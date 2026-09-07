@@ -39,6 +39,8 @@ inductive TypeChecked : Expr → Prop where
   | letE {name : String} {ty : Ty} {val body : Expr} :
       TypeChecked val → TypeChecked body → TypeChecked (.letE name ty val body)
   | un {op : UnOp} {e : Expr} : TypeChecked e → TypeChecked (.un op e)
+  | bin {op : BinOp} {lhs rhs : Expr} :
+      TypeChecked lhs → TypeChecked rhs → TypeChecked (.bin op lhs rhs)
 
 mutual
 
@@ -161,6 +163,133 @@ theorem applyUn_abs_bigint {p : Program} {i : Int} {v : Value}
   subst h
   exact hasTy_bigint p _
 
+theorem int53_ty {p : Program} {i : Int} {t : Ty} (h : Value.hasTy p (.int53 i) t = true) :
+    t = .int53 := by
+  cases t <;> simp_all [Value.hasTy]
+
+theorem uint32_ty {p : Program} {n : UInt32} {t : Ty} (h : Value.hasTy p (.uint32 n) t = true) :
+    t = .uint32 := by
+  cases t <;> simp_all [Value.hasTy]
+
+theorem bigint_ty {p : Program} {i : Int} {t : Ty} (h : Value.hasTy p (.bigint i) t = true) :
+    t = .bigint := by
+  cases t <;> simp_all [Value.hasTy]
+
+theorem str_ty {p : Program} {s : String} {t : Ty} (h : Value.hasTy p (.str s) t = true) :
+    t = .string := by
+  cases t <;> simp_all [Value.hasTy]
+
+theorem arr_ty {p : Program} {xs : List Value} {t : Ty} (h : Value.hasTy p (.arr xs) t = true) :
+    ∃ elem, t = .array elem ∧ Value.hasElemTy p xs elem = true := by
+  cases t <;> simp_all [Value.hasTy]
+
+theorem hasElemTy_append {p : Program} {xs ys : List Value} {elem : Ty}
+    (hx : Value.hasElemTy p xs elem = true) (hy : Value.hasElemTy p ys elem = true) :
+    Value.hasElemTy p (xs ++ ys) elem = true := by
+  induction xs with
+  | nil => simpa using hy
+  | cons x rest ihx =>
+    simp only [List.cons_append, Value.hasElemTy, Bool.and_eq_true] at hx ⊢
+    exact ⟨hx.1, ihx hx.2⟩
+
+theorem applyArith_hasTy {p : Program} {op : BinOp} {t : Ty} {a b v : Value}
+    (ha : Value.hasTy p a t = true) (h : applyArith op a b = .ok v) :
+    Value.hasTy p v t = true := by
+  cases a <;> cases b <;>
+    first
+      | (exfalso; simp [applyArith] at h; done)
+      | skip
+  case int53.int53 x y =>
+    have ht := int53_ty ha; subst ht
+    cases op <;> simp only [applyArith] at h <;>
+      first
+        | exact mkInt53_hasTy h
+        | (split at h
+           · exact absurd h (by simp)
+           · exact mkInt53_hasTy h)
+        | exact absurd h (by simp)
+  case uint32.uint32 x y =>
+    have ht := uint32_ty ha; subst ht
+    cases op <;> simp only [applyArith] at h <;>
+      first
+        | (simp only [Except.ok.injEq] at h; subst h; exact hasTy_uint32 p _)
+        | (split at h
+           · exact absurd h (by simp)
+           · simp only [Except.ok.injEq] at h; subst h; exact hasTy_uint32 p _)
+        | exact absurd h (by simp)
+  case bigint.bigint x y =>
+    have ht := bigint_ty ha; subst ht
+    cases op <;> simp only [applyArith] at h <;>
+      first
+        | (simp only [Except.ok.injEq] at h; subst h; exact hasTy_bigint p _)
+        | (split at h
+           · exact absurd h (by simp)
+           · simp only [Except.ok.injEq] at h; subst h; exact hasTy_bigint p _)
+        | exact absurd h (by simp)
+
+theorem applyMinMax_hasTy {p : Program} {op : BinOp} {t : Ty} {a b v : Value}
+    (ha : Value.hasTy p a t = true) (hb : Value.hasTy p b t = true)
+    (h : applyMinMax op a b = .ok v) : Value.hasTy p v t = true := by
+  simp only [applyMinMax, bind, Except.bind] at h
+  split at h <;>
+    first
+      | (exfalso; simp at h; done)
+      | (cases op <;>
+          first
+            | (exfalso; simp at h; done)
+            | (simp only [Except.ok.injEq] at h; subst h; split <;> assumption))
+
+theorem compareValues_hasTy {p : Program} {op : BinOp} {a b v : Value}
+    (h : compareValues op a b = .ok v) : Value.hasTy p v .bool = true := by
+  cases a <;> cases b <;> simp only [compareValues] at h <;>
+    first
+      | (exfalso; simp at h; done)
+      | (simp only [Except.ok.injEq] at h; subst h; exact hasTy_bool p _)
+
+theorem applyBin_concat_hasTy {p : Program} {t : Ty} {a b v : Value}
+    (ha : Value.hasTy p a t = true) (hb : Value.hasTy p b t = true)
+    (h : applyBin .concat a b = .ok v) : Value.hasTy p v t = true := by
+  cases a <;> cases b <;> simp only [applyBin] at h <;>
+    first
+      | (exfalso; simp at h; done)
+      | skip
+  case str.str x y =>
+    have ht := str_ty ha; subst ht
+    simp only [Except.ok.injEq] at h; subst h
+    exact hasTy_str p _
+  case arr.arr x y =>
+    obtain ⟨elem, hte, hx⟩ := arr_ty ha
+    subst hte
+    obtain ⟨elem', hte', hy⟩ := arr_ty hb
+    injection hte' with heq
+    subst heq
+    simp only [Except.ok.injEq] at h; subst h
+    simpa [hasTy_array] using hasElemTy_append hx hy
+
+/-- The type the compiler gives a binary operation whose operands both have type `t`. -/
+def binResultTy (op : BinOp) (t : Ty) : Ty :=
+  match op with
+  | .add | .sub | .mul | .div | .mod | .min | .max | .concat => t
+  | _ => .bool
+
+theorem applyBin_hasTy {p : Program} {op : BinOp} {t : Ty} {a b v : Value}
+    (ha : Value.hasTy p a t = true) (hb : Value.hasTy p b t = true)
+    (h : applyBin op a b = .ok v) : Value.hasTy p v (binResultTy op t) = true := by
+  cases op <;> simp only [binResultTy] <;>
+    first
+      | exact applyArith_hasTy ha (by simpa [applyBin] using h)
+      | exact applyMinMax_hasTy ha hb (by simpa [applyBin] using h)
+      | exact compareValues_hasTy (p := p) (by simpa [applyBin] using h)
+      | exact applyBin_concat_hasTy ha hb h
+      | (simp only [applyBin, Except.ok.injEq] at h; subst h; exact hasTy_bool p _)
+      | (exfalso; simp [applyBin] at h; done)
+
+theorem asBool_hasTy {p : Program} {w v : Value} (h : asBool w = .ok v) :
+    Value.hasTy p v .bool = true := by
+  cases w <;> simp [asBool] at h
+  subst h
+  exact hasTy_bool p _
+
 theorem EnvTyped.cons {p : Program} {env : Env} {ctx : Compile.Ctx} {name : String} {ty : Ty}
     {v : Value} (henv : EnvTyped p env ctx) (hv : Value.hasTy p v ty = true) :
     EnvTyped p ((name, v) :: env) ((name, ty) :: ctx) := by
@@ -202,6 +331,35 @@ theorem litValue_hasTy (p : Program) (ctx : Compile.Ctx) (l : Lit) (je : Js.Expr
   | bigint i =>
     simp only [Compile.compileExpr, Except.ok.injEq, Prod.mk.injEq] at hc
     simp [← hc.2, litValue, hasTy_bigint]
+
+/-- Both operands of a binary operation are compiled at the same type, and the result type the compiler
+gives is `binResultTy` of that type. -/
+private theorem compileExpr_bin_inv {p : Program} {ctx : Compile.Ctx} {op : BinOp}
+    {lhs rhs : Expr} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.bin op lhs rhs) = .ok (je, ty)) :
+    ∃ jl jr t, Compile.compileExpr p ctx lhs = .ok (jl, t)
+      ∧ Compile.compileExpr p ctx rhs = .ok (jr, t)
+      ∧ ty = binResultTy op t := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i lPair hcl
+  obtain ⟨jl, tl⟩ := lPair
+  split at hc
+  · simp at hc
+  rename_i rPair hcr
+  obtain ⟨jr, tr⟩ := rPair
+  split at hc
+  · simp at hc
+  rename_i hsame
+  have htlr : tl = tr := Ty.eq_of_not_bne hsame
+  subst htlr
+  refine ⟨jl, jr, tl, hcl, hcr, ?_⟩
+  cases op <;> repeat' split at hc
+  all_goals
+    first
+      | (exfalso; simp at hc; done)
+      | (simp only [Except.ok.injEq, Prod.mk.injEq] at hc; simp_all [binResultTy])
 
 /-- If the compiler judged an expression to have type `T` and `eval` returns a value, the value satisfies
 `T`. -/
@@ -325,6 +483,51 @@ theorem typeSound (p : Program) :
           subst hi
           exact hc.2 ▸ applyUn_abs_bigint he
         · simp at hc
+    | bin hl hr =>
+      rename_i op lhsE rhsE
+      obtain ⟨jl, jr, tl, hcl, hcr, hty⟩ := compileExpr_bin_inv hc
+      subst hty
+      cases hop : op with
+      | and =>
+        subst hop
+        rw [evalExpr_and] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        split at he <;>
+          first
+            | (exfalso; simp at he; done)
+            | (simp only [Except.ok.injEq] at he; subst he; exact hasTy_bool p _)
+            | (split at he <;>
+                 first
+                   | (exfalso; simp at he; done)
+                   | exact asBool_hasTy he)
+      | or =>
+        subst hop
+        rw [evalExpr_or] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        split at he <;>
+          first
+            | (exfalso; simp at he; done)
+            | (simp only [Except.ok.injEq] at he; subst he; exact hasTy_bool p _)
+            | (split at he <;>
+                 first
+                   | (exfalso; simp at he; done)
+                   | exact asBool_hasTy he)
+      | _ =>
+        subst hop
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        exact applyBin_hasTy (ih ctx env lhsE jl tl av hl henv hcl hav)
+          (ih ctx env rhsE jr tl bv hr henv hcr hbv) he
     | letE hval hbody =>
       rename_i name tyL valE bodyE
       rw [evalExpr_letE] at he
