@@ -312,6 +312,43 @@ def truncateLabel : Decl :=
     (ite' (len (v "label") ≤' v "limit") (v "label")
       (substring (v "label") (int53 0) (v "limit") ++' str "..."))
 
+/-- What a role may do in a day and in a month. -/
+def limitsFor : Decl :=
+  decl "limitsFor" [("role", .named "Role" [])] (.dict .int53)
+    (matchOn (v "role") [
+      alt "guest" [] (dict .int53 [("daily", int53 10), ("monthly", int53 100)]),
+      alt "member" [] (dict .int53 [("daily", int53 100), ("monthly", int53 3000)]),
+      alt "admin" [] (dict .int53 [("daily", int53 1000), ("monthly", int53 30000)])
+    ])
+
+/-- A role with no daily limit recorded may do nothing. -/
+def dailyLimit : Decl :=
+  decl "dailyLimit" [("role", .named "Role" [])] .int53
+    (matchOn (dictGet (call "limitsFor" [v "role"]) (str "daily")) [
+      alt "some" ["value"] (v "value"),
+      alt "none" [] (int53 0)
+    ])
+
+def priceOf : Decl :=
+  decl "priceOf" [("prices", .dict .int53), ("sku", .string)] (.option .int53)
+    (dictGet (v "prices") (v "sku"))
+
+def isListed : Decl :=
+  decl "isListed" [("prices", .dict .int53), ("sku", .string)] .bool
+    (dictHas (v "prices") (v "sku"))
+
+/-- The price book after one price change. A sku already in the book keeps its place. -/
+def repriced : Decl :=
+  decl "repriced" [("prices", .dict .int53), ("sku", .string), ("amount", .int53)]
+    (.dict .int53)
+    (dictSet (v "prices") (v "sku") (v "amount"))
+
+def listedSkus : Decl :=
+  decl "listedSkus" [("prices", .dict .int53)] (.array .string) (dictKeys (v "prices"))
+
+def catalogueSize : Decl :=
+  decl "catalogueSize" [("prices", .dict .int53)] .int53 (len (v "prices"))
+
 def program : Program := {
   types := [Money, Role, OrderState, Paginated, Validated]
   decls := [
@@ -323,7 +360,8 @@ def program : Program := {
     lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
     quantityLabel, renewalLabel, chargeable, settleMessage,
     remainingItems, firstPage, validateQuantity, validationMessage,
-    storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel
+    storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel,
+    limitsFor, dailyLimit, priceOf, isListed, repriced, listedSkus, catalogueSize
   ]
 }
 

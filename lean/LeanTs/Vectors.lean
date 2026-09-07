@@ -29,6 +29,10 @@ def bmpMax : String := String.singleton (Char.ofNat 0xFFFF)
 /-- A character outside the BMP. In JS it becomes a surrogate pair, two units long. -/
 def astral : String := String.singleton (Char.ofNat 0x10000)
 
+/-- The keys a generated dictionary uses. They are drawn from the strings a `String` parameter is offered,
+so a lookup in one of these dictionaries can actually hit. -/
+def dictKeyPool : List String := ["a", "b", "ab"]
+
 private def scalarEdges : Ty → List Value
   | .bool => [.bool true, .bool false]
   | .int53 =>
@@ -72,6 +76,10 @@ partial def edgeCases (p : Program) (width : Nat) : Ty → List Value
     let items := (edgeCases p (width / 2 + 1) t).take width
     Value.arr [] :: (items.map fun x => Value.arr [x])
       ++ [Value.arr (items.take 3), Value.arr (items.take 5)]
+  | .dict v =>
+    let items := (edgeCases p (width / 2 + 1) v).take 3
+    let keyed := (dictKeyPool.zip items).map fun (k, x) => Value.dict [(k, x)]
+    Value.dict [] :: keyed ++ [Value.dict (dictKeyPool.zip (items.take 2))]
   | ty => scalarEdges ty
 
 private partial def randomValue (p : Program) (s : UInt64) : Ty → Value
@@ -125,6 +133,9 @@ partial def Value.toJson : Value → Json
     .obj [("t", .str "obj"), ("ctor", .str ctor),
           ("fields", .obj (fields.map fun (k, v) => (k, Value.toJson v)))]
   | .arr xs => .obj [("t", .str "arr"), ("v", .arr (xs.map Value.toJson))]
+  | .dict entries =>
+    .obj [("t", .str "dict"),
+          ("v", .arr (entries.map fun (k, v) => .arr [.str k, Value.toJson v]))]
 
 def TestVector.toJson (v : TestVector) : Json :=
   let outcome :=
@@ -147,6 +158,7 @@ private def illTypedPool : List Value :=
    .bigint 0, .arr [], .arr [.str "x"], .arr [.int53 0],
    .obj "none" [], .obj "some" [("value", .str "x")], .obj "ok" [("value", .int53 0)],
    .obj "nope" [], .obj "Money" [("amount", .int53 1)],
+   .dict [], .dict [("a", .str "x")],
    .obj "Money" [("amount", .int53 1), ("currency", .str "JPY"), ("extra", .bool true)]]
 
 /-- Whether the entry check can tell this value apart from one the parameter accepts. `Int53` and

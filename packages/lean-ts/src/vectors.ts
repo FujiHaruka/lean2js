@@ -7,7 +7,8 @@ export type EncodedValue =
   | { t: "string"; v: string }
   | { t: "bigint"; v: string }
   | { t: "obj"; ctor: string; fields: Record<string, EncodedValue> }
-  | { t: "arr"; v: EncodedValue[] };
+  | { t: "arr"; v: EncodedValue[] }
+  | { t: "dict"; v: [string, EncodedValue][] };
 
 export type Vector = {
   fn: string;
@@ -30,6 +31,8 @@ export function decode(value: EncodedValue): unknown {
     }
     case "arr":
       return value.v.map(decode);
+    case "dict":
+      return new Map(value.v.map(([key, entry]) => [key, decode(entry)]));
     default:
       return value.v;
   }
@@ -45,6 +48,8 @@ export function describeValue(value: EncodedValue): string {
       return `${value.ctor}{${Object.keys(value.fields).join(",")}}`;
     case "arr":
       return `[${value.v.map(describeValue).join(",")}]`;
+    case "dict":
+      return `{${value.v.map(([key]) => key).join(",")}}`;
     default:
       return `${value.v}`;
   }

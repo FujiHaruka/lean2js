@@ -33,6 +33,7 @@ inductive JsValue where
   | bool (b : Bool)
   | obj (fields : List (String × JsValue))
   | arr (xs : List JsValue)
+  | dict (entries : List (String × JsValue))
   deriving Repr, Inhabited
 
 abbrev JsEnv := List (String × JsValue)
@@ -50,6 +51,7 @@ def JsValue.beq : JsValue → JsValue → Bool
   | .bool a, .bool b => a == b
   | .obj a, .obj b => JsValue.beqFields a b
   | .arr a, .arr b => JsValue.beqList a b
+  | .dict a, .dict b => JsValue.beqFields a b
   | _, _ => false
 termination_by a => sizeOf a
 
@@ -136,6 +138,12 @@ def strSlice (s : String) (lo hi : Int) : JsResult :=
     fail "indexOutOfBounds"
   else .ok (.str (String.ofList ((s.toList.drop lo.toNat).take (hi - lo).toNat)))
 
+/-- `Map.set` overwrites in place and appends a key it has not seen, so iteration order survives both. -/
+def mapSet (entries : List (String × JsValue)) (key : String) (v : JsValue) :
+    List (String × JsValue) :=
+  if entries.any (·.1 == key) then entries.map (fun e => if e.1 == key then (key, v) else e)
+  else entries ++ [(key, v)]
+
 def at? (xs : List JsValue) (i : Int) : JsResult :=
   if i < safeMin || safeMax < i || i < 0 || Int.ofNat xs.length ≤ i then
     fail "indexOutOfBounds"
@@ -161,6 +169,13 @@ private def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__strcmp", [.str a, .str b] => some (.ok (.num (strcmp a b)))
   | "__eq", [a, b] => some (.ok (.bool (a == b)))
   | "__at", [.arr xs, .num i] => some (at? xs i)
+  | "__dget", [.dict entries, .str key] =>
+    some (.ok (match (entries.find? (·.1 == key)).map (·.2) with
+      | some v => .obj [("tag", .str "some"), ("value", v)]
+      | none => .obj [("tag", .str "none")]))
+  | "__dhas", [.dict entries, .str key] => some (.ok (.bool (entries.any (·.1 == key))))
+  | "__dset", [.dict entries, .str key, v] => some (.ok (.dict (mapSet entries key v)))
+  | "__dkeys", [.dict entries] => some (.ok (.arr (entries.map fun e => .str e.1)))
   | "__strlen", [.str s] => some (.ok (.num s.toList.length))
   | "__trim", [.str s] => some (.ok (.str (strTrim s)))
   | "__upper", [.str s] => some (.ok (.str (strUpper s)))
@@ -215,6 +230,7 @@ def checkTy : JsValue → TyDesc → Bool
   | .str _, .string => true
   | .bigint _, .bigint => true
   | .arr xs, .array t => checkList xs t
+  | .dict entries, .dict t => checkEntries entries t
   | .obj (("tag", .str ctor) :: rest), .option t =>
     match ctor with
     | "none" => rest.isEmpty
@@ -243,6 +259,11 @@ def checkList : List JsValue → TyDesc → Bool
   | [], _ => true
   | x :: rest, t => checkTy x t && checkList rest t
 termination_by xs => sizeOf xs
+
+def checkEntries : List (String × JsValue) → TyDesc → Bool
+  | [], _ => true
+  | (_, v) :: rest, t => checkTy v t && checkEntries rest t
+termination_by entries => sizeOf entries
 
 end
 
@@ -319,8 +340,12 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
         | some v => .ok v
         | none => .error "typeError"
       | .arr xs => if field == "length" then .ok (.num xs.length) else .error "typeError"
+      | .dict entries => if field == "size" then .ok (.num entries.length) else .error "typeError"
       | _ => .error "typeError"
     | .arrayLit items => do .ok (.arr (← evalList m f env items))
+    | .dictLit entries => do
+      let vs ← evalList m f env (entries.map (·.2))
+      .ok (.dict ((entries.map (·.1)).zip vs))
     | .check d x => do
       let v ← eval m f env x
       if checkTy v d then .ok v else .error "typeError"

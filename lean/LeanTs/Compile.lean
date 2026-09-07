@@ -27,6 +27,7 @@ private partial def wfTy (p : Program) (scope : List String) : Ty → Except Str
   | .var n => if scope.contains n then .ok () else .error s!"unbound type parameter: {n}"
   | .option t => wfTy p scope t
   | .array t => wfTy p scope t
+  | .dict v => wfTy p scope v
   | .result ok err => do wfTy p scope ok; wfTy p scope err
   | .named n args =>
     match p.findType? n with
@@ -408,7 +409,8 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     match tarr with
     | .array _ => .ok (.member jarr "length", .int53)
     | .string => .ok (.call "__strlen" [jarr], .int53)
-    | ty => .error s!"length expects an Array or a String, not {ty.render}"
+    | .dict _ => .ok (.member jarr "size", .int53)
+    | ty => .error s!"length expects an Array, a String or a Dict, not {ty.render}"
   | .mapE arr binder body => do
     let (jarr, tarr) ← compileExpr p ctx arr
     match tarr with
@@ -439,6 +441,45 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
         .error s!"reduce folds into {tinit.render} but its body is {tbody.render}"
       else .ok (.reduceJs jarr jinit accName elemName jbody, tinit)
     | ty => .error s!"reduce expects an Array, not {ty.render}"
+  | .dictLit value entries => do
+    wfTy p [] value
+    validateDistinct "key" (entries.map (·.1))
+    let js ← compileValues p ctx entries
+    if !js.all (fun (_, ty) => ty == value) then
+      .error s!"dictionary values are not all {value.render}"
+    else .ok (.dictLit ((entries.map (·.1)).zip (js.map (·.1))), .dict value)
+  | .dictGet d key => do
+    let (jd, td) ← compileExpr p ctx d
+    let (jk, tk) ← compileExpr p ctx key
+    match td with
+    | .dict value =>
+      if tk != .string then .error "a dictionary key must be a String"
+      else .ok (.call "__dget" [jd, jk], .option value)
+    | ty => .error s!"get expects a Dict, not {ty.render}"
+  | .dictHas d key => do
+    let (jd, td) ← compileExpr p ctx d
+    let (jk, tk) ← compileExpr p ctx key
+    match td with
+    | .dict _ =>
+      if tk != .string then .error "a dictionary key must be a String"
+      else .ok (.call "__dhas" [jd, jk], .bool)
+    | ty => .error s!"has expects a Dict, not {ty.render}"
+  | .dictSet d key val => do
+    let (jd, td) ← compileExpr p ctx d
+    let (jk, tk) ← compileExpr p ctx key
+    let (jv, tv) ← compileExpr p ctx val
+    match td with
+    | .dict value =>
+      if tk != .string then .error "a dictionary key must be a String"
+      else if tv != value then
+        .error s!"set stores {tv.render} into a Dict {value.render}"
+      else .ok (.call "__dset" [jd, jk, jv], .dict value)
+    | ty => .error s!"set expects a Dict, not {ty.render}"
+  | .dictKeys d => do
+    let (jd, td) ← compileExpr p ctx d
+    match td with
+    | .dict _ => .ok (.call "__dkeys" [jd], .array .string)
+    | ty => .error s!"keys expects a Dict, not {ty.render}"
   | .strUn op e => do
     let (je, te) ← compileExpr p ctx e
     if te != .string then .error s!"{op.name} expects a String, not {te.render}"
@@ -478,6 +519,15 @@ def compileArgs (p : Program) (ctx : Ctx) (es : List Expr) :
     let tail ← compileArgs p ctx rest
     .ok (head :: tail)
 termination_by sizeOf es
+
+private def compileValues (p : Program) (ctx : Ctx) :
+    List (String × Expr) → Except String (List (Js.Expr × Ty))
+  | [] => .ok []
+  | (_, e) :: rest => do
+    let head ← compileExpr p ctx e
+    let tail ← compileValues p ctx rest
+    .ok (head :: tail)
+termination_by es => sizeOf es
 
 private def compileAlts (p : Program) (ctx : Ctx) (ty : Ty) (alts : List Alt) :
     Except String (List Arm) :=
@@ -528,6 +578,7 @@ private partial def tyDesc (p : Program) : Ty → Except String Js.TyDesc
   | .option t => do .ok (.option (← tyDesc p t))
   | .result ok err => do .ok (.result (← tyDesc p ok) (← tyDesc p err))
   | .array t => do .ok (.array (← tyDesc p t))
+  | .dict v => do .ok (.dict (← tyDesc p v))
   | .named n args =>
     match p.findType? n with
     | none => .error s!"unknown type: {n}"
@@ -568,6 +619,7 @@ searched too, so `Tree (Tree Int53)` is caught the same way a field of type `Tre
 private partial def mentions (p : Program) (target : String) (seen : List String) : Ty → Bool
   | .option t => mentions p target seen t
   | .array t => mentions p target seen t
+  | .dict v => mentions p target seen v
   | .result ok err => mentions p target seen ok || mentions p target seen err
   | .named n args =>
     if n == target || args.any (mentions p target seen) then true

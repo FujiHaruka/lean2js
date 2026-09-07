@@ -84,10 +84,25 @@ const __substring = (s, lo, hi) => {
     : __fail("indexOutOfBounds");
 };
 
+const __dget = (d, k) => (d.has(k) ? { tag: "some", value: d.get(k) } : { tag: "none" });
+
+const __dhas = (d, k) => d.has(k);
+
+// A fresh Map: values in the subset are immutable, so set cannot write through to the caller's.
+const __dset = (d, k, v) => new Map(d).set(k, v);
+
+const __dkeys = (d) => Array.from(d.keys());
+
 // === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (a instanceof Map || b instanceof Map) {
+    if (!(a instanceof Map) || !(b instanceof Map) || a.size !== b.size) return false;
+    const xs = Array.from(a);
+    const ys = Array.from(b);
+    return xs.every(([k, v], i) => ys[i][0] === k && __eq(v, ys[i][1]));
+  }
   if (Array.isArray(a) || Array.isArray(b)) {
     return (
       Array.isArray(a) &&
@@ -154,6 +169,12 @@ const __has = (x, t) => {
       return typeof x === "bigint";
     case "array":
       return Array.isArray(x) && x.every((e) => __has(e, t[1]));
+    case "dict":
+      return (
+        x instanceof Map &&
+        Array.from(x.keys()).every((k) => typeof k === "string") &&
+        Array.from(x.values()).every((e) => __has(e, t[1]))
+      );
     case "option":
       return (
         __isObj(x) &&
@@ -473,6 +494,52 @@ export function truncateLabel(__p0, __p1) {
   const label = __ck(__p0, ["string"]);
   const limit = __ck(__p1, ["int53"]);
   return ((__strlen(label) <= limit) ? label : (__substring(label, 0, limit) + "..."));
+}
+
+/** limitsFor : (role : Role) → Dict Int53 */
+export function limitsFor(__p0) {
+  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  return ((__s) => ((((__s).tag === "guest") ? new Map([["daily", 10], ["monthly", 100]]) : (((__s).tag === "member") ? new Map([["daily", 100], ["monthly", 3000]]) : new Map([["daily", 1000], ["monthly", 30000]])))))(role);
+}
+
+/** dailyLimit : (role : Role) → Int53 */
+export function dailyLimit(__p0) {
+  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(limitsFor(role), "daily"));
+}
+
+/** priceOf : (prices : Dict Int53, sku : String) → Option Int53 */
+export function priceOf(__p0, __p1) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  return __dget(prices, sku);
+}
+
+/** isListed : (prices : Dict Int53, sku : String) → Bool */
+export function isListed(__p0, __p1) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  return __dhas(prices, sku);
+}
+
+/** repriced : (prices : Dict Int53, sku : String, amount : Int53) → Dict Int53 */
+export function repriced(__p0, __p1, __p2) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  const amount = __ck(__p2, ["int53"]);
+  return __dset(prices, sku, amount);
+}
+
+/** listedSkus : (prices : Dict Int53) → Array String */
+export function listedSkus(__p0) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  return __dkeys(prices);
+}
+
+/** catalogueSize : (prices : Dict Int53) → Int53 */
+export function catalogueSize(__p0) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  return (prices).size;
 }
 
 //# sourceMappingURL=index.js.map

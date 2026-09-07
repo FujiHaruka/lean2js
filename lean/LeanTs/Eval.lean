@@ -116,6 +116,17 @@ UTF-16 units, which is why the generated code cannot call it unguarded. -/
 def splitStr (s sep : String) : List String :=
   if sep.isEmpty then [s] else s.splitOn sep
 
+def dictLookup (entries : List (String × Value)) (k : String) : Value :=
+  match (entries.find? (·.1 == k)).map (·.2) with
+  | some v => .obj "some" [("value", v)]
+  | none => .obj "none" []
+
+/-- Writing an existing key leaves it where it is and writing a new one appends, which is what `Map.set`
+does. Iteration order is observable through `keys`, so the two have to agree on it. -/
+def dictWith (entries : List (String × Value)) (k : String) (v : Value) : List (String × Value) :=
+  if entries.any (·.1 == k) then entries.map (fun e => if e.1 == k then (k, v) else e)
+  else entries ++ [(k, v)]
+
 def applyStrUn : StrUnOp → Value → Except Err Value
   | .trim, .str s => .ok (.str (String.ofList (trimChars s.toList)))
   | .upper, .str s => .ok (.str (String.ofList (s.toList.map asciiUpper)))
@@ -268,7 +279,8 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       match ← evalExpr p f env arr with
       | .arr xs => mkInt53 (Int.ofNat xs.length)
       | .str s => mkInt53 (Int.ofNat s.toList.length)
-      | _ => .error (.typeError "length expects an Array or a String")
+      | .dict entries => mkInt53 (Int.ofNat entries.length)
+      | _ => .error (.typeError "length expects an Array, a String or a Dict")
     | .mapE arr binder body => do
       match ← evalExpr p f env arr with
       | .arr xs => do .ok (.arr (← evalMapItems p f env binder body xs))
@@ -283,6 +295,32 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
         let acc ← evalExpr p f env init
         evalReduceItems p f env accName elemName body acc xs
       | _ => .error (.typeError "reduce expects an Array")
+    | .dictLit _ entries => do
+      let vs ← evalArgs p f env (entries.map (·.2))
+      .ok (.dict ((entries.map (·.1)).zip vs))
+    | .dictGet d key => do
+      let dv ← evalExpr p f env d
+      let kv ← evalExpr p f env key
+      match dv, kv with
+      | .dict entries, .str k => .ok (dictLookup entries k)
+      | _, _ => .error (.typeError "get expects a Dict and a String key")
+    | .dictHas d key => do
+      let dv ← evalExpr p f env d
+      let kv ← evalExpr p f env key
+      match dv, kv with
+      | .dict entries, .str k => .ok (.bool (entries.any (·.1 == k)))
+      | _, _ => .error (.typeError "has expects a Dict and a String key")
+    | .dictSet d key val => do
+      let dv ← evalExpr p f env d
+      let kv ← evalExpr p f env key
+      let vv ← evalExpr p f env val
+      match dv, kv with
+      | .dict entries, .str k => .ok (.dict (dictWith entries k vv))
+      | _, _ => .error (.typeError "set expects a Dict and a String key")
+    | .dictKeys d => do
+      match ← evalExpr p f env d with
+      | .dict entries => .ok (.arr (entries.map fun e => .str e.1))
+      | _ => .error (.typeError "keys expects a Dict")
     | .strUn op e => do applyStrUn op (← evalExpr p f env e)
     | .strBin op lhs rhs => do
       let a ← evalExpr p f env lhs

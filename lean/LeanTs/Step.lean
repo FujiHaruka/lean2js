@@ -38,6 +38,11 @@ inductive Frame where
   | indexL (idx : Expr) (env : Env)
   | indexR (arr : Value)
   | lengthK
+  | dictK (keys : List String) (done : List Value) (rest : List Expr) (env : Env)
+  | dictGetK (done : List Value) (rest : List Expr) (env : Env)
+  | dictHasK (done : List Value) (rest : List Expr) (env : Env)
+  | dictSetK (done : List Value) (rest : List Expr) (env : Env)
+  | dictKeysK
   | strUnK (op : StrUnOp)
   | strBinL (op : StrBinOp) (rhs : Expr) (env : Env)
   | strBinR (op : StrBinOp) (lhs : Value)
@@ -129,6 +134,19 @@ def step (p : Program) : State → State
     | .filterE arr binder body => .eval env arr (.filterArrK binder body env :: k)
     | .reduceE arr init accName elemName body =>
       .eval env arr (.reduceArrK init accName elemName body env :: k)
+    | .dictLit _ entries =>
+      continueArgs (fun vs => finish (.dict ((entries.map (·.1)).zip vs)) k) []
+        (entries.map (·.2)) env k (fun done rest => .dictK (entries.map (·.1)) done rest env)
+    | .dictGet d key =>
+      continueArgs (buildDictGet · k) [] [d, key] env k
+        (fun done rest => .dictGetK done rest env)
+    | .dictHas d key =>
+      continueArgs (buildDictHas · k) [] [d, key] env k
+        (fun done rest => .dictHasK done rest env)
+    | .dictSet d key val =>
+      continueArgs (buildDictSet · k) [] [d, key, val] env k
+        (fun done rest => .dictSetK done rest env)
+    | .dictKeys d => .eval env d (.dictKeysK :: k)
     | .strUn op e => .eval env e (.strUnK op :: k)
     | .strBin op lhs rhs => .eval env lhs (.strBinL op rhs env :: k)
     | .substring str lo hi =>
@@ -209,7 +227,27 @@ def step (p : Program) : State → State
         match mkInt53 (Int.ofNat s.toList.length) with
         | .ok w => finish w k
         | .error e => fail e
-      | _ => fail (.typeError "length expects an Array or a String")
+      | .dict entries =>
+        match mkInt53 (Int.ofNat entries.length) with
+        | .ok w => finish w k
+        | .error e => fail e
+      | _ => fail (.typeError "length expects an Array, a String or a Dict")
+    | .dictK keys done rest env =>
+      continueArgs (fun vs => finish (.dict (keys.zip vs)) k) (done ++ [v]) rest env k
+        (fun done rest => .dictK keys done rest env)
+    | .dictGetK done rest env =>
+      continueArgs (buildDictGet · k) (done ++ [v]) rest env k
+        (fun done rest => .dictGetK done rest env)
+    | .dictHasK done rest env =>
+      continueArgs (buildDictHas · k) (done ++ [v]) rest env k
+        (fun done rest => .dictHasK done rest env)
+    | .dictSetK done rest env =>
+      continueArgs (buildDictSet · k) (done ++ [v]) rest env k
+        (fun done rest => .dictSetK done rest env)
+    | .dictKeysK =>
+      match v with
+      | .dict entries => finish (.arr (entries.map fun e => .str e.1)) k
+      | _ => fail (.typeError "keys expects a Dict")
     | .strUnK op =>
       match applyStrUn op v with
       | .ok w => finish w k
@@ -261,6 +299,18 @@ where
       | some c =>
         if c.fields.length != args.length then fail (.arity ctorName)
         else finish (.obj ctorName ((c.fields.map (·.name)).zip args)) k
+  buildDictGet (args : List Value) (k : List Frame) : State :=
+    match args with
+    | [.dict entries, .str key] => finish (dictLookup entries key) k
+    | _ => fail (.typeError "get expects a Dict and a String key")
+  buildDictHas (args : List Value) (k : List Frame) : State :=
+    match args with
+    | [.dict entries, .str key] => finish (.bool (entries.any (·.1 == key))) k
+    | _ => fail (.typeError "has expects a Dict and a String key")
+  buildDictSet (args : List Value) (k : List Frame) : State :=
+    match args with
+    | [.dict entries, .str key, val] => finish (.dict (dictWith entries key val)) k
+    | _ => fail (.typeError "set expects a Dict and a String key")
   buildSlice (args : List Value) (k : List Frame) : State :=
     match args with
     | [s, lo, hi] =>

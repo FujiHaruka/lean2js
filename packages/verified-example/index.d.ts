@@ -114,3 +114,17 @@ export declare function mentionsTerm(text: string, term: string): boolean;
 export declare function fieldCount(row: string, separator: string): number;
 
 export declare function truncateLabel(label: string, limit: number): string;
+
+export declare function limitsFor(role: Role): ReadonlyMap<string, number>;
+
+export declare function dailyLimit(role: Role): number;
+
+export declare function priceOf(prices: ReadonlyMap<string, number>, sku: string): Option<number>;
+
+export declare function isListed(prices: ReadonlyMap<string, number>, sku: string): boolean;
+
+export declare function repriced(prices: ReadonlyMap<string, number>, sku: string, amount: number): ReadonlyMap<string, number>;
+
+export declare function listedSkus(prices: ReadonlyMap<string, number>): readonly string[];
+
+export declare function catalogueSize(prices: ReadonlyMap<string, number>): number;

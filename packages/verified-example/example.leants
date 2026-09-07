@@ -142,3 +142,24 @@ def fieldCount(row : String, separator : String) : Int53 =
 def truncateLabel(label : String, limit : Int53) : String =
   if (label.length <= limit) then label else (label.substring(0, limit) ++ "...")
 
+def limitsFor(role : Role) : Dict Int53 =
+  match role { guest => {"daily": 10, "monthly": 100} : Dict Int53 | member => {"daily": 100, "monthly": 3000} : Dict Int53 | admin => {"daily": 1000, "monthly": 30000} : Dict Int53 }
+
+def dailyLimit(role : Role) : Int53 =
+  match limitsFor(role).get("daily") { some(value) => value | none => 0 }
+
+def priceOf(prices : Dict Int53, sku : String) : Option Int53 =
+  prices.get(sku)
+
+def isListed(prices : Dict Int53, sku : String) : Bool =
+  prices.has(sku)
+
+def repriced(prices : Dict Int53, sku : String, amount : Int53) : Dict Int53 =
+  prices.set(sku, amount)
+
+def listedSkus(prices : Dict Int53) : Array String =
+  prices.keys()
+
+def catalogueSize(prices : Dict Int53) : Int53 =
+  prices.length
+

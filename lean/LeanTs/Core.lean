@@ -30,6 +30,7 @@ inductive Ty where
   | option (t : Ty)
   | result (ok err : Ty)
   | array (t : Ty)
+  | dict (value : Ty)
   deriving Repr, BEq, Inhabited
 
 partial def Ty.render : Ty → String
@@ -44,6 +45,7 @@ partial def Ty.render : Ty → String
   | .option t => s!"Option {t.render}"
   | .result ok err => s!"Result {ok.render} {err.render}"
   | .array t => s!"Array {t.render}"
+  | .dict v => s!"Dict {v.render}"
 
 /-- Replaces a declaration's type parameters with the arguments it was applied to. -/
 partial def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
@@ -52,6 +54,7 @@ partial def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
   | .option t => .option (t.subst sigma)
   | .result ok err => .result (ok.subst sigma) (err.subst sigma)
   | .array t => .array (t.subst sigma)
+  | .dict v => .dict (v.subst sigma)
   | ty => ty
 
 inductive Lit where
@@ -137,6 +140,11 @@ inductive Expr where
   | mapE (arr : Expr) (binder : String) (body : Expr)
   | filterE (arr : Expr) (binder : String) (body : Expr)
   | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)
+  | dictLit (value : Ty) (entries : List (String × Expr))
+  | dictGet (d key : Expr)
+  | dictHas (d key : Expr)
+  | dictSet (d key val : Expr)
+  | dictKeys (d : Expr)
   | strUn (op : StrUnOp) (e : Expr)
   | strBin (op : StrBinOp) (lhs rhs : Expr)
   | substring (s lo hi : Expr)

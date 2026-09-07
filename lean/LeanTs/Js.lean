@@ -24,6 +24,7 @@ inductive TyDesc where
   | option (t : TyDesc)
   | result (ok err : TyDesc)
   | array (t : TyDesc)
+  | dict (value : TyDesc)
   | ctors (name : String) (alts : List (String × List (String × TyDesc)))
   deriving Inhabited
 
@@ -36,6 +37,7 @@ partial def TyDesc.render : TyDesc → String
   | .option t => "[\"option\", " ++ t.render ++ "]"
   | .result ok err => "[\"result\", " ++ ok.render ++ ", " ++ err.render ++ "]"
   | .array t => "[\"array\", " ++ t.render ++ "]"
+  | .dict v => "[\"dict\", " ++ v.render ++ "]"
   | .ctors _ alts =>
     let field := fun (n, d) => "[\"" ++ escapeString n ++ "\", " ++ TyDesc.render d ++ "]"
     let alt := fun (c, fields) =>
@@ -56,6 +58,7 @@ inductive Expr where
   | objLit (fields : List (String × Expr))
   | member (obj : Expr) (field : String)
   | arrayLit (items : List Expr)
+  | dictLit (entries : List (String × Expr))
   | check (d : TyDesc) (e : Expr)
   | mapJs (arr : Expr) (binder : String) (body : Expr)
   | filterJs (arr : Expr) (binder : String) (body : Expr)
@@ -96,6 +99,9 @@ partial def Expr.render : Expr → String
     "{ " ++ String.intercalate ", " (fields.map field) ++ " }"
   | .member obj field => "(" ++ obj.render ++ ")." ++ field
   | .arrayLit items => "[" ++ String.intercalate ", " (items.map Expr.render) ++ "]"
+  | .dictLit entries =>
+    let entry := fun (k, v) => "[\"" ++ escapeString k ++ "\", " ++ Expr.render v ++ "]"
+    "new Map([" ++ String.intercalate ", " (entries.map entry) ++ "])"
   | .check d e => "__ck(" ++ e.render ++ ", " ++ d.render ++ ")"
   | .mapJs arr binder body =>
     "__map(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
@@ -201,10 +207,25 @@ const __substring = (s, lo, hi) => {
     : __fail(\"indexOutOfBounds\");
 };
 
+const __dget = (d, k) => (d.has(k) ? { tag: \"some\", value: d.get(k) } : { tag: \"none\" });
+
+const __dhas = (d, k) => d.has(k);
+
+// A fresh Map: values in the subset are immutable, so set cannot write through to the caller's.
+const __dset = (d, k, v) => new Map(d).set(k, v);
+
+const __dkeys = (d) => Array.from(d.keys());
+
 // === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
   if (a === b) return true;
   if (typeof a !== \"object\" || typeof b !== \"object\" || a === null || b === null) return false;
+  if (a instanceof Map || b instanceof Map) {
+    if (!(a instanceof Map) || !(b instanceof Map) || a.size !== b.size) return false;
+    const xs = Array.from(a);
+    const ys = Array.from(b);
+    return xs.every(([k, v], i) => ys[i][0] === k && __eq(v, ys[i][1]));
+  }
   if (Array.isArray(a) || Array.isArray(b)) {
     return (
       Array.isArray(a) &&
@@ -271,6 +292,12 @@ const __has = (x, t) => {
       return typeof x === \"bigint\";
     case \"array\":
       return Array.isArray(x) && x.every((e) => __has(e, t[1]));
+    case \"dict\":
+      return (
+        x instanceof Map &&
+        Array.from(x.keys()).every((k) => typeof k === \"string\") &&
+        Array.from(x.values()).every((e) => __has(e, t[1]))
+      );
     case \"option\":
       return (
         __isObj(x) &&
@@ -315,6 +342,7 @@ partial def tsType : Core.Ty → String
   | .option t => "Option<" ++ tsType t ++ ">"
   | .result ok err => "Result<" ++ tsType ok ++ ", " ++ tsType err ++ ">"
   | .array t => "readonly " ++ tsType t ++ "[]"
+  | .dict v => "ReadonlyMap<string, " ++ tsType v ++ ">"
 
 private def renderCtor (c : Core.CtorDef) : String :=
   let fields := c.fields.map fun f => s!"; readonly {f.name}: {tsType f.ty}"

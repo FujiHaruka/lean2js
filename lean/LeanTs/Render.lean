@@ -64,6 +64,14 @@ partial def Expr.source : Expr → String
   | .reduceE arr init accName elemName body =>
     arr.source ++ ".reduce(" ++ init.source ++ ", (" ++ accName ++ ", " ++ elemName ++ ") => "
       ++ body.source ++ ")"
+  | .dictLit value entries =>
+    let entry := fun (k, e) => "\"" ++ escapeString k ++ "\": " ++ Expr.source e
+    s!"\{{String.intercalate ", " (entries.map entry)}} : Dict {value.render}"
+  | .dictGet d key => d.source ++ ".get(" ++ key.source ++ ")"
+  | .dictHas d key => d.source ++ ".has(" ++ key.source ++ ")"
+  | .dictSet d key val =>
+    d.source ++ ".set(" ++ key.source ++ ", " ++ val.source ++ ")"
+  | .dictKeys d => d.source ++ ".keys()"
   | .strUn op e => e.source ++ "." ++ op.name ++ "()"
   | .strBin op lhs rhs => lhs.source ++ "." ++ op.name ++ "(" ++ rhs.source ++ ")"
   | .substring s lo hi =>

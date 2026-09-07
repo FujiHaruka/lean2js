@@ -183,6 +183,34 @@
     {
       "name": "truncateLabel",
       "signature": "(label : String, limit : Int53) → String"
+    },
+    {
+      "name": "limitsFor",
+      "signature": "(role : Role) → Dict Int53"
+    },
+    {
+      "name": "dailyLimit",
+      "signature": "(role : Role) → Int53"
+    },
+    {
+      "name": "priceOf",
+      "signature": "(prices : Dict Int53, sku : String) → Option Int53"
+    },
+    {
+      "name": "isListed",
+      "signature": "(prices : Dict Int53, sku : String) → Bool"
+    },
+    {
+      "name": "repriced",
+      "signature": "(prices : Dict Int53, sku : String, amount : Int53) → Dict Int53"
+    },
+    {
+      "name": "listedSkus",
+      "signature": "(prices : Dict Int53) → Array String"
+    },
+    {
+      "name": "catalogueSize",
+      "signature": "(prices : Dict Int53) → Int53"
     }
   ],
   "theorems": [

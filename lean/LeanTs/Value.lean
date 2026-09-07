@@ -30,6 +30,7 @@ inductive Value where
   | bigint (i : Int)
   | obj (ctor : String) (fields : List (String × Value))
   | arr (xs : List Value)
+  | dict (entries : List (String × Value))
   deriving Repr, Inhabited
 
 inductive Err where
@@ -67,6 +68,7 @@ def Value.beq : Value → Value → Bool
   | .bigint a, .bigint b => a == b
   | .obj ca fa, .obj cb fb => ca == cb && Value.beqFields fa fb
   | .arr xs, .arr ys => Value.beqList xs ys
+  | .dict a, .dict b => Value.beqFields a b
   | _, _ => false
 termination_by a => sizeOf a
 
@@ -86,6 +88,12 @@ end
 
 instance : BEq Value where
   beq := Value.beq
+
+/-- A JS `Map` cannot hold one key twice, so a dictionary that does has no value on the other side of the
+boundary and is rejected there. -/
+def keysDistinct : List String → Bool
+  | [] => true
+  | k :: rest => !rest.contains k && keysDistinct rest
 
 mutual
 
@@ -115,6 +123,8 @@ def Value.hasTy (p : Program) : Value → Ty → Bool
     | "error" => Value.hasFieldTys p fields [("error", err)]
     | _ => false
   | .arr xs, .array elem => Value.hasElemTy p xs elem
+  | .dict entries, .dict elem =>
+    keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem
   | _, _ => false
 termination_by v => sizeOf v
 
@@ -130,6 +140,11 @@ def Value.hasElemTy (p : Program) : List Value → Ty → Bool
   | [], _ => true
   | x :: rest, elem => Value.hasTy p x elem && Value.hasElemTy p rest elem
 termination_by xs => sizeOf xs
+
+def Value.hasEntryTys (p : Program) : List (String × Value) → Ty → Bool
+  | [], _ => true
+  | (_, v) :: rest, elem => Value.hasTy p v elem && Value.hasEntryTys p rest elem
+termination_by entries => sizeOf entries
 
 end
 

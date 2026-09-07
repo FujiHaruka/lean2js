@@ -184,6 +184,27 @@ private def nested (alts : List Alt) : Decl :=
   (decl "reduceNotArray" [("n", .int53)] .int53
     (reduce' (v "n") (int53 0) "acc" "x" (v "acc")))
 
+#guard compiles (decl "prices" [("n", .int53)] (.dict .int53) (dict .int53 [("a", v "n")]))
+#guard !compiles (decl "prices" [("n", .int53)] (.dict .string) (dict .string [("a", v "n")]))
+#guard !compiles
+  (decl "prices" [("n", .int53)] (.dict .int53) (dict .int53 [("a", v "n"), ("a", v "n")]))
+#guard compiles
+  (decl "look" [("d", .dict .int53), ("k", .string)] (.option .int53) (dictGet (v "d") (v "k")))
+#guard !compiles
+  (decl "look" [("d", .dict .int53), ("k", .int53)] (.option .int53) (dictGet (v "d") (v "k")))
+#guard !compiles
+  (decl "look" [("d", .array .int53), ("k", .string)] (.option .int53) (dictGet (v "d") (v "k")))
+#guard compiles
+  (decl "known" [("d", .dict .int53), ("k", .string)] .bool (dictHas (v "d") (v "k")))
+#guard compiles
+  (decl "stored" [("d", .dict .int53), ("k", .string), ("n", .int53)] (.dict .int53)
+    (dictSet (v "d") (v "k") (v "n")))
+#guard !compiles
+  (decl "stored" [("d", .dict .int53), ("k", .string), ("s", .string)] (.dict .int53)
+    (dictSet (v "d") (v "k") (v "s")))
+#guard compiles (decl "names" [("d", .dict .int53)] (.array .string) (dictKeys (v "d")))
+#guard compiles (decl "count" [("d", .dict .int53)] .int53 (len (v "d")))
+
 #guard compiles (decl "trimmed" [("s", .string)] .string (trim (v "s")))
 #guard !compiles (decl "trimmed" [("n", .int53)] .string (trim (v "n")))
 #guard compiles (decl "shouted" [("s", .string)] .string (upper (lower (v "s"))))
