@@ -112,7 +112,7 @@ inductive Pat where
   | bind (name : String)
   | lit (l : Lit)
   | ctor (name : String) (args : List Pat)
-  deriving Repr, Inhabited
+  deriving Repr, BEq, Inhabited
 
 /-- For `none` and `error` / `ok` one side's type is not determined by the term, so the syntax carries an
 annotation.
@@ -148,7 +148,7 @@ inductive Expr where
   | strUn (op : StrUnOp) (e : Expr)
   | strBin (op : StrBinOp) (lhs rhs : Expr)
   | substring (s lo hi : Expr)
-  deriving Repr, Inhabited
+  deriving Repr, BEq, Inhabited
 
 abbrev Alt := Pat × Expr
 
@@ -177,7 +177,7 @@ structure TypeDef where
   name : String
   params : List String := []
   ctors : List CtorDef
-  deriving Repr, Inhabited
+  deriving Repr, BEq, Inhabited
 
 def TypeDef.find? (t : TypeDef) (ctor : String) : Option CtorDef :=
   t.ctors.find? (·.name == ctor)
@@ -197,7 +197,7 @@ structure Decl where
   params : List Param
   ret : Ty
   body : Expr
-  deriving Repr, Inhabited
+  deriving Repr, BEq, Inhabited
 
 structure Program where
   types : List TypeDef := []

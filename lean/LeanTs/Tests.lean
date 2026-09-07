@@ -1,5 +1,6 @@
 import LeanTs.Compile
 import LeanTs.Builder
+import LeanTs.Syntax
 
 /-!
 # Tests
@@ -285,5 +286,60 @@ private def callsIdentity (name callee : String) : Decl :=
   [identity "base" "value",
    decl "shadowed" [("xs", .array .int53)] (.array .int53)
      (map' (v "xs") "base" (call "base" [v "base"]))]
+
+#guard (expr% a + b * 2) == (v "a" +' v "b" *' int53 2)
+#guard (expr% (a + b) * 2) == ((v "a" +' v "b") *' int53 2)
+#guard (expr% a < b && c) == ((v "a" <' v "b") &&' v "c")
+#guard (expr% !flag) == not' (v "flag")
+#guard (expr% -a) == neg' (v "a")
+#guard (expr% big(1)) == bigint 1
+#guard (expr% u32(7)) == uint32 7
+#guard (expr% true) == bool true
+#guard (expr% page.total) == proj (v "page") "total"
+#guard (expr% page.items.length) == len (proj (v "page") "items")
+#guard (expr% f(a, b)) == call "f" [v "a", v "b"]
+#guard (expr% Money::Money(a, b)) == ctor "Money" [] "Money" [v "a", v "b"]
+#guard (expr% Validated<String, Int53>::valid(q))
+  == ctor "Validated" [.string, .int53] "valid" [v "q"]
+#guard (expr% none<String>) == none' .string
+#guard (expr% some(x)) == some' (v "x")
+#guard (expr% ok<String>(x)) == ok' .string (v "x")
+#guard (expr% error<OrderState>("no")) == error' (.named "OrderState" []) (str "no")
+#guard (expr% Array<Int53>{1, 2}) == array .int53 [int53 1, int53 2]
+#guard (expr% Dict<Int53>{"a": 1}) == dict .int53 [("a", int53 1)]
+#guard (expr% xs[0]) == at' (v "xs") (int53 0)
+#guard (expr% xs.map(fun x => x * 2)) == (map' (v "xs") "x" (v "x" *' int53 2))
+#guard (expr% xs.filter(fun x => x > 0)) == (filter' (v "xs") "x" (v "x" >' int53 0))
+#guard (expr% xs.reduce(0, fun (sum, x) => sum + x))
+  == (reduce' (v "xs") (int53 0) "sum" "x" (v "sum" +' v "x"))
+#guard (expr% s.trim().toUpper()) == upper (trim (v "s"))
+#guard (expr% s.startsWith("a")) == startsWith (v "s") (str "a")
+#guard (expr% s.substring(0, n)) == substring (v "s") (int53 0) (v "n")
+#guard (expr% d.get(k)) == dictGet (v "d") (v "k")
+#guard (expr% d.set(k, x)) == dictSet (v "d") (v "k") (v "x")
+#guard (expr% d.keys()) == dictKeys (v "d")
+#guard (expr% if a then b else c) == ite' (v "a") (v "b") (v "c")
+#guard (expr% let n : Int53 := 1; n) == letIn "n" .int53 (int53 1) (v "n")
+#guard (expr% match r { guest() => 0 | _ => 1 })
+  == matchOn (v "r") [alt "guest" [] (int53 0), altP pWild (int53 1)]
+#guard (expr% match n { 0 => "none" | _ => "some" })
+  == matchOn (v "n") [altP (pInt53 0) (str "none"), altP pWild (str "some")]
+#guard (expr% match o { ok(shipped(_, t)) => t | error(m) => m })
+  == matchOn (v "o") [
+    altP (pCtor "ok" [pCtor "shipped" [pWild, pBind "t"]]) (v "t"),
+    altP (pCtor "error" [pBind "m"]) (v "m")]
+
+#guard (ty% Result<Paginated<Money>, String>)
+  == Ty.result (.named "Paginated" [.named "Money" []]) .string
+#guard (ty% Result<Array<Int53>, String>) == Ty.result (.array .int53) .string
+
+#guard (decl% add(a : Int53, b : Int53) : Int53 := a + b)
+  == (decl "add" [("a", .int53), ("b", .int53)] .int53 (v "a" +' v "b"))
+#guard (type% Money := Money(amount : Int53, currency : String))
+  == struct "Money" [("amount", .int53), ("currency", .string)]
+#guard (type% Role := guest | member | admin) == enum "Role" [("guest", []), ("member", []),
+  ("admin", [])]
+#guard (type% Paginated<T> := Paginated(items : Array<T>, total : Int53))
+  == struct "Paginated" [("items", .array (.var "T")), ("total", .int53)] (params := ["T"])
 
 end LeanTs.Tests

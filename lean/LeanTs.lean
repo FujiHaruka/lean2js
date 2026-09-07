@@ -8,6 +8,7 @@ import LeanTs.Manifest
 import LeanTs.Vectors
 import LeanTs.Example
 import LeanTs.Builder
+import LeanTs.Syntax
 import LeanTs.Ident
 import LeanTs.Tests
 import LeanTs.Axioms
