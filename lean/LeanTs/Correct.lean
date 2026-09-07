@@ -40,6 +40,8 @@ inductive CoveredOp : BinOp → Prop where
   | add : CoveredOp .add
   | sub : CoveredOp .sub
   | mul : CoveredOp .mul
+  | div : CoveredOp .div
+  | mod : CoveredOp .mod
 
 /-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
@@ -376,6 +378,46 @@ theorem encodeList_append (xs ys : List Value) :
 
 theorem helper_aconcat (xs ys : List Js.JsValue) :
     Js.helper "__aconcat" [.arr xs, .arr ys] = some (.ok (.arr (xs ++ ys))) := rfl
+
+theorem helper_i53div (a b : Int) :
+    Js.helper "__i53div" [.num a, .num b] = some (Js.Runtime.i53div a b) := rfl
+
+theorem helper_i53mod (a b : Int) :
+    Js.helper "__i53mod" [.num a, .num b] = some (Js.Runtime.i53mod a b) := rfl
+
+theorem helper_u32div (a b : Int) :
+    Js.helper "__u32div" [.num a, .num b] = some (Js.Runtime.u32div a b) := rfl
+
+theorem helper_u32mod (a b : Int) :
+    Js.helper "__u32mod" [.num a, .num b] = some (Js.Runtime.u32mod a b) := rfl
+
+theorem helper_bigdiv (a b : Int) :
+    Js.helper "__bigdiv" [.bigint a, .bigint b] = some (Js.Runtime.bigdiv a b) := rfl
+
+theorem helper_bigmod (a b : Int) :
+    Js.helper "__bigmod" [.bigint a, .bigint b] = some (Js.Runtime.bigmod a b) := rfl
+
+theorem u32_of_natCast {n : Nat} (h : n < 4294967296) :
+    Js.Runtime.u32 (n : Int) = (n : Int) := by
+  refine u32_of_lt ?_ ?_ <;> omega
+
+theorem u32_tdiv (x y : UInt32) :
+    Js.Runtime.u32 ((x.toNat : Int).tdiv (y.toNat : Int)) = ((x / y).toNat : Int) := by
+  have hx : x.toNat < 4294967296 := x.toNat_lt_size
+  have hle : x.toNat / y.toNat ≤ x.toNat := Nat.div_le_self _ _
+  have htd : ((x.toNat : Int)).tdiv ((y.toNat : Int)) = ((x.toNat / y.toNat : Nat) : Int) := by
+    simp [Int.tdiv]
+  rw [htd, UInt32.toNat_div]
+  exact u32_of_natCast (by omega)
+
+theorem u32_tmod (x y : UInt32) :
+    Js.Runtime.u32 ((x.toNat : Int).tmod (y.toNat : Int)) = ((x % y).toNat : Int) := by
+  have hx : x.toNat < 4294967296 := x.toNat_lt_size
+  have hle : x.toNat % y.toNat ≤ x.toNat := Nat.mod_le _ _
+  have htm : ((x.toNat : Int)).tmod ((y.toNat : Int)) = ((x.toNat % y.toNat : Nat) : Int) := by
+    simp [Int.tmod]
+  rw [htm, UInt32.toNat_mod]
+  exact u32_of_natCast (by omega)
 
 theorem helper_u32mul (a b : Int) :
     Js.helper "__u32mul" [.num a, .num b] = some (Js.Runtime.u32mul a b) := rfl
@@ -1162,4 +1204,169 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           simp only [encodeValue]
           exact eventually_binary (fun g => eval_binary_times m g _ jl jr)
             (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) rfl
+      | div =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        cases tl <;> simp only [Compile.numericHelper] at hc <;>
+          first
+            | (exfalso; simp at hc; done)
+            | skip
+        · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+          obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyArith] at he
+          split at he
+          · simp at he
+          rename_i hy0
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_i53div]
+          simp only [Js.Runtime.i53div, if_neg hy0, i53_of_mkInt53 he]
+        · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+          obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyArith] at he
+          split at he
+          · simp at he
+          rename_i hy0
+          simp only [Except.ok.injEq] at he
+          subst he
+          have hyne : y ≠ 0 := by simpa using hy0
+          have hy0' : ¬((y.toNat : Int) == 0) = true := by
+            simp only [beq_iff_eq, Int.natCast_eq_zero]
+            intro hz
+            exact hyne (UInt32.toNat_inj.mp (by simpa using hz))
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_u32div]
+          simp only [Js.Runtime.u32div, if_neg hy0', encodeValue, u32_tdiv]
+        · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+          obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyArith] at he
+          split at he
+          · simp at he
+          rename_i hy0
+          simp only [Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_bigdiv]
+          simp only [Js.Runtime.bigdiv, if_neg hy0, encodeValue]
+
+      | mod =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        cases tl <;> simp only [Compile.numericHelper] at hc <;>
+          first
+            | (exfalso; simp at hc; done)
+            | skip
+        · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+          obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyArith] at he
+          split at he
+          · simp at he
+          rename_i hy0
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_i53mod]
+          simp only [Js.Runtime.i53mod, if_neg hy0, i53_of_mkInt53 he]
+        · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+          obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyArith] at he
+          split at he
+          · simp at he
+          rename_i hy0
+          simp only [Except.ok.injEq] at he
+          subst he
+          have hyne : y ≠ 0 := by simpa using hy0
+          have hy0' : ¬((y.toNat : Int) == 0) = true := by
+            simp only [beq_iff_eq, Int.natCast_eq_zero]
+            intro hz
+            exact hyne (UInt32.toNat_inj.mp (by simpa using hz))
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_u32mod]
+          simp only [Js.Runtime.u32mod, if_neg hy0', encodeValue, u32_tmod]
+        · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+          obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyArith] at he
+          split at he
+          · simp at he
+          rename_i hy0
+          simp only [Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_bigmod]
+          simp only [Js.Runtime.bigmod, if_neg hy0, encodeValue]
 end LeanTs.Correct
