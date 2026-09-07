@@ -1,6 +1,6 @@
 import LeanTs.Eval
 import LeanTs.Manifest
-import LeanTs.Builder
+import LeanTs.Syntax
 
 /-!
 # Example
@@ -12,342 +12,281 @@ The `program` placed here is what ships as `packages/verified-example`.
 
 namespace LeanTs.Example
 
-open Core Core.Builder
+open Core Core.Dsl
 
-def Money : TypeDef :=
-  struct "Money" [("amount", .int53), ("currency", .string)]
+def Money : TypeDef := type% Money := Money(amount : Int53, currency : String)
 
-def Role : TypeDef :=
-  enum "Role" [("guest", []), ("member", []), ("admin", [])]
+def Role : TypeDef := type% Role := guest | member | admin
 
-def OrderState : TypeDef :=
-  enum "OrderState" [
-    ("draft", []),
-    ("placed", [("orderId", .int53)]),
-    ("shipped", [("orderId", .int53), ("trackingId", .string)]),
-    ("cancelled", [("reason", .string)])
-  ]
+def OrderState : TypeDef := type%
+  OrderState :=
+      draft
+    | placed(orderId : Int53)
+    | shipped(orderId : Int53, trackingId : String)
+    | cancelled(reason : String)
 
 /-- One page of results together with how many there are in all. -/
-def Paginated : TypeDef :=
-  struct "Paginated" [("items", .array (.var "T")), ("total", .int53)] (params := ["T"])
+def Paginated : TypeDef := type%
+  Paginated<T> := Paginated(items : Array<T>, total : Int53)
 
 /-- What a check concluded: the value it accepted, or the reasons it refused. `E` is named by only one of
 the two constructors, so a `valid` term cannot be read off for it and every use carries both arguments. -/
-def Validated : TypeDef :=
-  enum "Validated" [
-    ("valid", [("value", .var "A")]),
-    ("invalid", [("errors", .array (.var "E"))])
-  ] (params := ["E", "A"])
+def Validated : TypeDef := type%
+  Validated<E, A> := valid(value : A) | invalid(errors : Array<E>)
 
-def add : Decl :=
-  decl "add" [("a", .int53), ("b", .int53)] .int53 (v "a" +' v "b")
+def add : Decl := decl% add(a : Int53, b : Int53) : Int53 := a + b
 
 /-- Clamps a quantity to at least 1 and at most upper. -/
-def clampQuantity : Decl :=
-  decl "clampQuantity" [("quantity", .int53), ("upper", .int53)] .int53
-    (ite' (v "quantity" <' int53 1) (int53 1)
-      (ite' (v "quantity" >' v "upper") (v "upper") (v "quantity")))
+def clampQuantity : Decl := decl%
+  clampQuantity(quantity : Int53, upper : Int53) : Int53 :=
+    if quantity < 1 then 1 else if quantity > upper then upper else quantity
 
 /-- The amount of a line item. The quantity is clamped before multiplying, so a negative quantity never
 makes the amount negative. -/
-def lineTotal : Decl :=
-  decl "lineTotal" [("unitPrice", .int53), ("quantity", .int53)] .int53
-    (v "unitPrice" *' call "clampQuantity" [v "quantity", int53 999])
+def lineTotal : Decl := decl%
+  lineTotal(unitPrice : Int53, quantity : Int53) : Int53 :=
+    unitPrice * clampQuantity(quantity, 999)
 
 /-- The amount after a percent% discount. The remainder is truncated. -/
-def discounted : Decl :=
-  decl "discounted" [("amount", .int53), ("percent", .int53)] .int53
-    (letIn "rate" .int53 (int53 100 -' clampPercent) (v "amount" *' v "rate" /' int53 100))
-where
-  clampPercent : Expr :=
-    ite' (v "percent" <' int53 0) (int53 0)
-      (ite' (v "percent" >' int53 100) (int53 100) (v "percent"))
+def discounted : Decl := decl%
+  discounted(amount : Int53, percent : Int53) : Int53 :=
+    let rate : Int53 :=
+      100 - (if percent < 0 then 0 else if percent > 100 then 100 else percent);
+    amount * rate / 100
 
 /-- Truncating division. Division by zero traps on the JS side too. -/
-def divide : Decl :=
-  decl "divide" [("a", .int53), ("b", .int53)] .int53 (v "a" /' v "b")
+def divide : Decl := decl% divide(a : Int53, b : Int53) : Int53 := a / b
 
-def remainder : Decl :=
-  decl "remainder" [("a", .int53), ("b", .int53)] .int53 (v "a" %' v "b")
+def remainder : Decl := decl% remainder(a : Int53, b : Int53) : Int53 := a % b
 
-def negate : Decl :=
-  decl "negate" [("a", .int53)] .int53 (neg' (v "a"))
+def negate : Decl := decl% negate(a : Int53) : Int53 := -a
 
 /-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
-def safeQuotientIsPositive : Decl :=
-  decl "safeQuotientIsPositive" [("a", .int53), ("b", .int53)] .bool
-    (v "b" ≠' int53 0 &&' (v "a" /' v "b" >' int53 0))
+def safeQuotientIsPositive : Decl := decl%
+  safeQuotientIsPositive(a : Int53, b : Int53) : Bool := b != 0 && a / b > 0
 
-def canCheckout : Decl :=
-  decl "canCheckout"
-    [("signedIn", .bool), ("cartTotal", .int53), ("stock", .int53)] .bool
-    (v "signedIn" &&' v "cartTotal" >' int53 0 &&' v "stock" ≥' int53 1)
+def canCheckout : Decl := decl%
+  canCheckout(signedIn : Bool, cartTotal : Int53, stock : Int53) : Bool :=
+    signedIn && cartTotal > 0 && stock >= 1
 
-def mixChannels : Decl :=
-  decl "mixChannels" [("a", .uint32), ("b", .uint32)] .uint32
-    (v "a" *' v "b" +' (v "a" -' v "b"))
+def mixChannels : Decl := decl%
+  mixChannels(a : UInt32, b : UInt32) : UInt32 := a * b + (a - b)
 
-def bucketOf : Decl :=
-  decl "bucketOf" [("key", .uint32), ("buckets", .uint32)] .uint32
-    (v "key" %' v "buckets")
+def bucketOf : Decl := decl%
+  bucketOf(key : UInt32, buckets : UInt32) : UInt32 := key % buckets
 
-def scaleFee : Decl :=
-  decl "scaleFee" [("fee", .bigint), ("factor", .bigint)] .bigint
-    (v "fee" *' v "factor" -' bigint 1)
+def scaleFee : Decl := decl%
+  scaleFee(fee : BigInt, factor : BigInt) : BigInt := fee * factor - big(1)
 
-def bigQuotient : Decl :=
-  decl "bigQuotient" [("a", .bigint), ("b", .bigint)] .bigint (v "a" /' v "b")
+def bigQuotient : Decl := decl% bigQuotient(a : BigInt, b : BigInt) : BigInt := a / b
 
-def slugOf : Decl :=
-  decl "slugOf" [("prefix", .string), ("name", .string)] .string
-    (v "prefix" ++' str "-" ++' v "name")
+def slugOf : Decl := decl%
+  slugOf(«prefix» : String, name : String) : String := «prefix» ++ "-" ++ name
 
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
-def sortsBefore : Decl :=
-  decl "sortsBefore" [("a", .string), ("b", .string)] .bool (v "a" <' v "b")
+def sortsBefore : Decl := decl% sortsBefore(a : String, b : String) : Bool := a < b
 
-def sameLabel : Decl :=
-  decl "sameLabel" [("a", .string), ("b", .string)] .bool (v "a" ==' v "b")
+def sameLabel : Decl := decl% sameLabel(a : String, b : String) : Bool := a == b
 
 /-- Binds the same name twice. ESM runs in strict mode, so emitting `const` twice would fail at import
 time. -/
-def rebindTwice : Decl :=
-  decl "rebindTwice" [("amount", .int53)] .int53
-    (letIn "amount" .int53 (v "amount" +' int53 1)
-      (letIn "amount" .int53 (v "amount" *' int53 2) (v "amount")))
+def rebindTwice : Decl := decl%
+  rebindTwice(amount : Int53) : Int53 :=
+    let amount : Int53 := amount + 1; let amount : Int53 := amount * 2; amount
 
-def roleRank : Decl :=
-  decl "roleRank" [("role", .named "Role" [])] .int53
-    (matchOn (v "role") [
-      alt "guest" [] (int53 0),
-      alt "member" [] (int53 1),
-      alt "admin" [] (int53 2)
-    ])
+def roleRank : Decl := decl%
+  roleRank(role : Role) : Int53 :=
+    match role { guest() => 0 | member() => 1 | admin() => 2 }
 
 /-- Amounts in different currencies cannot be added. `===` is unusable on the JS side, so a structural
 equality helper is called. -/
-def addMoney : Decl :=
-  decl "addMoney" [("a", .named "Money" []), ("b", .named "Money" [])]
-    (.result (.named "Money" []) .string)
-    (ite' (proj (v "a") "currency" ≠' proj (v "b") "currency")
-      (error' (.named "Money" []) (str "currency mismatch"))
-      (ok' .string
-        (ctor "Money" [] "Money"
-          [proj (v "a") "amount" +' proj (v "b") "amount", proj (v "a") "currency"])))
+def addMoney : Decl := decl%
+  addMoney(a : Money, b : Money) : Result<Money, String> :=
+    if a.currency != b.currency then error<Money>("currency mismatch")
+    else ok<String>(Money::Money(a.amount + b.amount, a.currency))
 
-def sameMoney : Decl :=
-  decl "sameMoney" [("a", .named "Money" []), ("b", .named "Money" [])] .bool (v "a" ==' v "b")
+def sameMoney : Decl := decl% sameMoney(a : Money, b : Money) : Bool := a == b
 
 /-- The state transition to shipped. Rejects states that cannot transition and an empty tracking id. -/
-def ship : Decl :=
-  decl "ship" [("state", .named "OrderState" []), ("trackingId", .string)]
-    (.result (.named "OrderState" []) .string)
-    (matchOn (v "state") [
-      alt "draft" [] (failWith "a draft order cannot ship"),
-      alt "placed" ["orderId"]
-        (ite' (v "trackingId" ==' str "")
-          (failWith "a tracking id is required")
-          (ok' .string
-            (ctor "OrderState" [] "shipped" [v "orderId", v "trackingId"]))),
-      alt "shipped" ["orderId", "trackingId"] (failWith "the order has already shipped"),
-      alt "cancelled" ["reason"] (failWith "a cancelled order cannot ship")
-    ])
-where
-  failWith (message : String) : Expr :=
-    error' (.named "OrderState" []) (str message)
+def ship : Decl := decl%
+  ship(state : OrderState, trackingId : String) : Result<OrderState, String> :=
+    match state {
+        draft() => error<OrderState>("a draft order cannot ship")
+      | placed(orderId) =>
+          if trackingId == "" then error<OrderState>("a tracking id is required")
+          else ok<String>(OrderState::shipped(orderId, trackingId))
+      | shipped(orderId, trackingId) => error<OrderState>("the order has already shipped")
+      | cancelled(reason) => error<OrderState>("a cancelled order cannot ship")
+    }
 
-def trackingOf : Decl :=
-  decl "trackingOf" [("state", .named "OrderState" [])] (.option .string)
-    (matchOn (v "state") [
-      alt "draft" [] (none' .string),
-      alt "placed" ["orderId"] (none' .string),
-      alt "shipped" ["orderId", "trackingId"] (some' (v "trackingId")),
-      alt "cancelled" ["reason"] (none' .string)
-    ])
+def trackingOf : Decl := decl%
+  trackingOf(state : OrderState) : Option<String> :=
+    match state {
+        draft() => none<String>
+      | placed(orderId) => none<String>
+      | shipped(orderId, trackingId) => some(trackingId)
+      | cancelled(reason) => none<String>
+    }
 
-def canRefund : Decl :=
-  decl "canRefund" [("role", .named "Role" []), ("state", .named "OrderState" [])] .bool
-    (matchOn (v "state") [
-      alt "draft" [] (bool false),
-      alt "placed" ["orderId"] (call "roleRank" [v "role"] ≥' int53 1),
-      alt "shipped" ["orderId", "trackingId"] (call "roleRank" [v "role"] ≥' int53 2),
-      alt "cancelled" ["reason"] (bool false)
-    ])
+def canRefund : Decl := decl%
+  canRefund(role : Role, state : OrderState) : Bool :=
+    match state {
+        draft() => false
+      | placed(orderId) => roleRank(role) >= 1
+      | shipped(orderId, trackingId) => roleRank(role) >= 2
+      | cancelled(reason) => false
+    }
 
-def total : Decl :=
-  decl "total" [("xs", .array .int53)] .int53
-    (reduce' (v "xs") (int53 0) "sum" "x" (v "sum" +' v "x"))
+def total : Decl := decl%
+  total(xs : Array<Int53>) : Int53 := xs.reduce(0, fun (sum, x) => sum + x)
 
 /-- An out-of-range read traps rather than yielding `undefined`. -/
-def headOr : Decl :=
-  decl "headOr" [("xs", .array .int53), ("fallback", .int53)] .int53
-    (ite' (len (v "xs") ==' int53 0) (v "fallback") (at' (v "xs") (int53 0)))
+def headOr : Decl := decl%
+  headOr(xs : Array<Int53>, fallback : Int53) : Int53 :=
+    if xs.length == 0 then fallback else xs[0]
 
-def firstTracking : Decl :=
-  decl "firstTracking" [("states", .array (.named "OrderState" []))] (.option .string)
-    (ite' (len (v "states") ==' int53 0) (none' .string)
-      (call "trackingOf" [at' (v "states") (int53 0)]))
+def firstTracking : Decl := decl%
+  firstTracking(states : Array<OrderState>) : Option<String> :=
+    if states.length == 0 then none<String> else trackingOf(states[0])
 
 /-- The amount of every line of an order at one unit price. -/
-def lineTotals : Decl :=
-  decl "lineTotals" [("unitPrice", .int53), ("quantities", .array .int53)] (.array .int53)
-    (map' (v "quantities") "quantity" (call "lineTotal" [v "unitPrice", v "quantity"]))
+def lineTotals : Decl := decl%
+  lineTotals(unitPrice : Int53, quantities : Array<Int53>) : Array<Int53> :=
+    quantities.map(fun quantity => lineTotal(unitPrice, quantity))
 
-def currenciesOf : Decl :=
-  decl "currenciesOf" [("items", .array (.named "Money" []))] (.array .string)
-    (map' (v "items") "item" (proj (v "item") "currency"))
+def currenciesOf : Decl := decl%
+  currenciesOf(items : Array<Money>) : Array<String> :=
+    items.map(fun item => item.currency)
 
 /-- The orders this role may still refund. The predicate reads `role` from outside the lambda. -/
-def refundableOnly : Decl :=
-  decl "refundableOnly" [("role", .named "Role" []), ("states", .array (.named "OrderState" []))]
-    (.array (.named "OrderState" []))
-    (filter' (v "states") "state" (call "canRefund" [v "role", v "state"]))
+def refundableOnly : Decl := decl%
+  refundableOnly(role : Role, states : Array<OrderState>) : Array<OrderState> :=
+    states.filter(fun state => canRefund(role, state))
 
 /-- Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix
 them. -/
-def cartTotal : Decl :=
-  decl "cartTotal" [("items", .array (.named "Money" []))] .int53
-    (reduce' (v "items") (int53 0) "subtotal" "item"
-      (v "subtotal" +' proj (v "item") "amount"))
+def cartTotal : Decl := decl%
+  cartTotal(items : Array<Money>) : Int53 :=
+    items.reduce(0, fun (subtotal, item) => subtotal + item.amount)
 
-def anyOverLimit : Decl :=
-  decl "anyOverLimit" [("amounts", .array .int53), ("limit", .int53)] .bool
-    (reduce' (v "amounts") (bool false) "seen" "amount"
-      (ite' (v "seen") (bool true) (v "amount" >' v "limit")))
+def anyOverLimit : Decl := decl%
+  anyOverLimit(amounts : Array<Int53>, limit : Int53) : Bool :=
+    amounts.reduce(false, fun (seen, amount) => if seen then true else amount > limit)
 
 /-- The label shown next to a line item. -/
-def quantityLabel : Decl :=
-  decl "quantityLabel" [("quantity", .int53)] .string
-    (matchOn (v "quantity") [
-      altP (pInt53 0) (str "out of stock"),
-      altP (pInt53 1) (str "last one"),
-      altP pWild (str "in stock")
-    ])
+def quantityLabel : Decl := decl%
+  quantityLabel(quantity : Int53) : String :=
+    match quantity { 0 => "out of stock" | 1 => "last one" | _ => "in stock" }
 
 /-- Whether a subscription carries on. Both cases are named, so no fallback is needed. -/
-def renewalLabel : Decl :=
-  decl "renewalLabel" [("autoRenew", .bool)] .string
-    (matchOn (v "autoRenew") [
-      altP (pBool true) (str "renews"),
-      altP (pBool false) (str "ends")
-    ])
+def renewalLabel : Decl := decl%
+  renewalLabel(autoRenew : Bool) : String :=
+    match autoRenew { true => "renews" | false => "ends" }
 
 /-- An amount of zero is free whatever the currency, and an amount carrying no currency cannot be
 charged at all. -/
-def chargeable : Decl :=
-  decl "chargeable" [("amount", .named "Money" [])] .bool
-    (matchOn (v "amount") [
-      altP (pCtor "Money" [pInt53 0, pWild]) (bool false),
-      altP (pCtor "Money" [pWild, pStr ""]) (bool false),
-      altP (pCtor "Money" [pBind "value", pWild]) (v "value" >' int53 0)
-    ])
+def chargeable : Decl := decl%
+  chargeable(amount : Money) : Bool :=
+    match amount {
+        Money(0, _) => false
+      | Money(_, "") => false
+      | Money(value, _) => value > 0
+    }
 
 /-- The shipping line shown once a transition has been attempted. A draft or cancelled order has nothing
 to show, so one arm reaches past `ok` and leaves the state itself open. -/
-def settleMessage : Decl :=
-  decl "settleMessage" [("outcome", .result (.named "OrderState" []) .string)] .string
-    (matchOn (v "outcome") [
-      altP (pCtor "ok" [pCtor "shipped" [pWild, pBind "trackingId"]]) (v "trackingId"),
-      altP (pCtor "ok" [pCtor "placed" [pWild]]) (str "awaiting shipment"),
-      altP (pCtor "ok" [pWild]) (str "no update"),
-      altP (pCtor "error" [pBind "message"]) (v "message")
-    ])
+def settleMessage : Decl := decl%
+  settleMessage(outcome : Result<OrderState, String>) : String :=
+    match outcome {
+        ok(shipped(_, trackingId)) => trackingId
+      | ok(placed(_)) => "awaiting shipment"
+      | ok(_) => "no update"
+      | error(message) => message
+    }
 
 /-- How many results lie beyond the page in hand. -/
-def remainingItems : Decl :=
-  decl "remainingItems" [("page", .named "Paginated" [.named "Money" []])] .int53
-    (proj (v "page") "total" -' len (proj (v "page") "items"))
+def remainingItems : Decl := decl%
+  remainingItems(page : Paginated<Money>) : Int53 := page.total - page.items.length
 
 /-- The whole list served as a single page. -/
-def firstPage : Decl :=
-  decl "firstPage" [("amounts", .array .int53)] (.named "Paginated" [.int53])
-    (ctor "Paginated" [.int53] "Paginated" [v "amounts", len (v "amounts")])
+def firstPage : Decl := decl%
+  firstPage(amounts : Array<Int53>) : Paginated<Int53> :=
+    Paginated<Int53>::Paginated(amounts, amounts.length)
 
 /-- Accepts an order quantity or says why it was refused. -/
-def validateQuantity : Decl :=
-  decl "validateQuantity" [("quantity", .int53)] (.named "Validated" [.string, .int53])
-    (ite' (v "quantity" <' int53 1) (refuse "a quantity must be at least 1")
-      (ite' (v "quantity" >' int53 999) (refuse "a quantity may not exceed 999")
-        (ctor "Validated" [.string, .int53] "valid" [v "quantity"])))
-where
-  refuse (message : String) : Expr :=
-    ctor "Validated" [.string, .int53] "invalid" [array .string [str message]]
+def validateQuantity : Decl := decl%
+  validateQuantity(quantity : Int53) : Validated<String, Int53> :=
+    if quantity < 1 then
+      Validated<String, Int53>::invalid(Array<String>{"a quantity must be at least 1"})
+    else if quantity > 999 then
+      Validated<String, Int53>::invalid(Array<String>{"a quantity may not exceed 999"})
+    else Validated<String, Int53>::valid(quantity)
 
 /-- The line shown once a quantity has been checked. -/
-def validationMessage : Decl :=
-  decl "validationMessage" [("outcome", .named "Validated" [.string, .int53])] .string
-    (matchOn (v "outcome") [
-      alt "valid" ["value"] (call "quantityLabel" [v "value"]),
-      alt "invalid" ["errors"]
-        (ite' (len (v "errors") ==' int53 0) (str "refused") (at' (v "errors") (int53 0)))
-    ])
+def validationMessage : Decl := decl%
+  validationMessage(outcome : Validated<String, Int53>) : String :=
+    match outcome {
+        valid(value) => quantityLabel(value)
+      | invalid(errors) => if errors.length == 0 then "refused" else errors[0]
+    }
 
 /-- A coupon code as it is stored: the campaign prefix and what the customer typed, upper-cased and with
 the surrounding whitespace gone. -/
-def storedCoupon : Decl :=
-  decl "storedCoupon" [("campaign", .string), ("entered", .string)] .string
-    (upper (trim (v "campaign" ++' v "entered")))
+def storedCoupon : Decl := decl%
+  storedCoupon(campaign : String, entered : String) : String :=
+    (campaign ++ entered).trim().toUpper()
 
 /-- Whether a coupon belongs to a campaign, comparing the way the codes are stored. -/
-def couponApplies : Decl :=
-  decl "couponApplies" [("code", .string), ("campaign", .string)] .bool
-    (startsWith (lower (trim (v "code"))) (lower (trim (v "campaign"))))
+def couponApplies : Decl := decl%
+  couponApplies(code : String, campaign : String) : Bool :=
+    code.trim().toLower().startsWith(campaign.trim().toLower())
 
 /-- Whether a free-text note mentions a search term, ignoring case. -/
-def mentionsTerm : Decl :=
-  decl "mentionsTerm" [("text", .string), ("term", .string)] .bool
-    (includes (lower (v "text")) (lower (v "term")))
+def mentionsTerm : Decl := decl%
+  mentionsTerm(text : String, term : String) : Bool :=
+    text.toLower().includes(term.toLower())
 
 /-- How many columns a line of an uploaded file carries. An empty separator leaves the line whole rather
 than cutting it into characters. -/
-def fieldCount : Decl :=
-  decl "fieldCount" [("row", .string), ("separator", .string)] .int53
-    (len (split (v "row") (v "separator")))
+def fieldCount : Decl := decl%
+  fieldCount(row : String, separator : String) : Int53 := row.split(separator).length
 
 /-- A label cut to fit, counted in code points so a surrogate pair is never split in half. A negative
 limit has no string to return and fails the way an out-of-range index does. -/
-def truncateLabel : Decl :=
-  decl "truncateLabel" [("label", .string), ("limit", .int53)] .string
-    (ite' (len (v "label") ≤' v "limit") (v "label")
-      (substring (v "label") (int53 0) (v "limit") ++' str "..."))
+def truncateLabel : Decl := decl%
+  truncateLabel(label : String, limit : Int53) : String :=
+    if label.length <= limit then label else label.substring(0, limit) ++ "..."
 
 /-- What a role may do in a day and in a month. -/
-def limitsFor : Decl :=
-  decl "limitsFor" [("role", .named "Role" [])] (.dict .int53)
-    (matchOn (v "role") [
-      alt "guest" [] (dict .int53 [("daily", int53 10), ("monthly", int53 100)]),
-      alt "member" [] (dict .int53 [("daily", int53 100), ("monthly", int53 3000)]),
-      alt "admin" [] (dict .int53 [("daily", int53 1000), ("monthly", int53 30000)])
-    ])
+def limitsFor : Decl := decl%
+  limitsFor(role : Role) : Dict<Int53> :=
+    match role {
+        guest() => Dict<Int53>{"daily": 10, "monthly": 100}
+      | member() => Dict<Int53>{"daily": 100, "monthly": 3000}
+      | admin() => Dict<Int53>{"daily": 1000, "monthly": 30000}
+    }
 
 /-- A role with no daily limit recorded may do nothing. -/
-def dailyLimit : Decl :=
-  decl "dailyLimit" [("role", .named "Role" [])] .int53
-    (matchOn (dictGet (call "limitsFor" [v "role"]) (str "daily")) [
-      alt "some" ["value"] (v "value"),
-      alt "none" [] (int53 0)
-    ])
+def dailyLimit : Decl := decl%
+  dailyLimit(role : Role) : Int53 :=
+    match limitsFor(role).get("daily") { some(value) => value | none() => 0 }
 
-def priceOf : Decl :=
-  decl "priceOf" [("prices", .dict .int53), ("sku", .string)] (.option .int53)
-    (dictGet (v "prices") (v "sku"))
+def priceOf : Decl := decl%
+  priceOf(prices : Dict<Int53>, sku : String) : Option<Int53> := prices.get(sku)
 
-def isListed : Decl :=
-  decl "isListed" [("prices", .dict .int53), ("sku", .string)] .bool
-    (dictHas (v "prices") (v "sku"))
+def isListed : Decl := decl%
+  isListed(prices : Dict<Int53>, sku : String) : Bool := prices.has(sku)
 
 /-- The price book after one price change. A sku already in the book keeps its place. -/
-def repriced : Decl :=
-  decl "repriced" [("prices", .dict .int53), ("sku", .string), ("amount", .int53)]
-    (.dict .int53)
-    (dictSet (v "prices") (v "sku") (v "amount"))
+def repriced : Decl := decl%
+  repriced(prices : Dict<Int53>, sku : String, amount : Int53) : Dict<Int53> :=
+    prices.set(sku, amount)
 
-def listedSkus : Decl :=
-  decl "listedSkus" [("prices", .dict .int53)] (.array .string) (dictKeys (v "prices"))
+def listedSkus : Decl := decl%
+  listedSkus(prices : Dict<Int53>) : Array<String> := prices.keys()
 
-def catalogueSize : Decl :=
-  decl "catalogueSize" [("prices", .dict .int53)] .int53 (len (v "prices"))
+def catalogueSize : Decl := decl%
+  catalogueSize(prices : Dict<Int53>) : Int53 := prices.length
 
 def program : Program := {
   types := [Money, Role, OrderState, Paginated, Validated]
@@ -370,7 +309,7 @@ private theorem find_add : program.find? "add" = some add := rfl
 theorem add_comm (a b : Int) :
     evalCall program "add" [.int53 a, .int53 b]
       = evalCall program "add" [.int53 b, .int53 a] := by
-  simp [evalCall, find_add, add, decl, v, Env.lookup?, bindParams, Value.hasTy,
+  simp [evalCall, find_add, add, Env.lookup?, bindParams, Value.hasTy,
     evalExpr.eq_def, defaultFuel, applyBin, applyArith, bind, Except.bind, Int.add_comm,
     or_comm, or_assoc, or_left_comm]
 

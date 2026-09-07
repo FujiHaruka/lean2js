@@ -13,6 +13,17 @@ implementation       semantics              index.js         ordinary import
 
 売るのは「仕様を証明した」ことではなく、「証明した実装が動いている」こと。
 
+書くのは Lean のファイルの中の、こういう構文。
+
+```lean
+def Money : TypeDef := type% Money := Money(amount : Int53, currency : String)
+
+def addMoney : Decl := decl%
+  addMoney(a : Money, b : Money) : Result<Money, String> :=
+    if a.currency != b.currency then error<Money>("currency mismatch")
+    else ok<String>(Money::Money(a.amount + b.amount, a.currency))
+```
+
 ## 設計方針
 
 - **JS の意味論に合わせる** — Int53、UInt32、BigInt など、数値表現を曖昧にしない
@@ -83,6 +94,7 @@ packages/verified-example/
 
 ```
 lean/LeanTs/Core.lean       サブセットの構文
+lean/LeanTs/Syntax.lean     Core 項へ展開される表層構文
 lean/LeanTs/Eval.lean       fuel 付き big-step のリファレンス意味論
 lean/LeanTs/Step.lean       継続を明示した small-step 意味論
 lean/LeanTs/Compile.lean    Core → JS（型検査と生成を一本のパスで）
