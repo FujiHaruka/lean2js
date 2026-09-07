@@ -67,8 +67,6 @@ export declare function trackingOf(state: OrderState): Option<string>;
 
 export declare function canRefund(role: Role, state: OrderState): boolean;
 
-export declare function sumFrom(xs: readonly number[], from: number): number;
-
 export declare function total(xs: readonly number[]): number;
 
 export declare function headOr(xs: readonly number[], fallback: number): number;

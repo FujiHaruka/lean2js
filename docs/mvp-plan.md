@@ -83,11 +83,12 @@ Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-ma
 
 1. `add : Int53 → Int53 → Int53`（溢れ trap つき）だけを Core → `eval` → `Compile` → ディスク上の
    `index.js` / `index.d.ts` まで通し、Vitest が生成物を import して差分テストする
-2. そこから横に広げる: Bool / if → inductive / match → structure → Array → 構造的再帰 →
+2. そこから横に広げる: Bool / if → inductive / match → structure → Array → 高階コンビネータ →
    String / UInt32 / BigInt
 
-停止性はまだ検査していない。非停止な定義はサブセットから外す方針だが、現状は `eval` の fuel が
-尽きるだけで、コンパイラは通してしまう。構造的再帰の検査は Phase 2 の課題。
+停止性はコンパイラが担保している。各宣言は自分より前の宣言だけを見てコンパイルされるので、自己再帰も
+相互再帰も書けず、走査は `map` / `filter` / `reduce` が受け持つ。`eval` の fuel は証明を閉じるための
+装置であって、サブセットの意味論ではない。
 
 差分テストの形: `leants` が `vectors.json`（`[{fn, args, expected}]`、`expected` は `eval` の結果で
 trap も符号化する）を出力し、Vitest が生成された ESM を実行して突き合わせる。

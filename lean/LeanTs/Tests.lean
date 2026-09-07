@@ -137,4 +137,15 @@ private def rank (alts : List Alt) : Decl :=
   (decl "reduceNotArray" [("n", .int53)] .int53
     (reduce' (v "n") (int53 0) "acc" "x" (v "acc")))
 
+private def inOrder (ds : List Decl) : Bool :=
+  (Compile.compileProgram { decls := ds }).isOk
+
+private def callsIdentity (name callee : String) : Decl :=
+  decl name [("value", .int53)] .int53 (call callee [v "value"])
+
+#guard !compiles (callsIdentity "loop" "loop")
+#guard inOrder [identity "base" "value", callsIdentity "wrapper" "base"]
+#guard !inOrder [callsIdentity "wrapper" "base", identity "base" "value"]
+#guard !inOrder [callsIdentity "ping" "pong", callsIdentity "pong" "ping"]
+
 end LeanTs.Tests

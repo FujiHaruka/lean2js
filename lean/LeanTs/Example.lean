@@ -163,15 +163,11 @@ def canRefund : Decl :=
       alt "cancelled" ["reason"] (bool false)
     ])
 
-/-- Structural recursion by index. An out-of-range read traps rather than yielding `undefined`. -/
-def sumFrom : Decl :=
-  decl "sumFrom" [("xs", .array .int53), ("from", .int53)] .int53
-    (ite' (v "from" ≥' len (v "xs")) (int53 0)
-      (at' (v "xs") (v "from") +' call "sumFrom" [v "xs", v "from" +' int53 1]))
-
 def total : Decl :=
-  decl "total" [("xs", .array .int53)] .int53 (call "sumFrom" [v "xs", int53 0])
+  decl "total" [("xs", .array .int53)] .int53
+    (reduce' (v "xs") (int53 0) "sum" "x" (v "sum" +' v "x"))
 
+/-- An out-of-range read traps rather than yielding `undefined`. -/
 def headOr : Decl :=
   decl "headOr" [("xs", .array .int53), ("fallback", .int53)] .int53
     (ite' (len (v "xs") ==' int53 0) (v "fallback") (at' (v "xs") (int53 0)))
@@ -215,7 +211,7 @@ def program : Program := {
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
     bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
-    sumFrom, total, headOr, firstTracking,
+    total, headOr, firstTracking,
     lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit
   ]
 }

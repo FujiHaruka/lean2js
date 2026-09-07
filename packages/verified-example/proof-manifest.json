@@ -101,10 +101,6 @@
       "signature": "(role : Role, state : OrderState) → Bool"
     },
     {
-      "name": "sumFrom",
-      "signature": "(xs : Array Int53, from : Int53) → Int53"
-    },
-    {
       "name": "total",
       "signature": "(xs : Array Int53) → Int53"
     },

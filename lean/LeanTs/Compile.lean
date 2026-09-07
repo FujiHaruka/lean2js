@@ -140,7 +140,7 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       .ok (.arrowCall [name] jb [jv], tb)
   | .call fn args => do
     match p.find? fn with
-    | none => .error s!"unknown function: {fn}"
+    | none => .error s!"{fn} is not declared before this call"
     | some d => do
       let js ← compileArgs p ctx args
       if d.params.length != js.length then .error s!"wrong number of arguments to {fn}"
@@ -371,11 +371,14 @@ private def validateType (t : TypeDef) : Except String Unit := do
       validateIdent "field" f.name
       if f.name == "tag" then .error s!"{c.name} may not have a field named tag"
 
+/-- Each declaration is compiled against the ones before it only, so a function can call neither itself
+nor a later one. That is what keeps nontermination out of the subset: `eval`'s fuel bounds the proof, not
+the language. Traversal is `map` / `filter` / `reduce`, which are syntax and cannot recur. -/
 def compileProgram (p : Program) : Except String Js.Module := do
   p.types.forM validateType
   validateDistinct "type" (p.types.map (·.name))
   validateDistinct "function" (p.decls.map (·.name))
-  let funcs ← p.decls.mapM (compileDecl p)
+  let funcs ← p.decls.zipIdx.mapM fun (d, i) => compileDecl { p with decls := p.decls.take i } d
   .ok { funcs }
 
 end LeanTs.Compile

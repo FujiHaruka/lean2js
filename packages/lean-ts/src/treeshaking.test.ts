@@ -24,7 +24,7 @@ describe("the generated package can be tree-shaken", () => {
     expect(out).toContain("function add");
     for (const dropped of [
       "function ship",
-      "function sumFrom",
+      "function total",
       "function cartTotal",
       "__strcmp",
       "__at",

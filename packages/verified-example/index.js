@@ -293,17 +293,10 @@ export function canRefund(__p0, __p1) {
   return ((__s) => ((((__s).tag === "draft") ? false : (((__s).tag === "placed") ? ((orderId) => ((roleRank(role) >= 1)))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ((roleRank(role) >= 2)))((__s).orderId, (__s).trackingId) : ((reason) => (false))((__s).reason))))))(state);
 }
 
-/** sumFrom : (xs : Array Int53, from : Int53) → Int53 */
-export function sumFrom(__p0, __p1) {
-  const xs = __ck(__p0, ["array", ["int53"]]);
-  const from = __ck(__p1, ["int53"]);
-  return ((from >= (xs).length) ? 0 : __i53((__at(xs, from) + sumFrom(xs, __i53((from + 1))))));
-}
-
 /** total : (xs : Array Int53) → Int53 */
 export function total(__p0) {
   const xs = __ck(__p0, ["array", ["int53"]]);
-  return sumFrom(xs, 0);
+  return __reduce(xs, 0, (sum, x) => (__i53((sum + x))));
 }
 
 /** headOr : (xs : Array Int53, fallback : Int53) → Int53 */
