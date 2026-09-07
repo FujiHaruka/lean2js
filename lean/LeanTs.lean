@@ -13,3 +13,4 @@ import LeanTs.Tests
 import LeanTs.Axioms
 import LeanTs.JsSem
 import LeanTs.Agree
+import LeanTs.Correct

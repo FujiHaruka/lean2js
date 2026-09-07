@@ -16,15 +16,29 @@ namespace LeanTs
 
 open Core
 
-partial def encodeValue : Value → Js.JsValue
+mutual
+
+def encodeValue : Value → Js.JsValue
   | .bool b => .bool b
   | .int53 i => .num i
   | .uint32 n => .num n.toNat
   | .str s => .str s
   | .bigint i => .bigint i
-  | .obj ctor fields =>
-    .obj (("tag", .str ctor) :: fields.map fun (k, v) => (k, encodeValue v))
-  | .arr xs => .arr (xs.map encodeValue)
+  | .obj ctor fields => .obj (("tag", .str ctor) :: encodeFields fields)
+  | .arr xs => .arr (encodeList xs)
+termination_by v => sizeOf v
+
+def encodeFields : List (String × Value) → List (String × Js.JsValue)
+  | [] => []
+  | (k, v) :: rest => (k, encodeValue v) :: encodeFields rest
+termination_by fields => sizeOf fields
+
+def encodeList : List Value → List Js.JsValue
+  | [] => []
+  | x :: rest => encodeValue x :: encodeList rest
+termination_by xs => sizeOf xs
+
+end
 
 /-- `eval` の結果と模型の結果が同じか。失敗どうしは投げられる `code` で比べる。 -/
 def agrees : Except Err Value → Js.JsResult → Bool
