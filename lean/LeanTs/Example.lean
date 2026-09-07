@@ -83,17 +83,22 @@ def sortsBefore : Decl :=
 def sameLabel : Decl :=
   decl "sameLabel" [("a", .string), ("b", .string)] .bool (v "a" ==' v "b")
 
+/-- 同じ名前を二度束縛する。ESM は strict mode で走るので `const` を二度出すと import 時に落ちる。 -/
+def rebindTwice : Decl :=
+  decl "rebindTwice" [("amount", .int53)] .int53
+    (letIn "amount" .int53 (v "amount" +' int53 1)
+      (letIn "amount" .int53 (v "amount" *' int53 2) (v "amount")))
+
 def program : Program := {
   decls := [
     add, clampQuantity, lineTotal, discounted, divide, remainder, negate,
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
-    bigQuotient, slugOf, sortsBefore, sameLabel
+    bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice
   ]
 }
 
 private theorem find_add : program.find? "add" = some add := rfl
 
-set_option maxRecDepth 8000 in
 theorem add_comm (a b : Int) :
     evalCall program "add" [.int53 a, .int53 b]
       = evalCall program "add" [.int53 b, .int53 a] := by

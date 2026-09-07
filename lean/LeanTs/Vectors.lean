@@ -110,9 +110,21 @@ def allVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
   let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
   (p.decls.zip seeds).flatMap fun (d, seed) => vectorsFor p d edgeLimit randomCount seed
 
+/-- fuel は停止性を証明の外に出さないための道具であって、サブセットの意味論ではない。
+JS 側に対応する概念がない以上、`outOfFuel` を期待値に書くと「JS も失敗せよ」という嘘になる。 -/
+private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
+  vectors.find? fun v =>
+    match v.expected with
+    | .error .outOfFuel => true
+    | _ => false
+
 /-- 1 行 1 ベクタで書き出す。生成物は git に入るので、整形しすぎても 1 行にまとめても差分が読めない。 -/
-def renderVectors (p : Program) (edgeLimit randomCount : Nat) : String :=
-  let rows := (allVectors p edgeLimit randomCount).map fun v => "  " ++ v.toJson.render
-  "[\n" ++ String.intercalate ",\n" rows ++ "\n]\n"
+def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String :=
+  let vectors := allVectors p edgeLimit randomCount
+  match outOfFuelIn vectors with
+  | some v => .error s!"{v.fn} ran out of fuel; the subset excludes nontermination"
+  | none =>
+    let rows := vectors.map fun v => "  " ++ v.toJson.render
+    .ok ("[\n" ++ String.intercalate ",\n" rows ++ "\n]\n")
 
 end LeanTs

@@ -81,6 +81,8 @@ const __i53div = (a, b) =>
 
 const __i53mod = (a, b) => (b === 0 ? __fail(\"divByZero\") : __i53(a % b));
 
+const __u32mul = (a, b) => Math.imul(a, b) >>> 0;
+
 const __u32div = (a, b) => (b === 0 ? __fail(\"divByZero\") : Math.trunc(a / b) >>> 0);
 
 const __u32mod = (a, b) => (b === 0 ? __fail(\"divByZero\") : a % b >>> 0);

@@ -31,3 +31,5 @@ export declare function slugOf(prefix: string, name: string): string;
 export declare function sortsBefore(a: string, b: string): boolean;
 
 export declare function sameLabel(a: string, b: string): boolean;
+
+export declare function rebindTwice(amount: number): number;

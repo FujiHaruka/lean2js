@@ -27,7 +27,9 @@ def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
     IO.FS.writeFile (outDir / "index.d.ts") (Js.renderDts m.program)
     IO.FS.writeFile (outDir / "proof-manifest.json") (m.toJson.renderPretty ++ "\n")
     IO.FS.writeFile (outDir / "package.json") ((packageJson m).renderPretty ++ "\n")
-    IO.FS.writeFile (outDir / "vectors.json") (renderVectors m.program 400 200)
+    match renderVectors m.program 400 200 with
+    | .error e => throw (IO.userError s!"vector generation failed: {e}")
+    | .ok vectors => IO.FS.writeFile (outDir / "vectors.json") vectors
     IO.println s!"wrote {m.program.decls.length} exports to {outDir}"
 
 def main (args : List String) : IO UInt32 := do

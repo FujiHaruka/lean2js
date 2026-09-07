@@ -15,6 +15,8 @@ const __i53div = (a, b) =>
 
 const __i53mod = (a, b) => (b === 0 ? __fail("divByZero") : __i53(a % b));
 
+const __u32mul = (a, b) => Math.imul(a, b) >>> 0;
+
 const __u32div = (a, b) => (b === 0 ? __fail("divByZero") : Math.trunc(a / b) >>> 0);
 
 const __u32mod = (a, b) => (b === 0 ? __fail("divByZero") : a % b >>> 0);
@@ -82,7 +84,7 @@ export function canCheckout(signedIn, cartTotal, stock) {
 
 /** mixChannels : (a : UInt32, b : UInt32) → UInt32 */
 export function mixChannels(a, b) {
-  return (((Math.imul(a, b) >>> 0) + ((a - b) >>> 0)) >>> 0);
+  return ((__u32mul(a, b) + ((a - b) >>> 0)) >>> 0);
 }
 
 /** bucketOf : (key : UInt32, buckets : UInt32) → UInt32 */
@@ -113,4 +115,9 @@ export function sortsBefore(a, b) {
 /** sameLabel : (a : String, b : String) → Bool */
 export function sameLabel(a, b) {
   return (a === b);
+}
+
+/** rebindTwice : (amount : Int53) → Int53 */
+export function rebindTwice(amount) {
+  return ((amount) => ((amount) => amount)(__i53((amount * 2))))(__i53((amount + 1)));
 }

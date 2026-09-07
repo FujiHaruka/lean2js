@@ -1,5 +1,6 @@
 import LeanTs.Js
 import LeanTs.Value
+import LeanTs.Ident
 
 /-!
 # Compile
@@ -25,7 +26,7 @@ private def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Exp
   | .int53, .mod => some (.call "__i53mod" [a, b])
   | .uint32, .add => some (.binary ">>>" (.binary "+" a b) (.num 0))
   | .uint32, .sub => some (.binary ">>>" (.binary "-" a b) (.num 0))
-  | .uint32, .mul => some (.binary ">>>" (.call "Math.imul" [a, b]) (.num 0))
+  | .uint32, .mul => some (.call "__u32mul" [a, b])
   | .uint32, .div => some (.call "__u32div" [a, b])
   | .uint32, .mod => some (.call "__u32mod" [a, b])
   | .bigint, .add => some (.binary "+" a b)
@@ -105,6 +106,7 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     if tt != te then .error s!"branches disagree: {tt.render} vs {te.render}"
     else .ok (.cond jc jt je, tt)
   | .letE name ty val body => do
+    validateIdent "let-bound" name
     let (jv, tv) ← compileExpr p ctx val
     if tv != ty then .error s!"let {name} is declared {ty.render} but bound to {tv.render}"
     else
@@ -138,15 +140,23 @@ end
 private partial def compileBody (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
     Except String (List Js.Stmt × Ty) :=
   match e with
-  | .letE name ty val body => do
-    let (jv, tv) ← compileExpr p ctx val
-    if tv != ty then .error s!"let {name} is declared {ty.render} but bound to {tv.render}"
-    else compileBody p ((name, ty) :: ctx) body (.const name jv :: acc)
-  | e => do
+  | .letE name ty val body =>
+    if (ctx.any (·.1 == name)) then finish p ctx e acc
+    else do
+      let (jv, tv) ← compileExpr p ctx val
+      if tv != ty then .error s!"let {name} is declared {ty.render} but bound to {tv.render}"
+      else compileBody p ((name, ty) :: ctx) body (.const name jv :: acc)
+  | e => finish p ctx e acc
+where
+  finish (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
+      Except String (List Js.Stmt × Ty) := do
     let (je, te) ← compileExpr p ctx e
     .ok (acc.reverse ++ [.ret je], te)
 
 def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
+  validateIdent "function" d.name
+  d.params.forM fun param => validateIdent "parameter" param.name
+  validateDistinct "parameter" (d.params.map (·.name))
   let ctx : Ctx := d.params.map fun param => (param.name, param.ty)
   let (stmts, ty) ← compileBody p ctx d.body []
   if ty != d.ret then

@@ -71,6 +71,10 @@
     {
       "name": "sameLabel",
       "signature": "(a : String, b : String) → Bool"
+    },
+    {
+      "name": "rebindTwice",
+      "signature": "(amount : Int53) → Int53"
     }
   ],
   "theorems": [
