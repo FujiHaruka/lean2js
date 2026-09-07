@@ -78,10 +78,12 @@ inductive Lit where
 inductive UnOp where
   | not
   | neg
+  | abs
   deriving Repr, BEq, Inhabited
 
 inductive BinOp where
   | add | sub | mul | div | mod
+  | min | max
   | lt | le | gt | ge | eq | ne
   | and | or
   | concat

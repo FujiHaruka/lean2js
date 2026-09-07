@@ -37,6 +37,18 @@
       "signature": "(a : Int53) → Int53"
     },
     {
+      "name": "priceGap",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "cappedCharge",
+      "signature": "(amount : Int53, budget : Int53) → Int53"
+    },
+    {
+      "name": "atLeast",
+      "signature": "(amount : Int53, floor : Int53) → Int53"
+    },
+    {
       "name": "safeQuotientIsPositive",
       "signature": "(a : Int53, b : Int53) → Bool"
     },

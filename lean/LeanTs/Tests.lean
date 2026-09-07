@@ -207,6 +207,14 @@ private def nested (alts : List Alt) : Decl :=
 #guard compiles (decl "amounts" [("d", .dict .int53)] (.array .int53) (dictValues (v "d")))
 #guard compiles (decl "count" [("d", .dict .int53)] .int53 (len (v "d")))
 
+#guard compiles (decl "distance" [("n", .int53)] .int53 (abs' (v "n")))
+#guard compiles (decl "distance" [("n", .bigint)] .bigint (abs' (v "n")))
+#guard !compiles (decl "distance" [("s", .string)] .string (abs' (v "s")))
+#guard compiles (decl "floor" [("a", .int53), ("b", .int53)] .int53 (min' (v "a") (v "b")))
+#guard compiles (decl "ceiling" [("a", .uint32), ("b", .uint32)] .uint32 (max' (v "a") (v "b")))
+#guard !compiles (decl "floor" [("a", .string), ("b", .string)] .string (min' (v "a") (v "b")))
+#guard !compiles (decl "floor" [("a", .int53), ("b", .bigint)] .int53 (min' (v "a") (v "b")))
+
 #guard compiles (decl "trimmed" [("s", .string)] .string (trim (v "s")))
 #guard !compiles (decl "trimmed" [("n", .int53)] .string (trim (v "n")))
 #guard compiles (decl "shouted" [("s", .string)] .string (upper (lower (v "s"))))
@@ -293,6 +301,9 @@ private def callsIdentity (name callee : String) : Decl :=
 #guard (expr% a < b && c) == ((v "a" <' v "b") &&' v "c")
 #guard (expr% !flag) == not' (v "flag")
 #guard (expr% -a) == neg' (v "a")
+#guard (expr% a.abs()) == abs' (v "a")
+#guard (expr% a.min(b)) == min' (v "a") (v "b")
+#guard (expr% a.max(b)) == max' (v "a") (v "b")
 #guard (expr% big(1)) == bigint 1
 #guard (expr% u32(7)) == uint32 7
 #guard (expr% true) == bool true

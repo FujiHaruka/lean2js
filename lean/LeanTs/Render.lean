@@ -14,6 +14,7 @@ namespace LeanTs.Core
 
 private def binSymbol : BinOp → String
   | .add => "+" | .sub => "-" | .mul => "*" | .div => "/" | .mod => "%"
+  | .min => "min" | .max => "max"
   | .lt => "<" | .le => "<=" | .gt => ">" | .ge => ">=" | .eq => "==" | .ne => "!="
   | .and => "&&" | .or => "||" | .concat => "++"
 
@@ -36,7 +37,11 @@ partial def Expr.source : Expr → String
   | .var name => name
   | .un .not e => "!" ++ e.source
   | .un .neg e => "-" ++ e.source
-  | .bin op lhs rhs => "(" ++ lhs.source ++ " " ++ binSymbol op ++ " " ++ rhs.source ++ ")"
+  | .un .abs e => e.source ++ ".abs()"
+  | .bin op lhs rhs =>
+    match op with
+    | .min | .max => lhs.source ++ "." ++ binSymbol op ++ "(" ++ rhs.source ++ ")"
+    | _ => "(" ++ lhs.source ++ " " ++ binSymbol op ++ " " ++ rhs.source ++ ")"
   | .cond c t e => "if " ++ c.source ++ " then " ++ t.source ++ " else " ++ e.source
   | .letE name ty val body =>
     s!"let {name} : {ty.render} = {val.source}; " ++ body.source

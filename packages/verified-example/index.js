@@ -26,6 +26,13 @@ const __bigdiv = (a, b) => (b === 0n ? __fail("divByZero") : a / b);
 
 const __bigmod = (a, b) => (b === 0n ? __fail("divByZero") : a % b);
 
+// Math.abs, Math.min and Math.max throw on a BigInt, so the comparisons are written out instead.
+const __abs = (x) => (x < 0 ? -x : x);
+
+const __min = (a, b) => (a <= b ? a : b);
+
+const __max = (a, b) => (a <= b ? b : a);
+
 const __strcmp = (a, b) => {
   const x = Array.from(a);
   const y = Array.from(b);
@@ -255,6 +262,27 @@ export function remainder(__p0, __p1) {
 export function negate(__p0) {
   const a = __ck(__p0, ["int53"]);
   return __i53((-a));
+}
+
+/** priceGap : (a : Int53, b : Int53) → Int53 */
+export function priceGap(__p0, __p1) {
+  const a = __ck(__p0, ["int53"]);
+  const b = __ck(__p1, ["int53"]);
+  return __i53(__abs(__i53((a - b))));
+}
+
+/** cappedCharge : (amount : Int53, budget : Int53) → Int53 */
+export function cappedCharge(__p0, __p1) {
+  const amount = __ck(__p0, ["int53"]);
+  const budget = __ck(__p1, ["int53"]);
+  return __min(amount, budget);
+}
+
+/** atLeast : (amount : Int53, floor : Int53) → Int53 */
+export function atLeast(__p0, __p1) {
+  const amount = __ck(__p0, ["int53"]);
+  const floor = __ck(__p1, ["int53"]);
+  return __max(amount, floor);
 }
 
 /** safeQuotientIsPositive : (a : Int53, b : Int53) → Bool */

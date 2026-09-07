@@ -41,6 +41,12 @@ export declare function remainder(a: number, b: number): number;
 
 export declare function negate(a: number): number;
 
+export declare function priceGap(a: number, b: number): number;
+
+export declare function cappedCharge(amount: number, budget: number): number;
+
+export declare function atLeast(amount: number, floor: number): number;
+
 export declare function safeQuotientIsPositive(a: number, b: number): boolean;
 
 export declare function canCheckout(signedIn: boolean, cartTotal: number, stock: number): boolean;

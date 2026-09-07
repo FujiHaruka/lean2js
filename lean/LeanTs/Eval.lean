@@ -35,6 +35,8 @@ def applyUn : UnOp → Value → Except Err Value
   | .not, .bool b => .ok (.bool !b)
   | .neg, .int53 i => mkInt53 (-i)
   | .neg, .bigint i => .ok (.bigint (-i))
+  | .abs, .int53 i => mkInt53 i.natAbs
+  | .abs, .bigint i => .ok (.bigint i.natAbs)
   | op, _ => .error (.typeError s!"unary {repr op} applied to a value of the wrong type")
 
 /-- Integer division is pinned to truncation. Lean's `/` is floor division (`-7 / 2 = -4`), which
@@ -81,9 +83,23 @@ where
     | .ge => o != .lt
     | _ => false
 
+/-- Strings are left out even though they are ordered: JS's `<` orders them by UTF-16 unit, so a String
+`min` would have to route through `__strcmp` the way the ordering comparisons do. -/
+def applyMinMax (op : BinOp) (a b : Value) : Except Err Value := do
+  let leftFirst ← match a, b with
+    | .int53 x, .int53 y => .ok (decide (x ≤ y))
+    | .uint32 x, .uint32 y => .ok (decide (x ≤ y))
+    | .bigint x, .bigint y => .ok (decide (x ≤ y))
+    | _, _ => .error (.typeError "min and max expect two Int53, UInt32 or BigInt values")
+  match op with
+  | .min => .ok (if leftFirst then a else b)
+  | .max => .ok (if leftFirst then b else a)
+  | _ => .error (.typeError "not min or max")
+
 def applyBin (op : BinOp) (a b : Value) : Except Err Value :=
   match op with
   | .add | .sub | .mul | .div | .mod => applyArith op a b
+  | .min | .max => applyMinMax op a b
   | .lt | .le | .gt | .ge => compareValues op a b
   | .eq => .ok (.bool (a == b))
   | .ne => .ok (.bool (a != b))

@@ -44,16 +44,22 @@ private def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Exp
   | .int53, .mul => some (.call "__i53" [.binary "*" a b])
   | .int53, .div => some (.call "__i53div" [a, b])
   | .int53, .mod => some (.call "__i53mod" [a, b])
+  | .int53, .min => some (.call "__min" [a, b])
+  | .int53, .max => some (.call "__max" [a, b])
   | .uint32, .add => some (.binary ">>>" (.binary "+" a b) (.num 0))
   | .uint32, .sub => some (.binary ">>>" (.binary "-" a b) (.num 0))
   | .uint32, .mul => some (.call "__u32mul" [a, b])
   | .uint32, .div => some (.call "__u32div" [a, b])
   | .uint32, .mod => some (.call "__u32mod" [a, b])
+  | .uint32, .min => some (.call "__min" [a, b])
+  | .uint32, .max => some (.call "__max" [a, b])
   | .bigint, .add => some (.binary "+" a b)
   | .bigint, .sub => some (.binary "-" a b)
   | .bigint, .mul => some (.binary "*" a b)
   | .bigint, .div => some (.call "__bigdiv" [a, b])
   | .bigint, .mod => some (.call "__bigmod" [a, b])
+  | .bigint, .min => some (.call "__min" [a, b])
+  | .bigint, .max => some (.call "__max" [a, b])
   | _, _ => none
 
 private def strUnHelper : StrUnOp → String
@@ -275,13 +281,19 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | .int53 => .ok (.call "__i53" [.unary "-" jx], .int53)
     | .bigint => .ok (.unary "-" jx, .bigint)
     | _ => .error "unary minus expects Int53 or BigInt"
+  | .un .abs x => do
+    let (jx, tx) ← compileExpr p ctx x
+    match tx with
+    | .int53 => .ok (.call "__i53" [.call "__abs" [jx]], .int53)
+    | .bigint => .ok (.call "__abs" [jx], .bigint)
+    | _ => .error "abs expects Int53 or BigInt"
   | .bin op lhs rhs => do
     let (jl, tl) ← compileExpr p ctx lhs
     let (jr, tr) ← compileExpr p ctx rhs
     if tl != tr then .error s!"operands disagree: {tl.render} vs {tr.render}"
     else
       match op with
-      | .add | .sub | .mul | .div | .mod =>
+      | .add | .sub | .mul | .div | .mod | .min | .max =>
         match numericHelper tl op jl jr with
         | some j => .ok (j, tl)
         | none => .error s!"arithmetic is not defined on {tl.render}"

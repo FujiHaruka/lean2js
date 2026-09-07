@@ -37,6 +37,9 @@ scoped infixl:30 " ||' " => Expr.bin BinOp.or
 
 def not' (e : Expr) : Expr := .un .not e
 def neg' (e : Expr) : Expr := .un .neg e
+def abs' (e : Expr) : Expr := .un .abs e
+def min' (a b : Expr) : Expr := .bin .min a b
+def max' (a b : Expr) : Expr := .bin .max a b
 def ite' (c t e : Expr) : Expr := .cond c t e
 def letIn (name : String) (ty : Ty) (val body : Expr) : Expr := .letE name ty val body
 def call (fn : String) (args : List Expr) : Expr := .call fn args

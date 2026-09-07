@@ -149,6 +149,13 @@ const __bigdiv = (a, b) => (b === 0n ? __fail(\"divByZero\") : a / b);
 
 const __bigmod = (a, b) => (b === 0n ? __fail(\"divByZero\") : a % b);
 
+// Math.abs, Math.min and Math.max throw on a BigInt, so the comparisons are written out instead.
+const __abs = (x) => (x < 0 ? -x : x);
+
+const __min = (a, b) => (a <= b ? a : b);
+
+const __max = (a, b) => (a <= b ? b : a);
+
 const __strcmp = (a, b) => {
   const x = Array.from(a);
   const y = Array.from(b);

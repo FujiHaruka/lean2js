@@ -31,6 +31,15 @@ def remainder(a : Int53, b : Int53) : Int53 =
 def negate(a : Int53) : Int53 =
   -a
 
+def priceGap(a : Int53, b : Int53) : Int53 =
+  (a - b).abs()
+
+def cappedCharge(amount : Int53, budget : Int53) : Int53 =
+  amount.min(budget)
+
+def atLeast(amount : Int53, floor : Int53) : Int53 =
+  amount.max(floor)
+
 def safeQuotientIsPositive(a : Int53, b : Int53) : Bool =
   ((b != 0) && ((a / b) > 0))
 

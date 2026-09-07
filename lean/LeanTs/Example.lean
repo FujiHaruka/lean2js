@@ -59,6 +59,14 @@ def divide : Decl := decl% divide(a : Int53, b : Int53) : Int53 := a / b
 
 def remainder : Decl := decl% remainder(a : Int53, b : Int53) : Int53 := a % b
 
+def priceGap : Decl := decl% priceGap(a : Int53, b : Int53) : Int53 := (a - b).abs()
+
+def cappedCharge : Decl := decl%
+  cappedCharge(amount : Int53, budget : Int53) : Int53 := amount.min(budget)
+
+def atLeast : Decl := decl%
+  atLeast(amount : Int53, floor : Int53) : Int53 := amount.max(floor)
+
 def negate : Decl := decl% negate(a : Int53) : Int53 := -a
 
 /-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
@@ -303,6 +311,7 @@ def program : Program := {
   types := [Money, Role, OrderState, Paginated, Validated]
   decls := [
     add, clampQuantity, lineTotal, discounted, divide, remainder, negate,
+    priceGap, cappedCharge, atLeast,
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
     bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,

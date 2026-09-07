@@ -279,6 +279,9 @@ private partial def keyedItem (stx : TSyntax `leants_item) : MacroM Term := do
 private partial def methodOn (recv : Term) (name : String) (args : Array Term) :
     MacroM Term := do
   match name, args.toList with
+  | "abs", [] => `(Expr.un UnOp.abs $recv)
+  | "min", [b] => `(Expr.bin BinOp.min $recv $b)
+  | "max", [b] => `(Expr.bin BinOp.max $recv $b)
   | "trim", [] => `(Expr.strUn StrUnOp.trim $recv)
   | "toUpper", [] => `(Expr.strUn StrUnOp.upper $recv)
   | "toLower", [] => `(Expr.strUn StrUnOp.lower $recv)
