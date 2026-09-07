@@ -33,20 +33,60 @@ Lean 全体ではなく、JS との対応が明快な領域に絞ることで、
 
 ## ロードマップ
 
-| Phase | 内容 |
-| --- | --- |
-| 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） |
-| 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） |
-| 3. SHIP | npm 開発体験（source maps、tree shaking、CI / package publishing） |
+| Phase | 内容 | 状態 |
+| --- | --- | --- |
+| 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） | 完了 |
+| 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） | 一部 |
+| 3. SHIP | npm 開発体験（source maps、tree shaking、CI / package publishing） | 完了 |
 
-詳細は [提案書](docs/proposal.html) を参照。
+詳細は [提案書](docs/proposal.html) と [実装プラン](docs/mvp-plan.md) を参照。
+
+## 保証の組み立て
+
+```
+Lean のリファレンス意味論  ──証明（断片）──  生成した JS
+        │                                        │
+        │                       └──実行時検査（成果物の全ベクタ）──┘
+        │
+        └──実行時検査──  small-step 意味論
+
+生成した JS の模型  ──Node 上の差分テスト──  本物の JavaScript
+```
+
+- **証明**: リテラル・変数・条件式について、`eval` が値を返すなら生成コードも同じ値を返す
+- **実行時検査**: 出荷する成果物の全ベクタ（現在 11081 件）について、`eval` と JS の模型、および
+  `eval` と small-step が一致することを `leants` が書き出す前に確かめる
+- **差分テスト**: 生成した ESM を Node で実行し、`eval` の答えと突き合わせる。JS の模型が仮定している
+  振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）はここで押さえる
+
+## 生成物
+
+```
+packages/verified-example/
+  index.js              ESM。実行時ヘルパは __ 接頭辞に閉じてある
+  index.js.map          example.leants への source map（関数単位）
+  index.d.ts            .d.ts。ADT は判別可能なユニオンになる
+  example.leants        Core を書き出したソース
+  proof-manifest.json   定理・コンパイラ版・公開 API
+  package.json          exports / sideEffects / engines
+  vectors.json          差分テストの入力と期待値
+```
 
 ## リポジトリ構成
 
 ```
-lean/          Lean 4 ライブラリ（サブセットの構文・意味論・コンパイラ・証明）
-packages/      TypeScript 側のツール群（CLI、差分テスト、パッケージ生成）
-docs/          提案書
+lean/LeanTs/Core.lean       サブセットの構文
+lean/LeanTs/Eval.lean       fuel 付き big-step のリファレンス意味論
+lean/LeanTs/Step.lean       継続を明示した small-step 意味論
+lean/LeanTs/Compile.lean    Core → JS（型検査と生成を一本のパスで）
+lean/LeanTs/JsSem.lean      生成した JS の意味論の模型
+lean/LeanTs/Correct.lean    compiler correctness（断片）
+lean/LeanTs/Agree.lean      成果物に対する実行時の一致検査
+lean/LeanTs/Example.lean    出荷するプログラムと、それについての定理
+lean/Main.lean              leants 実行ファイル
+packages/lean-ts/           差分テスト・tree shaking・source map の検証
+packages/verified-example/  生成された npm パッケージ
+docs/                       提案書と実装プラン
 ```
 
 ## 開発
