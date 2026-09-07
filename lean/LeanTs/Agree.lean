@@ -29,6 +29,7 @@ def encodeValue : Value → Js.JsValue
   | .obj ctor fields => .obj (("tag", .str ctor) :: encodeFields fields)
   | .arr xs => .arr (encodeList xs)
   | .dict entries => .dict (encodeFields entries)
+  | .fn name => .fn name
 termination_by v => sizeOf v
 
 def encodeFields : List (String × Value) → List (String × Js.JsValue)

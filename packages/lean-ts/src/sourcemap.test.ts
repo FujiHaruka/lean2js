@@ -77,7 +77,7 @@ describe("the source map ties generated functions to .leants declarations", () =
       const generatedText = generated[generatedLine] ?? "";
       const sourceText = source[sourceLine] ?? "";
 
-      const name = /^export function (\w+)\(/.exec(generatedText)?.[1];
+      const name = /^(?:export )?function (\w+)\(/.exec(generatedText)?.[1];
       expect(name, `line ${generatedLine} is not a function: ${generatedText}`).toBeTruthy();
       expect(sourceText, `source line ${sourceLine} should declare ${name}`).toMatch(
         new RegExp(`^def ${name}\\(`),

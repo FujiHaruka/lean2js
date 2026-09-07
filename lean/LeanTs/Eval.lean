@@ -178,6 +178,13 @@ def asBool : Value → Except Err Value
   | .bool b => .ok (.bool b)
   | _ => .error (.typeError "expected a Bool")
 
+/-- A function-typed parameter holds the name of a declaration, so applying it is an ordinary call to
+that name. Anything else bound to the name is rejected by the compiler, never here. -/
+def calleeOf (env : Env) (fn : String) : String :=
+  match env.lookup? fn with
+  | some (.fn name) => name
+  | _ => fn
+
 def bindParams : List Param → List Value → Env
   | p :: ps, v :: vs => (p.name, v) :: bindParams ps vs
   | _, _ => []
@@ -234,6 +241,8 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       match env.lookup? name with
       | some v => .ok v
       | none => .error (.unknownVar name)
+    | .fnRef name =>
+      if (p.find? name).isSome then .ok (.fn name) else .error (.unknownFn name)
     | .un op x => do applyUn op (← evalExpr p f env x)
     | .bin .and lhs rhs => do
       match ← evalExpr p f env lhs with
@@ -259,10 +268,11 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       evalExpr p f ((name, v) :: env) body
     | .call fn args => do
       let vs ← evalArgs p f env args
-      match p.find? fn with
-      | none => .error (.unknownFn fn)
+      let target := calleeOf env fn
+      match p.find? target with
+      | none => .error (.unknownFn target)
       | some d =>
-        if d.params.length != vs.length then .error (.arity fn)
+        if d.params.length != vs.length then .error (.arity target)
         else evalExpr p f (bindParams d.params vs) d.body
     | .ctor typeName _ ctorName args => do
       let vs ← evalArgs p f env args
@@ -549,6 +559,11 @@ theorem evalExpr_proj (p : Program) (f : Nat) (env : Env) (e : Expr) (field : St
           | _ => .error (.typeError "field access expects a constructor value")) := by
   rw [evalExpr.eq_def]
 
+theorem evalExpr_fnRef (p : Program) (f : Nat) (env : Env) (name : String) :
+    evalExpr p (f + 1) env (.fnRef name) =
+      (if (p.find? name).isSome then .ok (.fn name) else .error (.unknownFn name)) := by
+  rw [evalExpr.eq_def]
+
 theorem evalExpr_un (p : Program) (f : Nat) (env : Env) (op : UnOp) (e : Expr) :
     evalExpr p (f + 1) env (.un op e) = (do applyUn op (← evalExpr p f env e)) := by
   rw [evalExpr.eq_def]
@@ -581,10 +596,11 @@ theorem evalExpr_call (p : Program) (f : Nat) (env : Env) (fn : String) (args : 
     evalExpr p (f + 1) env (.call fn args) =
       (do
         let vs ← evalArgs p f env args
-        match p.find? fn with
-        | none => .error (.unknownFn fn)
+        let target := calleeOf env fn
+        match p.find? target with
+        | none => .error (.unknownFn target)
         | some d =>
-          if d.params.length != vs.length then .error (.arity fn)
+          if d.params.length != vs.length then .error (.arity target)
           else evalExpr p f (bindParams d.params vs) d.body) := by
   rw [evalExpr.eq_def]
 

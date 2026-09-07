@@ -128,6 +128,8 @@ def step (p : Program) : State → State
       match env.lookup? name with
       | some v => finish v k
       | none => fail (.unknownVar name)
+    | .fnRef name =>
+      if (p.find? name).isSome then finish (.fn name) k else fail (.unknownFn name)
     | .un op x => .eval env x (.unK op :: k)
     | .bin .and lhs rhs => .eval env lhs (.andK rhs env :: k)
     | .bin .or lhs rhs => .eval env lhs (.orK rhs env :: k)
@@ -135,7 +137,8 @@ def step (p : Program) : State → State
     | .cond c t e => .eval env c (.condK t e env :: k)
     | .letE name _ val body => .eval env val (.letK name body env :: k)
     | .call fn args =>
-      continueArgs (buildCall p fn · k) [] args env k (fun done rest => .callK fn done rest env)
+      continueArgs (buildCall p (calleeOf env fn) · k) [] args env k
+        (fun done rest => .callK fn done rest env)
     | .ctor typeName _ ctorName args =>
       continueArgs (buildCtor p typeName ctorName · k) [] args env k
         (fun done rest => .ctorK typeName ctorName done rest env)
@@ -211,7 +214,7 @@ def step (p : Program) : State → State
       | _ => fail (.typeError "condition expects a Bool")
     | .letK name body env => .eval ((name, v) :: env) body k
     | .callK fn done rest env =>
-      continueArgs (buildCall p fn · k) (done ++ [v]) rest env k
+      continueArgs (buildCall p (calleeOf env fn) · k) (done ++ [v]) rest env k
         (fun done rest => .callK fn done rest env)
     | .ctorK typeName ctorName done rest env =>
       continueArgs (buildCtor p typeName ctorName · k) (done ++ [v]) rest env k

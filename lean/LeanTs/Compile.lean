@@ -29,6 +29,7 @@ private partial def wfTy (p : Program) (scope : List String) : Ty → Except Str
   | .array t => wfTy p scope t
   | .dict v => wfTy p scope v
   | .result ok err => do wfTy p scope ok; wfTy p scope err
+  | .fn _ _ => .error "a function type is only allowed as a parameter of a declaration"
   | .named n args =>
     match p.findType? n with
     | none => .error s!"unknown type: {n}"
@@ -36,6 +37,33 @@ private partial def wfTy (p : Program) (scope : List String) : Ty → Except Str
       if t.params.length != args.length then
         .error s!"{n} takes {t.params.length} type arguments but is given {args.length}"
       else args.forM (wfTy p scope)
+
+/-- A parameter is the one place a function type may sit. Its own parameters and result go through
+`wfTy`, which rejects a function type, so the types stay first order and the entry check never has to
+look inside one. -/
+private def wfParamTy (p : Program) : Ty → Except String Unit
+  | .fn params ret => do params.forM (wfTy p []); wfTy p [] ret
+  | ty => wfTy p [] ty
+
+/-- A function handed to a declaration must itself be declared before that declaration. Every call then
+still lands on something declared earlier, whether it is named directly or reached through a parameter,
+so the call graph stays acyclic and nothing recurses. -/
+private def fnArgsPrecede (p : Program) (fn : String) (d : Decl) (args : List Expr) :
+    Except String Unit :=
+  match p.decls.findIdx? (·.name == fn) with
+  | none => .ok ()
+  | some calleeIdx =>
+    (d.params.zip args).forM fun (param, arg) =>
+      if !param.ty.isFn then .ok ()
+      else
+        match arg with
+        | .fnRef g =>
+          match p.decls.findIdx? (·.name == g) with
+          | some gIdx =>
+            if gIdx < calleeIdx then .ok ()
+            else .error s!"{g} is not declared before {fn}, which takes it as a function"
+          | none => .error s!"{g} is not declared before this reference"
+        | _ => .error s!"the function argument to {fn} has to be a declared function passed by name"
 
 private def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Expr :=
   match ty, op with
@@ -271,6 +299,10 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     match (ctx.find? (·.1 == name)).map (·.2) with
     | some ty => .ok (.ident name, ty)
     | none => .error s!"unbound variable: {name}"
+  | .fnRef name =>
+    match p.find? name with
+    | none => .error s!"{name} is not declared before this reference"
+    | some d => .ok (.ident name, .fn (d.params.map (·.ty)) d.ret)
   | .un .not x => do
     let (jx, tx) ← compileExpr p ctx x
     if tx == .bool then .ok (.unary "!" jx, .bool)
@@ -336,17 +368,28 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       let (jb, tb) ← compileExpr p ((name, ty) :: ctx) body
       .ok (.arrowCall [name] jb [jv], tb)
   | .call fn args => do
-    if ctx.any (·.1 == fn) then
-      .error s!"{fn} names both a function and a binding in scope here"
-    else
-    match p.find? fn with
-    | none => .error s!"{fn} is not declared before this call"
-    | some d => do
-      let js ← compileArgs p ctx args
-      if d.params.length != js.length then .error s!"wrong number of arguments to {fn}"
-      else if !(d.params.zip js).all (fun (param, (_, ty)) => param.ty == ty) then
-        .error s!"argument types do not match the signature of {fn}"
-      else .ok (.call d.name (js.map (·.1)), d.ret)
+    match (ctx.find? (·.1 == fn)).map (·.2) with
+    | some (Ty.fn params ret) =>
+      if (p.find? fn).isSome then
+        .error s!"{fn} names both a function and a binding in scope here"
+      else do
+        let js ← compileArgs p ctx args
+        if params.length != js.length then .error s!"wrong number of arguments to {fn}"
+        else if !(params.zip js).all (fun (ty, (_, t)) => ty == t) then
+          .error s!"argument types do not match the signature of {fn}"
+        else .ok (.call fn (js.map (·.1)), ret)
+    | some _ => .error s!"{fn} names both a function and a binding in scope here"
+    | none =>
+      match p.find? fn with
+      | none => .error s!"{fn} is not declared before this call"
+      | some d => do
+        let js ← compileArgs p ctx args
+        if d.params.length != js.length then .error s!"wrong number of arguments to {fn}"
+        else if !(d.params.zip js).all (fun (param, (_, ty)) => param.ty == ty) then
+          .error s!"argument types do not match the signature of {fn}"
+        else do
+          fnArgsPrecede p fn d args
+          .ok (.call d.name (js.map (·.1)), d.ret)
   | .ctor typeName tyArgs ctorName args => do
     wfTy p [] (.named typeName tyArgs)
     match p.findType? typeName with
@@ -641,6 +684,7 @@ private partial def tyDesc (p : Program) : Ty → Except String Js.TyDesc
   | .result ok err => do .ok (.result (← tyDesc p ok) (← tyDesc p err))
   | .array t => do .ok (.array (← tyDesc p t))
   | .dict v => do .ok (.dict (← tyDesc p v))
+  | .fn _ _ => .error "a function type has no shape to check at the boundary"
   | .named n args =>
     match p.findType? n with
     | none => .error s!"unknown type: {n}"
@@ -658,7 +702,7 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
   validateIdent "function" d.name
   d.params.forM fun param => validateIdent "parameter" param.name
   validateDistinct "parameter" (d.params.map (·.name))
-  d.params.forM fun param => wfTy p [] param.ty
+  d.params.forM fun param => wfParamTy p param.ty
   wfTy p [] d.ret
   let ctx : Ctx := d.params.map fun param => (param.name, param.ty)
   let (stmts, ty) ← compileBody p ctx d.body []
@@ -666,14 +710,17 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
     .error s!"{d.name} is declared to return {d.ret.render} but its body is {ty.render}"
   else do
     let checks ← d.params.zipIdx.mapM fun (param, i) => do
-      let desc ← tyDesc p param.ty
-      .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i))))
+      if param.ty.isFn then .ok (Js.Stmt.const param.name (.ident (rawParam i)))
+      else do
+        let desc ← tyDesc p param.ty
+        .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i))))
     let sig := d.params.map fun param => s!"{param.name} : {param.ty.render}"
     .ok {
       name := d.name
       params := d.params.zipIdx.map fun (_, i) => rawParam i
       body := checks ++ stmts
       doc := s!"{d.name} : ({String.intercalate ", " sig}) → {d.ret.render}"
+      exported := d.isPublic
     }
 
 /-- Whether a type's fields can reach `target` through the declarations they name. Type arguments are

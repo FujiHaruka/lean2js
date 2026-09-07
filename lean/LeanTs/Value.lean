@@ -31,6 +31,7 @@ inductive Value where
   | obj (ctor : String) (fields : List (String × Value))
   | arr (xs : List Value)
   | dict (entries : List (String × Value))
+  | fn (name : String)
   deriving Repr, Inhabited
 
 inductive Err where
@@ -69,6 +70,7 @@ def Value.beq : Value → Value → Bool
   | .obj ca fa, .obj cb fb => ca == cb && Value.beqFields fa fb
   | .arr xs, .arr ys => Value.beqList xs ys
   | .dict a, .dict b => Value.beqFields a b
+  | .fn a, .fn b => a == b
   | _, _ => false
 termination_by a => sizeOf a
 
@@ -125,6 +127,10 @@ def Value.hasTy (p : Program) : Value → Ty → Bool
   | .arr xs, .array elem => Value.hasElemTy p xs elem
   | .dict entries, .dict elem =>
     keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem
+  | .fn name, .fn params ret =>
+    match p.find? name with
+    | some d => (d.params.map (·.ty)) == params && d.ret == ret
+    | none => false
   | _, _ => false
 termination_by v => sizeOf v
 

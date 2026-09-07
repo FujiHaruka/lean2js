@@ -316,6 +316,37 @@ export function atLeast(__p0, __p1) {
   return __max(amount, floor);
 }
 
+/** noDiscount : (amount : Int53) → Int53 */
+export function noDiscount(__p0) {
+  const amount = __ck(__p0, ["int53"]);
+  return amount;
+}
+
+/** tenPercentOff : (amount : Int53) → Int53 */
+export function tenPercentOff(__p0) {
+  const amount = __ck(__p0, ["int53"]);
+  return __i53((amount - __i53div(amount, 10)));
+}
+
+/** priced : (rule : (Int53) => Int53, amount : Int53) → Int53 */
+function priced(__p0, __p1) {
+  const rule = __p0;
+  const amount = __ck(__p1, ["int53"]);
+  return rule(amount);
+}
+
+/** memberPrice : (amount : Int53) → Int53 */
+export function memberPrice(__p0) {
+  const amount = __ck(__p0, ["int53"]);
+  return priced(tenPercentOff, amount);
+}
+
+/** guestPrice : (amount : Int53) → Int53 */
+export function guestPrice(__p0) {
+  const amount = __ck(__p0, ["int53"]);
+  return priced(noDiscount, amount);
+}
+
 /** safeQuotientIsPositive : (a : Int53, b : Int53) → Bool */
 export function safeQuotientIsPositive(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);

@@ -31,6 +31,7 @@ inductive Ty where
   | result (ok err : Ty)
   | array (t : Ty)
   | dict (value : Ty)
+  | fn (params : List Ty) (ret : Ty)
   deriving Repr, BEq, Inhabited
 
 partial def Ty.render : Ty → String
@@ -46,6 +47,8 @@ partial def Ty.render : Ty → String
   | .result ok err => s!"Result {ok.render} {err.render}"
   | .array t => s!"Array {t.render}"
   | .dict v => s!"Dict {v.render}"
+  | .fn params ret =>
+    "(" ++ String.intercalate ", " (params.map Ty.render) ++ ") => " ++ ret.render
 
 mutual
 
@@ -59,6 +62,7 @@ def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
   | .result ok err => .result (Ty.subst sigma ok) (Ty.subst sigma err)
   | .array t => .array (Ty.subst sigma t)
   | .dict v => .dict (Ty.subst sigma v)
+  | .fn params ret => .fn (Ty.substArgs sigma params) (Ty.subst sigma ret)
   | ty => ty
 
 def Ty.substArgs (sigma : List (String × Ty)) : List Ty → List Ty
@@ -66,6 +70,10 @@ def Ty.substArgs (sigma : List (String × Ty)) : List Ty → List Ty
   | t :: rest => Ty.subst sigma t :: Ty.substArgs sigma rest
 
 end
+
+def Ty.isFn : Ty → Bool
+  | .fn _ _ => true
+  | _ => false
 
 inductive Lit where
   | bool (b : Bool)
@@ -147,6 +155,7 @@ subset is ever a function. See `docs/business-logic-plan.md`. -/
 inductive Expr where
   | lit (l : Lit)
   | var (name : String)
+  | fnRef (name : String)
   | un (op : UnOp) (e : Expr)
   | bin (op : BinOp) (lhs rhs : Expr)
   | cond (c t e : Expr)
@@ -234,6 +243,12 @@ structure Program where
   types : List TypeDef := []
   decls : List Decl
   deriving Repr, Inhabited
+
+/-- A declaration that takes a function is internal. A function value cannot be checked at the boundary,
+so a declaration that would need one checked never reaches the boundary at all. -/
+def Decl.isPublic (d : Decl) : Bool := d.params.all fun param => !param.ty.isFn
+
+def Program.publicDecls (p : Program) : List Decl := p.decls.filter Decl.isPublic
 
 def Program.find? (p : Program) (name : String) : Option Decl :=
   p.decls.find? (·.name == name)

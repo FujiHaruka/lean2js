@@ -49,6 +49,22 @@
       "signature": "(amount : Int53, floor : Int53) → Int53"
     },
     {
+      "name": "noDiscount",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "tenPercentOff",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "memberPrice",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "guestPrice",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
       "name": "safeQuotientIsPositive",
       "signature": "(a : Int53, b : Int53) → Bool"
     },

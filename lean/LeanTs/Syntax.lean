@@ -25,6 +25,7 @@ declare_syntax_cat leants_field
 declare_syntax_cat leants_ctor
 
 syntax:max "(" leants_ty ")" : leants_ty
+syntax:max "(" leants_ty,* ")" " => " leants_ty : leants_ty
 syntax:max ident "<" leants_ty,+ ">" : leants_ty
 syntax:max ident : leants_ty
 
@@ -36,6 +37,7 @@ syntax:max ident "::" ident "(" leants_expr,* ")" : leants_expr
 syntax:max ident noWs "<" leants_ty,+ ">" "{" leants_item,* "}" : leants_expr
 syntax:max ident noWs "<" leants_ty,+ ">" "(" leants_expr,* ")" : leants_expr
 syntax:max ident noWs "<" leants_ty,+ ">" : leants_expr
+syntax:max "@" ident : leants_expr
 syntax:max "fun " ident " => " leants_expr : leants_expr
 syntax:max "fun " "(" ident "," ident ")" " => " leants_expr : leants_expr
 syntax:max ident "(" leants_expr,* ")" : leants_expr
@@ -116,6 +118,9 @@ def typeDef (name : String) (params : List String) (ctors : List CtorDef) : Type
 
 private partial def tyOf (stx : TSyntax `leants_ty) : MacroM Term := do
   match stx with
+  | `(leants_ty| ($ts,*) => $ret:leants_ty) =>
+    let params ← ts.getElems.mapM tyOf
+    `(Ty.fn [$params,*] $(← tyOf ret))
   | `(leants_ty| ($t:leants_ty)) => tyOf t
   | `(leants_ty| $n:ident<$ts,*>) =>
     let args ← ts.getElems.mapM tyOf
@@ -199,6 +204,7 @@ private partial def exprOf (stx : TSyntax `leants_expr) : MacroM Term := do
   | `(leants_expr| $n:ident) => varChain ((nameOf n).splitOn ".")
   | `(leants_expr| $e:leants_expr.$m:ident($es,*)) => methodCall (← exprOf e) (nameOf m) es
   | `(leants_expr| $e:leants_expr.$f:ident) => projChain (← exprOf e) [nameOf f]
+  | `(leants_expr| @$n:ident) => `(Expr.fnRef $(quote (nameOf n)))
   | `(leants_expr| $e:leants_expr[$i:leants_expr]) =>
     `(Expr.index $(← exprOf e) $(← exprOf i))
   | `(leants_expr| !$e:leants_expr) => `(Expr.un UnOp.not $(← exprOf e))

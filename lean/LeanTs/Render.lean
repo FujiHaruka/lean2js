@@ -35,6 +35,7 @@ partial def Pat.source : Pat → String
 partial def Expr.source : Expr → String
   | .lit l => litSource l
   | .var name => name
+  | .fnRef name => "@" ++ name
   | .un .not e => "!" ++ e.source
   | .un .neg e => "-" ++ e.source
   | .un .abs e => e.source ++ ".abs()"

@@ -18,6 +18,9 @@ open Core Core.Builder
 private def compiles (d : Decl) : Bool :=
   (Compile.compileProgram { decls := [d] }).isOk
 
+private def compilesAll (ds : List Decl) : Bool :=
+  (Compile.compileProgram { decls := ds }).isOk
+
 private def identity (name : String) (param : String) : Decl :=
   decl name [(param, .int53)] .int53 (v param)
 
@@ -248,6 +251,37 @@ private def nested (alts : List Alt) : Decl :=
 #guard !compiles
   (decl "joined" [("a", .dict .int53), ("b", .dict .int53)] (.dict .int53) (v "a" ++' v "b"))
 
+private def rule : Decl := decl "rule" [("amount", .int53)] .int53 (v "amount")
+private def later : Decl := decl "later" [("amount", .int53)] .int53 (v "amount")
+
+private def applyRule : Decl :=
+  decl "applyRule" [("f", .fn [.int53] .int53), ("amount", .int53)] .int53
+    (call "f" [v "amount"])
+
+#guard compilesAll [rule, applyRule,
+  decl "priced" [("amount", .int53)] .int53 (call "applyRule" [fnRef "rule", v "amount"])]
+#guard !compilesAll [rule, applyRule,
+  decl "priced" [("amount", .int53)] .int53 (call "applyRule" [v "rule", v "amount"])]
+#guard !compilesAll [rule, applyRule, later,
+  decl "priced" [("amount", .int53)] .int53 (call "applyRule" [fnRef "later", v "amount"])]
+#guard !compilesAll [applyRule,
+  decl "priced" [("amount", .int53)] .int53 (call "applyRule" [fnRef "rule", v "amount"])]
+#guard !compilesAll [rule,
+  decl "wrongShape" [("f", .fn [.string] .int53), ("amount", .int53)] .int53
+    (call "f" [v "amount"])]
+
+#guard !compiles (decl "returnsFn" [("amount", .int53)] (.fn [.int53] .int53) (v "amount"))
+#guard !compiles
+  (decl "arrayOfFn" [("fs", .array (.fn [.int53] .int53))] .int53 (len (v "fs")))
+#guard !compiles
+  (decl "higherOrder" [("f", .fn [.fn [.int53] .int53] .int53), ("amount", .int53)] .int53
+    (call "f" [v "amount"]))
+#guard !compiles
+  (decl "returnsFnParam" [("f", .fn [.int53] .int53)] (.fn [.int53] .int53) (v "f"))
+
+#guard (decl "pure" [("amount", .int53)] .int53 (v "amount")).isPublic
+#guard !(decl "takesFn" [("f", .fn [.int53] .int53)] .int53 (call "f" [int53 0])).isPublic
+
 #guard compiles (decl "distance" [("n", .int53)] .int53 (abs' (v "n")))
 #guard compiles (decl "distance" [("n", .bigint)] .bigint (abs' (v "n")))
 #guard !compiles (decl "distance" [("s", .string)] .string (abs' (v "s")))
@@ -342,6 +376,7 @@ private def callsIdentity (name callee : String) : Decl :=
 #guard (expr% a < b && c) == ((v "a" <' v "b") &&' v "c")
 #guard (expr% !flag) == not' (v "flag")
 #guard (expr% -a) == neg' (v "a")
+#guard (expr% @f) == fnRef "f"
 #guard (expr% a.abs()) == abs' (v "a")
 #guard (expr% a.min(b)) == min' (v "a") (v "b")
 #guard (expr% a.max(b)) == max' (v "a") (v "b")

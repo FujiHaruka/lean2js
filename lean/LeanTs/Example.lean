@@ -67,6 +67,22 @@ def cappedCharge : Decl := decl%
 def atLeast : Decl := decl%
   atLeast(amount : Int53, floor : Int53) : Int53 := amount.max(floor)
 
+def noDiscount : Decl := decl% noDiscount(amount : Int53) : Int53 := amount
+
+def tenPercentOff : Decl := decl%
+  tenPercentOff(amount : Int53) : Int53 := amount - amount / 10
+
+/-- Charges an amount under a pricing rule the caller picks. Taking a function keeps it off the public
+API: there is no way to check at the boundary that one handed in from JS is pure. -/
+def priced : Decl := decl%
+  priced(rule : (Int53) => Int53, amount : Int53) : Int53 := rule(amount)
+
+def memberPrice : Decl := decl%
+  memberPrice(amount : Int53) : Int53 := priced(@tenPercentOff, amount)
+
+def guestPrice : Decl := decl%
+  guestPrice(amount : Int53) : Int53 := priced(@noDiscount, amount)
+
 def negate : Decl := decl% negate(a : Int53) : Int53 := -a
 
 /-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
@@ -334,6 +350,7 @@ def program : Program := {
   decls := [
     add, clampQuantity, lineTotal, discounted, divide, remainder, negate,
     priceGap, cappedCharge, atLeast,
+    noDiscount, tenPercentOff, priced, memberPrice, guestPrice,
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
     bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,

@@ -42,7 +42,7 @@ def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
     match renderVectors m.program 400 200 with
     | .error e => throw (IO.userError s!"vector generation failed: {e}")
     | .ok vectors => IO.FS.writeFile (outDir / "vectors.json") vectors
-    IO.println s!"wrote {m.program.decls.length} exports to {outDir}"
+    IO.println s!"wrote {m.program.publicDecls.length} exports to {outDir}"
 
 def main (args : List String) : IO UInt32 := do
   let outDir : System.FilePath := args.head? |>.getD "packages/verified-example"

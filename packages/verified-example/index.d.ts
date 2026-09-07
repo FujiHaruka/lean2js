@@ -47,6 +47,14 @@ export declare function cappedCharge(amount: number, budget: number): number;
 
 export declare function atLeast(amount: number, floor: number): number;
 
+export declare function noDiscount(amount: number): number;
+
+export declare function tenPercentOff(amount: number): number;
+
+export declare function memberPrice(amount: number): number;
+
+export declare function guestPrice(amount: number): number;
+
 export declare function safeQuotientIsPositive(a: number, b: number): boolean;
 
 export declare function canCheckout(signedIn: boolean, cartTotal: number, stock: number): boolean;

@@ -40,6 +40,21 @@ def cappedCharge(amount : Int53, budget : Int53) : Int53 =
 def atLeast(amount : Int53, floor : Int53) : Int53 =
   amount.max(floor)
 
+def noDiscount(amount : Int53) : Int53 =
+  amount
+
+def tenPercentOff(amount : Int53) : Int53 =
+  (amount - (amount / 10))
+
+def priced(rule : (Int53) => Int53, amount : Int53) : Int53 =
+  rule(amount)
+
+def memberPrice(amount : Int53) : Int53 =
+  priced(@tenPercentOff, amount)
+
+def guestPrice(amount : Int53) : Int53 =
+  priced(@noDiscount, amount)
+
 def safeQuotientIsPositive(a : Int53, b : Int53) : Bool =
   ((b != 0) && ((a / b) > 0))
 

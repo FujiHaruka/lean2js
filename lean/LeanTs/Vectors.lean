@@ -136,6 +136,7 @@ partial def Value.toJson : Value → Json
   | .dict entries =>
     .obj [("t", .str "dict"),
           ("v", .arr (entries.map fun (k, v) => .arr [.str k, Value.toJson v]))]
+  | .fn name => .obj [("t", .str "fn"), ("v", .str name)]
 
 def TestVector.toJson (v : TestVector) : Json :=
   let outcome :=
@@ -186,7 +187,8 @@ private def illTypedVectorsFor (p : Program) (d : Decl) (perParam : Nat) : List 
 def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
   let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
   (p.decls.zip seeds).flatMap fun (d, seed) =>
-    vectorsFor p d edgeLimit randomCount seed ++ illTypedVectorsFor p d 3
+    if d.isPublic then vectorsFor p d edgeLimit randomCount seed ++ illTypedVectorsFor p d 3
+    else []
 
 /-- Fuel is a device for keeping termination inside the proof, not part of the subset's semantics. Since
 nothing on the JS side corresponds to it, writing `outOfFuel` as an expected value would be the lie that

@@ -34,6 +34,7 @@ inductive JsValue where
   | obj (fields : List (String × JsValue))
   | arr (xs : List JsValue)
   | dict (entries : List (String × JsValue))
+  | fn (name : String)
   deriving Repr, Inhabited
 
 abbrev JsEnv := List (String × JsValue)
@@ -52,6 +53,7 @@ def JsValue.beq : JsValue → JsValue → Bool
   | .obj a, .obj b => JsValue.beqFields a b
   | .arr a, .arr b => JsValue.beqList a b
   | .dict a, .dict b => JsValue.beqFields a b
+  | .fn a, .fn b => a == b
   | _, _ => false
 termination_by a => sizeOf a
 
@@ -306,7 +308,9 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
     | .ident name =>
       match (env.find? (·.1 == name)).map (·.2) with
       | some v => .ok v
-      | none => .error "unboundIdentifier"
+      | none =>
+        if (m.funcs.find? (·.name == name)).isSome then .ok (.fn name)
+        else .error "unboundIdentifier"
     | .unary "!" x => do
       match ← eval m f env x with
       | .bool b => .ok (.bool !b)
@@ -341,7 +345,11 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
       match helper name vs with
       | some r => r
       | none =>
-        match m.funcs.find? (·.name == name) with
+        let target :=
+          match (env.find? (·.1 == name)).map (·.2) with
+          | some (.fn callee) => callee
+          | _ => name
+        match m.funcs.find? (·.name == target) with
         | none => .error "unboundIdentifier"
         | some fn =>
           if fn.params.length != vs.length then .error "typeError"

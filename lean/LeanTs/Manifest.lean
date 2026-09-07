@@ -29,7 +29,7 @@ structure Manifest where
   claims : List Claim
 
 def Manifest.toJson (m : Manifest) : Json :=
-  let exports := m.program.decls.map fun d =>
+  let exports := m.program.publicDecls.map fun d =>
     let params := d.params.map fun p => s!"{p.name} : {p.ty.render}"
     Json.obj [
       ("name", .str d.name),
