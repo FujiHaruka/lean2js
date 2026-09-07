@@ -14,7 +14,8 @@
     "format": "biome check --write .",
     "lean:build": "cd lean && lake build",
     "package:check": "publint packages/verified-example && attw --pack packages/verified-example --profile esm-only",
-    "lean:emit": "cd lean && lake exe leants ../packages/verified-example"
+    "lean:emit": "cd lean && lake exe leants ../packages/verified-example",
+    "template:check": "./scripts/check-template.sh"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

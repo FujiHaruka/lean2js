@@ -18,6 +18,8 @@ jobs:
         run: lake exe leants ../packages/verified-example
       - name: Generated package is up to date
         run: git diff --exit-code -- packages/verified-example
+      - name: The user package template builds and emits
+        run: ./scripts/check-template.sh
 
   node:
     runs-on: ubuntu-latest

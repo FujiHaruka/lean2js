@@ -52,7 +52,7 @@ Lean 全体ではなく、JS との対応が明快な領域に絞ることで、
 | --- | --- | --- |
 | 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） | 完了 |
 | 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） | 一部 |
-| 3. SHIP | npm 開発体験（source maps、tree shaking、CI / package publishing） | 完了 |
+| 3. SHIP | npm 開発体験（source maps、tree shaking、CI）と、処理系そのものの配布（利用者のパッケージの雛形） | 完了 |
 
 詳細は [提案書](docs/proposal.html) と [実装プラン](docs/mvp-plan.md) を参照。
 
@@ -108,6 +108,8 @@ lean/LeanTs/Example.lean    出荷するプログラムと、それについて�
 lean/Main.lean              leants 実行ファイル
 packages/lean-ts/           差分テスト・tree shaking・source map の検証
 packages/verified-example/  生成された npm パッケージ
+templates/verified-package/ 利用者が自分のロジックを書きはじめるためのパッケージの雛形
+scripts/                    雛形が空のディレクトリから通ることを確かめる検査
 docs/                       提案書と実装プラン
 ```
 
@@ -117,9 +119,23 @@ docs/                       提案書と実装プラン
 
 ```sh
 pnpm install
-pnpm lean:build     # Lean ライブラリと定理をビルドする
-pnpm lean:emit      # 検証つき npm パッケージを生成する
+pnpm lean:build      # Lean ライブラリと定理をビルドする
+pnpm lean:emit       # 検証つき npm パッケージを生成する
 pnpm typecheck
 pnpm test
-pnpm package:check  # publint / attw
+pnpm package:check   # publint / attw
+pnpm template:check  # 雛形が空のディレクトリから通ることを確かめる
 ```
+
+### 自分のロジックを書く
+
+出荷するのは処理系であって、`packages/verified-example` ではない。利用者は自分の Lean パッケージで
+このライブラリに依存し、業務ロジックと定理を書き、自分の npm パッケージを生成する。
+
+```sh
+cp -R templates/verified-package my-logic && cd my-logic
+lake build           # ロジックと定理を検査する
+lake exe emit dist   # dist/ に npm パッケージを書き出す
+```
+
+雛形の中身と書き換えどころは [`templates/verified-package/README.md`](templates/verified-package/README.md) にある。

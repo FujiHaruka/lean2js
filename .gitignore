@@ -4,3 +4,4 @@ coverage/
 .lake/
 *.tsbuildinfo
 .DS_Store
+lake-manifest.json

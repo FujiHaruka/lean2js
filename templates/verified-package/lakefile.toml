@@ -1,0 +1,16 @@
+name = "myLogic"
+version = "0.1.0"
+defaultTargets = ["MyLogic", "emit"]
+
+[[require]]
+name = "LeanTs"
+git = "https://github.com/FujiHaruka/lean.ts"
+rev = "main"
+subDir = "lean"
+
+[[lean_lib]]
+name = "MyLogic"
+
+[[lean_exe]]
+name = "emit"
+root = "Main"

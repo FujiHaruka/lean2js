@@ -4,14 +4,12 @@ import LeanTs.Eval
 import LeanTs.Json
 import LeanTs.Js
 import LeanTs.Compile
+import LeanTs.Emit
 import LeanTs.Manifest
 import LeanTs.Vectors
-import LeanTs.Example
 import LeanTs.Builder
 import LeanTs.Syntax
 import LeanTs.Ident
-import LeanTs.Tests
-import LeanTs.Axioms
 import LeanTs.JsSem
 import LeanTs.Agree
 import LeanTs.Correct

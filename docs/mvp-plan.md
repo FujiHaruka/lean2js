@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） | 完了 |
 | 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） | 一部 |
-| 3. SHIP | npm 開発体験（source maps、tree shaking、CI / package publishing） | 進行中 |
+| 3. SHIP | npm 開発体験（source maps、tree shaking、CI）と、処理系そのものの配布（利用者のパッケージの雛形） | 完了 |
 
 ### Phase 2 の到達点
 
@@ -21,6 +21,16 @@
   噛み合っていることを言えないと `+` が連結か加算かを決められない）
 - small-step semantics — 継続を明示した抽象機械として実装（`Step.lean`）。big-step との一致は
   成果物のベクタ全件について実行時に確かめている。短絡評価を壊すと 125 件の食い違いとして落ちる
+
+### Phase 3 の到達点
+
+- source map / tree shaking / CI — 完了
+- 配布 — 完了。`emit` はライブラリ側にあり、利用者は自分の Lean パッケージで `LeanTs` に依存し、自分の
+  manifest を `emit` に渡す小さな実行ファイルを持つ。**npm に出るのは利用者の成果物のほう**で、
+  `packages/verified-example` はその形の見本にとどまる。雛形は `templates/verified-package/` にあり、
+  空のディレクトリから通ることを `scripts/check-template.sh` が CI で確かめている
+- 定理は証明項であってデータではないので、プログラムをファイルで受け取る CLI では運べない。だから
+  配布物は「CLI」ではなく「利用者側のパッケージの雛形」になっている
 
 ## Approach
 
