@@ -4,10 +4,10 @@ import LeanTs.Js
 /-!
 # SourceMap
 
-生成した `index.js` から `.leants` ソースへの source map。
+The source map from the generated `index.js` to the `.leants` source.
 
-対応づけは関数単位。式の中まで追わないのは、Core の項に位置情報を持たせていないため。スタックトレースが
-どの関数のどの宣言に対応するかは分かる。
+Mappings are per function. They do not reach inside expressions because Core terms carry no position
+information. A stack trace still tells you which declaration of which function it lands in.
 -/
 
 namespace LeanTs
@@ -18,7 +18,8 @@ private def base64 : String :=
 private def base64Char (n : Nat) : String :=
   (base64.get? ⟨n⟩).map String.singleton |>.getD "A"
 
-/-- source map の可変長数値。符号を最下位ビットに置き、5 ビットずつ下位から並べる。 -/
+/-- The source map's variable-length number. The sign goes in the lowest bit, then five bits at a time
+from the bottom. -/
 partial def vlq (value : Int) : String :=
   let unsigned := if value < 0 then ((-value).toNat * 2) + 1 else value.toNat * 2
   let rec go (n : Nat) (acc : String) : String :=
@@ -32,7 +33,8 @@ structure Mapping where
   generatedLine : Nat
   sourceLine : Nat
 
-/-- 各行ぶんのグループを `;` で区切る。列は毎行 0 に戻り、ソース行は直前からの差分で書く。 -/
+/-- Separates each line's group with `;`. The column resets to 0 every line, and the source line is
+written as a delta from the previous one. -/
 def encodeMappings (totalLines : Nat) (mappings : List Mapping) : String :=
   let rec go (line : Nat) (prevSource : Int) (acc : List String) : List String :=
     if line ≥ totalLines then acc
@@ -55,14 +57,15 @@ def sourceMapJson (sourceName : String) (source : Core.Source)
     ("mappings", .str (encodeMappings totalLines mappings))
   ]
 
-/-- 生成した JS のテキストと、各関数が何行目から始まるか。 -/
+/-- The text of the generated JS, and which line each function starts on. -/
 structure Emitted where
   text : String
   funcLines : List (String × Nat)
 
 private def countLines (s : String) : Nat := (s.splitOn "\n").length
 
-/-- `export function` が本体の何行目に出るか。JSDoc を付けると先頭がずれるので、行を数える。 -/
+/-- Which line of the body `export function` appears on. JSDoc shifts the head, so the lines are
+counted. -/
 private def signatureOffset (f : Js.Func) : Nat :=
   ((f.render.splitOn "\n").findIdx? (·.startsWith "export function")).getD 0
 

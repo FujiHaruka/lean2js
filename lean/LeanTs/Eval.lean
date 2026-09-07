@@ -3,10 +3,11 @@ import LeanTs.Value
 /-!
 # Eval
 
-サブセットのリファレンス意味論。Phase 2 の定理はすべて「この `eval` の結果」と「生成した JS の評価結果」の
-一致として述べられる。
+The reference semantics of the subset. Every Phase 2 theorem is stated as agreement between "the result
+of this `eval`" and "the result of evaluating the generated JS".
 
-fuel 付きの big-step にしてあるのは、`partial` を使うと停止性が公理になり、証明の対象にならないため。
+It is a fuelled big-step semantics because `partial` would make termination an axiom, putting it beyond
+the reach of proof.
 -/
 
 namespace LeanTs
@@ -25,8 +26,8 @@ def litValue : Lit → Value
   | .str s => .str s
   | .bigint i => .bigint i
 
-/-- Int53 は wrap ではなく trap する。JS の Number は 2^53 を超えると黙って精度を落とすので、
-静かに間違った答えを返すより失敗させる方が意味論を揃えやすい。 -/
+/-- Int53 traps rather than wraps. JS's Number silently loses precision past 2^53, so failing makes the
+semantics easier to line up than quietly returning a wrong answer. -/
 def mkInt53 (i : Int) : Except Err Value :=
   if i < int53Min || int53Max < i then .error .int53Overflow else .ok (.int53 i)
 
@@ -36,8 +37,8 @@ def applyUn : UnOp → Value → Except Err Value
   | .neg, .bigint i => .ok (.bigint (-i))
   | op, _ => .error (.typeError s!"unary {repr op} applied to a value of the wrong type")
 
-/-- 整数除算は truncation に固定する。Lean の `/` は floor 除算 (`-7 / 2 = -4`) で、
-JS の `Math.trunc(-7 / 2) = -3` と食い違う。 -/
+/-- Integer division is pinned to truncation. Lean's `/` is floor division (`-7 / 2 = -4`), which
+disagrees with JS's `Math.trunc(-7 / 2) = -3`. -/
 def applyArith (op : BinOp) : Value → Value → Except Err Value
   | .int53 a, .int53 b =>
     match op with
@@ -106,8 +107,8 @@ def bindNames : List String → List Value → Env
 
 mutual
 
-/-- `and` / `or` を先に捌いているのは JS の `&&` / `||` が短絡するため。両辺を評価してしまうと
-`false && (1 / 0)` で JS は `false`、こちらは trap になり、差分テストが即座に割れる。 -/
+/-- `and` / `or` are handled first because JS's `&&` / `||` short-circuit. Evaluating both sides would
+make `false && (1 / 0)` give `false` in JS and a trap here, splitting the differential test at once. -/
 def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Value :=
   match fuel with
   | 0 => .error .outOfFuel
@@ -209,10 +210,10 @@ termination_by (fuel, 1, es.length)
 
 end
 
-/-- 呼び出し深さの上限。差分テストの呼び出しはこれを超えないよう作る。 -/
+/-- The upper bound on call depth. Differential test calls are built so as not to exceed it. -/
 def defaultFuel : Nat := 10000
 
-/-- 公開関数をひとつ呼ぶ。引数の型が宣言と合っているかを入口で見る。 -/
+/-- Calls one exported function. The argument types are checked against the declaration at the entry. -/
 def evalCall (p : Program) (fn : String) (args : List Value) : Except Err Value :=
   match p.find? fn with
   | none => .error (.unknownFn fn)

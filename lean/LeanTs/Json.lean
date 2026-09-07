@@ -1,10 +1,10 @@
 /-!
 # Json
 
-proof manifest と差分テストのベクタを書き出すための最小の JSON ライタ。
+A minimal JSON writer for emitting the proof manifest and the differential test vectors.
 
-`Lean.Json` を使わないのは、Lean frontend への依存をコンパイラ本体から外しておきたいため
-（このライブラリが必要とするのは `IO.FS` だけになる）。
+`Lean.Json` is avoided to keep the dependency on the Lean frontend out of the compiler proper (all this
+library then needs is `IO.FS`).
 -/
 
 namespace LeanTs
@@ -24,9 +24,9 @@ private def hex4 (n : Nat) : String :=
   "" |>.push (digit (n / 4096 % 16)) |>.push (digit (n / 256 % 16))
      |>.push (digit (n / 16 % 16)) |>.push (digit (n % 16))
 
-/-- JSON の文字列エスケープ。JS の文字列リテラルにもそのまま使える。
-U+2028 / U+2029 を素通しにしないのは、JSON では正当でも JS のソースに直接置くと
-行終端子として解釈されうるため。 -/
+/-- JSON string escaping. It works as is for JS string literals too.
+U+2028 / U+2029 are not passed through because, legal as they are in JSON, placing them directly in JS
+source can have them read as line terminators. -/
 def escapeString (s : String) : String :=
   s.foldl (init := "") fun acc c =>
     acc ++
@@ -51,7 +51,8 @@ partial def Json.render : Json → String
     let field := fun (k, v) => "\"" ++ escapeString k ++ "\":" ++ v.render
     "{" ++ String.intercalate "," (fields.map field) ++ "}"
 
-/-- 人が読める整形。生成物は git に入るので、差分がレビューできる形で書き出す。 -/
+/-- Human-readable formatting. The artifact goes into git, so it is written out in a shape whose diff can
+be reviewed. -/
 partial def Json.renderPretty (j : Json) (indent : String := "") : String :=
   let inner := indent ++ "  "
   match j with

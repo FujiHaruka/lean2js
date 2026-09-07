@@ -5,10 +5,10 @@ import LeanTs.Ident
 /-!
 # Compile
 
-Core から JS への変換。Phase 2 で正しさを証明する対象はこの関数。
+The translation from Core to JS. This function is what Phase 2 proves correct.
 
-型検査と生成を一本のパスにしてあるのは、`+` ひとつを出すにも被演算子の型が要るため。別々に持つと
-同じ型付け規則がコンパイラの信頼ベースに二度載る。
+Type checking and code generation are a single pass because emitting even one `+` needs the type of its
+operands. Keeping them apart would put the same typing rules on the compiler's trusted base twice.
 -/
 
 namespace LeanTs.Compile
@@ -17,7 +17,7 @@ open Core
 
 abbrev Ctx := List (String × Ty)
 
-/-- `match` が束縛する被検査値。`__` で始まるので利用者の名前とは衝突しない。 -/
+/-- The scrutinee that `match` binds. It starts with `__`, so it never collides with a user's name. -/
 private def scrutName : String := "__s"
 
 private def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Expr :=
@@ -50,12 +50,13 @@ private def isOrdered : Ty → Bool
   | .int53 | .uint32 | .bigint | .string => true
   | _ => false
 
-/-- スカラは `===` で比べられるが、構築子の値と配列は参照比較になってしまう。 -/
+/-- Scalars can be compared with `===`, but constructor values and arrays would end up compared by
+reference. -/
 private def isScalar : Ty → Bool
   | .bool | .int53 | .uint32 | .string | .bigint => true
   | _ => false
 
-/-- `match` で場合分けできる型と、その構築子ごとのフィールド。 -/
+/-- The types `match` can case-split on, and the fields of each of their constructors. -/
 private def ctorTable (p : Program) : Ty → Except String (List (String × List (String × Ty)))
   | .named n =>
     match p.findType? n with
@@ -238,7 +239,8 @@ def compileArgs (p : Program) (ctx : Ctx) (es : List Expr) :
     .ok (head :: tail)
 termination_by sizeOf es
 
-/-- 各 alt を、構築子名・束縛名・読み出すフィールド名・本体・本体の型に落とす。 -/
+/-- Lowers each alt to its constructor name, bound names, the field names to read, the body, and the
+body's type. -/
 def compileAlts (p : Program) (ctx : Ctx) (table : List (String × List (String × Ty)))
     (alts : List Alt) :
     Except String (List (String × List String × List String × Js.Expr × Ty)) :=
@@ -261,8 +263,9 @@ termination_by sizeOf alts
 
 end
 
-/-- 末尾の `let` は `const` 文にほどく。式の途中に現れる `let` は評価順を保つために
-即時実行の arrow で包むしかないが、関数の頭に並ぶ `let` まで包むと出力が読めなくなる。 -/
+/-- Unfolds a tail `let` into a `const` statement. A `let` appearing mid-expression has to be wrapped in
+an immediately invoked arrow to preserve evaluation order, but wrapping the `let`s lined up at the head of
+a function as well would make the output unreadable. -/
 private partial def compileBody (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
     Except String (List Js.Stmt × Ty) :=
   match e with
@@ -297,7 +300,7 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
       doc := s!"{d.name} : ({String.intercalate ", " sig}) → {d.ret.render}"
     }
 
-/-- `tag` は構築子の判別に使うので、フィールド名として空けておく必要がある。 -/
+/-- `tag` is used to tell constructors apart, so it has to stay free as a field name. -/
 private def validateType (t : TypeDef) : Except String Unit := do
   validateIdent "type" t.name
   validateDistinct "constructor" (t.ctors.map (·.name))

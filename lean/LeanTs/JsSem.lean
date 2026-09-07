@@ -3,24 +3,25 @@ import LeanTs.Js
 /-!
 # JsSem
 
-生成した JavaScript の意味論を Lean の中に持つ。
+Holds the semantics of the generated JavaScript inside Lean.
 
-## この模型が仮定していること
+## What this model assumes
 
-数値を `Int` として持ち、`Number` の丸めを持たない。これが正当なのは、生成コードが `Number` を
-剥き出しで扱わないため。整数の加減乗は必ず `__i53` か `>>> 0` を通り、除算は `BigInt` を経由する。
-そのうえで IEEE 倍精度について次を仮定する。
+Numbers are held as `Int`, with no `Number` rounding. That is legitimate because the generated code never
+handles a bare `Number`: integer addition, subtraction and multiplication always go through `__i53` or
+`>>> 0`, and division goes through `BigInt`. On top of that we assume the following about IEEE double
+precision.
 
-- 真の結果が safe integer なら、倍精度の演算結果はそれと一致する
-- 真の結果が safe integer でないなら、倍精度の演算結果も safe integer ではない
+- If the true result is a safe integer, the double-precision result agrees with it
+- If the true result is not a safe integer, the double-precision result is not a safe integer either
 
-したがって「厳密な整数演算 + 範囲検査」は、実際の JS の「倍精度演算 + `Number.isSafeInteger`」と
-同じ結果を返す。
+So "exact integer arithmetic + a range check" returns the same result as real JS's "double-precision
+arithmetic + `Number.isSafeInteger`".
 
-`-0` はこの模型では表現できない。負のゼロの一致は差分テストが受け持つ。
+`-0` cannot be represented in this model. Agreement on negative zero is the differential test's job.
 
-つまり保証は二段になっている。Lean 側でこの模型とリファレンス意味論の一致を見て、Node 上の差分テストで
-模型と本物の JS の一致を見る。
+The guarantee therefore comes in two layers. On the Lean side we check that this model and the reference
+semantics agree; the differential test on Node checks that the model and the real JS agree.
 -/
 
 namespace LeanTs.Js
@@ -36,7 +37,8 @@ inductive JsValue where
 
 abbrev JsEnv := List (String × JsValue)
 
-/-- 投げられる例外は `code` だけを観測する。生成コードは `__fail` 以外から投げない。 -/
+/-- Only the `code` of a thrown exception is observed. The generated code throws from nowhere but
+`__fail`. -/
 abbrev JsResult := Except String JsValue
 
 mutual
@@ -86,7 +88,7 @@ def i53div (a b : Int) : JsResult :=
 def i53mod (a b : Int) : JsResult :=
   if b == 0 then fail "divByZero" else i53 (a.tmod b)
 
-/-- `>>> 0` は ToUint32、つまり 2^32 を法とする非負の代表元。 -/
+/-- `>>> 0` is ToUint32: the non-negative representative modulo 2^32. -/
 def u32 (i : Int) : Int := ((i % wrap32) + wrap32) % wrap32
 
 def u32mul (a b : Int) : JsResult := .ok (.num (u32 (a * b)))
@@ -103,7 +105,7 @@ def bigdiv (a b : Int) : JsResult :=
 def bigmod (a b : Int) : JsResult :=
   if b == 0 then fail "divByZero" else .ok (.bigint (a.tmod b))
 
-/-- `Array.from` はコードポイント単位で切る。JS の `<` が使う UTF-16 単位ではない。 -/
+/-- `Array.from` splits by code point, not by the UTF-16 units JS's `<` uses. -/
 def strcmp (a b : String) : Int :=
   match compare a.toList b.toList with
   | .lt => -1
@@ -155,8 +157,8 @@ private def arith (op : String) (a b : JsValue) : JsResult :=
   | ">=", x, y => order x y (· != .lt)
   | _, _, _ => .error "typeError"
 where
-  /-- `===` はスカラでは値の比較、それ以外では参照の比較になる。生成コードは後者の場面では
-  `__eq` を呼ぶので、模型は前者だけを認める。 -/
+  /-- `===` compares values on scalars and references on everything else. The generated code calls
+  `__eq` in the latter case, so the model admits only the former. -/
   sameValue : JsValue → JsValue → Bool
     | .num x, .num y => x == y
     | .bigint x, .bigint y => x == y
@@ -176,7 +178,7 @@ def bindAll : List String → List JsValue → JsEnv
 
 mutual
 
-/-- 生成コードの評価。`&&` と `||` は JS どおり短絡する。 -/
+/-- Evaluation of the generated code. `&&` and `||` short-circuit as they do in JS. -/
 def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
   match fuel with
   | 0 => .error "outOfFuel"

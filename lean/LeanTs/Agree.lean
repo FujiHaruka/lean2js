@@ -6,11 +6,12 @@ import LeanTs.Vectors
 /-!
 # Agree
 
-リファレンス意味論と、生成した JS の模型が一致することを、出荷する成果物そのものについて確かめる。
+Checks, on the shipped artifact itself, that the reference semantics and the model of the generated JS
+agree.
 
-保証は二段になっている。ここで `eval` と `JsSem` の一致を見て、Node 上の差分テストで `JsSem` が
-仮定している振る舞いと本物の JS の一致を見る。前者は模型の上での話なので、Phase 2 の
-compiler correctness が証明として埋めるべき隙間はここにある。
+The guarantee comes in two layers. Here we check that `eval` and `JsSem` agree; the differential test on
+Node checks that the behaviour `JsSem` assumes and the real JS agree. The former lives on the model, so
+the gap that Phase 2's compiler correctness has to close as a proof is exactly here.
 -/
 
 namespace LeanTs
@@ -41,7 +42,8 @@ termination_by xs => sizeOf xs
 
 end
 
-/-- `eval` の結果と模型の結果が同じか。失敗どうしは投げられる `code` で比べる。 -/
+/-- Whether the result of `eval` and the result of the model are the same. Two failures are compared by
+the thrown `code`. -/
 def agrees : Except Err Value → Js.JsResult → Bool
   | .ok a, .ok b => encodeValue a == b
   | .error e, .error code => e.code == code
@@ -72,7 +74,8 @@ def disagreementsIn (m : Js.Module) (vectors : List TestVector) :
     if agrees v.expected actual then none
     else some { fn := v.fn, args := v.args, expected := v.expected, actual }
 
-/-- small-step が big-step と同じ答えを出すか。短絡評価と評価順はここでしか壊れない。 -/
+/-- Whether small-step gives the same answer as big-step. Short-circuiting and evaluation order break
+nowhere else. -/
 def stepDisagreementsIn (p : Program) (vectors : List TestVector) : List (String × List Value) :=
   vectors.filterMap fun v =>
     let bySteps := stepCall p v.fn v.args
@@ -83,7 +86,7 @@ def stepDisagreementsIn (p : Program) (vectors : List TestVector) : List (String
       | _, _ => false
     if same then none else some (v.fn, v.args)
 
-/-- 生成物がリファレンス意味論と食い違わないことを、書き出す前に確かめる。 -/
+/-- Checks that the artifact does not disagree with the reference semantics, before writing it out. -/
 def checkAgreement (p : Program) (edgeLimit randomCount : Nat) : Except String Unit := do
   let m ← Compile.compileProgram p
   let vectors := allTestVectors p edgeLimit randomCount

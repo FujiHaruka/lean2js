@@ -3,24 +3,25 @@ import LeanTs.Core
 /-!
 # Value
 
-`eval` が返す値と、JS と意味論を揃えるために踏む必要のある trap。
+The values `eval` returns, and the traps that have to be taken to line the semantics up with JS.
 
-Lean と JS で答えが割れる演算は、どちらか片方に寄せるのではなく両方で失敗させる。ゼロ除算がその代表で、
-Lean の `/ 0 = 0` と JS の `Infinity` はどちらも「正しい」ため、一致させる方法が trap しかない。
+Where Lean and JS split on the answer, both sides fail rather than one being bent toward the other.
+Division by zero is the archetype: Lean's `/ 0 = 0` and JS's `Infinity` are both "right", so trapping is
+the only way to make them agree.
 -/
 
 namespace LeanTs
 
 open Core
 
-/-- JS の `Number.MAX_SAFE_INTEGER`。 -/
+/-- JS's `Number.MAX_SAFE_INTEGER`. -/
 def int53Max : Int := 9007199254740991
 
-/-- JS の `Number.MIN_SAFE_INTEGER`。 -/
+/-- JS's `Number.MIN_SAFE_INTEGER`. -/
 def int53Min : Int := -9007199254740991
 
-/-- 構築子つきの値は JS 側でもタグ付きオブジェクトになる。`Option` を `T | null` に特殊化しないのは、
-入れ子にした瞬間に `none` と `some none` が区別できなくなるため。 -/
+/-- A value with a constructor becomes a tagged object on the JS side too. `Option` is not specialised to
+`T | null` because the moment one is nested, `none` and `some none` stop being distinguishable. -/
 inductive Value where
   | bool (b : Bool)
   | int53 (i : Int)
@@ -56,7 +57,8 @@ def Err.code : Err → String
 
 mutual
 
-/-- 構造的等価。JS の `===` は参照比較なので、生成コード側も同じ規則のヘルパを呼ぶ。 -/
+/-- Structural equality. JS's `===` compares references, so the generated code calls a helper following
+the same rules. -/
 def Value.beq : Value → Value → Bool
   | .bool a, .bool b => a == b
   | .int53 a, .int53 b => a == b
@@ -87,7 +89,8 @@ instance : BEq Value where
 
 mutual
 
-/-- 値が宣言された型どおりかを見る。公開 API の境界を型で固定するための検査。 -/
+/-- Checks that a value matches its declared type. This is what pins the public API boundary down by
+type. -/
 def Value.hasTy (p : Program) : Value → Ty → Bool
   | .bool _, .bool => true
   | .int53 i, .int53 => int53Min ≤ i && i ≤ int53Max

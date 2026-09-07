@@ -4,17 +4,17 @@ import LeanTs.Json
 /-!
 # Vectors
 
-差分テストの入力と、`eval` が返す期待値を書き出す。
+Writes out the inputs of the differential test and the values `eval` is expected to return.
 
-trap も期待値として符号化する。ゼロ除算や Int53 の溢れは JS と Lean を揃えるための中心的な設計判断で、
-「例外になること」自体が確かめたい振る舞いだから。
+Traps are encoded as expected values too. Division by zero and Int53 overflow are the central design
+decision for lining JS and Lean up, so "that it throws" is itself the behaviour we want to check.
 -/
 
 namespace LeanTs
 
 open Core
 
-/-- 決定的な乱数。ベクタは git に入るので、実行のたびに差分が出ては困る。 -/
+/-- Deterministic randomness. The vectors go into git, so a diff on every run would be trouble. -/
 private def nextSeed (s : UInt64) : UInt64 :=
   s * 6364136223846793005 + 1442695040888963407
 
@@ -22,10 +22,11 @@ private def bits (s : UInt64) : Nat := (s >>> 11).toNat
 
 private def pick (s : UInt64) (n : Nat) : Nat := if n == 0 then 0 else bits s % n
 
-/-- BMP の最後の文字。JS の `.length` は UTF-16 単位で数えるため、ここから先で Lean と割れる。 -/
+/-- The last character of the BMP. JS's `.length` counts UTF-16 units, so past here it splits from
+Lean. -/
 def bmpMax : String := String.singleton (Char.ofNat 0xFFFF)
 
-/-- BMP の外にある文字。JS では surrogate pair 2 つになる。 -/
+/-- A character outside the BMP. In JS it becomes a surrogate pair, two units long. -/
 def astral : String := String.singleton (Char.ofNat 0x10000)
 
 private def scalarEdges : Ty → List Value
@@ -45,11 +46,12 @@ private def scalarEdges : Ty → List Value
      1208925819614629174706176, -1208925819614629174706176].map Value.bigint
   | _ => []
 
-/-- 各引数の境界値の直積。入れ子の型では組合せが爆発するので、深いところほど幅を切る。 -/
+/-- The cartesian product of each argument's boundary values. Nested types blow the combinations up, so
+the deeper it goes the narrower the width. -/
 private def tuplesOf (rows : List (List Value)) (per : List Value) : List (List Value) :=
   per.flatMap fun v => rows.map fun row => v :: row
 
-/-- 境界のすぐ内と外を必ず踏む。溢れと丸めはここでしか壊れない。 -/
+/-- Always steps just inside and just outside the boundary. Overflow and rounding break nowhere else. -/
 partial def edgeCases (p : Program) (width : Nat) : Ty → List Value
   | .named n =>
     match p.findType? n with
@@ -141,15 +143,17 @@ def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector
   let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
   (p.decls.zip seeds).flatMap fun (d, seed) => vectorsFor p d edgeLimit randomCount seed
 
-/-- fuel は停止性を証明の外に出さないための道具であって、サブセットの意味論ではない。
-JS 側に対応する概念がない以上、`outOfFuel` を期待値に書くと「JS も失敗せよ」という嘘になる。 -/
+/-- Fuel is a device for keeping termination inside the proof, not part of the subset's semantics. Since
+nothing on the JS side corresponds to it, writing `outOfFuel` as an expected value would be the lie that
+"JS must fail too". -/
 private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
   vectors.find? fun v =>
     match v.expected with
     | .error .outOfFuel => true
     | _ => false
 
-/-- 1 行 1 ベクタで書き出す。生成物は git に入るので、整形しすぎても 1 行にまとめても差分が読めない。 -/
+/-- Writes one vector per line. The artifact goes into git, and neither over-formatting it nor collapsing
+it to a single line leaves a readable diff. -/
 def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String :=
   let vectors := allTestVectors p edgeLimit randomCount
   match outOfFuelIn vectors with

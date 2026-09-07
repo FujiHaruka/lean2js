@@ -4,10 +4,10 @@ import LeanTs.Builder
 /-!
 # Tests
 
-コンパイラが受け付けてはいけないプログラムを固定する。
+Pins down the programs the compiler must not accept.
 
-差分テストは「通ったプログラムが JS でも同じ答えを返すこと」しか見ない。通してはいけないものを
-通さないことは、こちら側でしか確かめられない。
+The differential test only looks at "a program that got through returns the same answer in JS too". That
+what must not get through does not get through can only be checked on this side.
 -/
 
 namespace LeanTs.Tests

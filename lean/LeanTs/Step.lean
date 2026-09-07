@@ -3,20 +3,21 @@ import LeanTs.Eval
 /-!
 # Step
 
-サブセットの small-step 意味論。継続を明示した抽象機械として書く。
+The small-step semantics of the subset, written as an abstract machine with explicit continuations.
 
-big-step の `eval` が「何を返すか」しか言わないのに対し、こちらは評価の途中の状態を持つ。短絡評価や
-評価順のように「いつ評価しないか」が問題になる規則は、途中の状態がないと言明できない。
+Where the big-step `eval` only says "what it returns", this one holds the states along the way. Rules
+where the question is "when is it not evaluated" — short-circuiting, evaluation order — cannot be stated
+without those intermediate states.
 
-`eval` との一致は `Agree` と同じ形で、出荷する成果物のベクタ全件について実行時に確かめる。
+Agreement with `eval` is checked as in `Agree`: at run time, over every vector of the shipped artifact.
 -/
 
 namespace LeanTs
 
 open Core
 
-/-- 評価待ちの継続。`andK` / `orK` が独立しているのは、JS の `&&` と `||` が短絡するため。
-両辺を `binL` で待つと右辺を必ず評価してしまう。 -/
+/-- A continuation waiting to be evaluated. `andK` / `orK` stand on their own because JS's `&&` and `||`
+short-circuit; waiting on both sides with `binL` would always evaluate the right one. -/
 inductive Frame where
   | unK (op : UnOp)
   | binL (op : BinOp) (rhs : Expr) (env : Env)
@@ -51,7 +52,7 @@ private def finish (v : Value) : List Frame → State
   | [] => .done (.ok v)
   | k => .apply v k
 
-/-- 引数列を左から順に評価する。残りがなくなった時点で構築子や呼び出しを組み立てる。 -/
+/-- Evaluates the argument list left to right, building the constructor or call once nothing is left. -/
 private def continueArgs (build : List Value → State) (done : List Value)
     (rest : List Expr) (env : Env) (k : List Frame) (frame : List Value → List Expr → Frame) :
     State :=
@@ -190,7 +191,8 @@ def run (p : Program) : Nat → State → Except Err Value
   | _ + 1, .done r => r
   | f + 1, s => run p f (step p s)
 
-/-- 公開関数をひとつ、抽象機械で呼ぶ。入口の型検査は `evalCall` と同じ。 -/
+/-- Calls one exported function on the abstract machine. The type check at the entry is the same as
+`evalCall`'s. -/
 def stepCall (p : Program) (fn : String) (args : List Value) : Except Err Value :=
   match p.find? fn with
   | none => .error (.unknownFn fn)

@@ -17,8 +17,8 @@ async function bundle(): Promise<string> {
   return result.outputFiles[0]?.text ?? "";
 }
 
-describe("生成したパッケージは tree shaking できる", () => {
-  it("使っていない export とヘルパは落ちる", async () => {
+describe("the generated package can be tree-shaken", () => {
+  it("drops unused exports and helpers", async () => {
     const out = await bundle();
 
     expect(out).toContain("function add");

@@ -1,18 +1,20 @@
 /-!
 # Core
 
-JavaScript へ落とすことが決まっている Lean サブセットの構文を、Lean の中の独立した AST として持つ。
+Holds the syntax of the Lean subset destined for JavaScript as a standalone AST inside Lean.
 
-通常の Lean `def` を読むのではなく deep embedding にしてあるのは、Phase 2 の compiler correctness が
-「ソース言語の意味論」を自分の手に持っていないと述べられないため。詳細は `docs/mvp-plan.md`。
+This is a deep embedding rather than a reader of ordinary Lean `def`s because Phase 2's compiler
+correctness cannot even be stated without holding the source language's semantics in our own hands.
+See `docs/mvp-plan.md`.
 -/
 
 namespace LeanTs.Core
 
-/-- 公開 API の境界に置ける型。JS 側の表現が一意に決まるものだけを並べる。
+/-- The types that may sit on the boundary of the public API. Only those whose JS representation is
+uniquely determined are listed.
 
-`option` と `result` を利用者の `inductive` で表さず組み込みにしてあるのは、`named` に型引数がなく
-`Option Int53` と `Option String` を別の宣言にしなければならなくなるため。 -/
+`option` and `result` are built in rather than expressed as a user's `inductive` because `named` takes no
+type arguments, which would force `Option Int53` and `Option String` into separate declarations. -/
 inductive Ty where
   | bool
   | int53
@@ -56,7 +58,8 @@ inductive BinOp where
   | concat
   deriving Repr, BEq, Inhabited
 
-/-- `none` と `error` / `ok` は片側の型が項から決まらないので、注釈を構文に持たせる。 -/
+/-- For `none` and `error` / `ok` one side's type is not determined by the term, so the syntax carries an
+annotation. -/
 inductive Expr where
   | lit (l : Lit)
   | var (name : String)
@@ -98,7 +101,7 @@ structure CtorDef where
   fields : List Field
   deriving Repr, BEq, Inhabited
 
-/-- 利用者が宣言する `structure` / `inductive`。単一構築子のものが `structure` にあたる。 -/
+/-- A `structure` / `inductive` declared by the user. The single-constructor ones are the `structure`s. -/
 structure TypeDef where
   name : String
   ctors : List CtorDef
@@ -107,7 +110,7 @@ structure TypeDef where
 def TypeDef.find? (t : TypeDef) (ctor : String) : Option CtorDef :=
   t.ctors.find? (·.name == ctor)
 
-/-- 公開する純粋関数ひとつ。 -/
+/-- One exported pure function. -/
 structure Decl where
   name : String
   params : List Param
@@ -126,8 +129,8 @@ def Program.find? (p : Program) (name : String) : Option Decl :=
 def Program.findType? (p : Program) (name : String) : Option TypeDef :=
   p.types.find? (·.name == name)
 
-/-- 構築子名から所属する型を引く。`match` は被検査値の型から型定義を辿れるので、これは
-`ctor` の型付けだけが使う。 -/
+/-- Looks up the type a constructor name belongs to. `match` can reach the type definition from the
+scrutinee's type, so only the typing of `ctor` uses this. -/
 def Program.ownerOf? (p : Program) (ctor : String) : Option TypeDef :=
   p.types.find? fun t => t.ctors.any (·.name == ctor)
 

@@ -3,10 +3,10 @@ import LeanTs.Core
 /-!
 # Builder
 
-Core の項を書くための記法。
+Notation for writing Core terms.
 
-Lean 本体の演算子を影に置くと、AST を組み立てているのか Lean の値を計算しているのかが読めなくなるため、
-すべて `'` を付けた別の記号にしてある。
+Shadowing Lean's own operators would make it unreadable whether a line builds an AST or computes a Lean
+value, so every one of these is a separate symbol carrying a `'`.
 -/
 
 namespace LeanTs.Core.Builder

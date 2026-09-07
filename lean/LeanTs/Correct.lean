@@ -3,30 +3,31 @@ import LeanTs.Agree
 /-!
 # Correct
 
-コンパイラの正しさ。「リファレンス意味論が値を返すなら、生成した JS も同じ値を返す」を、
-サブセットの断片について証明する。
+Compiler correctness. Proves "if the reference semantics returns a value, the generated JS returns the
+same value" for a fragment of the subset.
 
-対象を断片に限っているのは、証明が届いている範囲を曖昧にしないため。断片の外については
-`Agree.checkAgreement` が出荷する成果物に対して実行時に一致を確かめている。
+The target is limited to a fragment so that the reach of the proof stays unambiguous. Outside the
+fragment, `Agree.checkAgreement` checks agreement at run time against the shipped artifact.
 
-## 断片がここで止まる理由
+## Why the fragment stops here
 
-次に必要なのは type soundness、つまり「コンパイラが型 `T` と判定した式を `eval` が評価して値が
-返るなら、その値は `T` を満たす」という補題。
+What is needed next is type soundness: the lemma that "if `eval` evaluates an expression the compiler
+typed as `T` and a value comes back, that value satisfies `T`".
 
-算術がこれを要求するのは、生成コードが被演算子の型で分岐するため。`a + b` は `Int53` なら
-`__i53(a + b)`、`String` なら文字列連結になる。コンパイラは文脈の型を見て後者を選んだのに、環境に
-入っている値が数だった場合、`eval` と生成コードは違う答えを出す。型が値と噛み合っていることを
-言わない限り、この場合分けを閉じられない。
+Arithmetic demands this because the generated code branches on the type of its operands. `a + b` becomes
+`__i53(a + b)` for `Int53` and string concatenation for `String`. If the compiler read the type from the
+context and chose the latter while the value in the environment was a number, `eval` and the generated
+code give different answers. This case split cannot be closed without saying that types and values line
+up.
 
-リテラル・変数・条件式はこの隙間に触れないため、先にここだけを証明してある。
+Literals, variables and conditionals never touch that gap, so they are what has been proved first.
 -/
 
 namespace LeanTs.Correct
 
 open Core
 
-/-- 証明が届いている構文。 -/
+/-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
   | lit (l : Lit) : InFragment (.lit l)
   | var (name : String) : InFragment (.var name)
@@ -36,8 +37,8 @@ inductive InFragment : Expr → Prop where
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
 
-/-- 十分な fuel を与えれば生成コードがこの値を返す、という関係。fuel を存在量化しておくと
-部分式ごとに必要な量が違っても合成できる。 -/
+/-- The relation "given enough fuel, the generated code returns this value". Quantifying the fuel
+existentially lets subexpressions compose even when each needs a different amount. -/
 def Eventually (m : Js.Module) (env : Js.JsEnv) (je : Js.Expr) (v : Js.JsValue) : Prop :=
   ∃ g, ∀ g', g ≤ g' → Js.eval m g' env je = .ok v
 
@@ -113,7 +114,7 @@ theorem cond_false {m : Js.Module} {env : Js.JsEnv} {jc jt jel : Js.Expr} {v : J
     rw [hg1 g (by omega)]
     exact hg2 g (by omega)
 
-/-- リファレンス意味論が値を返すなら、生成コードも同じ値を返す。 -/
+/-- If the reference semantics returns a value, the generated code returns the same value. -/
 theorem fragment_correct (p : Program) (m : Js.Module) (ctx : Compile.Ctx)
     {e : Expr} (hfrag : InFragment e) :
     ∀ {env : Env} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},

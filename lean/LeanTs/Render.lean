@@ -4,10 +4,10 @@ import LeanTs.Json
 /-!
 # Render
 
-Core をソースとして書き出す。
+Writes Core out as source.
 
-生成した JS の source map が指す先がこれ。Lean のファイル上の位置はまだ追っていないので、`.leants` は
-サブセットの項を素直に書き下したものになる。
+This is what the generated JS's source map points at. Positions in the Lean file are not tracked yet, so
+a `.leants` is a plain transcription of the subset's terms.
 -/
 
 namespace LeanTs.Core
@@ -64,13 +64,13 @@ def Decl.signature (d : Decl) : String :=
   let params := d.params.map fun p => s!"{p.name} : {p.ty.render}"
   s!"def {d.name}({String.intercalate ", " params}) : {d.ret.render} ="
 
-/-- 宣言ひとつを 3 行に固定する。source map が行だけで位置を決められる。 -/
+/-- Pins one declaration to three lines, so the source map can fix a position from the line alone. -/
 def Decl.source (d : Decl) : List String :=
   [d.signature, "  " ++ d.body.source, ""]
 
 structure Source where
   text : String
-  /-- 各関数が何行目から始まるか。0 始まり。 -/
+  /-- Which line each function starts on. Zero-based. -/
   declLines : List (String × Nat)
 
 def Program.source (p : Program) : Source :=

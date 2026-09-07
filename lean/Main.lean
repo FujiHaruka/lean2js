@@ -1,7 +1,7 @@
 import LeanTs
 
 /-!
-`leants` — サブセットで書いたプログラムを npm パッケージとして書き出す。
+`leants` — emits a program written in the subset as an npm package.
 -/
 
 open LeanTs

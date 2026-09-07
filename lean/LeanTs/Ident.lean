@@ -1,15 +1,15 @@
 /-!
 # Ident
 
-生成する JS の識別子として安全な名前かを見る。
+Checks whether a name is safe as an identifier in the generated JS.
 
-サブセットの利用者が `new` や `Math` や `__i53` という名前を付けられると、生成物が構文エラーになるか、
-実行時ヘルパを踏み潰す。名前の検査はコンパイラ側の責務。
+If a user of the subset could name something `new` or `Math` or `__i53`, the artifact would either be a
+syntax error or trample a runtime helper. Checking names is the compiler's responsibility.
 -/
 
 namespace LeanTs
 
-/-- 予約語に加えて、値として存在するが再束縛すると壊れる名前も落とす。 -/
+/-- Beyond the reserved words, also rejects names that exist as values and break when rebound. -/
 def jsReserved : List String :=
   ["arguments", "await", "break", "case", "catch", "class", "const", "continue", "debugger",
    "default", "delete", "do", "else", "enum", "eval", "export", "extends", "false", "finally",
@@ -23,7 +23,8 @@ private def isIdentStart (c : Char) : Bool := c.isAlpha || c == '_' || c == '$'
 
 private def isIdentPart (c : Char) : Bool := isIdentStart c || c.isDigit
 
-/-- 生成コードのヘルパは全て `__` で始まる。利用者側の名前と衝突しないよう、この接頭辞は予約する。 -/
+/-- Every helper in the generated code starts with `__`. The prefix is reserved so that user names cannot
+collide with them. -/
 def reservedPrefix : String := "__"
 
 def validateIdent (kind name : String) : Except String Unit :=

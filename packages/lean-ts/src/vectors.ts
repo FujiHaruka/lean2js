@@ -14,9 +14,9 @@ export type Vector = {
   args: EncodedValue[];
 } & ({ ok: true; value: EncodedValue } | { ok: false; error: string });
 
-/** `eval` の値を JS の値に戻す。生成コードの出力とはこの結果を直接突き合わせる。
- * 逆向き（実行結果を符号化して比べる）にすると、JS の値だけからは Int53 と UInt32 が
- * 区別できず、型ごとの分岐がハーネス側にも生えてしまう。 */
+/** Turns an `eval` value back into a JS value. The output of the generated code is matched directly
+ * against this result. Going the other way (encoding the run's result and comparing) cannot tell Int53
+ * from UInt32 given a JS value alone, growing a per-type branch in the harness as well. */
 export function decode(value: EncodedValue): unknown {
   switch (value.t) {
     case "bigint":

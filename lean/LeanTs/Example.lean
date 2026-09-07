@@ -5,9 +5,9 @@ import LeanTs.Builder
 /-!
 # Example
 
-サブセットで書いた業務ロジックと、それについて証明した定理。
+Business logic written in the subset, and the theorems proved about it.
 
-ここに置いた `program` が `packages/verified-example` として出荷される。
+The `program` placed here is what ships as `packages/verified-example`.
 -/
 
 namespace LeanTs.Example
@@ -31,18 +31,19 @@ def OrderState : TypeDef :=
 def add : Decl :=
   decl "add" [("a", .int53), ("b", .int53)] .int53 (v "a" +' v "b")
 
-/-- 数量を 1 以上 upper 以下に丸める。 -/
+/-- Clamps a quantity to at least 1 and at most upper. -/
 def clampQuantity : Decl :=
   decl "clampQuantity" [("quantity", .int53), ("upper", .int53)] .int53
     (ite' (v "quantity" <' int53 1) (int53 1)
       (ite' (v "quantity" >' v "upper") (v "upper") (v "quantity")))
 
-/-- 明細の金額。数量を丸めてから掛けるので、負の数量が金額を負にすることはない。 -/
+/-- The amount of a line item. The quantity is clamped before multiplying, so a negative quantity never
+makes the amount negative. -/
 def lineTotal : Decl :=
   decl "lineTotal" [("unitPrice", .int53), ("quantity", .int53)] .int53
     (v "unitPrice" *' call "clampQuantity" [v "quantity", int53 999])
 
-/-- percent% の値引き後の金額。端数は切り捨てる。 -/
+/-- The amount after a percent% discount. The remainder is truncated. -/
 def discounted : Decl :=
   decl "discounted" [("amount", .int53), ("percent", .int53)] .int53
     (letIn "rate" .int53 (int53 100 -' clampPercent) (v "amount" *' v "rate" /' int53 100))
@@ -51,7 +52,7 @@ where
     ite' (v "percent" <' int53 0) (int53 0)
       (ite' (v "percent" >' int53 100) (int53 100) (v "percent"))
 
-/-- 切り捨て除算。ゼロ除算は JS 側でも trap する。 -/
+/-- Truncating division. Division by zero traps on the JS side too. -/
 def divide : Decl :=
   decl "divide" [("a", .int53), ("b", .int53)] .int53 (v "a" /' v "b")
 
@@ -61,7 +62,7 @@ def remainder : Decl :=
 def negate : Decl :=
   decl "negate" [("a", .int53)] .int53 (neg' (v "a"))
 
-/-- 短絡評価の確認を兼ねる。`b` が 0 のとき右辺は評価されない。 -/
+/-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
 def safeQuotientIsPositive : Decl :=
   decl "safeQuotientIsPositive" [("a", .int53), ("b", .int53)] .bool
     (v "b" ≠' int53 0 &&' (v "a" /' v "b" >' int53 0))
@@ -90,14 +91,15 @@ def slugOf : Decl :=
   decl "slugOf" [("prefix", .string), ("name", .string)] .string
     (v "prefix" ++' str "-" ++' v "name")
 
-/-- コードポイント順の比較。JS の `<` は UTF-16 単位で比べるため一致しない。 -/
+/-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 def sortsBefore : Decl :=
   decl "sortsBefore" [("a", .string), ("b", .string)] .bool (v "a" <' v "b")
 
 def sameLabel : Decl :=
   decl "sameLabel" [("a", .string), ("b", .string)] .bool (v "a" ==' v "b")
 
-/-- 同じ名前を二度束縛する。ESM は strict mode で走るので `const` を二度出すと import 時に落ちる。 -/
+/-- Binds the same name twice. ESM runs in strict mode, so emitting `const` twice would fail at import
+time. -/
 def rebindTwice : Decl :=
   decl "rebindTwice" [("amount", .int53)] .int53
     (letIn "amount" .int53 (v "amount" +' int53 1)
@@ -111,7 +113,8 @@ def roleRank : Decl :=
       alt "admin" [] (int53 2)
     ])
 
-/-- 通貨が違う金額は足せない。JS 側では `===` が使えないので構造的等価のヘルパを呼ぶ。 -/
+/-- Amounts in different currencies cannot be added. `===` is unusable on the JS side, so a structural
+equality helper is called. -/
 def addMoney : Decl :=
   decl "addMoney" [("a", .named "Money"), ("b", .named "Money")]
     (.result (.named "Money") .string)
@@ -124,7 +127,7 @@ def addMoney : Decl :=
 def sameMoney : Decl :=
   decl "sameMoney" [("a", .named "Money"), ("b", .named "Money")] .bool (v "a" ==' v "b")
 
-/-- 出荷への状態遷移。遷移できない状態と空の追跡番号を弾く。 -/
+/-- The state transition to shipped. Rejects states that cannot transition and an empty tracking id. -/
 def ship : Decl :=
   decl "ship" [("state", .named "OrderState"), ("trackingId", .string)]
     (.result (.named "OrderState") .string)
@@ -160,7 +163,7 @@ def canRefund : Decl :=
       alt "cancelled" ["reason"] (bool false)
     ])
 
-/-- 添字による構造的再帰。範囲外の読み出しは `undefined` ではなく trap する。 -/
+/-- Structural recursion by index. An out-of-range read traps rather than yielding `undefined`. -/
 def sumFrom : Decl :=
   decl "sumFrom" [("xs", .array .int53), ("from", .int53)] .int53
     (ite' (v "from" ≥' len (v "xs")) (int53 0)

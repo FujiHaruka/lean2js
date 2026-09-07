@@ -8,8 +8,8 @@ const vectors = loadVectors(vectorsPath);
 
 const exported = generated as unknown as Record<string, (...args: unknown[]) => unknown>;
 
-describe("生成した ESM は Lean の eval と一致する", () => {
-  it("ベクタが空でない", () => {
+describe("the generated ESM agrees with Lean's eval", () => {
+  it("has a non-empty set of vectors", () => {
     expect(vectors.length).toBeGreaterThan(0);
   });
 

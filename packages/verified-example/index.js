@@ -6,11 +6,11 @@ const __fail = (code) => {
   throw error;
 };
 
-// Int53 は数学的な整数なので -0 を残さない。JS では 0 - 0 も -4 % 2 も -0 になる。
+// Int53 is a mathematical integer, so no -0 survives. In JS both 0 - 0 and -4 % 2 are -0.
 const __i53 = (x) =>
   Number.isSafeInteger(x) ? (x === 0 ? 0 : x) : __fail("int53Overflow");
 
-// Math.trunc(a / b) は a が 2^53 に近いと 1 ずれる。整数除算に浮動小数の割り算を使わない。
+// Math.trunc(a / b) is off by one when a is near 2^53. Integer division avoids floating-point division.
 const __i53div = (a, b) =>
   b === 0 ? __fail("divByZero") : Number(BigInt(a) / BigInt(b));
 
@@ -37,7 +37,7 @@ const __strcmp = (a, b) => {
   return x.length === y.length ? 0 : x.length < y.length ? -1 : 1;
 };
 
-// === は参照を比べるので、構築子の値と配列には使えない。
+// === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
@@ -56,7 +56,7 @@ const __eq = (a, b) => {
   );
 };
 
-// 範囲外の添字は undefined ではなく失敗にする。undefined はサブセットに存在しない。
+// An out-of-range index fails rather than yielding undefined. undefined does not exist in the subset.
 const __at = (xs, i) =>
   Number.isSafeInteger(i) && i >= 0 && i < xs.length
     ? xs[i]

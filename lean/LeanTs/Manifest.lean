@@ -4,10 +4,11 @@ import LeanTs.Core
 /-!
 # Manifest
 
-生成物に添える proof manifest。
+The proof manifest that accompanies the artifact.
 
-`Claim` が証明項そのものを持つのは、manifest に並ぶ定理名を文字列にすると、証明が消えても manifest だけが
-残りうるため。証明項を要求しておけば、定理を消した時点で `lake build` が落ちる。
+`Claim` holds the proof term itself because, were the theorem names listed in the manifest mere strings,
+the manifest could outlive the proofs. Demanding the proof term makes `lake build` fail the moment a
+theorem is deleted.
 -/
 
 namespace LeanTs

@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-/** Lean 側のエンコーダとは独立な実装。共有すると同じ間違いを二度するだけになる。 */
+/** An implementation independent of the encoder on the Lean side. Sharing one would only make the same
+ * mistake twice. */
 function decodeVlq(segment: string): number[] {
   const values: number[] = [];
   let shift = 0;
@@ -53,22 +54,22 @@ function decodeGeneratedLineToSourceLine(mappings: string): Map<number, number> 
   return out;
 }
 
-describe("source map は生成した関数を .leants の宣言に対応づける", () => {
+describe("the source map ties generated functions to .leants declarations", () => {
   const map = JSON.parse(read("index.js.map")) as SourceMap;
   const generated = read("index.js").split("\n");
   const source = map.sourcesContent[0]?.split("\n") ?? [];
 
-  it("v3 で、埋め込んだソースが配布物と一致する", () => {
+  it("is v3, with the embedded source matching the shipped file", () => {
     expect(map.version).toBe(3);
     expect(map.sources).toEqual(["example.leants"]);
     expect(map.sourcesContent[0]).toBe(read("example.leants"));
   });
 
-  it("index.js が source map を指している", () => {
+  it("has index.js point at the source map", () => {
     expect(read("index.js")).toContain("//# sourceMappingURL=index.js.map");
   });
 
-  it("対応づけた行はどちらも同じ関数を指す", () => {
+  it("has each tied pair of lines point at the same function", () => {
     const entries = [...decodeGeneratedLineToSourceLine(map.mappings)];
     expect(entries.length).toBeGreaterThan(10);
 

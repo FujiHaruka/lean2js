@@ -4,10 +4,10 @@ import LeanTs.Core
 /-!
 # Js
 
-出力する JavaScript の AST と ESM / `.d.ts` プリンタ。
+The AST of the JavaScript to emit, and the ESM / `.d.ts` printers.
 
-括弧は優先順位を見ずに常に付ける。優先順位表はコンパイラの信頼ベースに載る一方、Phase 1 では
-何も買わない。読みやすい出力は Phase 3 の課題。
+Parentheses are always written, without consulting precedence. A precedence table would go on the
+compiler's trusted base while buying nothing in Phase 1. Readable output is Phase 3's problem.
 -/
 
 namespace LeanTs.Js
@@ -72,7 +72,8 @@ def Func.render (f : Func) : String :=
   header ++ "export function " ++ f.name ++ "(" ++ String.intercalate ", " f.params ++ ") {\n"
     ++ String.intercalate "\n" (f.body.map Stmt.render) ++ "\n}"
 
-/-- 生成コードが呼ぶ実行時ヘルパ。JS と Lean で答えが割れる演算をここに閉じ込めてある。 -/
+/-- The runtime helpers the generated code calls. The operations where JS and Lean split on the answer
+are confined here. -/
 def runtime : String :=
 "const __fail = (code) => {
   const error = new Error(code);
@@ -80,11 +81,11 @@ def runtime : String :=
   throw error;
 };
 
-// Int53 は数学的な整数なので -0 を残さない。JS では 0 - 0 も -4 % 2 も -0 になる。
+// Int53 is a mathematical integer, so no -0 survives. In JS both 0 - 0 and -4 % 2 are -0.
 const __i53 = (x) =>
   Number.isSafeInteger(x) ? (x === 0 ? 0 : x) : __fail(\"int53Overflow\");
 
-// Math.trunc(a / b) は a が 2^53 に近いと 1 ずれる。整数除算に浮動小数の割り算を使わない。
+// Math.trunc(a / b) is off by one when a is near 2^53. Integer division avoids floating-point division.
 const __i53div = (a, b) =>
   b === 0 ? __fail(\"divByZero\") : Number(BigInt(a) / BigInt(b));
 
@@ -111,7 +112,7 @@ const __strcmp = (a, b) => {
   return x.length === y.length ? 0 : x.length < y.length ? -1 : 1;
 };
 
-// === は参照を比べるので、構築子の値と配列には使えない。
+// === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
   if (a === b) return true;
   if (typeof a !== \"object\" || typeof b !== \"object\" || a === null || b === null) return false;
@@ -130,7 +131,7 @@ const __eq = (a, b) => {
   );
 };
 
-// 範囲外の添字は undefined ではなく失敗にする。undefined はサブセットに存在しない。
+// An out-of-range index fails rather than yielding undefined. undefined does not exist in the subset.
 const __at = (xs, i) =>
   Number.isSafeInteger(i) && i >= 0 && i < xs.length
     ? xs[i]
@@ -166,7 +167,8 @@ def declareFunc (d : Core.Decl) : String :=
   "export declare function " ++ d.name ++ "(" ++ String.intercalate ", " params ++ "): "
     ++ tsType d.ret ++ ";"
 
-/-- `Option` と `Result` は組み込みなので、宣言も常に添える。型は消えるため未使用でも害はない。 -/
+/-- `Option` and `Result` are built in, so their declarations always come along. Types are erased, so an
+unused one is harmless. -/
 private def builtinTypes : String :=
 "export type Option<T> =
   | { readonly tag: \"none\" }
