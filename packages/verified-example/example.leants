@@ -87,3 +87,18 @@ def headOr(xs : Array Int53, fallback : Int53) : Int53 =
 def firstTracking(states : Array OrderState) : Option String =
   if (states.length == 0) then none[String] else trackingOf(states[0])
 
+def lineTotals(unitPrice : Int53, quantities : Array Int53) : Array Int53 =
+  quantities.map(quantity => lineTotal(unitPrice, quantity))
+
+def currenciesOf(items : Array Money) : Array String =
+  items.map(item => item.currency)
+
+def refundableOnly(role : Role, states : Array OrderState) : Array OrderState =
+  states.filter(state => canRefund(role, state))
+
+def cartTotal(items : Array Money) : Int53 =
+  items.reduce(0, (subtotal, item) => (subtotal + item.amount))
+
+def anyOverLimit(amounts : Array Int53, limit : Int53) : Bool =
+  amounts.reduce(false, (seen, amount) => if seen then true else (amount > limit))
+

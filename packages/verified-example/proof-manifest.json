@@ -115,6 +115,26 @@
     {
       "name": "firstTracking",
       "signature": "(states : Array OrderState) → Option String"
+    },
+    {
+      "name": "lineTotals",
+      "signature": "(unitPrice : Int53, quantities : Array Int53) → Array Int53"
+    },
+    {
+      "name": "currenciesOf",
+      "signature": "(items : Array Money) → Array String"
+    },
+    {
+      "name": "refundableOnly",
+      "signature": "(role : Role, states : Array OrderState) → Array OrderState"
+    },
+    {
+      "name": "cartTotal",
+      "signature": "(items : Array Money) → Int53"
+    },
+    {
+      "name": "anyOverLimit",
+      "signature": "(amounts : Array Int53, limit : Int53) → Bool"
     }
   ],
   "theorems": [

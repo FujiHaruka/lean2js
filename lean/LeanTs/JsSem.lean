@@ -292,6 +292,20 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
     | .check d x => do
       let v ← eval m f env x
       if checkTy v d then .ok v else .error "typeError"
+    | .mapJs arr binder body => do
+      match ← eval m f env arr with
+      | .arr xs => do .ok (.arr (← evalMapJs m f env binder body xs))
+      | _ => .error "typeError"
+    | .filterJs arr binder body => do
+      match ← eval m f env arr with
+      | .arr xs => do .ok (.arr (← evalFilterJs m f env binder body xs))
+      | _ => .error "typeError"
+    | .reduceJs arr init accName elemName body => do
+      match ← eval m f env arr with
+      | .arr xs => do
+        let acc ← eval m f env init
+        evalReduceJs m f env accName elemName body acc xs
+      | _ => .error "typeError"
 termination_by (fuel, 0, 0)
 
 def evalList (m : Module) (fuel : Nat) (env : JsEnv) (es : List Expr) :
@@ -303,6 +317,38 @@ def evalList (m : Module) (fuel : Nat) (env : JsEnv) (es : List Expr) :
     let vs ← evalList m fuel env rest
     .ok (v :: vs)
 termination_by (fuel, 1, es.length)
+
+/-- The combinators are walked here rather than modelled as a function value handed to a helper, so that
+nothing in the model is ever a closure. -/
+def evalMapJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body : Expr)
+    (xs : List JsValue) : Except String (List JsValue) :=
+  match xs with
+  | [] => .ok []
+  | x :: rest => do
+    let v ← eval m fuel ((binder, x) :: env) body
+    let vs ← evalMapJs m fuel env binder body rest
+    .ok (v :: vs)
+termination_by (fuel, 1, xs.length)
+
+def evalFilterJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body : Expr)
+    (xs : List JsValue) : Except String (List JsValue) :=
+  match xs with
+  | [] => .ok []
+  | x :: rest => do
+    match ← eval m fuel ((binder, x) :: env) body with
+    | .bool true => do .ok (x :: (← evalFilterJs m fuel env binder body rest))
+    | .bool false => evalFilterJs m fuel env binder body rest
+    | _ => .error "typeError"
+termination_by (fuel, 1, xs.length)
+
+def evalReduceJs (m : Module) (fuel : Nat) (env : JsEnv) (accName elemName : String)
+    (body : Expr) (acc : JsValue) (xs : List JsValue) : JsResult :=
+  match xs with
+  | [] => .ok acc
+  | x :: rest => do
+    let next ← eval m fuel ((elemName, x) :: (accName, acc) :: env) body
+    evalReduceJs m fuel env accName elemName body next rest
+termination_by (fuel, 1, xs.length)
 
 def evalStmts (m : Module) (fuel : Nat) (env : JsEnv) (stmts : List Stmt) : JsResult :=
   match stmts with

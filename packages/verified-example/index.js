@@ -62,6 +62,24 @@ const __at = (xs, i) =>
     ? xs[i]
     : __fail("indexOutOfBounds");
 
+const __map = (xs, f) => {
+  const out = [];
+  for (let i = 0; i < xs.length; i++) out.push(f(xs[i]));
+  return out;
+};
+
+const __filter = (xs, f) => {
+  const out = [];
+  for (let i = 0; i < xs.length; i++) if (f(xs[i])) out.push(xs[i]);
+  return out;
+};
+
+const __reduce = (xs, init, f) => {
+  let acc = init;
+  for (let i = 0; i < xs.length; i++) acc = f(acc, xs[i]);
+  return acc;
+};
+
 const __isObj = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 
 // Fields are compared in order and by count, because eval compares them that way: a missing field, an
@@ -299,6 +317,39 @@ export function headOr(__p0, __p1) {
 export function firstTracking(__p0) {
   const states = __ck(__p0, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
   return (((states).length === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
+}
+
+/** lineTotals : (unitPrice : Int53, quantities : Array Int53) → Array Int53 */
+export function lineTotals(__p0, __p1) {
+  const unitPrice = __ck(__p0, ["int53"]);
+  const quantities = __ck(__p1, ["array", ["int53"]]);
+  return __map(quantities, (quantity) => (lineTotal(unitPrice, quantity)));
+}
+
+/** currenciesOf : (items : Array Money) → Array String */
+export function currenciesOf(__p0) {
+  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __map(items, (item) => ((item).currency));
+}
+
+/** refundableOnly : (role : Role, states : Array OrderState) → Array OrderState */
+export function refundableOnly(__p0, __p1) {
+  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  const states = __ck(__p1, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
+  return __filter(states, (state) => (canRefund(role, state)));
+}
+
+/** cartTotal : (items : Array Money) → Int53 */
+export function cartTotal(__p0) {
+  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __reduce(items, 0, (subtotal, item) => (__i53((subtotal + (item).amount))));
+}
+
+/** anyOverLimit : (amounts : Array Int53, limit : Int53) → Bool */
+export function anyOverLimit(__p0, __p1) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  const limit = __ck(__p1, ["int53"]);
+  return __reduce(amounts, false, (seen, amount) => ((seen ? true : (amount > limit))));
 }
 
 //# sourceMappingURL=index.js.map

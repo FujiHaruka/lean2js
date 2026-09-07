@@ -22,7 +22,17 @@ describe("the generated package can be tree-shaken", () => {
     const out = await bundle();
 
     expect(out).toContain("function add");
-    for (const dropped of ["function ship", "function sumFrom", "__strcmp", "__at", "__eq"]) {
+    for (const dropped of [
+      "function ship",
+      "function sumFrom",
+      "function cartTotal",
+      "__strcmp",
+      "__at",
+      "__eq",
+      "__map",
+      "__filter",
+      "__reduce",
+    ]) {
       expect(out, `${dropped} should have been shaken out`).not.toContain(dropped);
     }
   });

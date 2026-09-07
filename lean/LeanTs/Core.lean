@@ -59,7 +59,10 @@ inductive BinOp where
   deriving Repr, BEq, Inhabited
 
 /-- For `none` and `error` / `ok` one side's type is not determined by the term, so the syntax carries an
-annotation. -/
+annotation.
+
+The array combinators carry their binder and body rather than taking a function, so no value in the
+subset is ever a function. See `docs/business-logic-plan.md`. -/
 inductive Expr where
   | lit (l : Lit)
   | var (name : String)
@@ -78,6 +81,9 @@ inductive Expr where
   | arrayLit (elem : Ty) (items : List Expr)
   | index (arr : Expr) (idx : Expr)
   | length (arr : Expr)
+  | mapE (arr : Expr) (binder : String) (body : Expr)
+  | filterE (arr : Expr) (binder : String) (body : Expr)
+  | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)
   deriving Repr, Inhabited
 
 abbrev Alt := String × List String × Expr

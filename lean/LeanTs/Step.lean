@@ -38,6 +38,14 @@ inductive Frame where
   | indexL (idx : Expr) (env : Env)
   | indexR (arr : Value)
   | lengthK
+  | mapArrK (binder : String) (body : Expr) (env : Env)
+  | mapK (binder : String) (body : Expr) (env : Env) (done rest : List Value)
+  | filterArrK (binder : String) (body : Expr) (env : Env)
+  | filterK (binder : String) (body : Expr) (env : Env) (done : List Value) (kept : Value)
+      (rest : List Value)
+  | reduceArrK (init : Expr) (accName elemName : String) (body : Expr) (env : Env)
+  | reduceInitK (items : List Value) (accName elemName : String) (body : Expr) (env : Env)
+  | reduceK (accName elemName : String) (body : Expr) (env : Env) (rest : List Value)
   deriving Inhabited
 
 inductive State where
@@ -59,6 +67,28 @@ private def continueArgs (build : List Value → State) (done : List Value)
   match rest with
   | [] => build done
   | e :: more => .eval env e (frame done more :: k)
+
+/-- Walks the elements left to right, one lambda body per element. The three combinators differ only in
+what they carry between elements: the results so far, the elements kept so far, or the accumulator. -/
+private def continueMap (binder : String) (body : Expr) (env : Env)
+    (done rest : List Value) (k : List Frame) : State :=
+  match rest with
+  | [] => finish (.arr done) k
+  | x :: more => .eval ((binder, x) :: env) body (.mapK binder body env done more :: k)
+
+private def continueFilter (binder : String) (body : Expr) (env : Env)
+    (done rest : List Value) (k : List Frame) : State :=
+  match rest with
+  | [] => finish (.arr done) k
+  | x :: more => .eval ((binder, x) :: env) body (.filterK binder body env done x more :: k)
+
+private def continueReduce (accName elemName : String) (body : Expr) (env : Env)
+    (acc : Value) (rest : List Value) (k : List Frame) : State :=
+  match rest with
+  | [] => finish acc k
+  | x :: more =>
+    .eval ((elemName, x) :: (accName, acc) :: env) body
+      (.reduceK accName elemName body env more :: k)
 
 def step (p : Program) : State → State
   | .done r => .done r
@@ -91,6 +121,10 @@ def step (p : Program) : State → State
         (fun done rest => .arrayK done rest env)
     | .index arr idx => .eval env arr (.indexL idx env :: k)
     | .length arr => .eval env arr (.lengthK :: k)
+    | .mapE arr binder body => .eval env arr (.mapArrK binder body env :: k)
+    | .filterE arr binder body => .eval env arr (.filterArrK binder body env :: k)
+    | .reduceE arr init accName elemName body =>
+      .eval env arr (.reduceArrK init accName elemName body env :: k)
   | .apply v [] => .done (.ok v)
   | .apply v (frame :: k) =>
     match frame with
@@ -168,6 +202,28 @@ def step (p : Program) : State → State
         | .ok w => finish w k
         | .error e => fail e
       | _ => fail (.typeError "length expects an Array")
+    | .mapArrK binder body env =>
+      match v with
+      | .arr xs => continueMap binder body env [] xs k
+      | _ => fail (.typeError "map expects an Array")
+    | .mapK binder body env done rest => continueMap binder body env (done ++ [v]) rest k
+    | .filterArrK binder body env =>
+      match v with
+      | .arr xs => continueFilter binder body env [] xs k
+      | _ => fail (.typeError "filter expects an Array")
+    | .filterK binder body env done kept rest =>
+      match v with
+      | .bool true => continueFilter binder body env (done ++ [kept]) rest k
+      | .bool false => continueFilter binder body env done rest k
+      | _ => fail (.typeError "filter expects a Bool predicate")
+    | .reduceArrK init accName elemName body env =>
+      match v with
+      | .arr xs => .eval env init (.reduceInitK xs accName elemName body env :: k)
+      | _ => fail (.typeError "reduce expects an Array")
+    | .reduceInitK items accName elemName body env =>
+      continueReduce accName elemName body env v items k
+    | .reduceK accName elemName body env rest =>
+      continueReduce accName elemName body env v rest k
 where
   buildCall (p : Program) (fn : String) (args : List Value) (k : List Frame) : State :=
     match p.find? fn with

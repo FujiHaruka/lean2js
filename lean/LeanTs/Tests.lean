@@ -88,4 +88,53 @@ private def rank (alts : List Alt) : Decl :=
 #guard withTypes (decl "maybe" [("n", .int53)] (.option .int53) (some' (v "n")))
 #guard !withTypes (decl "maybeMismatch" [("n", .int53)] (.option .string) (some' (v "n")))
 
+#guard withTypes
+  (decl "doubled" [("xs", .array .int53)] (.array .int53)
+    (map' (v "xs") "x" (v "x" *' int53 2)))
+#guard withTypes
+  (decl "signs" [("xs", .array .int53)] (.array .bool)
+    (map' (v "xs") "x" (v "x" >' int53 0)))
+#guard withTypes
+  (decl "scaled" [("xs", .array .int53), ("factor", .int53)] (.array .int53)
+    (map' (v "xs") "x" (v "x" *' v "factor")))
+#guard withTypes
+  (decl "shadowing" [("x", .array .int53)] (.array .int53)
+    (map' (v "x") "x" (v "x" *' int53 2)))
+#guard !withTypes
+  (decl "mapNotArray" [("n", .int53)] (.array .int53) (map' (v "n") "x" (v "x")))
+#guard !withTypes
+  (decl "mapReturnDrift" [("xs", .array .int53)] (.array .string)
+    (map' (v "xs") "x" (v "x")))
+#guard !withTypes
+  (decl "reservedBinder" [("xs", .array .int53)] (.array .int53)
+    (map' (v "xs") "class" (v "class")))
+#guard !withTypes
+  (decl "helperBinder" [("xs", .array .int53)] (.array .int53)
+    (map' (v "xs") "__x" (v "__x")))
+
+#guard withTypes
+  (decl "positives" [("xs", .array .int53)] (.array .int53)
+    (filter' (v "xs") "x" (v "x" >' int53 0)))
+#guard !withTypes
+  (decl "filterNotBool" [("xs", .array .int53)] (.array .int53)
+    (filter' (v "xs") "x" (v "x")))
+#guard !withTypes
+  (decl "filterNotArray" [("n", .int53)] (.array .int53) (filter' (v "n") "x" (bool true)))
+
+#guard withTypes
+  (decl "sum" [("xs", .array .int53)] .int53
+    (reduce' (v "xs") (int53 0) "acc" "x" (v "acc" +' v "x")))
+#guard withTypes
+  (decl "anyPositive" [("xs", .array .int53)] .bool
+    (reduce' (v "xs") (bool false) "acc" "x" (ite' (v "acc") (bool true) (v "x" >' int53 0))))
+#guard !withTypes
+  (decl "reduceBodyDrift" [("xs", .array .int53)] .int53
+    (reduce' (v "xs") (int53 0) "acc" "x" (v "x" >' int53 0)))
+#guard !withTypes
+  (decl "reduceSameBinder" [("xs", .array .int53)] .int53
+    (reduce' (v "xs") (int53 0) "acc" "acc" (v "acc")))
+#guard !withTypes
+  (decl "reduceNotArray" [("n", .int53)] .int53
+    (reduce' (v "n") (int53 0) "acc" "x" (v "acc")))
+
 end LeanTs.Tests

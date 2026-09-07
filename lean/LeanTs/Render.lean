@@ -52,6 +52,13 @@ partial def Expr.source : Expr → String
     s!"[{String.intercalate ", " (items.map Expr.source)}] : Array {elem.render}"
   | .index arr idx => arr.source ++ "[" ++ idx.source ++ "]"
   | .length arr => arr.source ++ ".length"
+  | .mapE arr binder body =>
+    arr.source ++ ".map(" ++ binder ++ " => " ++ body.source ++ ")"
+  | .filterE arr binder body =>
+    arr.source ++ ".filter(" ++ binder ++ " => " ++ body.source ++ ")"
+  | .reduceE arr init accName elemName body =>
+    arr.source ++ ".reduce(" ++ init.source ++ ", (" ++ accName ++ ", " ++ elemName ++ ") => "
+      ++ body.source ++ ")"
 
 def CtorDef.source (c : CtorDef) : String :=
   let fields := c.fields.map fun f => s!"{f.name} : {f.ty.render}"

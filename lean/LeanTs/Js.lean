@@ -57,6 +57,9 @@ inductive Expr where
   | member (obj : Expr) (field : String)
   | arrayLit (items : List Expr)
   | check (d : TyDesc) (e : Expr)
+  | mapJs (arr : Expr) (binder : String) (body : Expr)
+  | filterJs (arr : Expr) (binder : String) (body : Expr)
+  | reduceJs (arr init : Expr) (accName elemName : String) (body : Expr)
   deriving Inhabited
 
 inductive Stmt where
@@ -94,6 +97,13 @@ partial def Expr.render : Expr → String
   | .member obj field => "(" ++ obj.render ++ ")." ++ field
   | .arrayLit items => "[" ++ String.intercalate ", " (items.map Expr.render) ++ "]"
   | .check d e => "__ck(" ++ e.render ++ ", " ++ d.render ++ ")"
+  | .mapJs arr binder body =>
+    "__map(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
+  | .filterJs arr binder body =>
+    "__filter(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
+  | .reduceJs arr init accName elemName body =>
+    "__reduce(" ++ arr.render ++ ", " ++ init.render ++ ", (" ++ accName ++ ", " ++ elemName
+      ++ ") => (" ++ body.render ++ "))"
 
 def Stmt.render : Stmt → String
   | .const name val => "  const " ++ name ++ " = " ++ val.render ++ ";"
@@ -168,6 +178,24 @@ const __at = (xs, i) =>
   Number.isSafeInteger(i) && i >= 0 && i < xs.length
     ? xs[i]
     : __fail(\"indexOutOfBounds\");
+
+const __map = (xs, f) => {
+  const out = [];
+  for (let i = 0; i < xs.length; i++) out.push(f(xs[i]));
+  return out;
+};
+
+const __filter = (xs, f) => {
+  const out = [];
+  for (let i = 0; i < xs.length; i++) if (f(xs[i])) out.push(xs[i]);
+  return out;
+};
+
+const __reduce = (xs, init, f) => {
+  let acc = init;
+  for (let i = 0; i < xs.length; i++) acc = f(acc, xs[i]);
+  return acc;
+};
 
 const __isObj = (x) => typeof x === \"object\" && x !== null && !Array.isArray(x);
 

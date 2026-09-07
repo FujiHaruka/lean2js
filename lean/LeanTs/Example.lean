@@ -181,6 +181,33 @@ def firstTracking : Decl :=
     (ite' (len (v "states") ==' int53 0) (none' .string)
       (call "trackingOf" [at' (v "states") (int53 0)]))
 
+/-- The amount of every line of an order at one unit price. -/
+def lineTotals : Decl :=
+  decl "lineTotals" [("unitPrice", .int53), ("quantities", .array .int53)] (.array .int53)
+    (map' (v "quantities") "quantity" (call "lineTotal" [v "unitPrice", v "quantity"]))
+
+def currenciesOf : Decl :=
+  decl "currenciesOf" [("items", .array (.named "Money"))] (.array .string)
+    (map' (v "items") "item" (proj (v "item") "currency"))
+
+/-- The orders this role may still refund. The predicate reads `role` from outside the lambda. -/
+def refundableOnly : Decl :=
+  decl "refundableOnly" [("role", .named "Role"), ("states", .array (.named "OrderState"))]
+    (.array (.named "OrderState"))
+    (filter' (v "states") "state" (call "canRefund" [v "role", v "state"]))
+
+/-- Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix
+them. -/
+def cartTotal : Decl :=
+  decl "cartTotal" [("items", .array (.named "Money"))] .int53
+    (reduce' (v "items") (int53 0) "subtotal" "item"
+      (v "subtotal" +' proj (v "item") "amount"))
+
+def anyOverLimit : Decl :=
+  decl "anyOverLimit" [("amounts", .array .int53), ("limit", .int53)] .bool
+    (reduce' (v "amounts") (bool false) "seen" "amount"
+      (ite' (v "seen") (bool true) (v "amount" >' v "limit")))
+
 def program : Program := {
   types := [Money, Role, OrderState]
   decls := [
@@ -188,7 +215,8 @@ def program : Program := {
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
     bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
-    sumFrom, total, headOr, firstTracking
+    sumFrom, total, headOr, firstTracking,
+    lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit
   ]
 }
 

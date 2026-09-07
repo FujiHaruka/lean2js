@@ -74,3 +74,13 @@ export declare function total(xs: readonly number[]): number;
 export declare function headOr(xs: readonly number[], fallback: number): number;
 
 export declare function firstTracking(states: readonly OrderState[]): Option<string>;
+
+export declare function lineTotals(unitPrice: number, quantities: readonly number[]): readonly number[];
+
+export declare function currenciesOf(items: readonly Money[]): readonly string[];
+
+export declare function refundableOnly(role: Role, states: readonly OrderState[]): readonly OrderState[];
+
+export declare function cartTotal(items: readonly Money[]): number;
+
+export declare function anyOverLimit(amounts: readonly number[], limit: number): boolean;

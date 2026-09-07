@@ -28,7 +28,7 @@ Lean 全体ではなく、JS との対応が明快な領域に絞ることで、
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
 | `structure` / `inductive` / `Option` / `Result` | `unsafe` / arbitrary FFI / pointer |
-| `Array` / `match` | metaprogramming |
+| `Array` / `map` / `filter` / `reduce` / `match` | metaprogramming |
 | 純粋関数 / 構造的再帰 | 非停止 / DOM access |
 
 ## ロードマップ
@@ -56,7 +56,7 @@ Lean のリファレンス意味論  ──証明（断片）──  生成し�
 - **証明**: リテラル・変数・条件式について、`eval` が値を返すなら生成コードも同じ値を返す
 - **境界の検査**: 公開関数は本体に入る前に、引数を宣言した型と構造的に照合する。型を破った呼び出しは
   `eval` と同じ `typeError` で落ちるので、一致の主張に「宣言した型を満たす引数について」という但し書きが要らない
-- **実行時検査**: 出荷する成果物の全ベクタ（現在 11228 件）について、`eval` と JS の模型、および
+- **実行時検査**: 出荷する成果物の全ベクタ（現在 12887 件）について、`eval` と JS の模型、および
   `eval` と small-step が一致することを `leants` が書き出す前に確かめる
 - **差分テスト**: 生成した ESM を Node で実行し、`eval` の答えと突き合わせる。JS の模型が仮定している
   振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）はここで押さえる

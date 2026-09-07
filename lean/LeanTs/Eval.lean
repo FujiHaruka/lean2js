@@ -196,6 +196,20 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       match ← evalExpr p f env arr with
       | .arr xs => mkInt53 (Int.ofNat xs.length)
       | _ => .error (.typeError "length expects an Array")
+    | .mapE arr binder body => do
+      match ← evalExpr p f env arr with
+      | .arr xs => do .ok (.arr (← evalMapItems p f env binder body xs))
+      | _ => .error (.typeError "map expects an Array")
+    | .filterE arr binder body => do
+      match ← evalExpr p f env arr with
+      | .arr xs => do .ok (.arr (← evalFilterItems p f env binder body xs))
+      | _ => .error (.typeError "filter expects an Array")
+    | .reduceE arr init accName elemName body => do
+      match ← evalExpr p f env arr with
+      | .arr xs => do
+        let acc ← evalExpr p f env init
+        evalReduceItems p f env accName elemName body acc xs
+      | _ => .error (.typeError "reduce expects an Array")
 termination_by (fuel, 0, 0)
 
 def evalArgs (p : Program) (fuel : Nat) (env : Env) (es : List Expr) :
@@ -207,6 +221,36 @@ def evalArgs (p : Program) (fuel : Nat) (env : Env) (es : List Expr) :
     let vs ← evalArgs p fuel env rest
     .ok (v :: vs)
 termination_by (fuel, 1, es.length)
+
+def evalMapItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (body : Expr)
+    (xs : List Value) : Except Err (List Value) :=
+  match xs with
+  | [] => .ok []
+  | x :: rest => do
+    let v ← evalExpr p fuel ((binder, x) :: env) body
+    let vs ← evalMapItems p fuel env binder body rest
+    .ok (v :: vs)
+termination_by (fuel, 1, xs.length)
+
+def evalFilterItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (body : Expr)
+    (xs : List Value) : Except Err (List Value) :=
+  match xs with
+  | [] => .ok []
+  | x :: rest => do
+    match ← evalExpr p fuel ((binder, x) :: env) body with
+    | .bool true => do .ok (x :: (← evalFilterItems p fuel env binder body rest))
+    | .bool false => evalFilterItems p fuel env binder body rest
+    | _ => .error (.typeError "filter expects a Bool predicate")
+termination_by (fuel, 1, xs.length)
+
+def evalReduceItems (p : Program) (fuel : Nat) (env : Env) (accName elemName : String)
+    (body : Expr) (acc : Value) (xs : List Value) : Except Err Value :=
+  match xs with
+  | [] => .ok acc
+  | x :: rest => do
+    let next ← evalExpr p fuel ((elemName, x) :: (accName, acc) :: env) body
+    evalReduceItems p fuel env accName elemName body next rest
+termination_by (fuel, 1, xs.length)
 
 end
 

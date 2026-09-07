@@ -217,6 +217,36 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     match tarr with
     | .array _ => .ok (.member jarr "length", .int53)
     | ty => .error s!"length expects an Array, not {ty.render}"
+  | .mapE arr binder body => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    match tarr with
+    | .array elem => do
+      validateIdent "lambda" binder
+      let (jbody, tbody) ← compileExpr p ((binder, elem) :: ctx) body
+      .ok (.mapJs jarr binder jbody, .array tbody)
+    | ty => .error s!"map expects an Array, not {ty.render}"
+  | .filterE arr binder body => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    match tarr with
+    | .array elem => do
+      validateIdent "lambda" binder
+      let (jbody, tbody) ← compileExpr p ((binder, elem) :: ctx) body
+      if tbody != .bool then .error s!"a filter predicate must be a Bool, not {tbody.render}"
+      else .ok (.filterJs jarr binder jbody, .array elem)
+    | ty => .error s!"filter expects an Array, not {ty.render}"
+  | .reduceE arr init accName elemName body => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    let (jinit, tinit) ← compileExpr p ctx init
+    match tarr with
+    | .array elem => do
+      validateIdent "lambda" accName
+      validateIdent "lambda" elemName
+      validateDistinct "lambda" [accName, elemName]
+      let (jbody, tbody) ← compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) body
+      if tbody != tinit then
+        .error s!"reduce folds into {tinit.render} but its body is {tbody.render}"
+      else .ok (.reduceJs jarr jinit accName elemName jbody, tinit)
+    | ty => .error s!"reduce expects an Array, not {ty.render}"
 termination_by sizeOf e
 where
   chain : List (String × List String × List String × Js.Expr × Ty) → Js.Expr
