@@ -194,7 +194,7 @@ private theorem find_add : program.find? "add" = some add := rfl
 theorem add_comm (a b : Int) :
     evalCall program "add" [.int53 a, .int53 b]
       = evalCall program "add" [.int53 b, .int53 a] := by
-  simp [evalCall, find_add, add, decl, v, Env.lookup?, bindParams, Value.hasTy, structureDepth,
+  simp [evalCall, find_add, add, decl, v, Env.lookup?, bindParams, Value.hasTy,
     evalExpr.eq_def, defaultFuel, applyBin, applyArith, bind, Except.bind, Int.add_comm,
     or_comm, or_assoc, or_left_comm]
 

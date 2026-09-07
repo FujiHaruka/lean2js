@@ -54,68 +54,80 @@ def Err.code : Err → String
   | .unknownFn _ => "unknownFn"
   | .arity _ => "arity"
 
+mutual
+
 /-- 構造的等価。JS の `===` は参照比較なので、生成コード側も同じ規則のヘルパを呼ぶ。 -/
-def Value.beq (fuel : Nat) : Value → Value → Bool
+def Value.beq : Value → Value → Bool
   | .bool a, .bool b => a == b
   | .int53 a, .int53 b => a == b
   | .uint32 a, .uint32 b => a == b
   | .str a, .str b => a == b
   | .bigint a, .bigint b => a == b
-  | .obj ca fa, .obj cb fb =>
-    match fuel with
-    | 0 => false
-    | f + 1 =>
-      ca == cb && fa.length == fb.length &&
-        (fa.zip fb).all fun ((ka, va), (kb, vb)) => ka == kb && Value.beq f va vb
-  | .arr xs, .arr ys =>
-    match fuel with
-    | 0 => false
-    | f + 1 => xs.length == ys.length && (xs.zip ys).all fun (a, b) => Value.beq f a b
+  | .obj ca fa, .obj cb fb => ca == cb && Value.beqFields fa fb
+  | .arr xs, .arr ys => Value.beqList xs ys
   | _, _ => false
+termination_by a => sizeOf a
 
-/-- 入れ子の深さの上限。`eval` の fuel と同じく、停止性を証明の外に出さないための道具。 -/
-def structureDepth : Nat := 1000
+def Value.beqFields : List (String × Value) → List (String × Value) → Bool
+  | [], [] => true
+  | (ka, va) :: as, (kb, vb) :: bs => ka == kb && Value.beq va vb && Value.beqFields as bs
+  | _, _ => false
+termination_by a => sizeOf a
+
+def Value.beqList : List Value → List Value → Bool
+  | [], [] => true
+  | a :: as, b :: bs => Value.beq a b && Value.beqList as bs
+  | _, _ => false
+termination_by a => sizeOf a
+
+end
 
 instance : BEq Value where
-  beq := Value.beq structureDepth
+  beq := Value.beq
+
+mutual
 
 /-- 値が宣言された型どおりかを見る。公開 API の境界を型で固定するための検査。 -/
-def Value.hasTy (p : Program) (fuel : Nat) : Value → Ty → Bool
+def Value.hasTy (p : Program) : Value → Ty → Bool
   | .bool _, .bool => true
   | .int53 i, .int53 => int53Min ≤ i && i ≤ int53Max
   | .uint32 _, .uint32 => true
   | .str _, .string => true
   | .bigint _, .bigint => true
   | .obj ctor fields, .named n =>
-    match fuel, p.findType? n with
-    | f + 1, some t =>
+    match p.findType? n with
+    | some t =>
       match t.find? ctor with
-      | some c =>
-        c.fields.length == fields.length &&
-          (c.fields.zip fields).all fun (declared, (key, value)) =>
-            declared.name == key && Value.hasTy p f value declared.ty
+      | some c => Value.hasFieldTys p fields (c.fields.map fun f => (f.name, f.ty))
       | none => false
-    | _, _ => false
+    | none => false
   | .obj ctor fields, .option elem =>
-    match fuel with
-    | f + 1 =>
-      match ctor, fields with
-      | "none", [] => true
-      | "some", [("value", value)] => Value.hasTy p f value elem
-      | _, _ => false
-    | 0 => false
+    match ctor with
+    | "none" => fields.isEmpty
+    | "some" => Value.hasFieldTys p fields [("value", elem)]
+    | _ => false
   | .obj ctor fields, .result ok err =>
-    match fuel with
-    | f + 1 =>
-      match ctor, fields with
-      | "ok", [("value", value)] => Value.hasTy p f value ok
-      | "error", [("error", value)] => Value.hasTy p f value err
-      | _, _ => false
-    | 0 => false
-  | .arr xs, .array elem =>
-    match fuel with
-    | f + 1 => xs.all fun x => Value.hasTy p f x elem
-    | 0 => false
+    match ctor with
+    | "ok" => Value.hasFieldTys p fields [("value", ok)]
+    | "error" => Value.hasFieldTys p fields [("error", err)]
+    | _ => false
+  | .arr xs, .array elem => Value.hasElemTy p xs elem
   | _, _ => false
+termination_by v => sizeOf v
+
+def Value.hasFieldTys (p : Program) :
+    List (String × Value) → List (String × Ty) → Bool
+  | [], [] => true
+  | (key, value) :: rest, (name, ty) :: tys =>
+    key == name && Value.hasTy p value ty && Value.hasFieldTys p rest tys
+  | _, _ => false
+termination_by fields => sizeOf fields
+
+def Value.hasElemTy (p : Program) : List Value → Ty → Bool
+  | [], _ => true
+  | x :: rest, elem => Value.hasTy p x elem && Value.hasElemTy p rest elem
+termination_by xs => sizeOf xs
+
+end
 
 end LeanTs

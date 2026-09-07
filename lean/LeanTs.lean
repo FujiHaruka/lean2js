@@ -10,3 +10,4 @@ import LeanTs.Example
 import LeanTs.Builder
 import LeanTs.Ident
 import LeanTs.Tests
+import LeanTs.Axioms

@@ -219,7 +219,7 @@ def evalCall (p : Program) (fn : String) (args : List Value) : Except Err Value 
   | some d =>
     if d.params.length != args.length then .error (.arity fn)
     else if !(d.params.zip args).all
-        (fun (param, v) => v.hasTy p structureDepth param.ty) then
+        (fun (param, v) => v.hasTy p param.ty) then
       .error (.typeError s!"argument type mismatch calling {fn}")
     else evalExpr p defaultFuel (bindParams d.params args) d.body
 
