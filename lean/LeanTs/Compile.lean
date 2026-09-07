@@ -316,7 +316,10 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       | .or =>
         if tl == .bool then .ok (.binary "||" jl jr, .bool) else .error "|| expects Bool"
       | .concat =>
-        if tl == .string then .ok (.binary "+" jl jr, .string) else .error "++ expects String"
+        match tl with
+        | .string => .ok (.binary "+" jl jr, .string)
+        | .array _ => .ok (.call "__aconcat" [jl, jr], tl)
+        | ty => .error s!"++ expects two Strings or two Arrays, not {ty.render}"
   | .cond c t e => do
     let (jc, tc) ← compileExpr p ctx c
     if tc != .bool then .error "condition expects a Bool" else
@@ -424,6 +427,20 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | .string => .ok (.call "__strlen" [jarr], .int53)
     | .dict _ => .ok (.member jarr "size", .int53)
     | ty => .error s!"length expects an Array, a String or a Dict, not {ty.render}"
+  | .arraySlice arr lo hi => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    let (jlo, tlo) ← compileExpr p ctx lo
+    let (jhi, thi) ← compileExpr p ctx hi
+    match tarr with
+    | .array elem =>
+      if tlo != .int53 || thi != .int53 then .error "the bounds of slice must be Int53"
+      else .ok (.call "__aslice" [jarr, jlo, jhi], .array elem)
+    | ty => .error s!"slice expects an Array, not {ty.render}"
+  | .arrayReverse arr => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    match tarr with
+    | .array elem => .ok (.call "__areverse" [jarr], .array elem)
+    | ty => .error s!"reverse expects an Array, not {ty.render}"
   | .mapE arr binder body => do
     let (jarr, tarr) ← compileExpr p ctx arr
     match tarr with

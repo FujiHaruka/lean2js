@@ -144,6 +144,12 @@ def mapSet (entries : List (String × JsValue)) (key : String) (v : JsValue) :
   if entries.any (·.1 == key) then entries.map (fun e => if e.1 == key then (key, v) else e)
   else entries ++ [(key, v)]
 
+def arrSlice (xs : List JsValue) (lo hi : Int) : JsResult :=
+  if lo < safeMin || safeMax < lo || hi < safeMin || safeMax < hi
+      || lo < 0 || hi < lo || Int.ofNat xs.length < hi then
+    fail "indexOutOfBounds"
+  else .ok (.arr ((xs.drop lo.toNat).take (hi - lo).toNat))
+
 def at? (xs : List JsValue) (i : Int) : JsResult :=
   if i < safeMin || safeMax < i || i < 0 || Int.ofNat xs.length ≤ i then
     fail "indexOutOfBounds"
@@ -175,6 +181,9 @@ private def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__strcmp", [.str a, .str b] => some (.ok (.num (strcmp a b)))
   | "__eq", [a, b] => some (.ok (.bool (a == b)))
   | "__at", [.arr xs, .num i] => some (at? xs i)
+  | "__aslice", [.arr xs, .num a, .num b] => some (arrSlice xs a b)
+  | "__aconcat", [.arr a, .arr b] => some (.ok (.arr (a ++ b)))
+  | "__areverse", [.arr xs] => some (.ok (.arr xs.reverse))
   | "__dget", [.dict entries, .str key] =>
     some (.ok (match (entries.find? (·.1 == key)).map (·.2) with
       | some v => .obj [("tag", .str "some"), ("value", v)]

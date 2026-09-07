@@ -62,6 +62,9 @@ partial def Expr.source : Expr → String
     s!"[{String.intercalate ", " (items.map Expr.source)}] : Array {elem.render}"
   | .index arr idx => arr.source ++ "[" ++ idx.source ++ "]"
   | .length arr => arr.source ++ ".length"
+  | .arraySlice arr lo hi =>
+    arr.source ++ ".slice(" ++ lo.source ++ ", " ++ hi.source ++ ")"
+  | .arrayReverse arr => arr.source ++ ".reverse()"
   | .mapE arr binder body =>
     arr.source ++ ".map(" ++ binder ++ " => " ++ body.source ++ ")"
   | .filterE arr binder body =>

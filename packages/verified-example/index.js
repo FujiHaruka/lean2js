@@ -93,6 +93,21 @@ const __substring = (s, lo, hi) => {
     : __fail("indexOutOfBounds");
 };
 
+// Bounds outside the array fail rather than being clamped, the way an index read does.
+const __aslice = (xs, lo, hi) =>
+  Number.isSafeInteger(lo) &&
+  Number.isSafeInteger(hi) &&
+  lo >= 0 &&
+  hi >= lo &&
+  hi <= xs.length
+    ? xs.slice(lo, hi)
+    : __fail("indexOutOfBounds");
+
+const __aconcat = (a, b) => [...a, ...b];
+
+// A fresh array: reverse() would otherwise write through to the caller's.
+const __areverse = (xs) => [...xs].reverse();
+
 const __dget = (d, k) => (d.has(k) ? { tag: "some", value: d.get(k) } : { tag: "none" });
 
 const __dhas = (d, k) => d.has(k);
@@ -412,6 +427,27 @@ export function headOr(__p0, __p1) {
 export function firstTracking(__p0) {
   const states = __ck(__p0, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
   return (((states).length === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
+}
+
+/** pageOf : (xs : Array Int53, lo : Int53, hi : Int53) → Array Int53 */
+export function pageOf(__p0, __p1, __p2) {
+  const xs = __ck(__p0, ["array", ["int53"]]);
+  const lo = __ck(__p1, ["int53"]);
+  const hi = __ck(__p2, ["int53"]);
+  return __aslice(xs, lo, hi);
+}
+
+/** mostRecentFirst : (events : Array String) → Array String */
+export function mostRecentFirst(__p0) {
+  const events = __ck(__p0, ["array", ["string"]]);
+  return __areverse(events);
+}
+
+/** combinedCart : (saved : Array Int53, added : Array Int53) → Array Int53 */
+export function combinedCart(__p0, __p1) {
+  const saved = __ck(__p0, ["array", ["int53"]]);
+  const added = __ck(__p1, ["array", ["int53"]]);
+  return __aconcat(saved, added);
 }
 
 /** lineTotals : (unitPrice : Int53, quantities : Array Int53) → Array Int53 */

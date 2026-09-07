@@ -85,6 +85,12 @@ export declare function headOr(xs: readonly number[], fallback: number): number;
 
 export declare function firstTracking(states: readonly OrderState[]): Option<string>;
 
+export declare function pageOf(xs: readonly number[], lo: number, hi: number): readonly number[];
+
+export declare function mostRecentFirst(events: readonly string[]): readonly string[];
+
+export declare function combinedCart(saved: readonly number[], added: readonly number[]): readonly number[];
+
 export declare function lineTotals(unitPrice: number, quantities: readonly number[]): readonly number[];
 
 export declare function currenciesOf(items: readonly Money[]): readonly string[];

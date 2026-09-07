@@ -290,6 +290,8 @@ private partial def methodOn (recv : Term) (name : String) (args : Array Term) :
   | "includes", [t] => `(Expr.strBin StrBinOp.includes $recv $t)
   | "split", [t] => `(Expr.strBin StrBinOp.split $recv $t)
   | "substring", [lo, hi] => `(Expr.substring $recv $lo $hi)
+  | "slice", [lo, hi] => `(Expr.arraySlice $recv $lo $hi)
+  | "reverse", [] => `(Expr.arrayReverse $recv)
   | "get", [k] => `(Expr.dictGet $recv $k)
   | "has", [k] => `(Expr.dictHas $recv $k)
   | "set", [k, val] => `(Expr.dictSet $recv $k $val)

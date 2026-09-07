@@ -216,6 +216,21 @@ const __substring = (s, lo, hi) => {
     : __fail(\"indexOutOfBounds\");
 };
 
+// Bounds outside the array fail rather than being clamped, the way an index read does.
+const __aslice = (xs, lo, hi) =>
+  Number.isSafeInteger(lo) &&
+  Number.isSafeInteger(hi) &&
+  lo >= 0 &&
+  hi >= lo &&
+  hi <= xs.length
+    ? xs.slice(lo, hi)
+    : __fail(\"indexOutOfBounds\");
+
+const __aconcat = (a, b) => [...a, ...b];
+
+// A fresh array: reverse() would otherwise write through to the caller's.
+const __areverse = (xs) => [...xs].reverse();
+
 const __dget = (d, k) => (d.has(k) ? { tag: \"some\", value: d.get(k) } : { tag: \"none\" });
 
 const __dhas = (d, k) => d.has(k);

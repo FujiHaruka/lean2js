@@ -107,7 +107,8 @@ def applyBin (op : BinOp) (a b : Value) : Except Err Value :=
   | .concat =>
     match a, b with
     | .str x, .str y => .ok (.str (x ++ y))
-    | _, _ => .error (.typeError "concat expects two strings")
+    | .arr x, .arr y => .ok (.arr (x ++ y))
+    | _, _ => .error (.typeError "concat expects two Strings or two Arrays")
 
 /-- The whitespace `trim` strips. Written out rather than delegated to `Char.isWhitespace` because the
 generated code has to strip exactly this set, and JS's own `trim` also takes NBSP, the BOM and the line
@@ -164,6 +165,14 @@ def sliceStr (s : Value) (lo hi : Value) : Except Err Value :=
     if a < 0 || b < a || Int.ofNat str.toList.length < b then .error .indexOutOfBounds
     else .ok (.str (String.ofList ((str.toList.drop a.toNat).take (b - a).toNat)))
   | _, _, _ => .error (.typeError "substring expects a String and two Int53 bounds")
+
+/-- Bounds count elements and one outside the array traps, exactly as `substring`'s do on a String. -/
+def sliceArr (a lo hi : Value) : Except Err Value :=
+  match a, lo, hi with
+  | .arr xs, .int53 i, .int53 j =>
+    if i < 0 || j < i || Int.ofNat xs.length < j then .error .indexOutOfBounds
+    else .ok (.arr ((xs.drop i.toNat).take (j - i).toNat))
+  | _, _, _ => .error (.typeError "slice expects an Array and two Int53 bounds")
 
 def asBool : Value → Except Err Value
   | .bool b => .ok (.bool b)
@@ -298,6 +307,15 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       | .str s => mkInt53 (Int.ofNat s.toList.length)
       | .dict entries => mkInt53 (Int.ofNat entries.length)
       | _ => .error (.typeError "length expects an Array, a String or a Dict")
+    | .arraySlice arr lo hi => do
+      let a ← evalExpr p f env arr
+      let i ← evalExpr p f env lo
+      let j ← evalExpr p f env hi
+      sliceArr a i j
+    | .arrayReverse arr => do
+      match ← evalExpr p f env arr with
+      | .arr xs => .ok (.arr xs.reverse)
+      | _ => .error (.typeError "reverse expects an Array")
     | .mapE arr binder body => do
       match ← evalExpr p f env arr with
       | .arr xs => do .ok (.arr (← evalMapItems p f env binder body xs))
@@ -673,6 +691,22 @@ theorem evalExpr_strBin (p : Program) (f : Nat) (env : Env) (op : StrBinOp) (lhs
         let a ← evalExpr p f env lhs
         let b ← evalExpr p f env rhs
         applyStrBin op a b) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_arraySlice (p : Program) (f : Nat) (env : Env) (arr lo hi : Expr) :
+    evalExpr p (f + 1) env (.arraySlice arr lo hi) =
+      (do
+        let a ← evalExpr p f env arr
+        let i ← evalExpr p f env lo
+        let j ← evalExpr p f env hi
+        sliceArr a i j) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_arrayReverse (p : Program) (f : Nat) (env : Env) (arr : Expr) :
+    evalExpr p (f + 1) env (.arrayReverse arr) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => .ok (.arr xs.reverse)
+          | _ => .error (.typeError "reverse expects an Array")) := by
   rw [evalExpr.eq_def]
 
 theorem evalExpr_substring (p : Program) (f : Nat) (env : Env) (str lo hi : Expr) :

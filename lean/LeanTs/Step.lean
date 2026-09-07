@@ -48,6 +48,8 @@ inductive Frame where
   | strUnK (op : StrUnOp)
   | strBinL (op : StrBinOp) (rhs : Expr) (env : Env)
   | strBinR (op : StrBinOp) (lhs : Value)
+  | arraySliceK (done : List Value) (rest : List Expr) (env : Env)
+  | arrayReverseK
   | substringK (done : List Value) (rest : List Expr) (env : Env)
   | mapArrK (binder : String) (body : Expr) (env : Env)
   | mapK (binder : String) (body : Expr) (env : Env) (done rest : List Value)
@@ -155,6 +157,10 @@ def step (p : Program) : State → State
         (fun done rest => .dictDeleteK done rest env)
     | .strUn op e => .eval env e (.strUnK op :: k)
     | .strBin op lhs rhs => .eval env lhs (.strBinL op rhs env :: k)
+    | .arraySlice arr lo hi =>
+      continueArgs (buildArraySlice · k) [] [arr, lo, hi] env k
+        (fun done rest => .arraySliceK done rest env)
+    | .arrayReverse arr => .eval env arr (.arrayReverseK :: k)
     | .substring str lo hi =>
       continueArgs (buildSlice · k) [] [str, lo, hi] env k
         (fun done rest => .substringK done rest env)
@@ -270,6 +276,13 @@ def step (p : Program) : State → State
       match applyStrBin op lhs v with
       | .ok w => finish w k
       | .error e => fail e
+    | .arraySliceK done rest env =>
+      continueArgs (buildArraySlice · k) (done ++ [v]) rest env k
+        (fun done rest => .arraySliceK done rest env)
+    | .arrayReverseK =>
+      match v with
+      | .arr xs => finish (.arr xs.reverse) k
+      | _ => fail (.typeError "reverse expects an Array")
     | .substringK done rest env =>
       continueArgs (buildSlice · k) (done ++ [v]) rest env k
         (fun done rest => .substringK done rest env)
@@ -328,6 +341,13 @@ where
     match args with
     | [.dict entries, .str key] => finish (.dict (entries.filter (·.1 != key))) k
     | _ => fail (.typeError "delete expects a Dict and a String key")
+  buildArraySlice (args : List Value) (k : List Frame) : State :=
+    match args with
+    | [a, lo, hi] =>
+      match sliceArr a lo hi with
+      | .ok w => finish w k
+      | .error e => fail e
+    | _ => fail (.arity "slice")
   buildSlice (args : List Value) (k : List Frame) : State :=
     match args with
     | [s, lo, hi] =>

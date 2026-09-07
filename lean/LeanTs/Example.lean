@@ -157,6 +157,16 @@ def firstTracking : Decl := decl%
   firstTracking(states : Array<OrderState>) : Option<String> :=
     if states.length == 0 then none<String> else trackingOf(states[0])
 
+/-- One window of a list. A window reaching past the end is refused rather than shortened. -/
+def pageOf : Decl := decl%
+  pageOf(xs : Array<Int53>, lo : Int53, hi : Int53) : Array<Int53> := xs.slice(lo, hi)
+
+def mostRecentFirst : Decl := decl%
+  mostRecentFirst(events : Array<String>) : Array<String> := events.reverse()
+
+def combinedCart : Decl := decl%
+  combinedCart(saved : Array<Int53>, added : Array<Int53>) : Array<Int53> := saved ++ added
+
 /-- The amount of every line of an order at one unit price. -/
 def lineTotals : Decl := decl%
   lineTotals(unitPrice : Int53, quantities : Array<Int53>) : Array<Int53> :=
@@ -315,7 +325,7 @@ def program : Program := {
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
     bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
-    total, headOr, firstTracking,
+    total, headOr, firstTracking, pageOf, mostRecentFirst, combinedCart,
     lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
     quantityLabel, renewalLabel, chargeable, settleMessage,
     remainingItems, firstPage, validateQuantity, validationMessage,

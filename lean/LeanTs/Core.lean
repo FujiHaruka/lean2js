@@ -151,6 +151,8 @@ inductive Expr where
   | arrayLit (elem : Ty) (items : List Expr)
   | index (arr : Expr) (idx : Expr)
   | length (arr : Expr)
+  | arraySlice (arr lo hi : Expr)
+  | arrayReverse (arr : Expr)
   | mapE (arr : Expr) (binder : String) (body : Expr)
   | filterE (arr : Expr) (binder : String) (body : Expr)
   | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)

@@ -207,6 +207,27 @@ private def nested (alts : List Alt) : Decl :=
 #guard compiles (decl "amounts" [("d", .dict .int53)] (.array .int53) (dictValues (v "d")))
 #guard compiles (decl "count" [("d", .dict .int53)] .int53 (len (v "d")))
 
+#guard compiles
+  (decl "window" [("xs", .array .int53), ("lo", .int53), ("hi", .int53)] (.array .int53)
+    (arraySlice (v "xs") (v "lo") (v "hi")))
+#guard !compiles
+  (decl "window" [("s", .string), ("lo", .int53), ("hi", .int53)] (.array .int53)
+    (arraySlice (v "s") (v "lo") (v "hi")))
+#guard !compiles
+  (decl "window" [("xs", .array .int53), ("lo", .string), ("hi", .int53)] (.array .int53)
+    (arraySlice (v "xs") (v "lo") (v "hi")))
+#guard compiles
+  (decl "flipped" [("xs", .array .string)] (.array .string) (arrayReverse (v "xs")))
+#guard !compiles (decl "flipped" [("s", .string)] .string (arrayReverse (v "s")))
+#guard compiles
+  (decl "joined" [("a", .array .int53), ("b", .array .int53)] (.array .int53)
+    (v "a" ++' v "b"))
+#guard !compiles
+  (decl "joined" [("a", .array .int53), ("b", .array .string)] (.array .int53)
+    (v "a" ++' v "b"))
+#guard !compiles
+  (decl "joined" [("a", .dict .int53), ("b", .dict .int53)] (.dict .int53) (v "a" ++' v "b"))
+
 #guard compiles (decl "distance" [("n", .int53)] .int53 (abs' (v "n")))
 #guard compiles (decl "distance" [("n", .bigint)] .bigint (abs' (v "n")))
 #guard !compiles (decl "distance" [("s", .string)] .string (abs' (v "s")))
@@ -328,6 +349,8 @@ private def callsIdentity (name callee : String) : Decl :=
 #guard (expr% s.startsWith("a")) == startsWith (v "s") (str "a")
 #guard (expr% s.endsWith("a")) == endsWith (v "s") (str "a")
 #guard (expr% s.substring(0, n)) == substring (v "s") (int53 0) (v "n")
+#guard (expr% xs.slice(0, n)) == arraySlice (v "xs") (int53 0) (v "n")
+#guard (expr% xs.reverse()) == arrayReverse (v "xs")
 #guard (expr% d.get(k)) == dictGet (v "d") (v "k")
 #guard (expr% d.set(k, x)) == dictSet (v "d") (v "k") (v "x")
 #guard (expr% d.keys()) == dictKeys (v "d")

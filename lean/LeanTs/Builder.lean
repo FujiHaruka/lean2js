@@ -55,6 +55,9 @@ def error' (ok : Ty) (e : Expr) : Expr := .errorE ok e
 def array (elem : Ty) (items : List Expr) : Expr := .arrayLit elem items
 def at' (arr idx : Expr) : Expr := .index arr idx
 def len (arr : Expr) : Expr := .length arr
+def arraySlice (arr lo hi : Expr) : Expr := .arraySlice arr lo hi
+def arrayReverse (arr : Expr) : Expr := .arrayReverse arr
+
 def map' (arr : Expr) (binder : String) (body : Expr) : Expr := .mapE arr binder body
 def filter' (arr : Expr) (binder : String) (body : Expr) : Expr := .filterE arr binder body
 
