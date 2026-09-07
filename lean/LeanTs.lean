@@ -13,6 +13,7 @@ import LeanTs.Ident
 import LeanTs.JsSem
 import LeanTs.Agree
 import LeanTs.Correct
+import LeanTs.Sound
 import LeanTs.Render
 import LeanTs.SourceMap
 import LeanTs.Step

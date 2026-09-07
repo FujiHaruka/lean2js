@@ -32,7 +32,36 @@ inductive Ty where
   | array (t : Ty)
   | dict (value : Ty)
   | fn (params : List Ty) (ret : Ty)
-  deriving Repr, BEq, Inhabited
+  deriving Repr, Inhabited
+
+mutual
+
+/-- Written out rather than derived so that `Ty.eq_of_beq` can be proved: `Ty` nests a `List Ty`, and
+neither `DecidableEq` nor `LawfulBEq` derives through that. Recursing through a list helper keeps it
+structural, so a type comparison still closes by `rfl`. -/
+def Ty.beq : Ty → Ty → Bool
+  | .bool, .bool => true
+  | .int53, .int53 => true
+  | .uint32, .uint32 => true
+  | .string, .string => true
+  | .bigint, .bigint => true
+  | .var a, .var b => a == b
+  | .named n as, .named m bs => n == m && Ty.beqList as bs
+  | .option a, .option b => Ty.beq a b
+  | .result a₁ a₂, .result b₁ b₂ => Ty.beq a₁ b₁ && Ty.beq a₂ b₂
+  | .array a, .array b => Ty.beq a b
+  | .dict a, .dict b => Ty.beq a b
+  | .fn as a, .fn bs b => Ty.beqList as bs && Ty.beq a b
+  | _, _ => false
+
+def Ty.beqList : List Ty → List Ty → Bool
+  | [], [] => true
+  | a :: as, b :: bs => Ty.beq a b && Ty.beqList as bs
+  | _, _ => false
+
+end
+
+instance : BEq Ty := ⟨Ty.beq⟩
 
 partial def Ty.render : Ty → String
   | .bool => "Bool"
