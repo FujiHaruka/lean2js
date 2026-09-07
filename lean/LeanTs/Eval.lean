@@ -389,4 +389,95 @@ def evalCall (p : Program) (fn : String) (args : List Value) : Except Err Value 
       .error (.typeError s!"argument type mismatch calling {fn}")
     else evalExpr p defaultFuel (bindParams d.params args) d.body
 
+theorem defaultFuel_succ : defaultFuel = 9999 + 1 := rfl
+
+/-! ### Unfolding one step at a time
+
+`evalExpr.eq_def` cannot be handed to `simp` on its own: its right-hand side calls `evalExpr` again, so
+rewriting with it does not stop. One lemma per syntactic form fires only where that form actually is,
+which is what lets a proof about a declaration walk its body. -/
+
+theorem evalExpr_lit (p : Program) (f : Nat) (env : Env) (l : Lit) :
+    evalExpr p (f + 1) env (.lit l) = .ok (litValue l) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_var (p : Program) (f : Nat) (env : Env) (name : String) :
+    evalExpr p (f + 1) env (.var name) =
+      (match env.lookup? name with
+        | some v => .ok v
+        | none => .error (.unknownVar name)) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_cond (p : Program) (f : Nat) (env : Env) (c t e : Expr) :
+    evalExpr p (f + 1) env (.cond c t e) =
+      (do match ← evalExpr p f env c with
+          | .bool true => evalExpr p f env t
+          | .bool false => evalExpr p f env e
+          | _ => .error (.typeError "condition expects a Bool")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_bin (p : Program) (f : Nat) (env : Env) (op : BinOp) (lhs rhs : Expr)
+    (hop : op ≠ .and) (hor : op ≠ .or) :
+    evalExpr p (f + 1) env (.bin op lhs rhs) =
+      (do
+        let a ← evalExpr p f env lhs
+        let b ← evalExpr p f env rhs
+        applyBin op a b) := by
+  cases op <;> first
+    | exact absurd rfl hop
+    | exact absurd rfl hor
+    | rw [evalExpr.eq_def]
+
+theorem evalExpr_matchE (p : Program) (f : Nat) (env : Env) (scrut : Expr) (alts : List Alt) :
+    evalExpr p (f + 1) env (.matchE scrut alts) =
+      (do match firstMatch alts (← evalExpr p f env scrut) with
+          | some (binds, body) => evalExpr p f (binds ++ env) body
+          | none => .error .noMatchingAlternative) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_okE (p : Program) (f : Nat) (env : Env) (err : Ty) (e : Expr) :
+    evalExpr p (f + 1) env (.okE err e) =
+      (do .ok (.obj "ok" [("value", ← evalExpr p f env e)])) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_errorE (p : Program) (f : Nat) (env : Env) (ok : Ty) (e : Expr) :
+    evalExpr p (f + 1) env (.errorE ok e) =
+      (do .ok (.obj "error" [("error", ← evalExpr p f env e)])) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_ctor (p : Program) (f : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (ctorName : String) (args : List Expr) :
+    evalExpr p (f + 1) env (.ctor typeName tyArgs ctorName args) =
+      (do
+        let vs ← evalArgs p f env args
+        match p.findType? typeName with
+        | none => .error (.typeError s!"unknown type: {typeName}")
+        | some t =>
+          match t.find? ctorName with
+          | none => .error (.typeError s!"{typeName} has no constructor {ctorName}")
+          | some c =>
+            if c.fields.length != vs.length then .error (.arity ctorName)
+            else .ok (.obj ctorName ((c.fields.map (·.name)).zip vs))) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_proj (p : Program) (f : Nat) (env : Env) (e : Expr) (field : String) :
+    evalExpr p (f + 1) env (.proj e field) =
+      (do match ← evalExpr p f env e with
+          | .obj _ fields =>
+            match (fields.find? (·.1 == field)).map (·.2) with
+            | some v => .ok v
+            | none => .error (.typeError s!"no field named {field}")
+          | _ => .error (.typeError "field access expects a constructor value")) := by
+  rw [evalExpr.eq_def]
+
+/-- Enters the body of an exported function once the entry checks are known to pass. Stating a theorem
+about a declaration otherwise means unfolding the whole program at the call, which puts every other
+declaration in front of the tactic. -/
+theorem evalCall_eq {p : Program} {fn : String} {args : List Value} {d : Decl}
+    (hfind : p.find? fn = some d)
+    (harity : d.params.length = args.length)
+    (hty : (d.params.zip args).all (fun (param, v) => v.hasTy p param.ty) = true) :
+    evalCall p fn args = evalExpr p defaultFuel (bindParams d.params args) d.body := by
+  simp [evalCall, hfind, harity, hty]
+
 end LeanTs

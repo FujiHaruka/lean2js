@@ -217,6 +217,18 @@
     {
       "name": "add_comm",
       "statement": "∀ a b, add a b = add b a"
+    },
+    {
+      "name": "draft_never_ships",
+      "statement": "∀ trackingId, ship(draft, trackingId) refuses with \"a draft order cannot ship\""
+    },
+    {
+      "name": "clamped_quantity_in_range",
+      "statement": "∀ quantity, clampQuantity(quantity, 999) lies between 1 and 999"
+    },
+    {
+      "name": "same_currency_adds",
+      "statement": "∀ a b sharing a currency whose amounts sum within Int53, addMoney(a, b) = ok(a.amount + b.amount)"
     }
   ]
 }

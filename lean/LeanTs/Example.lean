@@ -313,6 +313,85 @@ theorem add_comm (a b : Int) :
     evalExpr.eq_def, defaultFuel, applyBin, applyArith, bind, Except.bind, Int.add_comm,
     or_comm, or_assoc, or_left_comm]
 
+private theorem find_clampQuantity : program.find? "clampQuantity" = some clampQuantity := rfl
+
+private theorem find_ship : program.find? "ship" = some ship := rfl
+
+private theorem find_addMoney : program.find? "addMoney" = some addMoney := rfl
+
+private theorem findType_OrderState : program.findType? "OrderState" = some OrderState := rfl
+
+private theorem findType_Money : program.findType? "Money" = some Money := rfl
+
+/-- An amount of money as it crosses the boundary. -/
+def money (amount : Int) (currency : String) : Value :=
+  .obj "Money" [("amount", .int53 amount), ("currency", .str currency)]
+
+private theorem findAt_draft :
+    OrderState.findAt? [] "draft" = some { name := "draft", fields := [] } := rfl
+
+theorem draft_never_ships (trackingId : String) :
+    evalCall program "ship" [.obj "draft" [], .str trackingId]
+      = .ok (.obj "error" [("error", .str "a draft order cannot ship")]) := by
+  rw [evalCall_eq find_ship rfl
+    (by simp [ship, Value.hasTy, Value.hasFieldTys, findType_OrderState, findAt_draft]),
+    defaultFuel_succ]
+  simp [ship, bindParams, evalExpr_matchE, evalExpr_var, evalExpr_errorE, evalExpr_lit,
+    Env.lookup?, firstMatch, matchPat, matchPats, litValue, Alt.pat, Alt.body, bind, Except.bind]
+
+theorem clamped_quantity_in_range (quantity : Int)
+    (hlo : int53Min ≤ quantity) (hhi : quantity ≤ int53Max) :
+    ∃ n, evalCall program "clampQuantity" [.int53 quantity, .int53 999] = .ok (.int53 n)
+      ∧ 1 ≤ n ∧ n ≤ 999 := by
+  simp only [int53Min, int53Max] at hlo hhi
+  rw [evalCall_eq find_clampQuantity rfl
+    (by
+      simp [clampQuantity, Value.hasTy, int53Min, int53Max]
+      exact ⟨decide_eq_true hlo, decide_eq_true hhi⟩),
+    defaultFuel_succ]
+  simp [clampQuantity, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_lit,
+    Env.lookup?, litValue, applyBin, compareValues, compareValues.orderBy, bind, Except.bind]
+  by_cases h1 : quantity < 1
+  · exact ⟨1, by simp [Int.compare_eq_lt.mpr h1], by omega, by omega⟩
+  · by_cases h2 : (999 : Int) < quantity
+    · refine ⟨999, ?_, by omega, by omega⟩
+      simp [Int.compare_eq_gt.mpr (show (1 : Int) < quantity by omega),
+        Int.compare_eq_gt.mpr h2]
+    · refine ⟨quantity, ?_, by omega, by omega⟩
+      have e1 : (compare quantity 1 == Ordering.lt) = false :=
+        beq_eq_false_iff_ne.mpr (Int.compare_ne_lt.mpr (by omega))
+      have e2 : (compare quantity 999 == Ordering.gt) = false :=
+        beq_eq_false_iff_ne.mpr (Int.compare_ne_gt.mpr (by omega))
+      simp [e1, e2]
+
+theorem same_currency_adds (x y : Int) (currency : String)
+    (hx : int53Min ≤ x ∧ x ≤ int53Max) (hy : int53Min ≤ y ∧ y ≤ int53Max)
+    (hsum : int53Min ≤ x + y ∧ x + y ≤ int53Max) :
+    evalCall program "addMoney" [money x currency, money y currency]
+      = .ok (.obj "ok" [("value", money (x + y) currency)]) := by
+  obtain ⟨hxlo, hxhi⟩ := hx
+  obtain ⟨hylo, hyhi⟩ := hy
+  obtain ⟨hslo, hshi⟩ := hsum
+  simp only [int53Min, int53Max] at hxlo hxhi hylo hyhi hslo hshi
+  rw [evalCall_eq find_addMoney rfl
+    (by
+      simp [addMoney, money, Value.hasTy, Value.hasFieldTys, findType_Money, Money, typeDef,
+        TypeDef.findAt?, TypeDef.ctorsAt, Ty.subst, bindVars, int53Min, int53Max]
+      repeat' apply And.intro
+      all_goals exact decide_eq_true (by omega)),
+    defaultFuel_succ]
+  have hno : ¬(x + y < int53Min ∨ int53Max < x + y) := by
+    simp only [int53Min, int53Max]
+    omega
+  have hbeq : (Value.str currency == Value.str currency) = true := by
+    show Value.beq (.str currency) (.str currency) = true
+    simp [Value.beq]
+  have hne : (Value.str currency != Value.str currency) = false := by
+    simp [bne, hbeq]
+  simp [addMoney, money, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_proj,
+    evalExpr_okE, evalExpr_ctor, evalArgs, Env.lookup?, applyBin, applyArith, mkInt53, hne,
+    findType_Money, Money, typeDef, TypeDef.find?, hno, bind, Except.bind]
+
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
@@ -321,7 +400,17 @@ def manifest : Manifest := {
   source := "lean/LeanTs/Example.lean"
   program := program
   claims := [
-    { name := "add_comm", statement := "∀ a b, add a b = add b a", proof := add_comm }
+    { name := "add_comm", statement := "∀ a b, add a b = add b a", proof := add_comm },
+    { name := "draft_never_ships"
+      statement := "∀ trackingId, ship(draft, trackingId) refuses with \"a draft order cannot ship\""
+      proof := draft_never_ships },
+    { name := "clamped_quantity_in_range"
+      statement := "∀ quantity, clampQuantity(quantity, 999) lies between 1 and 999"
+      proof := clamped_quantity_in_range },
+    { name := "same_currency_adds"
+      statement :=
+        "∀ a b sharing a currency whose amounts sum within Int53, addMoney(a, b) = ok(a.amount + b.amount)"
+      proof := same_currency_adds }
   ]
 }
 

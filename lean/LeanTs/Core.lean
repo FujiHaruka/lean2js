@@ -47,15 +47,27 @@ partial def Ty.render : Ty → String
   | .array t => s!"Array {t.render}"
   | .dict v => s!"Dict {v.render}"
 
-/-- Replaces a declaration's type parameters with the arguments it was applied to. -/
-partial def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
+mutual
+
+/-- Replaces a declaration's type parameters with the arguments it was applied to. Recursing through a
+list helper rather than `args.map` keeps this out of `partial`, which a proof about a declaration cannot
+unfold. -/
+def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
   | .var n => ((sigma.find? (·.1 == n)).map (·.2)).getD (.var n)
-  | .named n args => .named n (args.map (Ty.subst sigma))
-  | .option t => .option (t.subst sigma)
-  | .result ok err => .result (ok.subst sigma) (err.subst sigma)
-  | .array t => .array (t.subst sigma)
-  | .dict v => .dict (v.subst sigma)
+  | .named n args => .named n (Ty.substArgs sigma args)
+  | .option t => .option (Ty.subst sigma t)
+  | .result ok err => .result (Ty.subst sigma ok) (Ty.subst sigma err)
+  | .array t => .array (Ty.subst sigma t)
+  | .dict v => .dict (Ty.subst sigma v)
   | ty => ty
+termination_by t => sizeOf t
+
+def Ty.substArgs (sigma : List (String × Ty)) : List Ty → List Ty
+  | [] => []
+  | t :: rest => Ty.subst sigma t :: Ty.substArgs sigma rest
+termination_by ts => sizeOf ts
+
+end
 
 inductive Lit where
   | bool (b : Bool)

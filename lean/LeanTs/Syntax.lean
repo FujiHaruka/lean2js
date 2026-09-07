@@ -88,16 +88,28 @@ syntax "ty% " leants_ty : term
 syntax "decl% " ident "(" leants_param,* ")" " : " leants_ty " := " leants_expr : term
 syntax "type% " ident ("<" ident,+ ">")? " := " sepBy1(leants_ctor, " | ") : term
 
+mutual
+
 /-- Replaces a bare name with a type variable where the declaration binds one of that name. The macro
-cannot tell the two apart on sight: both are written as a plain identifier. -/
-partial def bindVars (params : List String) : Ty → Ty
+cannot tell the two apart on sight: both are written as a plain identifier. Recursing through a list
+helper rather than `args.map` keeps this out of `partial`, which a proof about a declaration cannot
+unfold. -/
+def bindVars (params : List String) : Ty → Ty
   | .named n [] => if params.contains n then .var n else .named n []
-  | .named n args => .named n (args.map (bindVars params))
+  | .named n args => .named n (bindVarsArgs params args)
   | .option t => .option (bindVars params t)
   | .result ok err => .result (bindVars params ok) (bindVars params err)
   | .array t => .array (bindVars params t)
   | .dict v => .dict (bindVars params v)
   | ty => ty
+termination_by t => sizeOf t
+
+def bindVarsArgs (params : List String) : List Ty → List Ty
+  | [] => []
+  | t :: rest => bindVars params t :: bindVarsArgs params rest
+termination_by ts => sizeOf ts
+
+end
 
 def typeDef (name : String) (params : List String) (ctors : List CtorDef) : TypeDef :=
   { name, params,
