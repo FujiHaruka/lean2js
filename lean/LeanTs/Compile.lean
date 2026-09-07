@@ -56,18 +56,167 @@ private def isScalar : Ty → Bool
   | .bool | .int53 | .uint32 | .string | .bigint => true
   | _ => false
 
-/-- The types `match` can case-split on, and the fields of each of their constructors. -/
-private def ctorTable (p : Program) : Ty → Except String (List (String × List (String × Ty)))
+/-- What a value's shape can be tested against at one position: a constructor's tag, or a literal it may
+equal. -/
+private inductive Head where
+  | ctor (name : String)
+  | lit (l : Lit)
+  deriving BEq
+
+/-- Every head a value of this type can take, each with the fields it carries. `none` where the values
+cannot be enumerated, so nothing short of a wildcard covers them. -/
+private def signature (p : Program) : Ty → Option (List (Head × List (String × Ty)))
   | .named n =>
-    match p.findType? n with
-    | some t => .ok (t.ctors.map fun c => (c.name, c.fields.map fun f => (f.name, f.ty)))
-    | none => .error s!"unknown type: {n}"
-  | .option t => .ok [("none", []), ("some", [("value", t)])]
-  | .result ok err => .ok [("ok", [("value", ok)]), ("error", [("error", err)])]
-  | ty => .error s!"{ty.render} cannot be matched on"
+    (p.findType? n).map fun t =>
+      t.ctors.map fun c => (.ctor c.name, c.fields.map fun f => (f.name, f.ty))
+  | .option t => some [(.ctor "none", []), (.ctor "some", [("value", t)])]
+  | .result ok err => some [(.ctor "ok", [("value", ok)]), (.ctor "error", [("error", err)])]
+  | .bool => some [(.lit (.bool true), []), (.lit (.bool false), [])]
+  | _ => none
+
+private def fieldTysOf (sig : Option (List (Head × List (String × Ty)))) (h : Head) : List Ty :=
+  match sig with
+  | some heads => (((heads.find? (·.1 == h)).map (·.2)).getD []).map (·.2)
+  | none => []
+
+private def headOf : Pat → Option Head
+  | .lit l => some (.lit l)
+  | .ctor name _ => some (.ctor name)
+  | _ => none
+
+/-- The rows left once the first column is known to have head `h`, with that head's own fields spliced in
+front of the rest. -/
+private def specialize (h : Head) (arity : Nat) : List (List Pat) → List (List Pat)
+  | [] => []
+  | row :: rows =>
+    let rest := specialize h arity rows
+    match row with
+    | [] => rest
+    | pat :: ps =>
+      match pat with
+      | .wild | .bind _ => (List.replicate arity .wild ++ ps) :: rest
+      | .lit l => if Head.lit l == h then ps :: rest else rest
+      | .ctor name args => if Head.ctor name == h then (args ++ ps) :: rest else rest
+
+/-- The rows left once the first column is known to have none of the heads already listed. -/
+private def defaultRows : List (List Pat) → List (List Pat)
+  | [] => []
+  | row :: rows =>
+    let rest := defaultRows rows
+    match row with
+    | .wild :: ps | .bind _ :: ps => ps :: rest
+    | _ => rest
+
+/-- Maranget's usefulness test: is there a value vector that `q` matches and no row of `rows` does?
+Exhaustiveness is this asked of an all-wildcard `q`, and an unreachable arm is this asked of that arm
+against the arms before it, so one function answers both.
+
+Patterns are type-checked before this runs, so a head that does not belong to its column's type cannot
+reach here. -/
+private partial def useful (p : Program) (rows : List (List Pat)) (q : List Pat) (tys : List Ty) : Bool :=
+  match q, tys with
+  | [], _ => rows.isEmpty
+  | pat :: qs, ty :: tys =>
+    let sig := signature p ty
+    match pat with
+    | .lit l => useful p (specialize (.lit l) 0 rows) qs tys
+    | .ctor name args =>
+      let ftys := fieldTysOf sig (.ctor name)
+      useful p (specialize (.ctor name) ftys.length rows) (args ++ qs) (ftys ++ tys)
+    | _ =>
+      let seen := rows.filterMap fun row =>
+        match row with
+        | pat :: _ => headOf pat
+        | [] => none
+      match sig with
+      | some heads =>
+        if heads.all fun (h, _) => seen.contains h then
+          heads.any fun (h, fields) =>
+            let ftys := fields.map (·.2)
+            useful p (specialize h ftys.length rows)
+              (List.replicate ftys.length .wild ++ qs) (ftys ++ tys)
+        else useful p (defaultRows rows) qs tys
+      | none => useful p (defaultRows rows) qs tys
+  | _ :: _, [] => false
+
+/-- The index of the first arm no value can reach, which is what replaces the old "every constructor
+exactly once" rule now that a wildcard may stand for several. -/
+private def firstUnreachable (p : Program) (ty : Ty) (seen : List (List Pat)) (i : Nat) :
+    List Pat → Option Nat
+  | [] => none
+  | pat :: rest =>
+    if useful p seen [pat] [ty] then firstUnreachable p ty (seen ++ [[pat]]) (i + 1) rest
+    else some i
+
+/-- One lowered `match` arm: what the generated code tests before taking it, the names it binds and where
+it reads each from, and the body under those bindings. -/
+private structure Arm where
+  tests : List Js.Expr
+  names : List String
+  paths : List Js.Expr
+  body : Js.Expr
+  ty : Ty
 
 private def objOf (ctor : String) (fields : List (String × Js.Expr)) : Js.Expr :=
   .objLit (("tag", .str ctor) :: fields)
+
+/-- A literal pattern is held to the same rules as a literal expression: an Int53 outside the safe range
+is no more matchable than it is writable. -/
+private def litJs (ty : Ty) : Lit → Except String Js.Expr
+  | .bool b => if ty == .bool then .ok (.bool b) else .error s!"a Bool pattern cannot match {ty.render}"
+  | .int53 i =>
+    if ty != .int53 then .error s!"an Int53 pattern cannot match {ty.render}"
+    else if i < int53Min || int53Max < i then .error s!"int53 literal out of range: {i}"
+    else .ok (.num i)
+  | .uint32 n =>
+    if ty == .uint32 then .ok (.num n.toNat) else .error s!"a UInt32 pattern cannot match {ty.render}"
+  | .str s =>
+    if ty == .string then .ok (.str s) else .error s!"a String pattern cannot match {ty.render}"
+  | .bigint i =>
+    if ty == .bigint then .ok (.bigLit i) else .error s!"a BigInt pattern cannot match {ty.render}"
+
+mutual
+
+/-- Type-checks one pattern against the type at its position and lowers it to the tests the generated
+code runs and the names it binds, each paired with the path it is read from.
+
+The tests are conjoined left to right by the caller, so an inner test is only reached once the tag it
+sits under has been confirmed and the path it reads is known to exist. -/
+private def patParts (p : Program) (ty : Ty) (path : Js.Expr) :
+    Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
+  | .wild => .ok ([], [])
+  | .bind name => do
+    validateIdent "pattern" name
+    .ok ([], [(name, path, ty)])
+  | .lit l => do .ok ([.binary "===" path (← litJs ty l)], [])
+  | .ctor name args =>
+    match signature p ty with
+    | none => .error s!"{ty.render} has no constructors to match on"
+    | some heads =>
+      match (heads.find? (·.1 == Head.ctor name)).map (·.2) with
+      | none => .error s!"{ty.render} has no constructor {name}"
+      | some fields =>
+        if fields.length != args.length then
+          .error s!"{name} binds {fields.length} fields but the pattern names {args.length}"
+        else do
+          let (tests, binds) ← patPartsList p (fields.map (·.2))
+            (fields.map fun f => Js.Expr.member path f.1) args
+          .ok (.binary "===" (.member path "tag") (.str name) :: tests, binds)
+termination_by pat => sizeOf pat
+
+private def patPartsList (p : Program) (tys : List Ty) (paths : List Js.Expr) :
+    List Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
+  | [] => .ok ([], [])
+  | pat :: pats =>
+    match tys, paths with
+    | ty :: tys, path :: paths => do
+      let (tests, binds) ← patParts p ty path pat
+      let (restTests, restBinds) ← patPartsList p tys paths pats
+      .ok (tests ++ restTests, binds ++ restBinds)
+    | _, _ => .error "a pattern names more fields than the constructor has"
+termination_by pats => sizeOf pats
+
+end
 
 mutual
 
@@ -180,18 +329,20 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | ty => .error s!"field access expects a declared type, not {ty.render}"
   | .matchE scrut alts => do
     let (jscrut, tscrut) ← compileExpr p ctx scrut
-    let table ← ctorTable p tscrut
-    validateDistinct "match alternative" (alts.map Alt.ctor)
-    if alts.length != table.length then
-      .error s!"match on {tscrut.render} must cover exactly {table.length} constructors"
-    else do
-      let arms ← compileAlts p ctx table alts
-      match arms with
-      | [] => .error "match needs at least one alternative"
-      | (_, _, _, _, ty) :: _ =>
-        if !arms.all (fun (_, _, _, _, t) => t == ty) then
-          .error "match alternatives disagree on their result type"
-        else .ok (.arrowCall [scrutName] (chain arms) [jscrut], ty)
+    let arms ← compileAlts p ctx tscrut alts
+    let pats := alts.map Alt.pat
+    if useful p (pats.map ([·])) [.wild] [tscrut] then
+      .error s!"match on {tscrut.render} is not exhaustive"
+    else
+      match firstUnreachable p tscrut [] 0 pats with
+      | some i => .error s!"match alternative {i + 1} is unreachable"
+      | none =>
+        match arms with
+        | [] => .error "match needs at least one alternative"
+        | arm :: _ =>
+          if !arms.all (fun a => a.ty == arm.ty) then
+            .error "match alternatives disagree on their result type"
+          else .ok (.arrowCall [scrutName] (chain arms) [jscrut], arm.ty)
   | .noneE elem => .ok (objOf "none" [], .option elem)
   | .someE e => do
     let (je, te) ← compileExpr p ctx e
@@ -252,15 +403,15 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | ty => .error s!"reduce expects an Array, not {ty.render}"
 termination_by sizeOf e
 where
-  chain : List (String × List String × List String × Js.Expr × Ty) → Js.Expr
+  chain : List Arm → Js.Expr
     | [] => .bool false
-    | [(_, binders, fields, body, _)] => apply binders fields body
-    | (ctor, binders, fields, body, _) :: rest =>
-      .cond (.binary "===" (.member (.ident scrutName) "tag") (.str ctor))
-        (apply binders fields body) (chain rest)
-  apply (binders fields : List String) (body : Js.Expr) : Js.Expr :=
-    if binders.isEmpty then body
-    else .arrowCall binders body (fields.map fun f => .member (.ident scrutName) f)
+    | [a] => apply a
+    | a :: rest =>
+      match a.tests with
+      | [] => apply a
+      | t :: ts => .cond (ts.foldl (.binary "&&") t) (apply a) (chain rest)
+  apply (a : Arm) : Js.Expr :=
+    if a.names.isEmpty then a.body else .arrowCall a.names a.body a.paths
 
 def compileArgs (p : Program) (ctx : Ctx) (es : List Expr) :
     Except String (List (Js.Expr × Ty)) :=
@@ -272,26 +423,18 @@ def compileArgs (p : Program) (ctx : Ctx) (es : List Expr) :
     .ok (head :: tail)
 termination_by sizeOf es
 
-/-- Lowers each alt to its constructor name, bound names, the field names to read, the body, and the
-body's type. -/
-def compileAlts (p : Program) (ctx : Ctx) (table : List (String × List (String × Ty)))
-    (alts : List Alt) :
-    Except String (List (String × List String × List String × Js.Expr × Ty)) :=
+private def compileAlts (p : Program) (ctx : Ctx) (ty : Ty) (alts : List Alt) :
+    Except String (List Arm) :=
   match alts with
   | [] => .ok []
-  | (ctor, binders, body) :: rest => do
-    match table.find? (·.1 == ctor) with
-    | none => .error s!"no such constructor in this match: {ctor}"
-    | some (_, fields) =>
-      if fields.length != binders.length then
-        .error s!"{ctor} binds {fields.length} fields but the pattern names {binders.length}"
-      else do
-        binders.forM fun b => validateIdent "pattern" b
-        validateDistinct "pattern" binders
-        let inner : Ctx := (binders.zip (fields.map (·.2))) ++ ctx
-        let (jbody, tbody) ← compileExpr p inner body
-        let tail ← compileAlts p ctx table rest
-        .ok ((ctor, binders, fields.map (·.1), jbody, tbody) :: tail)
+  | (pat, body) :: rest => do
+    let (tests, binds) ← patParts p ty (.ident scrutName) pat
+    validateDistinct "pattern" (binds.map (·.1))
+    let (jbody, tbody) ← compileExpr p ((binds.map fun b => (b.1, b.2.2)) ++ ctx) body
+    let tail ← compileAlts p ctx ty rest
+    .ok ({
+      tests, names := binds.map (·.1), paths := binds.map (·.2.1), body := jbody, ty := tbody
+    } :: tail)
 termination_by sizeOf alts
 
 end

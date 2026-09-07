@@ -107,6 +107,40 @@ def bindNames : List String → List Value → Env
 
 mutual
 
+/-- What a pattern binds when it matches the value, and nothing when it does not. Matching needs no
+evaluation, so `Step` runs the same function in one transition rather than decomposing the scrutinee
+across frames. -/
+def matchPat : Pat → Value → Option Env
+  | .wild, _ => some []
+  | .bind name, v => some [(name, v)]
+  | .lit l, v => if litValue l == v then some [] else none
+  | .ctor name args, .obj ctor fields =>
+    if name == ctor then matchPats args (fields.map (·.2)) else none
+  | .ctor _ _, _ => none
+termination_by pat => sizeOf pat
+
+def matchPats : List Pat → List Value → Option Env
+  | [], [] => some []
+  | pat :: pats, v :: vs => do
+    let here ← matchPat pat v
+    let rest ← matchPats pats vs
+    some (here ++ rest)
+  | _, _ => none
+termination_by pats => sizeOf pats
+
+end
+
+/-- The first arm whose pattern matches, with what it bound. Arms are tried in order, so an arm is
+reached only when every earlier one failed. -/
+def firstMatch : List Alt → Value → Option (Env × Expr)
+  | [], _ => none
+  | alt :: rest, v =>
+    match matchPat (Alt.pat alt) v with
+    | some binds => some (binds, Alt.body alt)
+    | none => firstMatch rest v
+
+mutual
+
 /-- `and` / `or` are handled first because JS's `&&` / `||` short-circuit. Evaluating both sides would
 make `false && (1 / 0)` give `false` in JS and a trap here, splitting the differential test at once. -/
 def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Value :=
@@ -167,15 +201,9 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
         | none => .error (.typeError s!"no field named {field}")
       | _ => .error (.typeError "field access expects a constructor value")
     | .matchE scrut alts => do
-      match ← evalExpr p f env scrut with
-      | .obj ctor fields =>
-        match alts.find? (fun a => Alt.ctor a == ctor) with
-        | none => .error (.noMatchingAlternative ctor)
-        | some alt =>
-          if (Alt.binders alt).length != fields.length then .error (.arity ctor)
-          else
-            evalExpr p f (bindNames (Alt.binders alt) (fields.map (·.2)) ++ env) (Alt.body alt)
-      | _ => .error (.typeError "match expects a constructor value")
+      match firstMatch alts (← evalExpr p f env scrut) with
+      | some (binds, body) => evalExpr p f (binds ++ env) body
+      | none => .error .noMatchingAlternative
     | .noneE _ => .ok (.obj "none" [])
     | .someE e => do .ok (.obj "some" [("value", ← evalExpr p f env e)])
     | .okE _ e => do .ok (.obj "ok" [("value", ← evalExpr p f env e)])

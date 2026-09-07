@@ -131,6 +131,22 @@
     {
       "name": "anyOverLimit",
       "signature": "(amounts : Array Int53, limit : Int53) → Bool"
+    },
+    {
+      "name": "quantityLabel",
+      "signature": "(quantity : Int53) → String"
+    },
+    {
+      "name": "renewalLabel",
+      "signature": "(autoRenew : Bool) → String"
+    },
+    {
+      "name": "chargeable",
+      "signature": "(amount : Money) → Bool"
+    },
+    {
+      "name": "settleMessage",
+      "signature": "(outcome : Result OrderState String) → String"
     }
   ],
   "theorems": [

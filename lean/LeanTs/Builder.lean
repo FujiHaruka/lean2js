@@ -57,8 +57,20 @@ def filter' (arr : Expr) (binder : String) (body : Expr) : Expr := .filterE arr 
 def reduce' (arr init : Expr) (accName elemName : String) (body : Expr) : Expr :=
   .reduceE arr init accName elemName body
 
+def pWild : Pat := .wild
+def pBind (name : String) : Pat := .bind name
+def pBool (b : Bool) : Pat := .lit (.bool b)
+def pInt53 (i : Int) : Pat := .lit (.int53 i)
+def pUint32 (n : UInt32) : Pat := .lit (.uint32 n)
+def pStr (s : String) : Pat := .lit (.str s)
+def pBigint (i : Int) : Pat := .lit (.bigint i)
+def pCtor (ctorName : String) (args : List Pat) : Pat := .ctor ctorName args
+
+/-- The arm that names every field of one constructor, which is what most arms are. -/
 def alt (ctorName : String) (binders : List String) (body : Expr) : Alt :=
-  (ctorName, binders, body)
+  (.ctor ctorName (binders.map Pat.bind), body)
+
+def altP (pat : Pat) (body : Expr) : Alt := (pat, body)
 
 def decl (name : String) (params : List (String × Ty)) (ret : Ty) (body : Expr) : Decl :=
   { name, params := params.map fun (n, t) => ⟨n, t⟩, ret, body }

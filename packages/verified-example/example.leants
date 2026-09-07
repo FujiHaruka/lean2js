@@ -99,3 +99,15 @@ def cartTotal(items : Array Money) : Int53 =
 def anyOverLimit(amounts : Array Int53, limit : Int53) : Bool =
   amounts.reduce(false, (seen, amount) => if seen then true else (amount > limit))
 
+def quantityLabel(quantity : Int53) : String =
+  match quantity { 0 => "out of stock" | 1 => "last one" | _ => "in stock" }
+
+def renewalLabel(autoRenew : Bool) : String =
+  match autoRenew { true => "renews" | false => "ends" }
+
+def chargeable(amount : Money) : Bool =
+  match amount { Money(0, _) => false | Money(_, "") => false | Money(value, _) => (value > 0) }
+
+def settleMessage(outcome : Result OrderState String) : String =
+  match outcome { ok(shipped(_, trackingId)) => trackingId | ok(placed(_)) => "awaiting shipment" | ok(_) => "no update" | error(message) => message }
+

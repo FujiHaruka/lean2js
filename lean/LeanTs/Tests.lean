@@ -67,6 +67,53 @@ private def rank (alts : List Alt) : Decl :=
 #guard !withTypes
   (rank [alt "red" [] (int53 0), alt "green" [] (int53 1), alt "blue" ["shade"] (bool true)])
 
+#guard withTypes (rank [alt "red" [] (int53 0), altP pWild (int53 1)])
+#guard !withTypes (rank [altP pWild (int53 1), alt "red" [] (int53 0)])
+#guard !withTypes
+  (rank [alt "red" [] (int53 0), alt "green" [] (int53 1), alt "blue" ["shade"] (v "shade"),
+    alt "red" [] (int53 2)])
+#guard withTypes (rank [altP (pCtor "blue" [pInt53 0]) (int53 0), altP pWild (int53 1)])
+#guard !withTypes
+  (rank [altP (pCtor "blue" [pInt53 0]) (int53 0), alt "red" [] (int53 1), alt "green" [] (int53 2)])
+#guard !withTypes
+  (rank [altP (pCtor "blue" [pInt53 9007199254740992]) (int53 0), altP pWild (int53 1)])
+#guard !withTypes (rank [altP (pStr "red") (int53 0), altP pWild (int53 1)])
+#guard !withTypes (rank [altP (pCtor "blue" [pBind "a", pBind "b"]) (int53 0), altP pWild (int53 1)])
+#guard !withTypes (rank [altP (pCtor "blue" [pBind "class"]) (int53 0), altP pWild (int53 1)])
+
+private def onPoint (alts : List Alt) : Decl :=
+  decl "onPoint" [("p", .named "Point")] .int53 (matchOn (v "p") alts)
+
+#guard withTypes (onPoint [altP (pCtor "Point" [pBind "x", pWild]) (v "x")])
+#guard !withTypes (onPoint [altP (pCtor "Point" [pBind "x", pBind "x"]) (v "x")])
+
+private def nested (alts : List Alt) : Decl :=
+  decl "nested" [("c", .option (.named "Colour"))] .int53 (matchOn (v "c") alts)
+
+#guard withTypes
+  (nested [altP (pCtor "some" [pCtor "blue" [pBind "shade"]]) (v "shade"), altP pWild (int53 0)])
+#guard withTypes
+  (nested [altP (pCtor "some" [pCtor "blue" [pBind "shade"]]) (v "shade"),
+    altP (pCtor "some" [pWild]) (int53 1), altP (pCtor "none" []) (int53 0)])
+#guard !withTypes
+  (nested [altP (pCtor "some" [pCtor "blue" [pBind "shade"]]) (v "shade"),
+    altP (pCtor "none" []) (int53 0)])
+
+#guard compiles
+  (decl "size" [("n", .int53)] .string
+    (matchOn (v "n") [altP (pInt53 0) (str "none"), altP pWild (str "some")]))
+#guard !compiles
+  (decl "size" [("n", .int53)] .string (matchOn (v "n") [altP (pInt53 0) (str "none")]))
+#guard !withTypes
+  (decl "size" [("n", .int53)] .int53
+    (matchOn (v "n") [altP (pCtor "red" []) (int53 0), altP pWild (int53 1)]))
+
+#guard compiles
+  (decl "flag" [("b", .bool)] .int53
+    (matchOn (v "b") [altP (pBool true) (int53 1), altP (pBool false) (int53 0)]))
+#guard !compiles
+  (decl "flag" [("b", .bool)] .int53 (matchOn (v "b") [altP (pBool true) (int53 1)]))
+
 #guard withTypes (decl "px" [("p", .named "Point")] .int53 (proj (v "p") "x"))
 #guard !withTypes (decl "pz" [("p", .named "Point")] .int53 (proj (v "p") "z"))
 #guard !withTypes

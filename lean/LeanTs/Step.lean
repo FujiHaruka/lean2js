@@ -167,14 +167,9 @@ def step (p : Program) : State → State
         | none => fail (.typeError s!"no field named {field}")
       | _ => fail (.typeError "field access expects a constructor value")
     | .matchK alts env =>
-      match v with
-      | .obj ctor fields =>
-        match alts.find? (fun a => Alt.ctor a == ctor) with
-        | none => fail (.noMatchingAlternative ctor)
-        | some alt =>
-          if (Alt.binders alt).length != fields.length then fail (.arity ctor)
-          else .eval (bindNames (Alt.binders alt) (fields.map (·.2)) ++ env) (Alt.body alt) k
-      | _ => fail (.typeError "match expects a constructor value")
+      match firstMatch alts v with
+      | some (binds, body) => .eval (binds ++ env) body k
+      | none => fail .noMatchingAlternative
     | .boolK =>
       match v with
       | .bool b => finish (.bool b) k

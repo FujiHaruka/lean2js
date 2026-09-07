@@ -204,6 +204,44 @@ def anyOverLimit : Decl :=
     (reduce' (v "amounts") (bool false) "seen" "amount"
       (ite' (v "seen") (bool true) (v "amount" >' v "limit")))
 
+/-- The label shown next to a line item. -/
+def quantityLabel : Decl :=
+  decl "quantityLabel" [("quantity", .int53)] .string
+    (matchOn (v "quantity") [
+      altP (pInt53 0) (str "out of stock"),
+      altP (pInt53 1) (str "last one"),
+      altP pWild (str "in stock")
+    ])
+
+/-- Whether a subscription carries on. Both cases are named, so no fallback is needed. -/
+def renewalLabel : Decl :=
+  decl "renewalLabel" [("autoRenew", .bool)] .string
+    (matchOn (v "autoRenew") [
+      altP (pBool true) (str "renews"),
+      altP (pBool false) (str "ends")
+    ])
+
+/-- An amount of zero is free whatever the currency, and an amount carrying no currency cannot be
+charged at all. -/
+def chargeable : Decl :=
+  decl "chargeable" [("amount", .named "Money")] .bool
+    (matchOn (v "amount") [
+      altP (pCtor "Money" [pInt53 0, pWild]) (bool false),
+      altP (pCtor "Money" [pWild, pStr ""]) (bool false),
+      altP (pCtor "Money" [pBind "value", pWild]) (v "value" >' int53 0)
+    ])
+
+/-- The shipping line shown once a transition has been attempted. A draft or cancelled order has nothing
+to show, so one arm reaches past `ok` and leaves the state itself open. -/
+def settleMessage : Decl :=
+  decl "settleMessage" [("outcome", .result (.named "OrderState") .string)] .string
+    (matchOn (v "outcome") [
+      altP (pCtor "ok" [pCtor "shipped" [pWild, pBind "trackingId"]]) (v "trackingId"),
+      altP (pCtor "ok" [pCtor "placed" [pWild]]) (str "awaiting shipment"),
+      altP (pCtor "ok" [pWild]) (str "no update"),
+      altP (pCtor "error" [pBind "message"]) (v "message")
+    ])
+
 def program : Program := {
   types := [Money, Role, OrderState]
   decls := [
@@ -212,7 +250,8 @@ def program : Program := {
     bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
     total, headOr, firstTracking,
-    lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit
+    lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
+    quantityLabel, renewalLabel, chargeable, settleMessage
   ]
 }
 

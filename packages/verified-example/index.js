@@ -345,4 +345,28 @@ export function anyOverLimit(__p0, __p1) {
   return __reduce(amounts, false, (seen, amount) => ((seen ? true : (amount > limit))));
 }
 
+/** quantityLabel : (quantity : Int53) → String */
+export function quantityLabel(__p0) {
+  const quantity = __ck(__p0, ["int53"]);
+  return ((__s) => (((__s === 0) ? "out of stock" : ((__s === 1) ? "last one" : "in stock"))))(quantity);
+}
+
+/** renewalLabel : (autoRenew : Bool) → String */
+export function renewalLabel(__p0) {
+  const autoRenew = __ck(__p0, ["bool"]);
+  return ((__s) => (((__s === true) ? "renews" : "ends")))(autoRenew);
+}
+
+/** chargeable : (amount : Money) → Bool */
+export function chargeable(__p0) {
+  const amount = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return ((__s) => (((((__s).tag === "Money") && ((__s).amount === 0)) ? false : ((((__s).tag === "Money") && ((__s).currency === "")) ? false : ((value) => ((value > 0)))((__s).amount)))))(amount);
+}
+
+/** settleMessage : (outcome : Result OrderState String) → String */
+export function settleMessage(__p0) {
+  const outcome = __ck(__p0, ["result", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
+  return ((__s) => (((((__s).tag === "ok") && (((__s).value).tag === "shipped")) ? ((trackingId) => (trackingId))(((__s).value).trackingId) : ((((__s).tag === "ok") && (((__s).value).tag === "placed")) ? "awaiting shipment" : (((__s).tag === "ok") ? "no update" : ((message) => (message))((__s).error))))))(outcome);
+}
+
 //# sourceMappingURL=index.js.map

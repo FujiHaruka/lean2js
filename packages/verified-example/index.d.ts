@@ -82,3 +82,11 @@ export declare function refundableOnly(role: Role, states: readonly OrderState[]
 export declare function cartTotal(items: readonly Money[]): number;
 
 export declare function anyOverLimit(amounts: readonly number[], limit: number): boolean;
+
+export declare function quantityLabel(quantity: number): string;
+
+export declare function renewalLabel(autoRenew: boolean): string;
+
+export declare function chargeable(amount: Money): boolean;
+
+export declare function settleMessage(outcome: Result<OrderState, string>): string;

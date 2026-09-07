@@ -24,6 +24,13 @@ private def litSource : Lit → String
   | .str s => "\"" ++ escapeString s ++ "\""
   | .bigint i => s!"{i}n"
 
+partial def Pat.source : Pat → String
+  | .wild => "_"
+  | .bind name => name
+  | .lit l => litSource l
+  | .ctor name [] => name
+  | .ctor name args => name ++ "(" ++ String.intercalate ", " (args.map Pat.source) ++ ")"
+
 partial def Expr.source : Expr → String
   | .lit l => litSource l
   | .var name => name
@@ -38,11 +45,7 @@ partial def Expr.source : Expr → String
     s!"{typeName}.{ctorName}(" ++ String.intercalate ", " (args.map Expr.source) ++ ")"
   | .proj e field => e.source ++ "." ++ field
   | .matchE scrut alts =>
-    let arm := fun (a : Alt) =>
-      let binders :=
-        if (Alt.binders a).isEmpty then ""
-        else "(" ++ String.intercalate ", " (Alt.binders a) ++ ")"
-      s!"{Alt.ctor a}{binders} => {(Alt.body a).source}"
+    let arm := fun (a : Alt) => s!"{(Alt.pat a).source} => {(Alt.body a).source}"
     "match " ++ scrut.source ++ " { " ++ String.intercalate " | " (alts.map arm) ++ " }"
   | .noneE elem => s!"none[{elem.render}]"
   | .someE e => "some(" ++ e.source ++ ")"

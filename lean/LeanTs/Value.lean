@@ -37,7 +37,7 @@ inductive Err where
   | int53Overflow
   | outOfFuel
   | indexOutOfBounds
-  | noMatchingAlternative (ctor : String)
+  | noMatchingAlternative
   | typeError (msg : String)
   | unknownVar (name : String)
   | unknownFn (name : String)
@@ -49,7 +49,7 @@ def Err.code : Err → String
   | .int53Overflow => "int53Overflow"
   | .outOfFuel => "outOfFuel"
   | .indexOutOfBounds => "indexOutOfBounds"
-  | .noMatchingAlternative _ => "noMatchingAlternative"
+  | .noMatchingAlternative => "noMatchingAlternative"
   | .typeError _ => "typeError"
   | .unknownVar _ => "unknownVar"
   | .unknownFn _ => "unknownFn"

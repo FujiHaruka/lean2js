@@ -58,6 +58,19 @@ inductive BinOp where
   | concat
   deriving Repr, BEq, Inhabited
 
+/-- What one `match` arm tests the scrutinee against. Nesting is what lets a rule branch on a combination
+— a state together with a role — instead of one constructor at a time, and a wildcard is what lets it
+name the combinations it cares about and leave the rest to a fallback.
+
+`bind` and `wild` differ only in whether the value is given a name; the exhaustiveness check treats them
+alike. -/
+inductive Pat where
+  | wild
+  | bind (name : String)
+  | lit (l : Lit)
+  | ctor (name : String) (args : List Pat)
+  deriving Repr, Inhabited
+
 /-- For `none` and `error` / `ok` one side's type is not determined by the term, so the syntax carries an
 annotation.
 
@@ -73,7 +86,7 @@ inductive Expr where
   | call (fn : String) (args : List Expr)
   | ctor (typeName ctorName : String) (args : List Expr)
   | proj (e : Expr) (field : String)
-  | matchE (scrut : Expr) (alts : List (String × List String × Expr))
+  | matchE (scrut : Expr) (alts : List (Pat × Expr))
   | noneE (elem : Ty)
   | someE (e : Expr)
   | okE (err : Ty) (e : Expr)
@@ -86,11 +99,10 @@ inductive Expr where
   | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)
   deriving Repr, Inhabited
 
-abbrev Alt := String × List String × Expr
+abbrev Alt := Pat × Expr
 
-def Alt.ctor (a : Alt) : String := a.1
-def Alt.binders (a : Alt) : List String := a.2.1
-def Alt.body (a : Alt) : Expr := a.2.2
+def Alt.pat (a : Alt) : Pat := a.1
+def Alt.body (a : Alt) : Expr := a.2
 
 structure Param where
   name : String
