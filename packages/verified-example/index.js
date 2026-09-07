@@ -10,6 +10,7 @@ const __fail = (code) => {
 const __i53 = (x) =>
   Number.isSafeInteger(x) ? (x === 0 ? 0 : x) : __fail("int53Overflow");
 
+// Math.trunc(a / b) は a が 2^53 に近いと 1 ずれる。整数除算に浮動小数の割り算を使わない。
 const __i53div = (a, b) =>
   b === 0 ? __fail("divByZero") : Number(BigInt(a) / BigInt(b));
 
@@ -35,6 +36,31 @@ const __strcmp = (a, b) => {
   }
   return x.length === y.length ? 0 : x.length < y.length ? -1 : 1;
 };
+
+// === は参照を比べるので、構築子の値と配列には使えない。
+const __eq = (a, b) => {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((x, i) => __eq(x, b[i]))
+    );
+  }
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((k) => Object.hasOwn(b, k) && __eq(a[k], b[k]))
+  );
+};
+
+// 範囲外の添字は undefined ではなく失敗にする。undefined はサブセットに存在しない。
+const __at = (xs, i) =>
+  Number.isSafeInteger(i) && i >= 0 && i < xs.length
+    ? xs[i]
+    : __fail("indexOutOfBounds");
 
 /** add : (a : Int53, b : Int53) → Int53 */
 export function add(a, b) {
@@ -119,5 +145,55 @@ export function sameLabel(a, b) {
 
 /** rebindTwice : (amount : Int53) → Int53 */
 export function rebindTwice(amount) {
-  return ((amount) => ((amount) => amount)(__i53((amount * 2))))(__i53((amount + 1)));
+  return ((amount) => (((amount) => (amount))(__i53((amount * 2)))))(__i53((amount + 1)));
+}
+
+/** roleRank : (role : Role) → Int53 */
+export function roleRank(role) {
+  return ((__s) => ((((__s).tag === "guest") ? 0 : (((__s).tag === "member") ? 1 : 2))))(role);
+}
+
+/** addMoney : (a : Money, b : Money) → Result Money String */
+export function addMoney(a, b) {
+  return (((a).currency !== (b).currency) ? { "tag": "error", "error": "currency mismatch" } : { "tag": "ok", "value": { "tag": "Money", "amount": __i53(((a).amount + (b).amount)), "currency": (a).currency } });
+}
+
+/** sameMoney : (a : Money, b : Money) → Bool */
+export function sameMoney(a, b) {
+  return __eq(a, b);
+}
+
+/** ship : (state : OrderState, trackingId : String) → Result OrderState String */
+export function ship(state, trackingId) {
+  return ((__s) => ((((__s).tag === "draft") ? { "tag": "error", "error": "a draft order cannot ship" } : (((__s).tag === "placed") ? ((orderId) => (((trackingId === "") ? { "tag": "error", "error": "a tracking id is required" } : { "tag": "ok", "value": { "tag": "shipped", "orderId": orderId, "trackingId": trackingId } })))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ({ "tag": "error", "error": "the order has already shipped" }))((__s).orderId, (__s).trackingId) : ((reason) => ({ "tag": "error", "error": "a cancelled order cannot ship" }))((__s).reason))))))(state);
+}
+
+/** trackingOf : (state : OrderState) → Option String */
+export function trackingOf(state) {
+  return ((__s) => ((((__s).tag === "draft") ? { "tag": "none" } : (((__s).tag === "placed") ? ((orderId) => ({ "tag": "none" }))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ({ "tag": "some", "value": trackingId }))((__s).orderId, (__s).trackingId) : ((reason) => ({ "tag": "none" }))((__s).reason))))))(state);
+}
+
+/** canRefund : (role : Role, state : OrderState) → Bool */
+export function canRefund(role, state) {
+  return ((__s) => ((((__s).tag === "draft") ? false : (((__s).tag === "placed") ? ((orderId) => ((roleRank(role) >= 1)))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ((roleRank(role) >= 2)))((__s).orderId, (__s).trackingId) : ((reason) => (false))((__s).reason))))))(state);
+}
+
+/** sumFrom : (xs : Array Int53, from : Int53) → Int53 */
+export function sumFrom(xs, from) {
+  return ((from >= (xs).length) ? 0 : __i53((__at(xs, from) + sumFrom(xs, __i53((from + 1))))));
+}
+
+/** total : (xs : Array Int53) → Int53 */
+export function total(xs) {
+  return sumFrom(xs, 0);
+}
+
+/** headOr : (xs : Array Int53, fallback : Int53) → Int53 */
+export function headOr(xs, fallback) {
+  return (((xs).length === 0) ? fallback : __at(xs, 0));
+}
+
+/** firstTracking : (states : Array OrderState) → Option String */
+export function firstTracking(states) {
+  return (((states).length === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
 }

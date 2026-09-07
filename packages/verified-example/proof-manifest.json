@@ -75,6 +75,46 @@
     {
       "name": "rebindTwice",
       "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "roleRank",
+      "signature": "(role : Role) → Int53"
+    },
+    {
+      "name": "addMoney",
+      "signature": "(a : Money, b : Money) → Result Money String"
+    },
+    {
+      "name": "sameMoney",
+      "signature": "(a : Money, b : Money) → Bool"
+    },
+    {
+      "name": "ship",
+      "signature": "(state : OrderState, trackingId : String) → Result OrderState String"
+    },
+    {
+      "name": "trackingOf",
+      "signature": "(state : OrderState) → Option String"
+    },
+    {
+      "name": "canRefund",
+      "signature": "(role : Role, state : OrderState) → Bool"
+    },
+    {
+      "name": "sumFrom",
+      "signature": "(xs : Array Int53, from : Int53) → Int53"
+    },
+    {
+      "name": "total",
+      "signature": "(xs : Array Int53) → Int53"
+    },
+    {
+      "name": "headOr",
+      "signature": "(xs : Array Int53, fallback : Int53) → Int53"
+    },
+    {
+      "name": "firstTracking",
+      "signature": "(states : Array OrderState) → Option String"
     }
   ],
   "theorems": [

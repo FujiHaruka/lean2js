@@ -100,6 +100,10 @@ def bindParams : List Param → List Value → Env
   | p :: ps, v :: vs => (p.name, v) :: bindParams ps vs
   | _, _ => []
 
+def bindNames : List String → List Value → Env
+  | n :: ns, v :: vs => (n, v) :: bindNames ns vs
+  | _, _ => []
+
 mutual
 
 /-- `and` / `or` を先に捌いているのは JS の `&&` / `||` が短絡するため。両辺を評価してしまうと
@@ -144,6 +148,53 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       | some d =>
         if d.params.length != vs.length then .error (.arity fn)
         else evalExpr p f (bindParams d.params vs) d.body
+    | .ctor typeName ctorName args => do
+      let vs ← evalArgs p f env args
+      match p.findType? typeName with
+      | none => .error (.typeError s!"unknown type: {typeName}")
+      | some t =>
+        match t.find? ctorName with
+        | none => .error (.typeError s!"{typeName} has no constructor {ctorName}")
+        | some c =>
+          if c.fields.length != vs.length then .error (.arity ctorName)
+          else .ok (.obj ctorName ((c.fields.map (·.name)).zip vs))
+    | .proj e field => do
+      match ← evalExpr p f env e with
+      | .obj _ fields =>
+        match (fields.find? (·.1 == field)).map (·.2) with
+        | some v => .ok v
+        | none => .error (.typeError s!"no field named {field}")
+      | _ => .error (.typeError "field access expects a constructor value")
+    | .matchE scrut alts => do
+      match ← evalExpr p f env scrut with
+      | .obj ctor fields =>
+        match alts.find? (fun a => Alt.ctor a == ctor) with
+        | none => .error (.noMatchingAlternative ctor)
+        | some alt =>
+          if (Alt.binders alt).length != fields.length then .error (.arity ctor)
+          else
+            evalExpr p f (bindNames (Alt.binders alt) (fields.map (·.2)) ++ env) (Alt.body alt)
+      | _ => .error (.typeError "match expects a constructor value")
+    | .noneE _ => .ok (.obj "none" [])
+    | .someE e => do .ok (.obj "some" [("value", ← evalExpr p f env e)])
+    | .okE _ e => do .ok (.obj "ok" [("value", ← evalExpr p f env e)])
+    | .errorE _ e => do .ok (.obj "error" [("error", ← evalExpr p f env e)])
+    | .arrayLit _ items => do .ok (.arr (← evalArgs p f env items))
+    | .index arr idx => do
+      let a ← evalExpr p f env arr
+      let i ← evalExpr p f env idx
+      match a, i with
+      | .arr xs, .int53 n =>
+        if n < 0 || Int.ofNat xs.length ≤ n then .error .indexOutOfBounds
+        else
+          match xs[n.toNat]? with
+          | some v => .ok v
+          | none => .error .indexOutOfBounds
+      | _, _ => .error (.typeError "index expects an Array and an Int53")
+    | .length arr => do
+      match ← evalExpr p f env arr with
+      | .arr xs => mkInt53 (Int.ofNat xs.length)
+      | _ => .error (.typeError "length expects an Array")
 termination_by (fuel, 0, 0)
 
 def evalArgs (p : Program) (fuel : Nat) (env : Env) (es : List Expr) :
@@ -167,7 +218,8 @@ def evalCall (p : Program) (fn : String) (args : List Value) : Except Err Value 
   | none => .error (.unknownFn fn)
   | some d =>
     if d.params.length != args.length then .error (.arity fn)
-    else if !(d.params.zip args).all (fun (p, v) => v.hasTy p.ty) then
+    else if !(d.params.zip args).all
+        (fun (param, v) => v.hasTy p structureDepth param.ty) then
       .error (.typeError s!"argument type mismatch calling {fn}")
     else evalExpr p defaultFuel (bindParams d.params args) d.body
 

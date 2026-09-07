@@ -28,8 +28,7 @@ def bmpMax : String := String.singleton (Char.ofNat 0xFFFF)
 /-- BMP の外にある文字。JS では surrogate pair 2 つになる。 -/
 def astral : String := String.singleton (Char.ofNat 0x10000)
 
-/-- 境界のすぐ内と外を必ず踏む。溢れと丸めはここでしか壊れない。 -/
-def edgeCases : Ty → List Value
+private def scalarEdges : Ty → List Value
   | .bool => [.bool true, .bool false]
   | .int53 =>
     [0, 1, -1, 2, -2, 3, -3, 7, -7, 10, -10,
@@ -44,8 +43,36 @@ def edgeCases : Ty → List Value
   | .bigint =>
     [0, 1, -1, 7, -7, 9007199254740993, -9007199254740993,
      1208925819614629174706176, -1208925819614629174706176].map Value.bigint
+  | _ => []
 
-private def randomValue (s : UInt64) : Ty → Value
+/-- 各引数の境界値の直積。入れ子の型では組合せが爆発するので、深いところほど幅を切る。 -/
+private def tuplesOf (rows : List (List Value)) (per : List Value) : List (List Value) :=
+  per.flatMap fun v => rows.map fun row => v :: row
+
+/-- 境界のすぐ内と外を必ず踏む。溢れと丸めはここでしか壊れない。 -/
+partial def edgeCases (p : Program) (width : Nat) : Ty → List Value
+  | .named n =>
+    match p.findType? n with
+    | none => []
+    | some t =>
+      t.ctors.flatMap fun c =>
+        let rows := c.fields.foldr (init := [[]]) fun f rows =>
+          tuplesOf rows ((edgeCases p (width / 2 + 1) f.ty).take (width / 2 + 1))
+        (rows.map fun args => Value.obj c.name ((c.fields.map (·.name)).zip args)).take width
+  | .option t =>
+    Value.obj "none" [] ::
+      ((edgeCases p (width / 2 + 1) t).take width).map fun x => .obj "some" [("value", x)]
+  | .result ok err =>
+    ((edgeCases p (width / 2 + 1) ok).take width).map (fun x => Value.obj "ok" [("value", x)])
+      ++ ((edgeCases p (width / 2 + 1) err).take width).map fun x =>
+        Value.obj "error" [("error", x)]
+  | .array t =>
+    let items := (edgeCases p (width / 2 + 1) t).take width
+    Value.arr [] :: (items.map fun x => Value.arr [x])
+      ++ [Value.arr (items.take 3), Value.arr (items.take 5)]
+  | ty => scalarEdges ty
+
+private partial def randomValue (p : Program) (s : UInt64) : Ty → Value
   | .bool => .bool (bits s % 2 == 0)
   | .int53 =>
     let magnitude : Int :=
@@ -66,32 +93,36 @@ private def randomValue (s : UInt64) : Ty → Value
   | .bigint =>
     let magnitude := Int.ofNat (bits s) * Int.ofNat (bits (nextSeed s) % 4294967296 + 1)
     .bigint (if bits (nextSeed (nextSeed s)) % 2 == 0 then magnitude else -magnitude)
+  | ty =>
+    let candidates := edgeCases p 6 ty
+    candidates.getD (pick s candidates.length) (.obj "none" [])
 
-/-- 各引数の境界値の直積。組合せが増えすぎる関数では上限で切る。 -/
-private def edgeTuples : List Ty → List (List Value)
+private def edgeTuples (p : Program) : List Ty → List (List Value)
   | [] => [[]]
-  | ty :: rest =>
-    let tails := edgeTuples rest
-    (edgeCases ty).flatMap fun v => tails.map fun tail => v :: tail
+  | ty :: rest => tuplesOf (edgeTuples p rest) (edgeCases p 12 ty)
 
-private def randomTuples (s : UInt64) (tys : List Ty) : Nat → List (List Value)
+private def randomTuples (p : Program) (s : UInt64) (tys : List Ty) : Nat → List (List Value)
   | 0 => []
   | n + 1 =>
     let (row, s') := tys.foldl (init := ([], s)) fun (acc, seed) ty =>
-      (acc ++ [randomValue seed ty], nextSeed seed)
-    row :: randomTuples (nextSeed s') tys n
+      (acc ++ [randomValue p seed ty], nextSeed seed)
+    row :: randomTuples p (nextSeed s') tys n
 
 structure TestVector where
   fn : String
   args : List Value
   expected : Except Err Value
 
-def Value.toJson : Value → Json
+partial def Value.toJson : Value → Json
   | .bool b => .obj [("t", .str "bool"), ("v", .bool b)]
   | .int53 i => .obj [("t", .str "int53"), ("v", .num i)]
   | .uint32 n => .obj [("t", .str "uint32"), ("v", .num n.toNat)]
   | .str s => .obj [("t", .str "string"), ("v", .str s)]
   | .bigint i => .obj [("t", .str "bigint"), ("v", .str (toString i))]
+  | .obj ctor fields =>
+    .obj [("t", .str "obj"), ("ctor", .str ctor),
+          ("fields", .obj (fields.map fun (k, v) => (k, Value.toJson v)))]
+  | .arr xs => .obj [("t", .str "arr"), ("v", .arr (xs.map Value.toJson))]
 
 def TestVector.toJson (v : TestVector) : Json :=
   let outcome :=
@@ -103,10 +134,10 @@ def TestVector.toJson (v : TestVector) : Json :=
 def vectorsFor (p : Program) (d : Decl) (edgeLimit randomCount : Nat) (seed : UInt64) :
     List TestVector :=
   let tys := d.params.map (·.ty)
-  let tuples := (edgeTuples tys).take edgeLimit ++ randomTuples seed tys randomCount
+  let tuples := (edgeTuples p tys).take edgeLimit ++ randomTuples p seed tys randomCount
   tuples.map fun args => { fn := d.name, args, expected := evalCall p d.name args }
 
-def allVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
+def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
   let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
   (p.decls.zip seeds).flatMap fun (d, seed) => vectorsFor p d edgeLimit randomCount seed
 
@@ -120,7 +151,7 @@ private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
 
 /-- 1 行 1 ベクタで書き出す。生成物は git に入るので、整形しすぎても 1 行にまとめても差分が読めない。 -/
 def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String :=
-  let vectors := allVectors p edgeLimit randomCount
+  let vectors := allTestVectors p edgeLimit randomCount
   match outOfFuelIn vectors with
   | some v => .error s!"{v.fn} ran out of fuel; the subset excludes nontermination"
   | none =>

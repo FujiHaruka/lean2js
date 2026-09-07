@@ -41,7 +41,27 @@ def ite' (c t e : Expr) : Expr := .cond c t e
 def letIn (name : String) (ty : Ty) (val body : Expr) : Expr := .letE name ty val body
 def call (fn : String) (args : List Expr) : Expr := .call fn args
 
+def ctor (typeName ctorName : String) (args : List Expr) : Expr := .ctor typeName ctorName args
+def proj (e : Expr) (field : String) : Expr := .proj e field
+def matchOn (scrut : Expr) (alts : List Alt) : Expr := .matchE scrut alts
+def none' (elem : Ty) : Expr := .noneE elem
+def some' (e : Expr) : Expr := .someE e
+def ok' (err : Ty) (e : Expr) : Expr := .okE err e
+def error' (ok : Ty) (e : Expr) : Expr := .errorE ok e
+def array (elem : Ty) (items : List Expr) : Expr := .arrayLit elem items
+def at' (arr idx : Expr) : Expr := .index arr idx
+def len (arr : Expr) : Expr := .length arr
+
+def alt (ctorName : String) (binders : List String) (body : Expr) : Alt :=
+  (ctorName, binders, body)
+
 def decl (name : String) (params : List (String × Ty)) (ret : Ty) (body : Expr) : Decl :=
   { name, params := params.map fun (n, t) => ⟨n, t⟩, ret, body }
+
+def struct (name : String) (fields : List (String × Ty)) : TypeDef :=
+  { name, ctors := [{ name, fields := fields.map fun (n, t) => ⟨n, t⟩ }] }
+
+def enum (name : String) (ctors : List (String × List (String × Ty))) : TypeDef :=
+  { name, ctors := ctors.map fun (c, fields) => ⟨c, fields.map fun (n, t) => ⟨n, t⟩⟩ }
 
 end LeanTs.Core.Builder

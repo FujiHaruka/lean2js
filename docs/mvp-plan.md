@@ -51,6 +51,15 @@ Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-ma
 | 負のゼロ | JS では `0 - 0` も `-4 % 2` も `-0` になる。Int53 は数学的な整数なので `+0` に正規化する |
 | inductive 表現 | 一律にタグ付きオブジェクト `{ tag, ... }`。`Option` を `T \| null` に特殊化しない（入れ子で壊れる） |
 
+## 前提: 宣言した型を満たす引数
+
+`eval` と生成した JS が一致することは、**宣言した型を満たす引数について**主張する。`.d.ts` が
+TypeScript の呼び出し側に対してこれを担保する。
+
+型を破った呼び出し（`Int53` に 2^60 を渡す、`String` に数値を渡す）では両者は割れうる。`eval` は
+入口で引数の型を検査して `typeError` を返すが、生成した JS は検査していないため。公開関数の入口で
+実行時に引数を検証するのは follow-up とする。
+
 ## 進め方
 
 幅優先で Core を作らない。まず縦に一本通す。
@@ -59,6 +68,9 @@ Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-ma
    `index.js` / `index.d.ts` まで通し、Vitest が生成物を import して差分テストする
 2. そこから横に広げる: Bool / if → inductive / match → structure → Array → 構造的再帰 →
    String / UInt32 / BigInt
+
+停止性はまだ検査していない。非停止な定義はサブセットから外す方針だが、現状は `eval` の fuel が
+尽きるだけで、コンパイラは通してしまう。構造的再帰の検査は Phase 2 の課題。
 
 差分テストの形: `leants` が `vectors.json`（`[{fn, args, expected}]`、`expected` は `eval` の結果で
 trap も符号化する）を出力し、Vitest が生成された ESM を実行して突き合わせる。

@@ -14,6 +14,20 @@ namespace LeanTs.Example
 
 open Core Core.Builder
 
+def Money : TypeDef :=
+  struct "Money" [("amount", .int53), ("currency", .string)]
+
+def Role : TypeDef :=
+  enum "Role" [("guest", []), ("member", []), ("admin", [])]
+
+def OrderState : TypeDef :=
+  enum "OrderState" [
+    ("draft", []),
+    ("placed", [("orderId", .int53)]),
+    ("shipped", [("orderId", .int53), ("trackingId", .string)]),
+    ("cancelled", [("reason", .string)])
+  ]
+
 def add : Decl :=
   decl "add" [("a", .int53), ("b", .int53)] .int53 (v "a" +' v "b")
 
@@ -89,11 +103,89 @@ def rebindTwice : Decl :=
     (letIn "amount" .int53 (v "amount" +' int53 1)
       (letIn "amount" .int53 (v "amount" *' int53 2) (v "amount")))
 
+def roleRank : Decl :=
+  decl "roleRank" [("role", .named "Role")] .int53
+    (matchOn (v "role") [
+      alt "guest" [] (int53 0),
+      alt "member" [] (int53 1),
+      alt "admin" [] (int53 2)
+    ])
+
+/-- 通貨が違う金額は足せない。JS 側では `===` が使えないので構造的等価のヘルパを呼ぶ。 -/
+def addMoney : Decl :=
+  decl "addMoney" [("a", .named "Money"), ("b", .named "Money")]
+    (.result (.named "Money") .string)
+    (ite' (proj (v "a") "currency" ≠' proj (v "b") "currency")
+      (error' (.named "Money") (str "currency mismatch"))
+      (ok' .string
+        (ctor "Money" "Money"
+          [proj (v "a") "amount" +' proj (v "b") "amount", proj (v "a") "currency"])))
+
+def sameMoney : Decl :=
+  decl "sameMoney" [("a", .named "Money"), ("b", .named "Money")] .bool (v "a" ==' v "b")
+
+/-- 出荷への状態遷移。遷移できない状態と空の追跡番号を弾く。 -/
+def ship : Decl :=
+  decl "ship" [("state", .named "OrderState"), ("trackingId", .string)]
+    (.result (.named "OrderState") .string)
+    (matchOn (v "state") [
+      alt "draft" [] (failWith "a draft order cannot ship"),
+      alt "placed" ["orderId"]
+        (ite' (v "trackingId" ==' str "")
+          (failWith "a tracking id is required")
+          (ok' .string
+            (ctor "OrderState" "shipped" [v "orderId", v "trackingId"]))),
+      alt "shipped" ["orderId", "trackingId"] (failWith "the order has already shipped"),
+      alt "cancelled" ["reason"] (failWith "a cancelled order cannot ship")
+    ])
+where
+  failWith (message : String) : Expr :=
+    error' (.named "OrderState") (str message)
+
+def trackingOf : Decl :=
+  decl "trackingOf" [("state", .named "OrderState")] (.option .string)
+    (matchOn (v "state") [
+      alt "draft" [] (none' .string),
+      alt "placed" ["orderId"] (none' .string),
+      alt "shipped" ["orderId", "trackingId"] (some' (v "trackingId")),
+      alt "cancelled" ["reason"] (none' .string)
+    ])
+
+def canRefund : Decl :=
+  decl "canRefund" [("role", .named "Role"), ("state", .named "OrderState")] .bool
+    (matchOn (v "state") [
+      alt "draft" [] (bool false),
+      alt "placed" ["orderId"] (call "roleRank" [v "role"] ≥' int53 1),
+      alt "shipped" ["orderId", "trackingId"] (call "roleRank" [v "role"] ≥' int53 2),
+      alt "cancelled" ["reason"] (bool false)
+    ])
+
+/-- 添字による構造的再帰。範囲外の読み出しは `undefined` ではなく trap する。 -/
+def sumFrom : Decl :=
+  decl "sumFrom" [("xs", .array .int53), ("from", .int53)] .int53
+    (ite' (v "from" ≥' len (v "xs")) (int53 0)
+      (at' (v "xs") (v "from") +' call "sumFrom" [v "xs", v "from" +' int53 1]))
+
+def total : Decl :=
+  decl "total" [("xs", .array .int53)] .int53 (call "sumFrom" [v "xs", int53 0])
+
+def headOr : Decl :=
+  decl "headOr" [("xs", .array .int53), ("fallback", .int53)] .int53
+    (ite' (len (v "xs") ==' int53 0) (v "fallback") (at' (v "xs") (int53 0)))
+
+def firstTracking : Decl :=
+  decl "firstTracking" [("states", .array (.named "OrderState"))] (.option .string)
+    (ite' (len (v "states") ==' int53 0) (none' .string)
+      (call "trackingOf" [at' (v "states") (int53 0)]))
+
 def program : Program := {
+  types := [Money, Role, OrderState]
   decls := [
     add, clampQuantity, lineTotal, discounted, divide, remainder, negate,
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
-    bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice
+    bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
+    roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
+    sumFrom, total, headOr, firstTracking
   ]
 }
 
@@ -102,8 +194,9 @@ private theorem find_add : program.find? "add" = some add := rfl
 theorem add_comm (a b : Int) :
     evalCall program "add" [.int53 a, .int53 b]
       = evalCall program "add" [.int53 b, .int53 a] := by
-  simp [evalCall, find_add, add, decl, v, Env.lookup?, bindParams, Value.hasTy,
-    evalExpr.eq_def, defaultFuel, applyBin, applyArith, bind, Except.bind, Int.add_comm]
+  simp [evalCall, find_add, add, decl, v, Env.lookup?, bindParams, Value.hasTy, structureDepth,
+    evalExpr.eq_def, defaultFuel, applyBin, applyArith, bind, Except.bind, Int.add_comm,
+    or_comm, or_assoc, or_left_comm]
 
 def manifest : Manifest := {
   package := "@leants/verified-example"
