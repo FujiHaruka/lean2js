@@ -164,7 +164,7 @@ end Runtime
 
 open _root_.LeanTs.Js.Runtime
 
-private def helper (name : String) (args : List JsValue) : Option JsResult :=
+def helper (name : String) (args : List JsValue) : Option JsResult :=
   match name, args with
   | "__i53", [.num a] => some (i53 a)
   | "__i53div", [.num a, .num b] => some (i53div a b)
