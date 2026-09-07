@@ -218,6 +218,10 @@ const __dset = (d, k, v) => new Map(d).set(k, v);
 
 const __dkeys = (d) => Array.from(d.keys());
 
+const __dvalues = (d) => Array.from(d.values());
+
+const __ddelete = (d, k) => new Map([...d].filter(([key]) => key !== k));
+
 // === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
   if (a === b) return true;

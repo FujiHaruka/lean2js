@@ -95,6 +95,10 @@ const __dset = (d, k, v) => new Map(d).set(k, v);
 
 const __dkeys = (d) => Array.from(d.keys());
 
+const __dvalues = (d) => Array.from(d.values());
+
+const __ddelete = (d, k) => new Map([...d].filter(([key]) => key !== k));
+
 // === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
   if (a === b) return true;
@@ -542,6 +546,19 @@ export function repriced(__p0, __p1, __p2) {
 export function listedSkus(__p0) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
   return __dkeys(prices);
+}
+
+/** listedPrices : (prices : Dict Int53) → Array Int53 */
+export function listedPrices(__p0) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  return __dvalues(prices);
+}
+
+/** withdrawn : (prices : Dict Int53, sku : String) → Dict Int53 */
+export function withdrawn(__p0, __p1) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  return __ddelete(prices, sku);
 }
 
 /** catalogueSize : (prices : Dict Int53) → Int53 */

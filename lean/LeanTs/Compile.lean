@@ -481,6 +481,19 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     match td with
     | .dict _ => .ok (.call "__dkeys" [jd], .array .string)
     | ty => .error s!"keys expects a Dict, not {ty.render}"
+  | .dictValues d => do
+    let (jd, td) ← compileExpr p ctx d
+    match td with
+    | .dict value => .ok (.call "__dvalues" [jd], .array value)
+    | ty => .error s!"values expects a Dict, not {ty.render}"
+  | .dictDelete d key => do
+    let (jd, td) ← compileExpr p ctx d
+    let (jk, tk) ← compileExpr p ctx key
+    match td with
+    | .dict value =>
+      if tk != .string then .error "a dictionary key must be a String"
+      else .ok (.call "__ddelete" [jd, jk], .dict value)
+    | ty => .error s!"delete expects a Dict, not {ty.render}"
   | .strUn op e => do
     let (je, te) ← compileExpr p ctx e
     if te != .string then .error s!"{op.name} expects a String, not {te.render}"

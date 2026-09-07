@@ -64,6 +64,10 @@ def dictHas (d key : Expr) : Expr := .dictHas d key
 def dictSet (d key val : Expr) : Expr := .dictSet d key val
 def dictKeys (d : Expr) : Expr := .dictKeys d
 
+def dictValues (d : Expr) : Expr := .dictValues d
+
+def dictDelete (d key : Expr) : Expr := .dictDelete d key
+
 def trim (e : Expr) : Expr := .strUn .trim e
 def upper (e : Expr) : Expr := .strUn .upper e
 def lower (e : Expr) : Expr := .strUn .lower e

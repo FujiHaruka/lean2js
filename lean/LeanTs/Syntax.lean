@@ -291,6 +291,8 @@ private partial def methodOn (recv : Term) (name : String) (args : Array Term) :
   | "has", [k] => `(Expr.dictHas $recv $k)
   | "set", [k, val] => `(Expr.dictSet $recv $k $val)
   | "keys", [] => `(Expr.dictKeys $recv)
+  | "values", [] => `(Expr.dictValues $recv)
+  | "delete", [k] => `(Expr.dictDelete $recv $k)
   | _, _ => Macro.throwUnsupported
 
 /-- `map` and `filter` take a lambda and `reduce` takes a seed and a lambda; everything else takes plain

@@ -213,6 +213,14 @@
       "signature": "(prices : Dict Int53) → Array String"
     },
     {
+      "name": "listedPrices",
+      "signature": "(prices : Dict Int53) → Array Int53"
+    },
+    {
+      "name": "withdrawn",
+      "signature": "(prices : Dict Int53, sku : String) → Dict Int53"
+    },
+    {
       "name": "catalogueSize",
       "signature": "(prices : Dict Int53) → Int53"
     }

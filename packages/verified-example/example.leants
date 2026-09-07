@@ -163,6 +163,12 @@ def repriced(prices : Dict Int53, sku : String, amount : Int53) : Dict Int53 =
 def listedSkus(prices : Dict Int53) : Array String =
   prices.keys()
 
+def listedPrices(prices : Dict Int53) : Array Int53 =
+  prices.values()
+
+def withdrawn(prices : Dict Int53, sku : String) : Dict Int53 =
+  prices.delete(sku)
+
 def catalogueSize(prices : Dict Int53) : Int53 =
   prices.length
 

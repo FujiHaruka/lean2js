@@ -204,6 +204,7 @@ private def nested (alts : List Alt) : Decl :=
   (decl "stored" [("d", .dict .int53), ("k", .string), ("s", .string)] (.dict .int53)
     (dictSet (v "d") (v "k") (v "s")))
 #guard compiles (decl "names" [("d", .dict .int53)] (.array .string) (dictKeys (v "d")))
+#guard compiles (decl "amounts" [("d", .dict .int53)] (.array .int53) (dictValues (v "d")))
 #guard compiles (decl "count" [("d", .dict .int53)] .int53 (len (v "d")))
 
 #guard compiles (decl "trimmed" [("s", .string)] .string (trim (v "s")))
@@ -319,6 +320,8 @@ private def callsIdentity (name callee : String) : Decl :=
 #guard (expr% d.get(k)) == dictGet (v "d") (v "k")
 #guard (expr% d.set(k, x)) == dictSet (v "d") (v "k") (v "x")
 #guard (expr% d.keys()) == dictKeys (v "d")
+#guard (expr% d.values()) == dictValues (v "d")
+#guard (expr% d.delete(k)) == dictDelete (v "d") (v "k")
 #guard (expr% if a then b else c) == ite' (v "a") (v "b") (v "c")
 #guard (expr% let n : Int53 := 1; n) == letIn "n" .int53 (int53 1) (v "n")
 #guard (expr% match r { guest() => 0 | _ => 1 })

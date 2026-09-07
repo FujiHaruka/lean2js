@@ -289,6 +289,13 @@ def repriced : Decl := decl%
 def listedSkus : Decl := decl%
   listedSkus(prices : Dict<Int53>) : Array<String> := prices.keys()
 
+def listedPrices : Decl := decl%
+  listedPrices(prices : Dict<Int53>) : Array<Int53> := prices.values()
+
+/-- The price book after a sku is withdrawn. A sku that was never listed leaves the book unchanged. -/
+def withdrawn : Decl := decl%
+  withdrawn(prices : Dict<Int53>, sku : String) : Dict<Int53> := prices.delete(sku)
+
 def catalogueSize : Decl := decl%
   catalogueSize(prices : Dict<Int53>) : Int53 := prices.length
 
@@ -304,7 +311,8 @@ def program : Program := {
     quantityLabel, renewalLabel, chargeable, settleMessage,
     remainingItems, firstPage, validateQuantity, validationMessage,
     storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel, isSpreadsheet,
-    limitsFor, dailyLimit, priceOf, isListed, repriced, listedSkus, catalogueSize
+    limitsFor, dailyLimit, priceOf, isListed, repriced, listedSkus, listedPrices, withdrawn,
+    catalogueSize
   ]
 }
 

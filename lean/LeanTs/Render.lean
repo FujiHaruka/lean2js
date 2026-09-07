@@ -72,6 +72,8 @@ partial def Expr.source : Expr → String
   | .dictSet d key val =>
     d.source ++ ".set(" ++ key.source ++ ", " ++ val.source ++ ")"
   | .dictKeys d => d.source ++ ".keys()"
+  | .dictValues d => d.source ++ ".values()"
+  | .dictDelete d key => d.source ++ ".delete(" ++ key.source ++ ")"
   | .strUn op e => e.source ++ "." ++ op.name ++ "()"
   | .strBin op lhs rhs => lhs.source ++ "." ++ op.name ++ "(" ++ rhs.source ++ ")"
   | .substring s lo hi =>

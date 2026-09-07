@@ -129,4 +129,8 @@ export declare function repriced(prices: ReadonlyMap<string, number>, sku: strin
 
 export declare function listedSkus(prices: ReadonlyMap<string, number>): readonly string[];
 
+export declare function listedPrices(prices: ReadonlyMap<string, number>): readonly number[];
+
+export declare function withdrawn(prices: ReadonlyMap<string, number>, sku: string): ReadonlyMap<string, number>;
+
 export declare function catalogueSize(prices: ReadonlyMap<string, number>): number;

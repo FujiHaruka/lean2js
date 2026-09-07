@@ -322,6 +322,16 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       match ← evalExpr p f env d with
       | .dict entries => .ok (.arr (entries.map fun e => .str e.1))
       | _ => .error (.typeError "keys expects a Dict")
+    | .dictValues d => do
+      match ← evalExpr p f env d with
+      | .dict entries => .ok (.arr (entries.map fun e => e.2))
+      | _ => .error (.typeError "values expects a Dict")
+    | .dictDelete d key => do
+      let dv ← evalExpr p f env d
+      let kv ← evalExpr p f env key
+      match dv, kv with
+      | .dict entries, .str k => .ok (.dict (entries.filter (·.1 != k)))
+      | _, _ => .error (.typeError "delete expects a Dict and a String key")
     | .strUn op e => do applyStrUn op (← evalExpr p f env e)
     | .strBin op lhs rhs => do
       let a ← evalExpr p f env lhs
@@ -618,6 +628,23 @@ theorem evalExpr_dictKeys (p : Program) (f : Nat) (env : Env) (d : Expr) :
       (do match ← evalExpr p f env d with
           | .dict entries => .ok (.arr (entries.map fun e => .str e.1))
           | _ => .error (.typeError "keys expects a Dict")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_dictValues (p : Program) (f : Nat) (env : Env) (d : Expr) :
+    evalExpr p (f + 1) env (.dictValues d) =
+      (do match ← evalExpr p f env d with
+          | .dict entries => .ok (.arr (entries.map fun e => e.2))
+          | _ => .error (.typeError "values expects a Dict")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_dictDelete (p : Program) (f : Nat) (env : Env) (d key : Expr) :
+    evalExpr p (f + 1) env (.dictDelete d key) =
+      (do
+        let dv ← evalExpr p f env d
+        let kv ← evalExpr p f env key
+        match dv, kv with
+        | .dict entries, .str k => .ok (.dict (entries.filter (·.1 != k)))
+        | _, _ => .error (.typeError "delete expects a Dict and a String key")) := by
   rw [evalExpr.eq_def]
 
 theorem evalExpr_strUn (p : Program) (f : Nat) (env : Env) (op : StrUnOp) (e : Expr) :

@@ -176,6 +176,9 @@ private def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__dhas", [.dict entries, .str key] => some (.ok (.bool (entries.any (·.1 == key))))
   | "__dset", [.dict entries, .str key, v] => some (.ok (.dict (mapSet entries key v)))
   | "__dkeys", [.dict entries] => some (.ok (.arr (entries.map fun e => .str e.1)))
+  | "__dvalues", [.dict entries] => some (.ok (.arr (entries.map fun e => e.2)))
+  | "__ddelete", [.dict entries, .str key] =>
+    some (.ok (.dict (entries.filter (·.1 != key))))
   | "__strlen", [.str s] => some (.ok (.num s.toList.length))
   | "__trim", [.str s] => some (.ok (.str (strTrim s)))
   | "__upper", [.str s] => some (.ok (.str (strUpper s)))

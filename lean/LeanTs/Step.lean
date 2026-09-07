@@ -43,6 +43,8 @@ inductive Frame where
   | dictHasK (done : List Value) (rest : List Expr) (env : Env)
   | dictSetK (done : List Value) (rest : List Expr) (env : Env)
   | dictKeysK
+  | dictValuesK
+  | dictDeleteK (done : List Value) (rest : List Expr) (env : Env)
   | strUnK (op : StrUnOp)
   | strBinL (op : StrBinOp) (rhs : Expr) (env : Env)
   | strBinR (op : StrBinOp) (lhs : Value)
@@ -147,6 +149,10 @@ def step (p : Program) : State → State
       continueArgs (buildDictSet · k) [] [d, key, val] env k
         (fun done rest => .dictSetK done rest env)
     | .dictKeys d => .eval env d (.dictKeysK :: k)
+    | .dictValues d => .eval env d (.dictValuesK :: k)
+    | .dictDelete d key =>
+      continueArgs (buildDictDelete · k) [] [d, key] env k
+        (fun done rest => .dictDeleteK done rest env)
     | .strUn op e => .eval env e (.strUnK op :: k)
     | .strBin op lhs rhs => .eval env lhs (.strBinL op rhs env :: k)
     | .substring str lo hi =>
@@ -248,6 +254,13 @@ def step (p : Program) : State → State
       match v with
       | .dict entries => finish (.arr (entries.map fun e => .str e.1)) k
       | _ => fail (.typeError "keys expects a Dict")
+    | .dictValuesK =>
+      match v with
+      | .dict entries => finish (.arr (entries.map fun e => e.2)) k
+      | _ => fail (.typeError "values expects a Dict")
+    | .dictDeleteK done rest env =>
+      continueArgs (buildDictDelete · k) (done ++ [v]) rest env k
+        (fun done rest => .dictDeleteK done rest env)
     | .strUnK op =>
       match applyStrUn op v with
       | .ok w => finish w k
@@ -311,6 +324,10 @@ where
     match args with
     | [.dict entries, .str key, val] => finish (.dict (dictWith entries key val)) k
     | _ => fail (.typeError "set expects a Dict and a String key")
+  buildDictDelete (args : List Value) (k : List Frame) : State :=
+    match args with
+    | [.dict entries, .str key] => finish (.dict (entries.filter (·.1 != key))) k
+    | _ => fail (.typeError "delete expects a Dict and a String key")
   buildSlice (args : List Value) (k : List Frame) : State :=
     match args with
     | [s, lo, hi] =>

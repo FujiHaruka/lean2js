@@ -157,6 +157,8 @@ inductive Expr where
   | dictHas (d key : Expr)
   | dictSet (d key val : Expr)
   | dictKeys (d : Expr)
+  | dictValues (d : Expr)
+  | dictDelete (d key : Expr)
   | strUn (op : StrUnOp) (e : Expr)
   | strBin (op : StrBinOp) (lhs rhs : Expr)
   | substring (s lo hi : Expr)
