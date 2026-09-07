@@ -170,6 +170,26 @@ private def nested (alts : List Alt) : Decl :=
   (decl "filterNotArray" [("n", .int53)] (.array .int53) (filter' (v "n") "x" (bool true)))
 
 #guard withTypes
+  (decl "firstBig" [("xs", .array .int53)] (.option .int53)
+    (find' (v "xs") "x" (v "x" >' int53 100)))
+#guard !withTypes
+  (decl "findNotBool" [("xs", .array .int53)] (.option .int53) (find' (v "xs") "x" (v "x")))
+#guard !withTypes
+  (decl "findNotArray" [("n", .int53)] (.option .int53) (find' (v "n") "x" (bool true)))
+#guard !withTypes
+  (decl "findElemDrift" [("xs", .array .int53)] (.option .string)
+    (find' (v "xs") "x" (v "x" >' int53 0)))
+
+#guard withTypes
+  (decl "allPositive" [("xs", .array .int53)] .bool (all' (v "xs") "x" (v "x" >' int53 0)))
+#guard withTypes
+  (decl "anyNegative" [("xs", .array .int53)] .bool (any' (v "xs") "x" (v "x" <' int53 0)))
+#guard !withTypes
+  (decl "allNotBool" [("xs", .array .int53)] .bool (all' (v "xs") "x" (v "x")))
+#guard !withTypes
+  (decl "anyNotArray" [("n", .int53)] .bool (any' (v "n") "x" (bool true)))
+
+#guard withTypes
   (decl "sum" [("xs", .array .int53)] .int53
     (reduce' (v "xs") (int53 0) "acc" "x" (v "acc" +' v "x")))
 #guard withTypes
@@ -343,6 +363,9 @@ private def callsIdentity (name callee : String) : Decl :=
 #guard (expr% xs[0]) == at' (v "xs") (int53 0)
 #guard (expr% xs.map(fun x => x * 2)) == (map' (v "xs") "x" (v "x" *' int53 2))
 #guard (expr% xs.filter(fun x => x > 0)) == (filter' (v "xs") "x" (v "x" >' int53 0))
+#guard (expr% xs.find(fun x => x > 0)) == (find' (v "xs") "x" (v "x" >' int53 0))
+#guard (expr% xs.all(fun x => x > 0)) == (all' (v "xs") "x" (v "x" >' int53 0))
+#guard (expr% xs.any(fun x => x > 0)) == (any' (v "xs") "x" (v "x" >' int53 0))
 #guard (expr% xs.reduce(0, fun (sum, x) => sum + x))
   == (reduce' (v "xs") (int53 0) "sum" "x" (v "sum" +' v "x"))
 #guard (expr% s.trim().toUpper()) == upper (trim (v "s"))

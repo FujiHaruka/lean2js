@@ -324,6 +324,14 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       match ← evalExpr p f env arr with
       | .arr xs => do .ok (.arr (← evalFilterItems p f env binder body xs))
       | _ => .error (.typeError "filter expects an Array")
+    | .findE arr binder body => do
+      match ← evalExpr p f env arr with
+      | .arr xs => evalFindItems p f env binder body xs
+      | _ => .error (.typeError "find expects an Array")
+    | .quantE op arr binder body => do
+      match ← evalExpr p f env arr with
+      | .arr xs => evalQuantItems p f env op binder body xs
+      | _ => .error (.typeError s!"{op.name} expects an Array")
     | .reduceE arr init accName elemName body => do
       match ← evalExpr p f env arr with
       | .arr xs => do
@@ -407,6 +415,32 @@ def evalFilterItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (bo
     | .bool true => do .ok (x :: (← evalFilterItems p fuel env binder body rest))
     | .bool false => evalFilterItems p fuel env binder body rest
     | _ => .error (.typeError "filter expects a Bool predicate")
+termination_by (fuel, 1, xs.length)
+
+/-- Stops at the first element the predicate accepts, so a predicate that would trap on a later element
+never sees it. -/
+def evalFindItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (body : Expr)
+    (xs : List Value) : Except Err Value :=
+  match xs with
+  | [] => .ok (.obj "none" [])
+  | x :: rest => do
+    match ← evalExpr p fuel ((binder, x) :: env) body with
+    | .bool true => .ok (.obj "some" [("value", x)])
+    | .bool false => evalFindItems p fuel env binder body rest
+    | _ => .error (.typeError "find expects a Bool predicate")
+termination_by (fuel, 1, xs.length)
+
+def evalQuantItems (p : Program) (fuel : Nat) (env : Env) (op : QuantOp) (binder : String)
+    (body : Expr) (xs : List Value) : Except Err Value :=
+  match xs with
+  | [] => .ok (.bool (op == .all))
+  | x :: rest => do
+    match ← evalExpr p fuel ((binder, x) :: env) body with
+    | .bool b =>
+      match op with
+      | .all => if b then evalQuantItems p fuel env op binder body rest else .ok (.bool false)
+      | .any => if b then .ok (.bool true) else evalQuantItems p fuel env op binder body rest
+    | _ => .error (.typeError s!"{op.name} expects a Bool predicate")
 termination_by (fuel, 1, xs.length)
 
 def evalReduceItems (p : Program) (fuel : Nat) (env : Env) (accName elemName : String)
@@ -608,6 +642,22 @@ theorem evalExpr_filterE (p : Program) (f : Nat) (env : Env) (arr : Expr) (binde
           | _ => .error (.typeError "filter expects an Array")) := by
   rw [evalExpr.eq_def]
 
+theorem evalExpr_findE (p : Program) (f : Nat) (env : Env) (arr : Expr) (binder : String)
+    (body : Expr) :
+    evalExpr p (f + 1) env (.findE arr binder body) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => evalFindItems p f env binder body xs
+          | _ => .error (.typeError "find expects an Array")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_quantE (p : Program) (f : Nat) (env : Env) (op : QuantOp) (arr : Expr)
+    (binder : String) (body : Expr) :
+    evalExpr p (f + 1) env (.quantE op arr binder body) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => evalQuantItems p f env op binder body xs
+          | _ => .error (.typeError s!"{op.name} expects an Array")) := by
+  rw [evalExpr.eq_def]
+
 theorem evalExpr_reduceE (p : Program) (f : Nat) (env : Env) (arr init : Expr)
     (accName elemName : String) (body : Expr) :
     evalExpr p (f + 1) env (.reduceE arr init accName elemName body) =
@@ -757,6 +807,35 @@ theorem evalFilterItems_cons (p : Program) (f : Nat) (env : Env) (binder : Strin
           | .bool false => evalFilterItems p f env binder body rest
           | _ => .error (.typeError "filter expects a Bool predicate")) := by
   rw [evalFilterItems.eq_def]
+
+theorem evalFindItems_nil (p : Program) (f : Nat) (env : Env) (binder : String) (body : Expr) :
+    evalFindItems p f env binder body [] = .ok (.obj "none" []) := by
+  rw [evalFindItems.eq_def]
+
+theorem evalFindItems_cons (p : Program) (f : Nat) (env : Env) (binder : String) (body : Expr)
+    (x : Value) (rest : List Value) :
+    evalFindItems p f env binder body (x :: rest) =
+      (do match ← evalExpr p f ((binder, x) :: env) body with
+          | .bool true => .ok (.obj "some" [("value", x)])
+          | .bool false => evalFindItems p f env binder body rest
+          | _ => .error (.typeError "find expects a Bool predicate")) := by
+  rw [evalFindItems.eq_def]
+
+theorem evalQuantItems_nil (p : Program) (f : Nat) (env : Env) (op : QuantOp) (binder : String)
+    (body : Expr) :
+    evalQuantItems p f env op binder body [] = .ok (.bool (op == .all)) := by
+  rw [evalQuantItems.eq_def]
+
+theorem evalQuantItems_cons (p : Program) (f : Nat) (env : Env) (op : QuantOp) (binder : String)
+    (body : Expr) (x : Value) (rest : List Value) :
+    evalQuantItems p f env op binder body (x :: rest) =
+      (do match ← evalExpr p f ((binder, x) :: env) body with
+          | .bool b =>
+            match op with
+            | .all => if b then evalQuantItems p f env op binder body rest else .ok (.bool false)
+            | .any => if b then .ok (.bool true) else evalQuantItems p f env op binder body rest
+          | _ => .error (.typeError s!"{op.name} expects a Bool predicate")) := by
+  rw [evalQuantItems.eq_def]
 
 theorem evalReduceItems_nil (p : Program) (f : Nat) (env : Env) (accName elemName : String)
     (body : Expr) (acc : Value) :

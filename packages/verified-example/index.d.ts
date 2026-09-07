@@ -101,6 +101,12 @@ export declare function cartTotal(items: readonly Money[]): number;
 
 export declare function anyOverLimit(amounts: readonly number[], limit: number): boolean;
 
+export declare function firstOverLimit(amounts: readonly number[], limit: number): Option<number>;
+
+export declare function everyLineWithinLimit(amounts: readonly number[], limit: number): boolean;
+
+export declare function someLineIsFree(amounts: readonly number[]): boolean;
+
 export declare function quantityLabel(quantity: number): string;
 
 export declare function renewalLabel(autoRenew: boolean): string;

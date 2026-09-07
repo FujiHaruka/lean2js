@@ -121,6 +121,15 @@ def cartTotal(items : Array Money) : Int53 =
 def anyOverLimit(amounts : Array Int53, limit : Int53) : Bool =
   amounts.reduce(false, (seen, amount) => if seen then true else (amount > limit))
 
+def firstOverLimit(amounts : Array Int53, limit : Int53) : Option Int53 =
+  amounts.find(amount => (amount > limit))
+
+def everyLineWithinLimit(amounts : Array Int53, limit : Int53) : Bool =
+  amounts.all(amount => (amount <= limit))
+
+def someLineIsFree(amounts : Array Int53) : Bool =
+  amounts.any(amount => (amount == 0))
+
 def quantityLabel(quantity : Int53) : String =
   match quantity { 0 => "out of stock" | 1 => "last one" | _ => "in stock" }
 

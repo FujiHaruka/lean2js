@@ -62,6 +62,8 @@ inductive Expr where
   | check (d : TyDesc) (e : Expr)
   | mapJs (arr : Expr) (binder : String) (body : Expr)
   | filterJs (arr : Expr) (binder : String) (body : Expr)
+  | findJs (arr : Expr) (binder : String) (body : Expr)
+  | quantJs (op : Core.QuantOp) (arr : Expr) (binder : String) (body : Expr)
   | reduceJs (arr init : Expr) (accName elemName : String) (body : Expr)
   deriving Inhabited
 
@@ -107,6 +109,10 @@ partial def Expr.render : Expr → String
     "__map(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
   | .filterJs arr binder body =>
     "__filter(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
+  | .findJs arr binder body =>
+    "__find(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
+  | .quantJs op arr binder body =>
+    "__" ++ op.name ++ "(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
   | .reduceJs arr init accName elemName body =>
     "__reduce(" ++ arr.render ++ ", " ++ init.render ++ ", (" ++ accName ++ ", " ++ elemName
       ++ ") => (" ++ body.render ++ "))"
@@ -285,6 +291,22 @@ const __filter = (xs, f) => {
   const out = [];
   for (let i = 0; i < xs.length; i++) if (f(xs[i])) out.push(xs[i]);
   return out;
+};
+
+// Stops at the first element the predicate accepts, so a predicate that would trap later never runs.
+const __find = (xs, f) => {
+  for (let i = 0; i < xs.length; i++) if (f(xs[i])) return { tag: \"some\", value: xs[i] };
+  return { tag: \"none\" };
+};
+
+const __all = (xs, f) => {
+  for (let i = 0; i < xs.length; i++) if (!f(xs[i])) return false;
+  return true;
+};
+
+const __any = (xs, f) => {
+  for (let i = 0; i < xs.length; i++) if (f(xs[i])) return true;
+  return false;
 };
 
 const __reduce = (xs, init, f) => {

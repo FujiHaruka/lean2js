@@ -164,6 +164,22 @@ const __filter = (xs, f) => {
   return out;
 };
 
+// Stops at the first element the predicate accepts, so a predicate that would trap later never runs.
+const __find = (xs, f) => {
+  for (let i = 0; i < xs.length; i++) if (f(xs[i])) return { tag: "some", value: xs[i] };
+  return { tag: "none" };
+};
+
+const __all = (xs, f) => {
+  for (let i = 0; i < xs.length; i++) if (!f(xs[i])) return false;
+  return true;
+};
+
+const __any = (xs, f) => {
+  for (let i = 0; i < xs.length; i++) if (f(xs[i])) return true;
+  return false;
+};
+
 const __reduce = (xs, init, f) => {
   let acc = init;
   for (let i = 0; i < xs.length; i++) acc = f(acc, xs[i]);
@@ -481,6 +497,26 @@ export function anyOverLimit(__p0, __p1) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
   const limit = __ck(__p1, ["int53"]);
   return __reduce(amounts, false, (seen, amount) => ((seen ? true : (amount > limit))));
+}
+
+/** firstOverLimit : (amounts : Array Int53, limit : Int53) → Option Int53 */
+export function firstOverLimit(__p0, __p1) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  const limit = __ck(__p1, ["int53"]);
+  return __find(amounts, (amount) => ((amount > limit)));
+}
+
+/** everyLineWithinLimit : (amounts : Array Int53, limit : Int53) → Bool */
+export function everyLineWithinLimit(__p0, __p1) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  const limit = __ck(__p1, ["int53"]);
+  return __all(amounts, (amount) => ((amount <= limit)));
+}
+
+/** someLineIsFree : (amounts : Array Int53) → Bool */
+export function someLineIsFree(__p0) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __any(amounts, (amount) => ((amount === 0)));
 }
 
 /** quantityLabel : (quantity : Int53) → String */

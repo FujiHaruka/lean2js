@@ -56,6 +56,10 @@ inductive Frame where
   | filterArrK (binder : String) (body : Expr) (env : Env)
   | filterK (binder : String) (body : Expr) (env : Env) (done : List Value) (kept : Value)
       (rest : List Value)
+  | findArrK (binder : String) (body : Expr) (env : Env)
+  | findK (binder : String) (body : Expr) (env : Env) (candidate : Value) (rest : List Value)
+  | quantArrK (op : QuantOp) (binder : String) (body : Expr) (env : Env)
+  | quantK (op : QuantOp) (binder : String) (body : Expr) (env : Env) (rest : List Value)
   | reduceArrK (init : Expr) (accName elemName : String) (body : Expr) (env : Env)
   | reduceInitK (items : List Value) (accName elemName : String) (body : Expr) (env : Env)
   | reduceK (accName elemName : String) (body : Expr) (env : Env) (rest : List Value)
@@ -94,6 +98,18 @@ private def continueFilter (binder : String) (body : Expr) (env : Env)
   match rest with
   | [] => finish (.arr done) k
   | x :: more => .eval ((binder, x) :: env) body (.filterK binder body env done x more :: k)
+
+private def continueFind (binder : String) (body : Expr) (env : Env)
+    (rest : List Value) (k : List Frame) : State :=
+  match rest with
+  | [] => finish (.obj "none" []) k
+  | x :: more => .eval ((binder, x) :: env) body (.findK binder body env x more :: k)
+
+private def continueQuant (op : QuantOp) (binder : String) (body : Expr) (env : Env)
+    (rest : List Value) (k : List Frame) : State :=
+  match rest with
+  | [] => finish (.bool (op == .all)) k
+  | x :: more => .eval ((binder, x) :: env) body (.quantK op binder body env more :: k)
 
 private def continueReduce (accName elemName : String) (body : Expr) (env : Env)
     (acc : Value) (rest : List Value) (k : List Frame) : State :=
@@ -136,6 +152,8 @@ def step (p : Program) : State → State
     | .length arr => .eval env arr (.lengthK :: k)
     | .mapE arr binder body => .eval env arr (.mapArrK binder body env :: k)
     | .filterE arr binder body => .eval env arr (.filterArrK binder body env :: k)
+    | .findE arr binder body => .eval env arr (.findArrK binder body env :: k)
+    | .quantE op arr binder body => .eval env arr (.quantArrK op binder body env :: k)
     | .reduceE arr init accName elemName body =>
       .eval env arr (.reduceArrK init accName elemName body env :: k)
     | .dictLit _ entries =>
@@ -300,6 +318,26 @@ def step (p : Program) : State → State
       | .bool true => continueFilter binder body env (done ++ [kept]) rest k
       | .bool false => continueFilter binder body env done rest k
       | _ => fail (.typeError "filter expects a Bool predicate")
+    | .findArrK binder body env =>
+      match v with
+      | .arr xs => continueFind binder body env xs k
+      | _ => fail (.typeError "find expects an Array")
+    | .findK binder body env candidate rest =>
+      match v with
+      | .bool true => finish (.obj "some" [("value", candidate)]) k
+      | .bool false => continueFind binder body env rest k
+      | _ => fail (.typeError "find expects a Bool predicate")
+    | .quantArrK op binder body env =>
+      match v with
+      | .arr xs => continueQuant op binder body env xs k
+      | _ => fail (.typeError s!"{op.name} expects an Array")
+    | .quantK op binder body env rest =>
+      match v with
+      | .bool b =>
+        match op with
+        | .all => if b then continueQuant op binder body env rest k else finish (.bool false) k
+        | .any => if b then finish (.bool true) k else continueQuant op binder body env rest k
+      | _ => fail (.typeError s!"{op.name} expects a Bool predicate")
     | .reduceArrK init accName elemName body env =>
       match v with
       | .arr xs => .eval env init (.reduceInitK xs accName elemName body env :: k)

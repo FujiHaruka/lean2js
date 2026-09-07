@@ -377,6 +377,14 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
       match ← eval m f env arr with
       | .arr xs => do .ok (.arr (← evalFilterJs m f env binder body xs))
       | _ => .error "typeError"
+    | .findJs arr binder body => do
+      match ← eval m f env arr with
+      | .arr xs => evalFindJs m f env binder body xs
+      | _ => .error "typeError"
+    | .quantJs op arr binder body => do
+      match ← eval m f env arr with
+      | .arr xs => evalQuantJs m f env op binder body xs
+      | _ => .error "typeError"
     | .reduceJs arr init accName elemName body => do
       match ← eval m f env arr with
       | .arr xs => do
@@ -415,6 +423,30 @@ def evalFilterJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body
     match ← eval m fuel ((binder, x) :: env) body with
     | .bool true => do .ok (x :: (← evalFilterJs m fuel env binder body rest))
     | .bool false => evalFilterJs m fuel env binder body rest
+    | _ => .error "typeError"
+termination_by (fuel, 1, xs.length)
+
+def evalFindJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body : Expr)
+    (xs : List JsValue) : Except String JsValue :=
+  match xs with
+  | [] => .ok (.obj [("tag", .str "none")])
+  | x :: rest => do
+    match ← eval m fuel ((binder, x) :: env) body with
+    | .bool true => .ok (.obj [("tag", .str "some"), ("value", x)])
+    | .bool false => evalFindJs m fuel env binder body rest
+    | _ => .error "typeError"
+termination_by (fuel, 1, xs.length)
+
+def evalQuantJs (m : Module) (fuel : Nat) (env : JsEnv) (op : Core.QuantOp) (binder : String)
+    (body : Expr) (xs : List JsValue) : Except String JsValue :=
+  match xs with
+  | [] => .ok (.bool (op == .all))
+  | x :: rest => do
+    match ← eval m fuel ((binder, x) :: env) body with
+    | .bool b =>
+      match op with
+      | .all => if b then evalQuantJs m fuel env op binder body rest else .ok (.bool false)
+      | .any => if b then .ok (.bool true) else evalQuantJs m fuel env op binder body rest
     | _ => .error "typeError"
 termination_by (fuel, 1, xs.length)
 

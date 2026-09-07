@@ -39,7 +39,7 @@ Lean 全体ではなく、JS との対応が明快な領域に絞ることで、
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
 | `structure` / `inductive` / 型パラメータ / `Option` / `Result` | `unsafe` / arbitrary FFI / pointer |
-| `Array` 操作（`map` / `filter` / `reduce` / `slice` / `reverse` / `++`）と `match`（入れ子・ワイルドカード・リテラル） | metaprogramming |
+| `Array` 操作（`map` / `filter` / `reduce` / `find` / `all` / `any` / `slice` / `reverse` / `++`）と `match`（入れ子・ワイルドカード・リテラル） | metaprogramming |
 | 算術（`+` / `-` / `*` / `/` / `%` / `abs` / `min` / `max`、溢れとゼロ除算は trap） | Float / IEEE 754 |
 | 純粋関数 | 再帰 / 非停止 / DOM access |
 | `String` 操作（`trim` / 大文字小文字 / `startsWith` / `endsWith` / `includes` / `split` / `substring`） | 正規表現 |
@@ -73,7 +73,7 @@ Lean のリファレンス意味論  ──証明（断片）──  生成し�
 - **停止性**: 関数は自分より前に宣言された関数しか呼べないので、自己再帰も相互再帰もコンパイルが通らない。
   非停止は `eval` の fuel が尽きるのを待つのではなく構文として排除され、走査は `map` / `filter` / `reduce`
   が受け持つ
-- **実行時検査**: 出荷する成果物の全ベクタ（現在 22343 件）について、`eval` と JS の模型、および
+- **実行時検査**: 出荷する成果物の全ベクタ（現在 23543 件）について、`eval` と JS の模型、および
   `eval` と small-step が一致することを `leants` が書き出す前に確かめる
 - **差分テスト**: 生成した ESM を Node で実行し、`eval` の答えと突き合わせる。JS の模型が仮定している
   振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）はここで押さえる

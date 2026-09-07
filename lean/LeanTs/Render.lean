@@ -69,6 +69,10 @@ partial def Expr.source : Expr → String
     arr.source ++ ".map(" ++ binder ++ " => " ++ body.source ++ ")"
   | .filterE arr binder body =>
     arr.source ++ ".filter(" ++ binder ++ " => " ++ body.source ++ ")"
+  | .findE arr binder body =>
+    arr.source ++ ".find(" ++ binder ++ " => " ++ body.source ++ ")"
+  | .quantE op arr binder body =>
+    arr.source ++ "." ++ op.name ++ "(" ++ binder ++ " => " ++ body.source ++ ")"
   | .reduceE arr init accName elemName body =>
     arr.source ++ ".reduce(" ++ init.source ++ ", (" ++ accName ++ ", " ++ elemName ++ ") => "
       ++ body.source ++ ")"

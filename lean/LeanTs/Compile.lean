@@ -458,6 +458,25 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       if tbody != .bool then .error s!"a filter predicate must be a Bool, not {tbody.render}"
       else .ok (.filterJs jarr binder jbody, .array elem)
     | ty => .error s!"filter expects an Array, not {ty.render}"
+  | .findE arr binder body => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    match tarr with
+    | .array elem => do
+      validateIdent "lambda" binder
+      let (jbody, tbody) ← compileExpr p ((binder, elem) :: ctx) body
+      if tbody != .bool then .error s!"a find predicate must be a Bool, not {tbody.render}"
+      else .ok (.findJs jarr binder jbody, .option elem)
+    | ty => .error s!"find expects an Array, not {ty.render}"
+  | .quantE op arr binder body => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    match tarr with
+    | .array elem => do
+      validateIdent "lambda" binder
+      let (jbody, tbody) ← compileExpr p ((binder, elem) :: ctx) body
+      if tbody != .bool then
+        .error s!"a {op.name} predicate must be a Bool, not {tbody.render}"
+      else .ok (.quantJs op jarr binder jbody, .bool)
+    | ty => .error s!"{op.name} expects an Array, not {ty.render}"
   | .reduceE arr init accName elemName body => do
     let (jarr, tarr) ← compileExpr p ctx arr
     let (jinit, tinit) ← compileExpr p ctx init

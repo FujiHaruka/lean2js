@@ -157,6 +157,18 @@
       "signature": "(amounts : Array Int53, limit : Int53) → Bool"
     },
     {
+      "name": "firstOverLimit",
+      "signature": "(amounts : Array Int53, limit : Int53) → Option Int53"
+    },
+    {
+      "name": "everyLineWithinLimit",
+      "signature": "(amounts : Array Int53, limit : Int53) → Bool"
+    },
+    {
+      "name": "someLineIsFree",
+      "signature": "(amounts : Array Int53) → Bool"
+    },
+    {
       "name": "quantityLabel",
       "signature": "(quantity : Int53) → String"
     },

@@ -61,6 +61,10 @@ def arrayReverse (arr : Expr) : Expr := .arrayReverse arr
 def map' (arr : Expr) (binder : String) (body : Expr) : Expr := .mapE arr binder body
 def filter' (arr : Expr) (binder : String) (body : Expr) : Expr := .filterE arr binder body
 
+def find' (arr : Expr) (binder : String) (body : Expr) : Expr := .findE arr binder body
+def all' (arr : Expr) (binder : String) (body : Expr) : Expr := .quantE .all arr binder body
+def any' (arr : Expr) (binder : String) (body : Expr) : Expr := .quantE .any arr binder body
+
 def reduce' (arr init : Expr) (accName elemName : String) (body : Expr) : Expr :=
   .reduceE arr init accName elemName body
 

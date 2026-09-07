@@ -308,6 +308,9 @@ private partial def methodCall (recv : Term) (name : String)
   match name, es.getElems.toList with
   | "map", [lam] => lambdaMethod recv name lam
   | "filter", [lam] => lambdaMethod recv name lam
+  | "find", [lam] => lambdaMethod recv name lam
+  | "all", [lam] => lambdaMethod recv name lam
+  | "any", [lam] => lambdaMethod recv name lam
   | "reduce", [init, lam] => reduceMethod recv init lam
   | _, _ => methodOn recv name (← es.getElems.mapM exprOf)
 
@@ -316,8 +319,14 @@ private partial def lambdaMethod (recv : Term) (name : String) (lam : TSyntax `l
   match lam with
   | `(leants_expr| fun $b:ident => $body:leants_expr) =>
     let jb ← exprOf body
-    if name == "map" then `(Expr.mapE $recv $(quote (nameOf b)) $jb)
-    else `(Expr.filterE $recv $(quote (nameOf b)) $jb)
+    let binder := quote (nameOf b)
+    match name with
+    | "map" => `(Expr.mapE $recv $binder $jb)
+    | "filter" => `(Expr.filterE $recv $binder $jb)
+    | "find" => `(Expr.findE $recv $binder $jb)
+    | "all" => `(Expr.quantE QuantOp.all $recv $binder $jb)
+    | "any" => `(Expr.quantE QuantOp.any $recv $binder $jb)
+    | _ => Macro.throwUnsupported
   | _ => Macro.throwUnsupported
 
 private partial def reduceMethod (recv : Term) (init lam : TSyntax `leants_expr) :

@@ -115,6 +115,17 @@ def StrBinOp.name : StrBinOp → String
   | .includes => "includes"
   | .split => "split"
 
+/-- `all` and `any` differ only in which answer ends the walk, so they share one form. `find` does not
+join them: it answers with the element rather than with a Bool. -/
+inductive QuantOp where
+  | all
+  | any
+  deriving Repr, BEq, Inhabited
+
+def QuantOp.name : QuantOp → String
+  | .all => "all"
+  | .any => "any"
+
 /-- What one `match` arm tests the scrutinee against. Nesting is what lets a rule branch on a combination
 — a state together with a role — instead of one constructor at a time, and a wildcard is what lets it
 name the combinations it cares about and leave the rest to a fallback.
@@ -155,6 +166,8 @@ inductive Expr where
   | arrayReverse (arr : Expr)
   | mapE (arr : Expr) (binder : String) (body : Expr)
   | filterE (arr : Expr) (binder : String) (body : Expr)
+  | findE (arr : Expr) (binder : String) (body : Expr)
+  | quantE (op : QuantOp) (arr : Expr) (binder : String) (body : Expr)
   | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)
   | dictLit (value : Ty) (entries : List (String × Expr))
   | dictGet (d key : Expr)

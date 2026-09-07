@@ -191,6 +191,18 @@ def anyOverLimit : Decl := decl%
   anyOverLimit(amounts : Array<Int53>, limit : Int53) : Bool :=
     amounts.reduce(false, fun (seen, amount) => if seen then true else amount > limit)
 
+/-- The first line that breaks the limit. Lines after it are never looked at. -/
+def firstOverLimit : Decl := decl%
+  firstOverLimit(amounts : Array<Int53>, limit : Int53) : Option<Int53> :=
+    amounts.find(fun amount => amount > limit)
+
+def everyLineWithinLimit : Decl := decl%
+  everyLineWithinLimit(amounts : Array<Int53>, limit : Int53) : Bool :=
+    amounts.all(fun amount => amount <= limit)
+
+def someLineIsFree : Decl := decl%
+  someLineIsFree(amounts : Array<Int53>) : Bool := amounts.any(fun amount => amount == 0)
+
 /-- The label shown next to a line item. -/
 def quantityLabel : Decl := decl%
   quantityLabel(quantity : Int53) : String :=
@@ -327,6 +339,7 @@ def program : Program := {
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
     total, headOr, firstTracking, pageOf, mostRecentFirst, combinedCart,
     lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
+    firstOverLimit, everyLineWithinLimit, someLineIsFree,
     quantityLabel, renewalLabel, chargeable, settleMessage,
     remainingItems, firstPage, validateQuantity, validationMessage,
     storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel, isSpreadsheet,
