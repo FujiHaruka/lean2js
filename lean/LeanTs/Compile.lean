@@ -139,6 +139,9 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       let (jb, tb) ← compileExpr p ((name, ty) :: ctx) body
       .ok (.arrowCall [name] jb [jv], tb)
   | .call fn args => do
+    if ctx.any (·.1 == fn) then
+      .error s!"{fn} names both a function and a binding in scope here"
+    else
     match p.find? fn with
     | none => .error s!"{fn} is not declared before this call"
     | some d => do

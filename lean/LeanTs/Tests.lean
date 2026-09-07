@@ -147,5 +147,11 @@ private def callsIdentity (name callee : String) : Decl :=
 #guard inOrder [identity "base" "value", callsIdentity "wrapper" "base"]
 #guard !inOrder [callsIdentity "wrapper" "base", identity "base" "value"]
 #guard !inOrder [callsIdentity "ping" "pong", callsIdentity "pong" "ping"]
+#guard !inOrder
+  [identity "base" "value", decl "shadowed" [("base", .int53)] .int53 (call "base" [v "base"])]
+#guard !inOrder
+  [identity "base" "value",
+   decl "shadowed" [("xs", .array .int53)] (.array .int53)
+     (map' (v "xs") "base" (call "base" [v "base"]))]
 
 end LeanTs.Tests
