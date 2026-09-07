@@ -12,16 +12,18 @@ fragment, `Agree.checkAgreement` checks agreement at run time against the shippe
 
 ## Why the fragment stops here
 
-What is needed next is type soundness: the lemma that "if `eval` evaluates an expression the compiler
-typed as `T` and a value comes back, that value satisfies `T`".
+Comparison and equality are what comes next, and each rests on a lemma that unfolding does not give.
 
-Arithmetic demands this because the generated code branches on the type of its operands. `a + b` becomes
-`__i53(a + b)` for `Int53` and string concatenation for `String`. If the compiler read the type from the
-context and chose the latter while the value in the environment was a number, `eval` and the generated
-code give different answers. This case split cannot be closed without saying that types and values line
-up.
+Comparison branches on the operand type, and two branches leave a gap. On `String` the generated code
+compares lists of code points while `eval` goes through Lean's `Ord String`, and that the two agree is
+not `rfl`. On `UInt32` `eval` compares `Nat` where the model compares `Int`, which `omega` does not
+bridge.
 
-Literals, variables and conditionals never touch that gap, so they are what has been proved first.
+Equality has to be stated at a type. "Encoding preserves equality" is false without one: `Int53 0` and
+`UInt32 0` are different values that both encode to `.num 0`, so an induction on the structure of values
+cannot close it.
+
+A call needs `Sound.TypeChecked` over the whole subset, because the callee's body is arbitrary syntax.
 -/
 
 namespace LeanTs.Correct

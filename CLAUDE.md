@@ -33,6 +33,7 @@ pnpm typecheck
 pnpm test
 pnpm lint
 pnpm package:check  # publint / attw
+pnpm template:check # 利用者向けテンプレートが空のディレクトリから build & emit できる
 git diff --exit-code -- packages/verified-example
 ```
 
