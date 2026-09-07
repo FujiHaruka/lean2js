@@ -208,7 +208,7 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__substring", [.str s, .num a, .num b] => some (strSlice s a b)
   | _, _ => none
 
-private def arith (op : String) (a b : JsValue) : JsResult :=
+def arith (op : String) (a b : JsValue) : JsResult :=
   match op, a, b with
   | "+", .num x, .num y => .ok (.num (x + y))
   | "-", .num x, .num y => .ok (.num (x - y))

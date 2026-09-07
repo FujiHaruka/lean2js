@@ -28,6 +28,13 @@ namespace LeanTs.Correct
 
 open Core
 
+/-- The binary operators the proof reaches. The rest are still carried by `Agree`'s run-time check:
+`&&` and `||` are here because their operands can only be `Bool`, so no case split on the operand type
+is left open. -/
+inductive CoveredOp : BinOp → Prop where
+  | and : CoveredOp .and
+  | or : CoveredOp .or
+
 /-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
   | lit (l : Lit) : InFragment (.lit l)
@@ -37,6 +44,8 @@ inductive InFragment : Expr → Prop where
   | letE {name : String} {ty : Ty} {val body : Expr} :
       InFragment val → InFragment body → InFragment (.letE name ty val body)
   | un {op : UnOp} {e : Expr} : InFragment e → InFragment (.un op e)
+  | bin {op : BinOp} {lhs rhs : Expr} :
+      CoveredOp op → InFragment lhs → InFragment rhs → InFragment (.bin op lhs rhs)
 
 /-- Everything the correctness proof reaches is also reached by type soundness, which the arithmetic
 cases need to know that the values in the environment match the types the compiler read. -/
@@ -46,6 +55,7 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .cond hc ht he => .cond hc.typeChecked ht.typeChecked he.typeChecked
   | .letE hv hb => .letE hv.typeChecked hb.typeChecked
   | .un hx => .un hx.typeChecked
+  | .bin _ hl hr => .bin hl.typeChecked hr.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -181,6 +191,105 @@ theorem i53_of_mkInt53 {i : Int} {v : Value} (h : mkInt53 i = .ok v) :
 
 theorem absInt (i : Int) : (if i < 0 then -i else i) = (i.natAbs : Int) := by
   omega
+
+theorem eventually_call2 {m : Js.Module} {env : Js.JsEnv} {name : String} {jl jr : Js.Expr}
+    {a b r : Js.JsValue} (h1 : Eventually m env jl a) (h2 : Eventually m env jr b)
+    (hh : Js.helper name [a, b] = some (.ok r)) :
+    Eventually m env (.call name [jl, jr]) r := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList]
+    rw [hg1 g (by omega), hg2 g (by omega)]
+    simp [hh]
+
+theorem eventually_andL {m : Js.Module} {env : Js.JsEnv} {jl jr : Js.Expr}
+    (h : Eventually m env jl (.bool false)) :
+    Eventually m env (.binary "&&" jl jr) (.bool false) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+
+theorem eventually_andR {m : Js.Module} {env : Js.JsEnv} {jl jr : Js.Expr} {w : Js.JsValue}
+    (h1 : Eventually m env jl (.bool true)) (h2 : Eventually m env jr w) :
+    Eventually m env (.binary "&&" jl jr) w := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+    exact hg2 g (by omega)
+
+theorem eventually_orL {m : Js.Module} {env : Js.JsEnv} {jl jr : Js.Expr}
+    (h : Eventually m env jl (.bool true)) :
+    Eventually m env (.binary "||" jl jr) (.bool true) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+
+theorem eventually_orR {m : Js.Module} {env : Js.JsEnv} {jl jr : Js.Expr} {w : Js.JsValue}
+    (h1 : Eventually m env jl (.bool false)) (h2 : Eventually m env jr w) :
+    Eventually m env (.binary "||" jl jr) w := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+    exact hg2 g (by omega)
+
+theorem eval_binary_plus (m : Js.Module) (g : Nat) (env : Js.JsEnv) (jl jr : Js.Expr) :
+    Js.eval m (g + 1) env (.binary "+" jl jr) =
+      (do
+        let a ← Js.eval m g env jl
+        let b ← Js.eval m g env jr
+        Js.arith "+" a b) := by
+  rw [Js.eval.eq_def]
+  rfl
+
+theorem eventually_plus_str {m : Js.Module} {env : Js.JsEnv} {jl jr : Js.Expr} {x y : String}
+    (h1 : Eventually m env jl (.str x)) (h2 : Eventually m env jr (.str y)) :
+    Eventually m env (.binary "+" jl jr) (.str (x ++ y)) := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [eval_binary_plus]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega), hg2 g (by omega)]
+    rfl
+
+theorem encodeList_append (xs ys : List Value) :
+    encodeList (xs ++ ys) = encodeList xs ++ encodeList ys := by
+  induction xs with
+  | nil => simp [encodeList]
+  | cons x rest ih => simp [encodeList, ih]
+
+theorem helper_aconcat (xs ys : List Js.JsValue) :
+    Js.helper "__aconcat" [.arr xs, .arr ys] = some (.ok (.arr (xs ++ ys))) := rfl
 
 theorem cond_true {m : Js.Module} {env : Js.JsEnv} {jc jt jel : Js.Expr} {v : Js.JsValue}
     (h1 : Eventually m env jc (.bool true)) (h2 : Eventually m env jt v) :
@@ -448,6 +557,111 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           refine eventually_call1 (by simpa [encodeValue] using ihx henv hcx hw :
             Eventually m (encodeEnv env) jx (.bigint i)) ?_
           simp [helper_abs_big, absInt i, encodeValue]
+        · simp at hc
+  | bin hop hl hr ihl ihr =>
+    rename_i op lhsE rhsE
+    intro ctx env je ty f v henv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      cases hop with
+      | and =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        split at hc
+        · rename_i htl
+          have htlb : tl = Ty.bool := Ty.eq_of_beq htl
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          rw [evalExpr_and] at he
+          simp only [bind, Except.bind] at he
+          split at he
+          · simp at he
+          rename_i av hav
+          obtain ⟨ab, hab⟩ := hasTy_bool_inv
+            (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          subst hab
+          have hle : Eventually m (encodeEnv env) jl (.bool ab) := by
+            simpa [encodeValue] using ihl henv hcl hav
+          cases ab with
+          | false =>
+            simp only [Except.ok.injEq] at he
+            subst he
+            simpa [encodeValue] using eventually_andL hle
+          | true =>
+            simp only [bind, Except.bind] at he
+            split at he
+            · simp at he
+            rename_i bv hbv
+            obtain ⟨bb, hbb⟩ := hasTy_bool_inv
+              (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            subst hbb
+            simp only [asBool, Except.ok.injEq] at he
+            subst he
+            refine eventually_andR hle ?_
+            simpa [encodeValue] using ihr henv hcr hbv
+        · simp at hc
+      | or =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        split at hc
+        · rename_i htl
+          have htlb : tl = Ty.bool := Ty.eq_of_beq htl
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          rw [evalExpr_or] at he
+          simp only [bind, Except.bind] at he
+          split at he
+          · simp at he
+          rename_i av hav
+          obtain ⟨ab, hab⟩ := hasTy_bool_inv
+            (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          subst hab
+          have hle : Eventually m (encodeEnv env) jl (.bool ab) := by
+            simpa [encodeValue] using ihl henv hcl hav
+          cases ab with
+          | true =>
+            simp only [Except.ok.injEq] at he
+            subst he
+            simpa [encodeValue] using eventually_orL hle
+          | false =>
+            simp only [bind, Except.bind] at he
+            split at he
+            · simp at he
+            rename_i bv hbv
+            obtain ⟨bb, hbb⟩ := hasTy_bool_inv
+              (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            subst hbb
+            simp only [asBool, Except.ok.injEq] at he
+            subst he
+            refine eventually_orR hle ?_
+            simpa [encodeValue] using ihr henv hcr hbv
         · simp at hc
 
 end LeanTs.Correct
