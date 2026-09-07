@@ -19,6 +19,9 @@ private def packageJson (m : Manifest) : Json :=
   ]
 
 def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
+  match checkAgreement m.program 400 200 with
+  | .error e => throw (IO.userError s!"the compiled module disagrees with eval: {e}")
+  | .ok () =>
   match Compile.compileProgram m.program with
   | .error e => throw (IO.userError s!"compile failed: {e}")
   | .ok jsModule =>
