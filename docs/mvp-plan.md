@@ -7,7 +7,7 @@
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） | 完了 |
-| 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） | 一部 |
+| 2. VERIFY | 変換の保証（small-step semantics、type soundness、compiler correctness、proof manifest） | 一部 |
 | 3. SHIP | npm 開発体験（source maps、tree shaking、CI）と、処理系そのものの配布（利用者のパッケージの雛形） | 完了 |
 
 ### Phase 2 の到達点
@@ -15,10 +15,12 @@
 - proof manifest — 完了。`Claim` が証明項を持つので、定理を消すと `lake build` が落ちる
 - JS の意味論の模型（`JsSem.lean`）と、出荷する成果物がリファレンス意味論と一致することの実行時検査
   （`Agree.lean`）— 完了
-- compiler correctness — リテラル・変数・条件式の断片について証明済み（`Correct.lean`）。
-  断片の外は `Agree` の実行時検査が受け持っている。次に必要なのは type soundness で、これが無いと
-  算術の場合分けが閉じない（生成コードは被演算子の型で分岐するので、コンパイラの判定した型と環境の値が
-  噛み合っていることを言えないと `+` が連結か加算かを決められない）
+- type soundness — 証明済み（`Sound.lean`）。リテラル・変数・条件式・`let` 束縛・単項演算・二項演算に
+  ついて、コンパイラが型 `T` と判断した式を `eval` が評価して値が返るなら、その値は `T` を満たす。
+  生成コードは被演算子の型で分岐するので、これが無いと `+` が連結か加算かを決められなかった
+- compiler correctness — リテラル・変数・条件式・`let` 束縛・単項演算、および二項演算のうち
+  `&&` / `||` / `++` について証明済み（`Correct.lean`）。断片の外は `Agree` の実行時検査が受け持って
+  いる。残っているのは算術・比較・等値で、どれも被演算子の型ごとに JS 側の模型と突き合わせる作業
 - small-step semantics — 継続を明示した抽象機械として実装（`Step.lean`）。big-step との一致は
   成果物のベクタ全件について実行時に確かめている。短絡評価を壊すと 125 件の食い違いとして落ちる
 
