@@ -40,7 +40,7 @@ LeanTs/Core.lean     Ty / Expr / Decl / Program  … サブセットの構文（
 LeanTs/Eval.lean     eval : Program → ... → Except Err Value  … リファレンス意味論（fuel 付き big-step）
 LeanTs/Js.lean       JS AST + ESM printer + .d.ts printer
 LeanTs/Compile.lean  Program → Js.Module  … Phase 2 で正しさを証明する対象
-LeanTs/Syntax.lean   制限 Lean 風に書くための macro 層（Core AST を生む）
+LeanTs/Builder.lean  Core 項を組み立てるための記法
 Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-manifest.json / vectors.json を出力
 ```
 
