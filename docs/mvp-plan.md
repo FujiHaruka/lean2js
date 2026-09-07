@@ -17,7 +17,8 @@
   （`Agree.lean`）— 完了
 - compiler correctness — リテラル・変数・条件式の断片について証明済み（`Correct.lean`）。
   算術・関数呼び出し・`match`・配列は未証明で、`Agree` の実行時検査が受け持っている
-- small-step semantics — 未着手
+- small-step semantics — 継続を明示した抽象機械として実装（`Step.lean`）。big-step との一致は
+  成果物のベクタ全件について実行時に確かめている。短絡評価を壊すと 210 件の食い違いとして落ちる
 
 ## Approach
 

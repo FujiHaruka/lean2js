@@ -1,4 +1,5 @@
 import LeanTs.JsSem
+import LeanTs.Step
 import LeanTs.Compile
 import LeanTs.Vectors
 
@@ -71,12 +72,27 @@ def disagreementsIn (m : Js.Module) (vectors : List TestVector) :
     if agrees v.expected actual then none
     else some { fn := v.fn, args := v.args, expected := v.expected, actual }
 
+/-- small-step が big-step と同じ答えを出すか。短絡評価と評価順はここでしか壊れない。 -/
+def stepDisagreementsIn (p : Program) (vectors : List TestVector) : List (String × List Value) :=
+  vectors.filterMap fun v =>
+    let bySteps := stepCall p v.fn v.args
+    let same :=
+      match bySteps, v.expected with
+      | .ok a, .ok b => a == b
+      | .error a, .error b => a == b
+      | _, _ => false
+    if same then none else some (v.fn, v.args)
+
 /-- 生成物がリファレンス意味論と食い違わないことを、書き出す前に確かめる。 -/
 def checkAgreement (p : Program) (edgeLimit randomCount : Nat) : Except String Unit := do
   let m ← Compile.compileProgram p
-  match disagreementsIn m (allTestVectors p edgeLimit randomCount) with
-  | [] => .ok ()
-  | d :: rest =>
-    .error s!"{rest.length + 1} disagreements, first: {d.render}"
+  let vectors := allTestVectors p edgeLimit randomCount
+  match disagreementsIn m vectors with
+  | d :: rest => .error s!"{rest.length + 1} disagreements, first: {d.render}"
+  | [] =>
+    match stepDisagreementsIn p vectors with
+    | (fn, _) :: rest =>
+      .error s!"small-step disagrees with big-step on {rest.length + 1} vectors, first: {fn}"
+    | [] => .ok ()
 
 end LeanTs
