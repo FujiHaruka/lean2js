@@ -1,6 +1,10 @@
 name = "LeanTs"
 version = "0.1.0"
-defaultTargets = ["LeanTs"]
+defaultTargets = ["LeanTs", "leants"]
 
 [[lean_lib]]
 name = "LeanTs"
+
+[[lean_exe]]
+name = "leants"
+root = "Main"

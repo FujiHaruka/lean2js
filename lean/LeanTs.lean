@@ -1,1 +1,9 @@
-import LeanTs.Basic
+import LeanTs.Core
+import LeanTs.Value
+import LeanTs.Eval
+import LeanTs.Json
+import LeanTs.Js
+import LeanTs.Compile
+import LeanTs.Manifest
+import LeanTs.Vectors
+import LeanTs.Example

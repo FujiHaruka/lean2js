@@ -13,6 +13,10 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: lean
+      - name: Generated package is up to date
+        run: |
+          lake --dir=lean exe leants packages/verified-example
+          git diff --exit-code -- packages/verified-example
 
   node:
     runs-on: ubuntu-latest
