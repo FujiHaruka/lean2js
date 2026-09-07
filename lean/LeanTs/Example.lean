@@ -28,6 +28,18 @@ def OrderState : TypeDef :=
     ("cancelled", [("reason", .string)])
   ]
 
+/-- One page of results together with how many there are in all. -/
+def Paginated : TypeDef :=
+  struct "Paginated" [("items", .array (.var "T")), ("total", .int53)] (params := ["T"])
+
+/-- What a check concluded: the value it accepted, or the reasons it refused. `E` is named by only one of
+the two constructors, so a `valid` term cannot be read off for it and every use carries both arguments. -/
+def Validated : TypeDef :=
+  enum "Validated" [
+    ("valid", [("value", .var "A")]),
+    ("invalid", [("errors", .array (.var "E"))])
+  ] (params := ["E", "A"])
+
 def add : Decl :=
   decl "add" [("a", .int53), ("b", .int53)] .int53 (v "a" +' v "b")
 
@@ -106,7 +118,7 @@ def rebindTwice : Decl :=
       (letIn "amount" .int53 (v "amount" *' int53 2) (v "amount")))
 
 def roleRank : Decl :=
-  decl "roleRank" [("role", .named "Role")] .int53
+  decl "roleRank" [("role", .named "Role" [])] .int53
     (matchOn (v "role") [
       alt "guest" [] (int53 0),
       alt "member" [] (int53 1),
@@ -116,37 +128,37 @@ def roleRank : Decl :=
 /-- Amounts in different currencies cannot be added. `===` is unusable on the JS side, so a structural
 equality helper is called. -/
 def addMoney : Decl :=
-  decl "addMoney" [("a", .named "Money"), ("b", .named "Money")]
-    (.result (.named "Money") .string)
+  decl "addMoney" [("a", .named "Money" []), ("b", .named "Money" [])]
+    (.result (.named "Money" []) .string)
     (ite' (proj (v "a") "currency" ≠' proj (v "b") "currency")
-      (error' (.named "Money") (str "currency mismatch"))
+      (error' (.named "Money" []) (str "currency mismatch"))
       (ok' .string
-        (ctor "Money" "Money"
+        (ctor "Money" [] "Money"
           [proj (v "a") "amount" +' proj (v "b") "amount", proj (v "a") "currency"])))
 
 def sameMoney : Decl :=
-  decl "sameMoney" [("a", .named "Money"), ("b", .named "Money")] .bool (v "a" ==' v "b")
+  decl "sameMoney" [("a", .named "Money" []), ("b", .named "Money" [])] .bool (v "a" ==' v "b")
 
 /-- The state transition to shipped. Rejects states that cannot transition and an empty tracking id. -/
 def ship : Decl :=
-  decl "ship" [("state", .named "OrderState"), ("trackingId", .string)]
-    (.result (.named "OrderState") .string)
+  decl "ship" [("state", .named "OrderState" []), ("trackingId", .string)]
+    (.result (.named "OrderState" []) .string)
     (matchOn (v "state") [
       alt "draft" [] (failWith "a draft order cannot ship"),
       alt "placed" ["orderId"]
         (ite' (v "trackingId" ==' str "")
           (failWith "a tracking id is required")
           (ok' .string
-            (ctor "OrderState" "shipped" [v "orderId", v "trackingId"]))),
+            (ctor "OrderState" [] "shipped" [v "orderId", v "trackingId"]))),
       alt "shipped" ["orderId", "trackingId"] (failWith "the order has already shipped"),
       alt "cancelled" ["reason"] (failWith "a cancelled order cannot ship")
     ])
 where
   failWith (message : String) : Expr :=
-    error' (.named "OrderState") (str message)
+    error' (.named "OrderState" []) (str message)
 
 def trackingOf : Decl :=
-  decl "trackingOf" [("state", .named "OrderState")] (.option .string)
+  decl "trackingOf" [("state", .named "OrderState" [])] (.option .string)
     (matchOn (v "state") [
       alt "draft" [] (none' .string),
       alt "placed" ["orderId"] (none' .string),
@@ -155,7 +167,7 @@ def trackingOf : Decl :=
     ])
 
 def canRefund : Decl :=
-  decl "canRefund" [("role", .named "Role"), ("state", .named "OrderState")] .bool
+  decl "canRefund" [("role", .named "Role" []), ("state", .named "OrderState" [])] .bool
     (matchOn (v "state") [
       alt "draft" [] (bool false),
       alt "placed" ["orderId"] (call "roleRank" [v "role"] ≥' int53 1),
@@ -173,7 +185,7 @@ def headOr : Decl :=
     (ite' (len (v "xs") ==' int53 0) (v "fallback") (at' (v "xs") (int53 0)))
 
 def firstTracking : Decl :=
-  decl "firstTracking" [("states", .array (.named "OrderState"))] (.option .string)
+  decl "firstTracking" [("states", .array (.named "OrderState" []))] (.option .string)
     (ite' (len (v "states") ==' int53 0) (none' .string)
       (call "trackingOf" [at' (v "states") (int53 0)]))
 
@@ -183,19 +195,19 @@ def lineTotals : Decl :=
     (map' (v "quantities") "quantity" (call "lineTotal" [v "unitPrice", v "quantity"]))
 
 def currenciesOf : Decl :=
-  decl "currenciesOf" [("items", .array (.named "Money"))] (.array .string)
+  decl "currenciesOf" [("items", .array (.named "Money" []))] (.array .string)
     (map' (v "items") "item" (proj (v "item") "currency"))
 
 /-- The orders this role may still refund. The predicate reads `role` from outside the lambda. -/
 def refundableOnly : Decl :=
-  decl "refundableOnly" [("role", .named "Role"), ("states", .array (.named "OrderState"))]
-    (.array (.named "OrderState"))
+  decl "refundableOnly" [("role", .named "Role" []), ("states", .array (.named "OrderState" []))]
+    (.array (.named "OrderState" []))
     (filter' (v "states") "state" (call "canRefund" [v "role", v "state"]))
 
 /-- Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix
 them. -/
 def cartTotal : Decl :=
-  decl "cartTotal" [("items", .array (.named "Money"))] .int53
+  decl "cartTotal" [("items", .array (.named "Money" []))] .int53
     (reduce' (v "items") (int53 0) "subtotal" "item"
       (v "subtotal" +' proj (v "item") "amount"))
 
@@ -224,7 +236,7 @@ def renewalLabel : Decl :=
 /-- An amount of zero is free whatever the currency, and an amount carrying no currency cannot be
 charged at all. -/
 def chargeable : Decl :=
-  decl "chargeable" [("amount", .named "Money")] .bool
+  decl "chargeable" [("amount", .named "Money" [])] .bool
     (matchOn (v "amount") [
       altP (pCtor "Money" [pInt53 0, pWild]) (bool false),
       altP (pCtor "Money" [pWild, pStr ""]) (bool false),
@@ -234,7 +246,7 @@ def chargeable : Decl :=
 /-- The shipping line shown once a transition has been attempted. A draft or cancelled order has nothing
 to show, so one arm reaches past `ok` and leaves the state itself open. -/
 def settleMessage : Decl :=
-  decl "settleMessage" [("outcome", .result (.named "OrderState") .string)] .string
+  decl "settleMessage" [("outcome", .result (.named "OrderState" []) .string)] .string
     (matchOn (v "outcome") [
       altP (pCtor "ok" [pCtor "shipped" [pWild, pBind "trackingId"]]) (v "trackingId"),
       altP (pCtor "ok" [pCtor "placed" [pWild]]) (str "awaiting shipment"),
@@ -242,8 +254,37 @@ def settleMessage : Decl :=
       altP (pCtor "error" [pBind "message"]) (v "message")
     ])
 
+/-- How many results lie beyond the page in hand. -/
+def remainingItems : Decl :=
+  decl "remainingItems" [("page", .named "Paginated" [.named "Money" []])] .int53
+    (proj (v "page") "total" -' len (proj (v "page") "items"))
+
+/-- The whole list served as a single page. -/
+def firstPage : Decl :=
+  decl "firstPage" [("amounts", .array .int53)] (.named "Paginated" [.int53])
+    (ctor "Paginated" [.int53] "Paginated" [v "amounts", len (v "amounts")])
+
+/-- Accepts an order quantity or says why it was refused. -/
+def validateQuantity : Decl :=
+  decl "validateQuantity" [("quantity", .int53)] (.named "Validated" [.string, .int53])
+    (ite' (v "quantity" <' int53 1) (refuse "a quantity must be at least 1")
+      (ite' (v "quantity" >' int53 999) (refuse "a quantity may not exceed 999")
+        (ctor "Validated" [.string, .int53] "valid" [v "quantity"])))
+where
+  refuse (message : String) : Expr :=
+    ctor "Validated" [.string, .int53] "invalid" [array .string [str message]]
+
+/-- The line shown once a quantity has been checked. -/
+def validationMessage : Decl :=
+  decl "validationMessage" [("outcome", .named "Validated" [.string, .int53])] .string
+    (matchOn (v "outcome") [
+      alt "valid" ["value"] (call "quantityLabel" [v "value"]),
+      alt "invalid" ["errors"]
+        (ite' (len (v "errors") ==' int53 0) (str "refused") (at' (v "errors") (int53 0)))
+    ])
+
 def program : Program := {
-  types := [Money, Role, OrderState]
+  types := [Money, Role, OrderState, Paginated, Validated]
   decls := [
     add, clampQuantity, lineTotal, discounted, divide, remainder, negate,
     safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
@@ -251,7 +292,8 @@ def program : Program := {
     roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
     total, headOr, firstTracking,
     lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
-    quantityLabel, renewalLabel, chargeable, settleMessage
+    quantityLabel, renewalLabel, chargeable, settleMessage,
+    remainingItems, firstPage, validateQuantity, validationMessage
   ]
 }
 

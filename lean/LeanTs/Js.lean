@@ -262,7 +262,9 @@ partial def tsType : Core.Ty → String
   | .uint32 => "number"
   | .string => "string"
   | .bigint => "bigint"
-  | .named n => n
+  | .var n => n
+  | .named n [] => n
+  | .named n args => n ++ "<" ++ String.intercalate ", " (args.map tsType) ++ ">"
   | .option t => "Option<" ++ tsType t ++ ">"
   | .result ok err => "Result<" ++ tsType ok ++ ", " ++ tsType err ++ ">"
   | .array t => "readonly " ++ tsType t ++ "[]"
@@ -272,9 +274,12 @@ private def renderCtor (c : Core.CtorDef) : String :=
   "{ readonly tag: \"" ++ c.name ++ "\"" ++ String.join fields ++ " }"
 
 private def declareType (t : Core.TypeDef) : String :=
+  let head :=
+    if t.params.isEmpty then t.name
+    else t.name ++ "<" ++ String.intercalate ", " t.params ++ ">"
   match t.ctors.map renderCtor with
-  | [only] => "export type " ++ t.name ++ " = " ++ only ++ ";"
-  | ctors => "export type " ++ t.name ++ " =\n  | " ++ String.intercalate "\n  | " ctors ++ ";"
+  | [only] => "export type " ++ head ++ " = " ++ only ++ ";"
+  | ctors => "export type " ++ head ++ " =\n  | " ++ String.intercalate "\n  | " ctors ++ ";"
 
 def declareFunc (d : Core.Decl) : String :=
   let params := d.params.map fun p => p.name ++ ": " ++ tsType p.ty

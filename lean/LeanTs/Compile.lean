@@ -20,6 +20,22 @@ abbrev Ctx := List (String × Ty)
 /-- The scrutinee that `match` binds. It starts with `__`, so it never collides with a user's name. -/
 private def scrutName : String := "__s"
 
+/-- Whether a type is one this program can talk about: every name is declared, applied to as many
+arguments as it takes, and every type variable is bound by the declaration the type is written in. -/
+private partial def wfTy (p : Program) (scope : List String) : Ty → Except String Unit
+  | .bool | .int53 | .uint32 | .string | .bigint => .ok ()
+  | .var n => if scope.contains n then .ok () else .error s!"unbound type parameter: {n}"
+  | .option t => wfTy p scope t
+  | .array t => wfTy p scope t
+  | .result ok err => do wfTy p scope ok; wfTy p scope err
+  | .named n args =>
+    match p.findType? n with
+    | none => .error s!"unknown type: {n}"
+    | some t =>
+      if t.params.length != args.length then
+        .error s!"{n} takes {t.params.length} type arguments but is given {args.length}"
+      else args.forM (wfTy p scope)
+
 private def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Expr :=
   match ty, op with
   | .int53, .add => some (.call "__i53" [.binary "+" a b])
@@ -66,9 +82,9 @@ private inductive Head where
 /-- Every head a value of this type can take, each with the fields it carries. `none` where the values
 cannot be enumerated, so nothing short of a wildcard covers them. -/
 private def signature (p : Program) : Ty → Option (List (Head × List (String × Ty)))
-  | .named n =>
+  | .named n args =>
     (p.findType? n).map fun t =>
-      t.ctors.map fun c => (.ctor c.name, c.fields.map fun f => (f.name, f.ty))
+      (t.ctorsAt args).map fun c => (.ctor c.name, c.fields.map fun f => (f.name, f.ty))
   | .option t => some [(.ctor "none", []), (.ctor "some", [("value", t)])]
   | .result ok err => some [(.ctor "ok", [("value", ok)]), (.ctor "error", [("error", err)])]
   | .bool => some [(.lit (.bool true), []), (.lit (.bool false), [])]
@@ -282,6 +298,7 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     else .ok (.cond jc jt je, tt)
   | .letE name ty val body => do
     validateIdent "let-bound" name
+    wfTy p [] ty
     let (jv, tv) ← compileExpr p ctx val
     if tv != ty then .error s!"let {name} is declared {ty.render} but bound to {tv.render}"
     else
@@ -299,11 +316,12 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       else if !(d.params.zip js).all (fun (param, (_, ty)) => param.ty == ty) then
         .error s!"argument types do not match the signature of {fn}"
       else .ok (.call d.name (js.map (·.1)), d.ret)
-  | .ctor typeName ctorName args => do
+  | .ctor typeName tyArgs ctorName args => do
+    wfTy p [] (.named typeName tyArgs)
     match p.findType? typeName with
     | none => .error s!"unknown type: {typeName}"
     | some t =>
-      match t.find? ctorName with
+      match t.findAt? tyArgs ctorName with
       | none => .error s!"{typeName} has no constructor {ctorName}"
       | some c => do
         let js ← compileArgs p ctx args
@@ -312,15 +330,15 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
         else if !(c.fields.zip js).all (fun (field, (_, ty)) => field.ty == ty) then
           .error s!"argument types do not match {typeName}.{ctorName}"
         else
-          .ok (objOf ctorName ((c.fields.map (·.name)).zip (js.map (·.1))), .named typeName)
+          .ok (objOf ctorName ((c.fields.map (·.name)).zip (js.map (·.1))), .named typeName tyArgs)
   | .proj e field => do
     let (je, te) ← compileExpr p ctx e
     match te with
-    | .named n =>
+    | .named n args =>
       match p.findType? n with
       | none => .error s!"unknown type: {n}"
       | some t =>
-        match t.ctors with
+        match t.ctorsAt args with
         | [c] =>
           match c.fields.find? (·.name == field) with
           | some f => .ok (.member je field, f.ty)
@@ -343,17 +361,22 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
           if !arms.all (fun a => a.ty == arm.ty) then
             .error "match alternatives disagree on their result type"
           else .ok (.arrowCall [scrutName] (chain arms) [jscrut], arm.ty)
-  | .noneE elem => .ok (objOf "none" [], .option elem)
+  | .noneE elem => do
+    wfTy p [] elem
+    .ok (objOf "none" [], .option elem)
   | .someE e => do
     let (je, te) ← compileExpr p ctx e
     .ok (objOf "some" [("value", je)], .option te)
   | .okE err e => do
+    wfTy p [] err
     let (je, te) ← compileExpr p ctx e
     .ok (objOf "ok" [("value", je)], .result te err)
   | .errorE ok e => do
+    wfTy p [] ok
     let (je, te) ← compileExpr p ctx e
     .ok (objOf "error" [("error", je)], .result ok te)
   | .arrayLit elem items => do
+    wfTy p [] elem
     let js ← compileArgs p ctx items
     if !js.all (fun (_, ty) => ty == elem) then
       .error s!"array elements are not all {elem.render}"
@@ -459,28 +482,27 @@ where
     let (je, te) ← compileExpr p ctx e
     .ok (acc.reverse ++ [.ret je], te)
 
-/-- Expands a declared type into the shape the generated code checks an argument against. A type that
-reaches itself is rejected instead of expanded: it would not terminate here, and nothing in the subset can
-build a value of one yet. -/
-private partial def tyDesc (p : Program) (seen : List String) : Ty → Except String Js.TyDesc
+/-- Expands a declared type into the shape the generated code checks an argument against. Recursion is
+what would make this diverge, and `validateType` has already rejected it, so no occurs check is needed
+here — one by name would reject `Paginated (Paginated Int53)`, which is not recursive. -/
+private partial def tyDesc (p : Program) : Ty → Except String Js.TyDesc
   | .bool => .ok .bool
   | .int53 => .ok .int53
   | .uint32 => .ok .uint32
   | .string => .ok .string
   | .bigint => .ok .bigint
-  | .option t => do .ok (.option (← tyDesc p seen t))
-  | .result ok err => do .ok (.result (← tyDesc p seen ok) (← tyDesc p seen err))
-  | .array t => do .ok (.array (← tyDesc p seen t))
-  | .named n =>
-    if seen.contains n then .error s!"{n} refers to itself; a recursive type cannot cross the boundary"
-    else
-      match p.findType? n with
-      | none => .error s!"unknown type: {n}"
-      | some t => do
-        let alts ← t.ctors.mapM fun c => do
-          let fields ← c.fields.mapM fun f => do .ok (f.name, ← tyDesc p (n :: seen) f.ty)
-          .ok (c.name, fields)
-        .ok (.ctors n alts)
+  | .var n => .error s!"unbound type parameter: {n}"
+  | .option t => do .ok (.option (← tyDesc p t))
+  | .result ok err => do .ok (.result (← tyDesc p ok) (← tyDesc p err))
+  | .array t => do .ok (.array (← tyDesc p t))
+  | .named n args =>
+    match p.findType? n with
+    | none => .error s!"unknown type: {n}"
+    | some t => do
+      let alts ← (t.ctorsAt args).mapM fun c => do
+        let fields ← c.fields.mapM fun f => do .ok (f.name, ← tyDesc p f.ty)
+        .ok (c.name, fields)
+      .ok (.ctors n alts)
 
 /-- The name an exported function takes its argument under, before the entry check hands it to the body
 under the declared name. -/
@@ -490,13 +512,15 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
   validateIdent "function" d.name
   d.params.forM fun param => validateIdent "parameter" param.name
   validateDistinct "parameter" (d.params.map (·.name))
+  d.params.forM fun param => wfTy p [] param.ty
+  wfTy p [] d.ret
   let ctx : Ctx := d.params.map fun param => (param.name, param.ty)
   let (stmts, ty) ← compileBody p ctx d.body []
   if ty != d.ret then
     .error s!"{d.name} is declared to return {d.ret.render} but its body is {ty.render}"
   else do
     let checks ← d.params.zipIdx.mapM fun (param, i) => do
-      let desc ← tyDesc p [] param.ty
+      let desc ← tyDesc p param.ty
       .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i))))
     let sig := d.params.map fun param => s!"{param.name} : {param.ty.render}"
     .ok {
@@ -506,9 +530,30 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
       doc := s!"{d.name} : ({String.intercalate ", " sig}) → {d.ret.render}"
     }
 
-/-- `tag` is used to tell constructors apart, so it has to stay free as a field name. -/
-private def validateType (t : TypeDef) : Except String Unit := do
+/-- Whether a type's fields can reach `target` through the declarations they name. Type arguments are
+searched too, so `Tree (Tree Int53)` is caught the same way a field of type `Tree` is. -/
+private partial def mentions (p : Program) (target : String) (seen : List String) : Ty → Bool
+  | .option t => mentions p target seen t
+  | .array t => mentions p target seen t
+  | .result ok err => mentions p target seen ok || mentions p target seen err
+  | .named n args =>
+    if n == target || args.any (mentions p target seen) then true
+    else if seen.contains n then false
+    else
+      match p.findType? n with
+      | none => false
+      | some t => t.ctors.any fun c => c.fields.any fun f => mentions p target (n :: seen) f.ty
+  | _ => false
+
+/-- `tag` is used to tell constructors apart, so it has to stay free as a field name.
+
+Recursive types are rejected at their declaration rather than where they cross the boundary, because the
+type expansions downstream — the entry check, the vector generator — all diverge on one and only the entry
+check is in a position to report an error. -/
+private def validateType (p : Program) (t : TypeDef) : Except String Unit := do
   validateIdent "type" t.name
+  t.params.forM (validateIdent "type parameter")
+  validateDistinct "type parameter" t.params
   validateDistinct "constructor" (t.ctors.map (·.name))
   t.ctors.forM fun c => do
     validateIdent "constructor" c.name
@@ -516,13 +561,16 @@ private def validateType (t : TypeDef) : Except String Unit := do
     c.fields.forM fun f => do
       validateIdent "field" f.name
       if f.name == "tag" then .error s!"{c.name} may not have a field named tag"
+      wfTy p t.params f.ty
+      if mentions p t.name [] f.ty then
+        .error s!"{t.name} refers to itself; a recursive type cannot cross the boundary"
 
 /-- Each declaration is compiled against the ones before it only, so a function can call neither itself
 nor a later one. That is what keeps nontermination out of the subset: `eval`'s fuel bounds the proof, not
 the language. Traversal is `map` / `filter` / `reduce`, which are syntax and cannot recur. -/
 def compileProgram (p : Program) : Except String Js.Module := do
-  p.types.forM validateType
   validateDistinct "type" (p.types.map (·.name))
+  p.types.forM (validateType p)
   validateDistinct "function" (p.decls.map (·.name))
   let funcs ← p.decls.zipIdx.mapM fun (d, i) => compileDecl { p with decls := p.decls.take i } d
   .ok { funcs }

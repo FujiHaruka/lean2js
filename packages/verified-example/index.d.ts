@@ -21,6 +21,12 @@ export type OrderState =
   | { readonly tag: "shipped"; readonly orderId: number; readonly trackingId: string }
   | { readonly tag: "cancelled"; readonly reason: string };
 
+export type Paginated<T> = { readonly tag: "Paginated"; readonly items: readonly T[]; readonly total: number };
+
+export type Validated<E, A> =
+  | { readonly tag: "valid"; readonly value: A }
+  | { readonly tag: "invalid"; readonly errors: readonly E[] };
+
 export declare function add(a: number, b: number): number;
 
 export declare function clampQuantity(quantity: number, upper: number): number;
@@ -90,3 +96,11 @@ export declare function renewalLabel(autoRenew: boolean): string;
 export declare function chargeable(amount: Money): boolean;
 
 export declare function settleMessage(outcome: Result<OrderState, string>): string;
+
+export declare function remainingItems(page: Paginated<Money>): number;
+
+export declare function firstPage(amounts: readonly number[]): Paginated<number>;
+
+export declare function validateQuantity(quantity: number): Validated<string, number>;
+
+export declare function validationMessage(outcome: Validated<string, number>): string;

@@ -13,30 +13,46 @@ namespace LeanTs.Core
 /-- The types that may sit on the boundary of the public API. Only those whose JS representation is
 uniquely determined are listed.
 
-`option` and `result` are built in rather than expressed as a user's `inductive` because `named` takes no
-type arguments, which would force `Option Int53` and `Option String` into separate declarations. -/
+`var` stands for a type parameter and is only ever written inside the field types of the `TypeDef` that
+declares it; every type reaching a boundary has had its parameters substituted away.
+
+`option` and `result` stay built in even though a user could now declare them, because the subset has
+literal syntax for their constructors and the generated runtime checks them by shape. Expressing them as
+declarations would remove neither special case. -/
 inductive Ty where
   | bool
   | int53
   | uint32
   | string
   | bigint
-  | named (n : String)
+  | var (name : String)
+  | named (n : String) (args : List Ty)
   | option (t : Ty)
   | result (ok err : Ty)
   | array (t : Ty)
   deriving Repr, BEq, Inhabited
 
-def Ty.render : Ty → String
+partial def Ty.render : Ty → String
   | .bool => "Bool"
   | .int53 => "Int53"
   | .uint32 => "UInt32"
   | .string => "String"
   | .bigint => "BigInt"
-  | .named n => n
+  | .var n => n
+  | .named n [] => n
+  | .named n args => n ++ " " ++ String.intercalate " " (args.map Ty.render)
   | .option t => s!"Option {t.render}"
   | .result ok err => s!"Result {ok.render} {err.render}"
   | .array t => s!"Array {t.render}"
+
+/-- Replaces a declaration's type parameters with the arguments it was applied to. -/
+partial def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
+  | .var n => ((sigma.find? (·.1 == n)).map (·.2)).getD (.var n)
+  | .named n args => .named n (args.map (Ty.subst sigma))
+  | .option t => .option (t.subst sigma)
+  | .result ok err => .result (ok.subst sigma) (err.subst sigma)
+  | .array t => .array (t.subst sigma)
+  | ty => ty
 
 inductive Lit where
   | bool (b : Bool)
@@ -84,7 +100,7 @@ inductive Expr where
   | cond (c t e : Expr)
   | letE (name : String) (ty : Ty) (val body : Expr)
   | call (fn : String) (args : List Expr)
-  | ctor (typeName ctorName : String) (args : List Expr)
+  | ctor (typeName : String) (tyArgs : List Ty) (ctorName : String) (args : List Expr)
   | proj (e : Expr) (field : String)
   | matchE (scrut : Expr) (alts : List (Pat × Expr))
   | noneE (elem : Ty)
@@ -119,14 +135,26 @@ structure CtorDef where
   fields : List Field
   deriving Repr, BEq, Inhabited
 
-/-- A `structure` / `inductive` declared by the user. The single-constructor ones are the `structure`s. -/
+/-- A `structure` / `inductive` declared by the user. The single-constructor ones are the `structure`s.
+
+`params` names the type parameters that the field types may mention as `Ty.var`. -/
 structure TypeDef where
   name : String
+  params : List String := []
   ctors : List CtorDef
   deriving Repr, Inhabited
 
 def TypeDef.find? (t : TypeDef) (ctor : String) : Option CtorDef :=
   t.ctors.find? (·.name == ctor)
+
+/-- The constructors as seen by a use of the type at `args`. Every lookup that reads a field's *type*
+rather than its name goes through here; reading a name back does not need the substitution. -/
+def TypeDef.ctorsAt (t : TypeDef) (args : List Ty) : List CtorDef :=
+  let sigma := t.params.zip args
+  t.ctors.map fun c => { c with fields := c.fields.map fun f => { f with ty := f.ty.subst sigma } }
+
+def TypeDef.findAt? (t : TypeDef) (args : List Ty) (ctor : String) : Option CtorDef :=
+  (t.ctorsAt args).find? (·.name == ctor)
 
 /-- One exported pure function. -/
 structure Decl where

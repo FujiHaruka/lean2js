@@ -147,6 +147,22 @@
     {
       "name": "settleMessage",
       "signature": "(outcome : Result OrderState String) → String"
+    },
+    {
+      "name": "remainingItems",
+      "signature": "(page : Paginated Money) → Int53"
+    },
+    {
+      "name": "firstPage",
+      "signature": "(amounts : Array Int53) → Paginated Int53"
+    },
+    {
+      "name": "validateQuantity",
+      "signature": "(quantity : Int53) → Validated String Int53"
+    },
+    {
+      "name": "validationMessage",
+      "signature": "(outcome : Validated String Int53) → String"
     }
   ],
   "theorems": [

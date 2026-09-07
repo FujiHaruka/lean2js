@@ -183,7 +183,7 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       | some d =>
         if d.params.length != vs.length then .error (.arity fn)
         else evalExpr p f (bindParams d.params vs) d.body
-    | .ctor typeName ctorName args => do
+    | .ctor typeName _ ctorName args => do
       let vs ← evalArgs p f env args
       match p.findType? typeName with
       | none => .error (.typeError s!"unknown type: {typeName}")

@@ -53,11 +53,11 @@ private def tuplesOf (rows : List (List Value)) (per : List Value) : List (List 
 
 /-- Always steps just inside and just outside the boundary. Overflow and rounding break nowhere else. -/
 partial def edgeCases (p : Program) (width : Nat) : Ty → List Value
-  | .named n =>
+  | .named n args =>
     match p.findType? n with
     | none => []
     | some t =>
-      t.ctors.flatMap fun c =>
+      (t.ctorsAt args).flatMap fun c =>
         let rows := c.fields.foldr (init := [[]]) fun f rows =>
           tuplesOf rows ((edgeCases p (width / 2 + 1) f.ty).take (width / 2 + 1))
         (rows.map fun args => Value.obj c.name ((c.fields.map (·.name)).zip args)).take width

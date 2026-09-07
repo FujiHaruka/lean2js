@@ -107,7 +107,7 @@ def step (p : Program) : State → State
     | .letE name _ val body => .eval env val (.letK name body env :: k)
     | .call fn args =>
       continueArgs (buildCall p fn · k) [] args env k (fun done rest => .callK fn done rest env)
-    | .ctor typeName ctorName args =>
+    | .ctor typeName _ ctorName args =>
       continueArgs (buildCtor p typeName ctorName · k) [] args env k
         (fun done rest => .ctorK typeName ctorName done rest env)
     | .proj e field => .eval env e (.projK field :: k)

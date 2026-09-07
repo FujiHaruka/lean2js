@@ -41,8 +41,10 @@ partial def Expr.source : Expr → String
   | .letE name ty val body =>
     s!"let {name} : {ty.render} = {val.source}; " ++ body.source
   | .call fn args => fn ++ "(" ++ String.intercalate ", " (args.map Expr.source) ++ ")"
-  | .ctor typeName ctorName args =>
-    s!"{typeName}.{ctorName}(" ++ String.intercalate ", " (args.map Expr.source) ++ ")"
+  | .ctor typeName tyArgs ctorName args =>
+    let at' := if tyArgs.isEmpty then "" else
+      "[" ++ String.intercalate ", " (tyArgs.map Ty.render) ++ "]"
+    s!"{typeName}{at'}.{ctorName}(" ++ String.intercalate ", " (args.map Expr.source) ++ ")"
   | .proj e field => e.source ++ "." ++ field
   | .matchE scrut alts =>
     let arm := fun (a : Alt) => s!"{(Alt.pat a).source} => {(Alt.body a).source}"
@@ -68,7 +70,8 @@ def CtorDef.source (c : CtorDef) : String :=
   if fields.isEmpty then c.name else c.name ++ "(" ++ String.intercalate ", " fields ++ ")"
 
 def TypeDef.source (t : TypeDef) : String :=
-  s!"type {t.name} = " ++ String.intercalate " | " (t.ctors.map CtorDef.source)
+  let params := if t.params.isEmpty then "" else " " ++ String.intercalate " " t.params
+  s!"type {t.name}{params} = " ++ String.intercalate " | " (t.ctors.map CtorDef.source)
 
 def Decl.signature (d : Decl) : String :=
   let params := d.params.map fun p => s!"{p.name} : {p.ty.render}"

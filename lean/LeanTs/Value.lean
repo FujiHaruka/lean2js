@@ -97,10 +97,10 @@ def Value.hasTy (p : Program) : Value → Ty → Bool
   | .uint32 _, .uint32 => true
   | .str _, .string => true
   | .bigint _, .bigint => true
-  | .obj ctor fields, .named n =>
+  | .obj ctor fields, .named n args =>
     match p.findType? n with
     | some t =>
-      match t.find? ctor with
+      match t.findAt? args ctor with
       | some c => Value.hasFieldTys p fields (c.fields.map fun f => (f.name, f.ty))
       | none => false
     | none => false

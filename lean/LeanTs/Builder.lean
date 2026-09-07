@@ -41,7 +41,8 @@ def ite' (c t e : Expr) : Expr := .cond c t e
 def letIn (name : String) (ty : Ty) (val body : Expr) : Expr := .letE name ty val body
 def call (fn : String) (args : List Expr) : Expr := .call fn args
 
-def ctor (typeName ctorName : String) (args : List Expr) : Expr := .ctor typeName ctorName args
+def ctor (typeName : String) (tyArgs : List Ty) (ctorName : String) (args : List Expr) : Expr :=
+  .ctor typeName tyArgs ctorName args
 def proj (e : Expr) (field : String) : Expr := .proj e field
 def matchOn (scrut : Expr) (alts : List Alt) : Expr := .matchE scrut alts
 def none' (elem : Ty) : Expr := .noneE elem
@@ -75,10 +76,11 @@ def altP (pat : Pat) (body : Expr) : Alt := (pat, body)
 def decl (name : String) (params : List (String × Ty)) (ret : Ty) (body : Expr) : Decl :=
   { name, params := params.map fun (n, t) => ⟨n, t⟩, ret, body }
 
-def struct (name : String) (fields : List (String × Ty)) : TypeDef :=
-  { name, ctors := [{ name, fields := fields.map fun (n, t) => ⟨n, t⟩ }] }
+def struct (name : String) (fields : List (String × Ty)) (params : List String := []) : TypeDef :=
+  { name, params, ctors := [{ name, fields := fields.map fun (n, t) => ⟨n, t⟩ }] }
 
-def enum (name : String) (ctors : List (String × List (String × Ty))) : TypeDef :=
-  { name, ctors := ctors.map fun (c, fields) => ⟨c, fields.map fun (n, t) => ⟨n, t⟩⟩ }
+def enum (name : String) (ctors : List (String × List (String × Ty)))
+    (params : List String := []) : TypeDef :=
+  { name, params, ctors := ctors.map fun (c, fields) => ⟨c, fields.map fun (n, t) => ⟨n, t⟩⟩ }
 
 end LeanTs.Core.Builder

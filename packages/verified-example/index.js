@@ -369,4 +369,28 @@ export function settleMessage(__p0) {
   return ((__s) => (((((__s).tag === "ok") && (((__s).value).tag === "shipped")) ? ((trackingId) => (trackingId))(((__s).value).trackingId) : ((((__s).tag === "ok") && (((__s).value).tag === "placed")) ? "awaiting shipment" : (((__s).tag === "ok") ? "no update" : ((message) => (message))((__s).error))))))(outcome);
 }
 
+/** remainingItems : (page : Paginated Money) → Int53 */
+export function remainingItems(__p0) {
+  const page = __ck(__p0, ["ctors", [["Paginated", [["items", ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]], ["total", ["int53"]]]]]]);
+  return __i53(((page).total - ((page).items).length));
+}
+
+/** firstPage : (amounts : Array Int53) → Paginated Int53 */
+export function firstPage(__p0) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  return { "tag": "Paginated", "items": amounts, "total": (amounts).length };
+}
+
+/** validateQuantity : (quantity : Int53) → Validated String Int53 */
+export function validateQuantity(__p0) {
+  const quantity = __ck(__p0, ["int53"]);
+  return ((quantity < 1) ? { "tag": "invalid", "errors": ["a quantity must be at least 1"] } : ((quantity > 999) ? { "tag": "invalid", "errors": ["a quantity may not exceed 999"] } : { "tag": "valid", "value": quantity }));
+}
+
+/** validationMessage : (outcome : Validated String Int53) → String */
+export function validationMessage(__p0) {
+  const outcome = __ck(__p0, ["ctors", [["valid", [["value", ["int53"]]]], ["invalid", [["errors", ["array", ["string"]]]]]]]);
+  return ((__s) => ((((__s).tag === "valid") ? ((value) => (quantityLabel(value)))((__s).value) : ((errors) => ((((errors).length === 0) ? "refused" : __at(errors, 0))))((__s).errors))))(outcome);
+}
+
 //# sourceMappingURL=index.js.map

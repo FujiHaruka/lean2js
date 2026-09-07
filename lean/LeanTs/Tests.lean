@@ -52,7 +52,7 @@ private def withTypes (d : Decl) : Bool :=
   (Compile.compileProgram { types := [Colour, Point], decls := [d] }).isOk
 
 private def rank (alts : List Alt) : Decl :=
-  decl "rank" [("c", .named "Colour")] .int53 (matchOn (v "c") alts)
+  decl "rank" [("c", .named "Colour" [])] .int53 (matchOn (v "c") alts)
 
 #guard withTypes
   (rank [alt "red" [] (int53 0), alt "green" [] (int53 1), alt "blue" ["shade"] (v "shade")])
@@ -82,13 +82,13 @@ private def rank (alts : List Alt) : Decl :=
 #guard !withTypes (rank [altP (pCtor "blue" [pBind "class"]) (int53 0), altP pWild (int53 1)])
 
 private def onPoint (alts : List Alt) : Decl :=
-  decl "onPoint" [("p", .named "Point")] .int53 (matchOn (v "p") alts)
+  decl "onPoint" [("p", .named "Point" [])] .int53 (matchOn (v "p") alts)
 
 #guard withTypes (onPoint [altP (pCtor "Point" [pBind "x", pWild]) (v "x")])
 #guard !withTypes (onPoint [altP (pCtor "Point" [pBind "x", pBind "x"]) (v "x")])
 
 private def nested (alts : List Alt) : Decl :=
-  decl "nested" [("c", .option (.named "Colour"))] .int53 (matchOn (v "c") alts)
+  decl "nested" [("c", .option (.named "Colour" []))] .int53 (matchOn (v "c") alts)
 
 #guard withTypes
   (nested [altP (pCtor "some" [pCtor "blue" [pBind "shade"]]) (v "shade"), altP pWild (int53 0)])
@@ -114,14 +114,14 @@ private def nested (alts : List Alt) : Decl :=
 #guard !compiles
   (decl "flag" [("b", .bool)] .int53 (matchOn (v "b") [altP (pBool true) (int53 1)]))
 
-#guard withTypes (decl "px" [("p", .named "Point")] .int53 (proj (v "p") "x"))
-#guard !withTypes (decl "pz" [("p", .named "Point")] .int53 (proj (v "p") "z"))
+#guard withTypes (decl "px" [("p", .named "Point" [])] .int53 (proj (v "p") "x"))
+#guard !withTypes (decl "pz" [("p", .named "Point" [])] .int53 (proj (v "p") "z"))
 #guard !withTypes
-  (decl "cx" [("c", .named "Colour")] .int53 (proj (v "c") "shade"))
+  (decl "cx" [("c", .named "Colour" [])] .int53 (proj (v "c") "shade"))
 
 #guard !compiles
   (decl "taggedField" [] .int53
-    (proj (ctor "Tagged" "Tagged" [int53 1]) "tag"))
+    (proj (ctor "Tagged" [] "Tagged" [int53 1]) "tag"))
 
 #guard !(Compile.compileProgram {
     types := [struct "Tagged" [("tag", Ty.int53)]], decls := [] }).isOk
@@ -183,6 +183,52 @@ private def nested (alts : List Alt) : Decl :=
 #guard !withTypes
   (decl "reduceNotArray" [("n", .int53)] .int53
     (reduce' (v "n") (int53 0) "acc" "x" (v "acc")))
+
+private def Box : TypeDef :=
+  struct "Box" [("value", Ty.var "T")] (params := ["T"])
+
+private def Pair : TypeDef :=
+  enum "Pair" [("first", [("value", Ty.var "A")]), ("second", [("value", Ty.var "B")])]
+    (params := ["A", "B"])
+
+private def withGenerics (d : Decl) : Bool :=
+  (Compile.compileProgram { types := [Box, Pair], decls := [d] }).isOk
+
+#guard withGenerics (decl "unbox" [("b", .named "Box" [.int53])] .int53 (proj (v "b") "value"))
+#guard !withGenerics (decl "unbox" [("b", .named "Box" [.int53])] .string (proj (v "b") "value"))
+#guard !withGenerics (decl "unbox" [("b", .named "Box" [])] .int53 (proj (v "b") "value"))
+#guard !withGenerics
+  (decl "unbox" [("b", .named "Box" [.int53, .string])] .int53 (proj (v "b") "value"))
+#guard withGenerics
+  (decl "unnest" [("b", .named "Box" [.named "Box" [.int53]])] .int53
+    (proj (proj (v "b") "value") "value"))
+#guard withGenerics
+  (decl "box" [("n", .int53)] (.named "Box" [.int53]) (ctor "Box" [.int53] "Box" [v "n"]))
+#guard !withGenerics
+  (decl "box" [("n", .int53)] (.named "Box" [.string]) (ctor "Box" [.string] "Box" [v "n"]))
+#guard withGenerics
+  (decl "pick" [("p", .named "Pair" [.int53, .string])] .string
+    (matchOn (v "p") [alt "first" ["value"] (str "a"), alt "second" ["value"] (v "value")]))
+#guard !withGenerics
+  (decl "pick" [("p", .named "Pair" [.int53, .string])] .string
+    (matchOn (v "p") [alt "first" ["value"] (v "value"), alt "second" ["value"] (v "value")]))
+
+#guard withGenerics
+  (decl "onlySecond" [("s", .string)] (.named "Pair" [.int53, .string])
+    (ctor "Pair" [.int53, .string] "second" [v "s"]))
+#guard !withGenerics
+  (decl "onlySecond" [("s", .string)] (.named "Pair" [.int53, .string])
+    (ctor "Pair" [.string, .string] "second" [v "s"]))
+
+private def typesOk (ts : List TypeDef) : Bool :=
+  (Compile.compileProgram { types := ts, decls := [] }).isOk
+
+#guard typesOk [Box, Pair]
+#guard !typesOk [struct "Loose" [("value", Ty.var "T")]]
+#guard !typesOk [struct "Reserved" [("value", Ty.var "class")] (params := ["class"])]
+#guard !typesOk [struct "Twice" [("value", Ty.var "T")] (params := ["T", "T"])]
+#guard !typesOk [struct "Tree" [("child", .named "Tree" [])]]
+#guard !typesOk [Box, struct "Wrap" [("inner", .named "Box" [.named "Wrap" []])]]
 
 private def inOrder (ds : List Decl) : Bool :=
   (Compile.compileProgram { decls := ds }).isOk

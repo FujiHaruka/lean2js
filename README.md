@@ -27,7 +27,7 @@ Lean 全体ではなく、JS との対応が明快な領域に絞ることで、
 | 含める | 外す |
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
-| `structure` / `inductive` / `Option` / `Result` | `unsafe` / arbitrary FFI / pointer |
+| `structure` / `inductive` / 型パラメータ / `Option` / `Result` | `unsafe` / arbitrary FFI / pointer |
 | `Array` / `map` / `filter` / `reduce` / `match`（入れ子・ワイルドカード・リテラル） | metaprogramming |
 | 純粋関数 | 再帰 / 非停止 / DOM access |
 
@@ -59,7 +59,7 @@ Lean のリファレンス意味論  ──証明（断片）──  生成し�
 - **停止性**: 関数は自分より前に宣言された関数しか呼べないので、自己再帰も相互再帰もコンパイルが通らない。
   非停止は `eval` の fuel が尽きるのを待つのではなく構文として排除され、走査は `map` / `filter` / `reduce`
   が受け持つ
-- **実行時検査**: 出荷する成果物の全ベクタ（現在 13265 件）について、`eval` と JS の模型、および
+- **実行時検査**: 出荷する成果物の全ベクタ（現在 14137 件）について、`eval` と JS の模型、および
   `eval` と small-step が一致することを `leants` が書き出す前に確かめる
 - **差分テスト**: 生成した ESM を Node で実行し、`eval` の答えと突き合わせる。JS の模型が仮定している
   振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）はここで押さえる
@@ -70,7 +70,7 @@ Lean のリファレンス意味論  ──証明（断片）──  生成し�
 packages/verified-example/
   index.js              ESM。実行時ヘルパは __ 接頭辞に閉じてある
   index.js.map          example.leants への source map（関数単位）
-  index.d.ts            .d.ts。ADT は判別可能なユニオンになる
+  index.d.ts            .d.ts。ADT は判別可能なユニオンに、型パラメータはジェネリクスになる
   example.leants        Core を書き出したソース
   proof-manifest.json   定理・コンパイラ版・公開 API
   package.json          exports / sideEffects / engines

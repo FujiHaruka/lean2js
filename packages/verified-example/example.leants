@@ -6,6 +6,10 @@ type Role = guest | member | admin
 
 type OrderState = draft | placed(orderId : Int53) | shipped(orderId : Int53, trackingId : String) | cancelled(reason : String)
 
+type Paginated T = Paginated(items : Array T, total : Int53)
+
+type Validated E A = valid(value : A) | invalid(errors : Array E)
+
 def add(a : Int53, b : Int53) : Int53 =
   (a + b)
 
@@ -110,4 +114,16 @@ def chargeable(amount : Money) : Bool =
 
 def settleMessage(outcome : Result OrderState String) : String =
   match outcome { ok(shipped(_, trackingId)) => trackingId | ok(placed(_)) => "awaiting shipment" | ok(_) => "no update" | error(message) => message }
+
+def remainingItems(page : Paginated Money) : Int53 =
+  (page.total - page.items.length)
+
+def firstPage(amounts : Array Int53) : Paginated Int53 =
+  Paginated[Int53].Paginated(amounts, amounts.length)
+
+def validateQuantity(quantity : Int53) : Validated String Int53 =
+  if (quantity < 1) then Validated[String, Int53].invalid(["a quantity must be at least 1"] : Array String) else if (quantity > 999) then Validated[String, Int53].invalid(["a quantity may not exceed 999"] : Array String) else Validated[String, Int53].valid(quantity)
+
+def validationMessage(outcome : Validated String Int53) : String =
+  match outcome { valid(value) => quantityLabel(value) | invalid(errors) => if (errors.length == 0) then "refused" else errors[0] }
 
