@@ -34,6 +34,7 @@ is left open. -/
 inductive CoveredOp : BinOp → Prop where
   | and : CoveredOp .and
   | or : CoveredOp .or
+  | concat : CoveredOp .concat
 
 /-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
@@ -662,6 +663,60 @@ theorem fragment_correct (p : Program) (m : Js.Module)
             subst he
             refine eventually_orR hle ?_
             simpa [encodeValue] using ihr henv hcr hbv
+        · simp at hc
+      | concat =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        split at hc
+        · rename_i htl
+          have htl' : tl = Ty.string := htl
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          obtain ⟨x, hx⟩ := hasTy_string_inv (htl' ▸ hat)
+          obtain ⟨y, hy⟩ := hasTy_string_inv (htl' ▸ hbt)
+          subst hx; subst hy
+          simp only [applyBin, Except.ok.injEq] at he
+          subst he
+          simp only [encodeValue]
+          refine eventually_plus_str ?_ ?_
+          · simpa [encodeValue] using ihl henv hcl hav
+          · simpa [encodeValue] using ihr henv hcr hbv
+        · rename_i elem htl
+          have htl' : tl = Ty.array elem := htl
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          obtain ⟨x, hx⟩ := hasTy_array_inv (elem := elem) (htl' ▸ hat)
+          obtain ⟨y, hy⟩ := hasTy_array_inv (elem := elem) (htl' ▸ hbt)
+          subst hx; subst hy
+          simp only [applyBin, Except.ok.injEq] at he
+          subst he
+          simp only [encodeValue, encodeList_append]
+          exact eventually_call2 (by simpa [encodeValue] using ihl henv hcl hav)
+            (by simpa [encodeValue] using ihr henv hcr hbv) (helper_aconcat _ _)
         · simp at hc
 
 end LeanTs.Correct

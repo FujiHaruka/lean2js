@@ -120,6 +120,10 @@ theorem hasTy_string_inv {p : Program} {v : Value} (h : Value.hasTy p v .string 
     ∃ s, v = .str s := by
   cases v <;> simp_all [Value.hasTy]
 
+theorem hasTy_array_inv {p : Program} {v : Value} {elem : Ty}
+    (h : Value.hasTy p v (.array elem) = true) : ∃ xs, v = .arr xs := by
+  cases v <;> simp_all [Value.hasTy]
+
 theorem hasTy_bigint_inv {p : Program} {v : Value} (h : Value.hasTy p v .bigint = true) :
     ∃ i, v = .bigint i := by
   cases v <;> simp_all [Value.hasTy]
