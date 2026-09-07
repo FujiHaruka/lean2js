@@ -1,0 +1,91 @@
+import LeanTs.Compile
+import LeanTs.Builder
+
+/-!
+# Tests
+
+コンパイラが受け付けてはいけないプログラムを固定する。
+
+差分テストは「通ったプログラムが JS でも同じ答えを返すこと」しか見ない。通してはいけないものを
+通さないことは、こちら側でしか確かめられない。
+-/
+
+namespace LeanTs.Tests
+
+open Core Core.Builder
+
+private def compiles (d : Decl) : Bool :=
+  (Compile.compileProgram { decls := [d] }).isOk
+
+private def identity (name : String) (param : String) : Decl :=
+  decl name [(param, .int53)] .int53 (v param)
+
+#guard compiles (identity "ok" "value")
+#guard !compiles (identity "new" "value")
+#guard !compiles (identity "fine" "class")
+#guard !compiles (identity "fine" "Math")
+#guard !compiles (identity "fine" "__i53")
+#guard !compiles (identity "fine" "has space")
+#guard !compiles (identity "fine" "1st")
+#guard !compiles (identity "" "value")
+
+#guard !compiles
+  (decl "dup" [("a", .int53), ("a", .int53)] .int53 (v "a"))
+
+#guard compiles
+  (decl "shadow" [("a", .int53)] .int53
+    (letIn "a" .int53 (int53 1) (letIn "a" .int53 (int53 2) (v "a"))))
+
+#guard !compiles (decl "unbound" [] .int53 (v "nope"))
+#guard !compiles (decl "wrongReturn" [("a", .int53)] .bool (v "a"))
+#guard !compiles (decl "mixedOperands" [("a", .int53), ("b", .uint32)] .int53 (v "a" +' v "b"))
+#guard !compiles (decl "boolArithmetic" [("a", .bool)] .bool (v "a" +' v "a"))
+#guard !compiles (decl "overflowLiteral" [] .int53 (int53 9007199254740992))
+
+private def Colour : TypeDef :=
+  enum "Colour" [("red", []), ("green", []), ("blue", [("shade", Ty.int53)])]
+
+private def Point : TypeDef :=
+  struct "Point" [("x", Ty.int53), ("y", Ty.int53)]
+
+private def withTypes (d : Decl) : Bool :=
+  (Compile.compileProgram { types := [Colour, Point], decls := [d] }).isOk
+
+private def rank (alts : List Alt) : Decl :=
+  decl "rank" [("c", .named "Colour")] .int53 (matchOn (v "c") alts)
+
+#guard withTypes
+  (rank [alt "red" [] (int53 0), alt "green" [] (int53 1), alt "blue" ["shade"] (v "shade")])
+
+#guard !withTypes (rank [alt "red" [] (int53 0), alt "green" [] (int53 1)])
+#guard !withTypes
+  (rank [alt "red" [] (int53 0), alt "red" [] (int53 1), alt "blue" ["shade"] (v "shade")])
+#guard !withTypes
+  (rank [alt "red" [] (int53 0), alt "green" [] (int53 1), alt "blue" [] (int53 2)])
+#guard !withTypes
+  (rank [alt "red" [] (int53 0), alt "green" [] (int53 1), alt "purple" ["shade"] (v "shade")])
+#guard !withTypes
+  (rank [alt "red" [] (int53 0), alt "green" [] (int53 1), alt "blue" ["shade"] (bool true)])
+
+#guard withTypes (decl "px" [("p", .named "Point")] .int53 (proj (v "p") "x"))
+#guard !withTypes (decl "pz" [("p", .named "Point")] .int53 (proj (v "p") "z"))
+#guard !withTypes
+  (decl "cx" [("c", .named "Colour")] .int53 (proj (v "c") "shade"))
+
+#guard !compiles
+  (decl "taggedField" [] .int53
+    (proj (ctor "Tagged" "Tagged" [int53 1]) "tag"))
+
+#guard !(Compile.compileProgram {
+    types := [struct "Tagged" [("tag", Ty.int53)]], decls := [] }).isOk
+
+#guard withTypes (decl "sizeOfList" [("xs", .array .int53)] .int53 (len (v "xs")))
+#guard !withTypes (decl "badIndex" [("xs", .array .int53)] .int53 (at' (v "xs") (bool true)))
+#guard !withTypes (decl "notAnArray" [("n", .int53)] .int53 (len (v "n")))
+#guard !withTypes
+  (decl "mixedArray" [] (.array .int53) (array .int53 [int53 1, str "two"]))
+
+#guard withTypes (decl "maybe" [("n", .int53)] (.option .int53) (some' (v "n")))
+#guard !withTypes (decl "maybeMismatch" [("n", .int53)] (.option .string) (some' (v "n")))
+
+end LeanTs.Tests

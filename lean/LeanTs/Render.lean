@@ -1,0 +1,85 @@
+import LeanTs.Core
+import LeanTs.Json
+
+/-!
+# Render
+
+Core をソースとして書き出す。
+
+生成した JS の source map が指す先がこれ。Lean のファイル上の位置はまだ追っていないので、`.leants` は
+サブセットの項を素直に書き下したものになる。
+-/
+
+namespace LeanTs.Core
+
+private def binSymbol : BinOp → String
+  | .add => "+" | .sub => "-" | .mul => "*" | .div => "/" | .mod => "%"
+  | .lt => "<" | .le => "<=" | .gt => ">" | .ge => ">=" | .eq => "==" | .ne => "!="
+  | .and => "&&" | .or => "||" | .concat => "++"
+
+private def litSource : Lit → String
+  | .bool b => if b then "true" else "false"
+  | .int53 i => toString i
+  | .uint32 n => s!"{n.toNat}u32"
+  | .str s => "\"" ++ escapeString s ++ "\""
+  | .bigint i => s!"{i}n"
+
+partial def Expr.source : Expr → String
+  | .lit l => litSource l
+  | .var name => name
+  | .un .not e => "!" ++ e.source
+  | .un .neg e => "-" ++ e.source
+  | .bin op lhs rhs => "(" ++ lhs.source ++ " " ++ binSymbol op ++ " " ++ rhs.source ++ ")"
+  | .cond c t e => "if " ++ c.source ++ " then " ++ t.source ++ " else " ++ e.source
+  | .letE name ty val body =>
+    s!"let {name} : {ty.render} = {val.source}; " ++ body.source
+  | .call fn args => fn ++ "(" ++ String.intercalate ", " (args.map Expr.source) ++ ")"
+  | .ctor typeName ctorName args =>
+    s!"{typeName}.{ctorName}(" ++ String.intercalate ", " (args.map Expr.source) ++ ")"
+  | .proj e field => e.source ++ "." ++ field
+  | .matchE scrut alts =>
+    let arm := fun (a : Alt) =>
+      let binders :=
+        if (Alt.binders a).isEmpty then ""
+        else "(" ++ String.intercalate ", " (Alt.binders a) ++ ")"
+      s!"{Alt.ctor a}{binders} => {(Alt.body a).source}"
+    "match " ++ scrut.source ++ " { " ++ String.intercalate " | " (alts.map arm) ++ " }"
+  | .noneE elem => s!"none[{elem.render}]"
+  | .someE e => "some(" ++ e.source ++ ")"
+  | .okE err e => s!"ok[{err.render}](" ++ e.source ++ ")"
+  | .errorE ok e => s!"error[{ok.render}](" ++ e.source ++ ")"
+  | .arrayLit elem items =>
+    s!"[{String.intercalate ", " (items.map Expr.source)}] : Array {elem.render}"
+  | .index arr idx => arr.source ++ "[" ++ idx.source ++ "]"
+  | .length arr => arr.source ++ ".length"
+
+def CtorDef.source (c : CtorDef) : String :=
+  let fields := c.fields.map fun f => s!"{f.name} : {f.ty.render}"
+  if fields.isEmpty then c.name else c.name ++ "(" ++ String.intercalate ", " fields ++ ")"
+
+def TypeDef.source (t : TypeDef) : String :=
+  s!"type {t.name} = " ++ String.intercalate " | " (t.ctors.map CtorDef.source)
+
+def Decl.signature (d : Decl) : String :=
+  let params := d.params.map fun p => s!"{p.name} : {p.ty.render}"
+  s!"def {d.name}({String.intercalate ", " params}) : {d.ret.render} ="
+
+/-- 宣言ひとつを 3 行に固定する。source map が行だけで位置を決められる。 -/
+def Decl.source (d : Decl) : List String :=
+  [d.signature, "  " ++ d.body.source, ""]
+
+structure Source where
+  text : String
+  /-- 各関数が何行目から始まるか。0 始まり。 -/
+  declLines : List (String × Nat)
+
+def Program.source (p : Program) : Source :=
+  let header := ["-- Generated from the Lean subset by leants.", ""]
+  let types := p.types.flatMap fun t => [t.source, ""]
+  let start := header.length + types.length
+  let (lines, decls) := p.decls.foldl (init := ([], [])) fun (lines, decls) d =>
+    (lines ++ d.source, decls ++ [(d.name, start + lines.length)])
+  { text := String.intercalate "\n" (header ++ types ++ lines) ++ "\n"
+    declLines := decls }
+
+end LeanTs.Core

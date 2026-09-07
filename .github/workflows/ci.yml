@@ -13,6 +13,11 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: lean
+      - name: Regenerate the package
+        working-directory: lean
+        run: lake exe leants ../packages/verified-example
+      - name: Generated package is up to date
+        run: git diff --exit-code -- packages/verified-example
 
   node:
     runs-on: ubuntu-latest
@@ -27,3 +32,4 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm package:check

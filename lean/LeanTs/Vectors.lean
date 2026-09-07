@@ -1,0 +1,161 @@
+import LeanTs.Eval
+import LeanTs.Json
+
+/-!
+# Vectors
+
+差分テストの入力と、`eval` が返す期待値を書き出す。
+
+trap も期待値として符号化する。ゼロ除算や Int53 の溢れは JS と Lean を揃えるための中心的な設計判断で、
+「例外になること」自体が確かめたい振る舞いだから。
+-/
+
+namespace LeanTs
+
+open Core
+
+/-- 決定的な乱数。ベクタは git に入るので、実行のたびに差分が出ては困る。 -/
+private def nextSeed (s : UInt64) : UInt64 :=
+  s * 6364136223846793005 + 1442695040888963407
+
+private def bits (s : UInt64) : Nat := (s >>> 11).toNat
+
+private def pick (s : UInt64) (n : Nat) : Nat := if n == 0 then 0 else bits s % n
+
+/-- BMP の最後の文字。JS の `.length` は UTF-16 単位で数えるため、ここから先で Lean と割れる。 -/
+def bmpMax : String := String.singleton (Char.ofNat 0xFFFF)
+
+/-- BMP の外にある文字。JS では surrogate pair 2 つになる。 -/
+def astral : String := String.singleton (Char.ofNat 0x10000)
+
+private def scalarEdges : Ty → List Value
+  | .bool => [.bool true, .bool false]
+  | .int53 =>
+    [0, 1, -1, 2, -2, 3, -3, 7, -7, 10, -10,
+     int53Max, int53Min, int53Max - 1, int53Min + 1,
+     4503599627370496, -4503599627370496, 3037000499, -3037000499].map Value.int53
+  | .uint32 =>
+    [0, 1, 2, 3, 7, 255, 65535, 65536, 2147483647, 2147483648, 4294967294, 4294967295].map
+      fun n => Value.uint32 (UInt32.ofNat n)
+  | .string =>
+    ["", "a", "b", "ab", "ba", "abc", "Z", "z", "\"", "\\", "\n",
+     "日本語", "🍣", "🍣a", bmpMax, astral, astral ++ "a"].map Value.str
+  | .bigint =>
+    [0, 1, -1, 7, -7, 9007199254740993, -9007199254740993,
+     1208925819614629174706176, -1208925819614629174706176].map Value.bigint
+  | _ => []
+
+/-- 各引数の境界値の直積。入れ子の型では組合せが爆発するので、深いところほど幅を切る。 -/
+private def tuplesOf (rows : List (List Value)) (per : List Value) : List (List Value) :=
+  per.flatMap fun v => rows.map fun row => v :: row
+
+/-- 境界のすぐ内と外を必ず踏む。溢れと丸めはここでしか壊れない。 -/
+partial def edgeCases (p : Program) (width : Nat) : Ty → List Value
+  | .named n =>
+    match p.findType? n with
+    | none => []
+    | some t =>
+      t.ctors.flatMap fun c =>
+        let rows := c.fields.foldr (init := [[]]) fun f rows =>
+          tuplesOf rows ((edgeCases p (width / 2 + 1) f.ty).take (width / 2 + 1))
+        (rows.map fun args => Value.obj c.name ((c.fields.map (·.name)).zip args)).take width
+  | .option t =>
+    Value.obj "none" [] ::
+      ((edgeCases p (width / 2 + 1) t).take width).map fun x => .obj "some" [("value", x)]
+  | .result ok err =>
+    ((edgeCases p (width / 2 + 1) ok).take width).map (fun x => Value.obj "ok" [("value", x)])
+      ++ ((edgeCases p (width / 2 + 1) err).take width).map fun x =>
+        Value.obj "error" [("error", x)]
+  | .array t =>
+    let items := (edgeCases p (width / 2 + 1) t).take width
+    Value.arr [] :: (items.map fun x => Value.arr [x])
+      ++ [Value.arr (items.take 3), Value.arr (items.take 5)]
+  | ty => scalarEdges ty
+
+private partial def randomValue (p : Program) (s : UInt64) : Ty → Value
+  | .bool => .bool (bits s % 2 == 0)
+  | .int53 =>
+    let magnitude : Int :=
+      match bits s % 4 with
+      | 0 => Int.ofNat (bits (nextSeed s) % 21)
+      | 1 => Int.ofNat (bits (nextSeed s) % 1000001)
+      | 2 => int53Max - Int.ofNat (bits (nextSeed s) % 5)
+      | _ => Int.ofNat (bits (nextSeed s) % 9007199254740992)
+    .int53 (if bits (nextSeed (nextSeed s)) % 2 == 0 then magnitude else -magnitude)
+  | .uint32 =>
+    match bits s % 3 with
+    | 0 => .uint32 (UInt32.ofNat (bits (nextSeed s) % 16))
+    | 1 => .uint32 (UInt32.ofNat (4294967295 - bits (nextSeed s) % 16))
+    | _ => .uint32 (UInt32.ofNat (bits (nextSeed s)))
+  | .string =>
+    let pool := ["", "a", "ab", "b", "日本", "🍣", astral, bmpMax, "0", "\n"]
+    .str (pool.getD (pick s pool.length) "")
+  | .bigint =>
+    let magnitude := Int.ofNat (bits s) * Int.ofNat (bits (nextSeed s) % 4294967296 + 1)
+    .bigint (if bits (nextSeed (nextSeed s)) % 2 == 0 then magnitude else -magnitude)
+  | ty =>
+    let candidates := edgeCases p 6 ty
+    candidates.getD (pick s candidates.length) (.obj "none" [])
+
+private def edgeTuples (p : Program) : List Ty → List (List Value)
+  | [] => [[]]
+  | ty :: rest => tuplesOf (edgeTuples p rest) (edgeCases p 12 ty)
+
+private def randomTuples (p : Program) (s : UInt64) (tys : List Ty) : Nat → List (List Value)
+  | 0 => []
+  | n + 1 =>
+    let (row, s') := tys.foldl (init := ([], s)) fun (acc, seed) ty =>
+      (acc ++ [randomValue p seed ty], nextSeed seed)
+    row :: randomTuples p (nextSeed s') tys n
+
+structure TestVector where
+  fn : String
+  args : List Value
+  expected : Except Err Value
+
+partial def Value.toJson : Value → Json
+  | .bool b => .obj [("t", .str "bool"), ("v", .bool b)]
+  | .int53 i => .obj [("t", .str "int53"), ("v", .num i)]
+  | .uint32 n => .obj [("t", .str "uint32"), ("v", .num n.toNat)]
+  | .str s => .obj [("t", .str "string"), ("v", .str s)]
+  | .bigint i => .obj [("t", .str "bigint"), ("v", .str (toString i))]
+  | .obj ctor fields =>
+    .obj [("t", .str "obj"), ("ctor", .str ctor),
+          ("fields", .obj (fields.map fun (k, v) => (k, Value.toJson v)))]
+  | .arr xs => .obj [("t", .str "arr"), ("v", .arr (xs.map Value.toJson))]
+
+def TestVector.toJson (v : TestVector) : Json :=
+  let outcome :=
+    match v.expected with
+    | .ok value => [("ok", Json.bool true), ("value", value.toJson)]
+    | .error e => [("ok", Json.bool false), ("error", .str e.code)]
+  .obj ([("fn", .str v.fn), ("args", .arr (v.args.map Value.toJson))] ++ outcome)
+
+def vectorsFor (p : Program) (d : Decl) (edgeLimit randomCount : Nat) (seed : UInt64) :
+    List TestVector :=
+  let tys := d.params.map (·.ty)
+  let tuples := (edgeTuples p tys).take edgeLimit ++ randomTuples p seed tys randomCount
+  tuples.map fun args => { fn := d.name, args, expected := evalCall p d.name args }
+
+def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
+  let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
+  (p.decls.zip seeds).flatMap fun (d, seed) => vectorsFor p d edgeLimit randomCount seed
+
+/-- fuel は停止性を証明の外に出さないための道具であって、サブセットの意味論ではない。
+JS 側に対応する概念がない以上、`outOfFuel` を期待値に書くと「JS も失敗せよ」という嘘になる。 -/
+private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
+  vectors.find? fun v =>
+    match v.expected with
+    | .error .outOfFuel => true
+    | _ => false
+
+/-- 1 行 1 ベクタで書き出す。生成物は git に入るので、整形しすぎても 1 行にまとめても差分が読めない。 -/
+def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String :=
+  let vectors := allTestVectors p edgeLimit randomCount
+  match outOfFuelIn vectors with
+  | some v => .error s!"{v.fn} ran out of fuel; the subset excludes nontermination"
+  | none =>
+    let rows := vectors.map fun v => "  " ++ v.toJson.render
+    .ok ("[\n" ++ String.intercalate ",\n" rows ++ "\n]\n")
+
+end LeanTs

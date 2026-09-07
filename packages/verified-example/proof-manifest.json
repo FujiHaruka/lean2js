@@ -1,0 +1,126 @@
+{
+  "package": "@leants/verified-example",
+  "version": "0.1.0",
+  "compiler": {
+    "name": "leants",
+    "version": "0.1.0"
+  },
+  "leanToolchain": "leanprover/lean4:v4.33.1",
+  "source": "lean/LeanTs/Example.lean",
+  "exports": [
+    {
+      "name": "add",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "clampQuantity",
+      "signature": "(quantity : Int53, upper : Int53) → Int53"
+    },
+    {
+      "name": "lineTotal",
+      "signature": "(unitPrice : Int53, quantity : Int53) → Int53"
+    },
+    {
+      "name": "discounted",
+      "signature": "(amount : Int53, percent : Int53) → Int53"
+    },
+    {
+      "name": "divide",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "remainder",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "negate",
+      "signature": "(a : Int53) → Int53"
+    },
+    {
+      "name": "safeQuotientIsPositive",
+      "signature": "(a : Int53, b : Int53) → Bool"
+    },
+    {
+      "name": "canCheckout",
+      "signature": "(signedIn : Bool, cartTotal : Int53, stock : Int53) → Bool"
+    },
+    {
+      "name": "mixChannels",
+      "signature": "(a : UInt32, b : UInt32) → UInt32"
+    },
+    {
+      "name": "bucketOf",
+      "signature": "(key : UInt32, buckets : UInt32) → UInt32"
+    },
+    {
+      "name": "scaleFee",
+      "signature": "(fee : BigInt, factor : BigInt) → BigInt"
+    },
+    {
+      "name": "bigQuotient",
+      "signature": "(a : BigInt, b : BigInt) → BigInt"
+    },
+    {
+      "name": "slugOf",
+      "signature": "(prefix : String, name : String) → String"
+    },
+    {
+      "name": "sortsBefore",
+      "signature": "(a : String, b : String) → Bool"
+    },
+    {
+      "name": "sameLabel",
+      "signature": "(a : String, b : String) → Bool"
+    },
+    {
+      "name": "rebindTwice",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "roleRank",
+      "signature": "(role : Role) → Int53"
+    },
+    {
+      "name": "addMoney",
+      "signature": "(a : Money, b : Money) → Result Money String"
+    },
+    {
+      "name": "sameMoney",
+      "signature": "(a : Money, b : Money) → Bool"
+    },
+    {
+      "name": "ship",
+      "signature": "(state : OrderState, trackingId : String) → Result OrderState String"
+    },
+    {
+      "name": "trackingOf",
+      "signature": "(state : OrderState) → Option String"
+    },
+    {
+      "name": "canRefund",
+      "signature": "(role : Role, state : OrderState) → Bool"
+    },
+    {
+      "name": "sumFrom",
+      "signature": "(xs : Array Int53, from : Int53) → Int53"
+    },
+    {
+      "name": "total",
+      "signature": "(xs : Array Int53) → Int53"
+    },
+    {
+      "name": "headOr",
+      "signature": "(xs : Array Int53, fallback : Int53) → Int53"
+    },
+    {
+      "name": "firstTracking",
+      "signature": "(states : Array OrderState) → Option String"
+    }
+  ],
+  "theorems": [
+    {
+      "name": "add_comm",
+      "statement": "∀ a b, add a b = add b a"
+    }
+  ]
+}
