@@ -257,6 +257,10 @@ def truncateLabel : Decl := decl%
   truncateLabel(label : String, limit : Int53) : String :=
     if label.length <= limit then label else label.substring(0, limit) ++ "..."
 
+/-- Whether an uploaded file is a spreadsheet, compared the way the names are stored. -/
+def isSpreadsheet : Decl := decl%
+  isSpreadsheet(fileName : String) : Bool := fileName.trim().toLower().endsWith(".csv")
+
 /-- What a role may do in a day and in a month. -/
 def limitsFor : Decl := decl%
   limitsFor(role : Role) : Dict<Int53> :=
@@ -299,7 +303,7 @@ def program : Program := {
     lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
     quantityLabel, renewalLabel, chargeable, settleMessage,
     remainingItems, firstPage, validateQuantity, validationMessage,
-    storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel,
+    storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel, isSpreadsheet,
     limitsFor, dailyLimit, priceOf, isListed, repriced, listedSkus, catalogueSize
   ]
 }

@@ -63,11 +63,12 @@ private def strUnHelper : StrUnOp → String
 
 private def strBinHelper : StrBinOp → String
   | .startsWith => "__startsWith"
+  | .endsWith => "__endsWith"
   | .includes => "__includes"
   | .split => "__split"
 
 private def strBinResult : StrBinOp → Ty
-  | .startsWith | .includes => .bool
+  | .startsWith | .endsWith | .includes => .bool
   | .split => .array .string
 
 private def orderSymbol : BinOp → Option String

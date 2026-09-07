@@ -185,6 +185,10 @@
       "signature": "(label : String, limit : Int53) → String"
     },
     {
+      "name": "isSpreadsheet",
+      "signature": "(fileName : String) → Bool"
+    },
+    {
       "name": "limitsFor",
       "signature": "(role : Role) → Dict Int53"
     },

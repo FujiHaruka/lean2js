@@ -314,6 +314,7 @@ private def callsIdentity (name callee : String) : Decl :=
   == (reduce' (v "xs") (int53 0) "sum" "x" (v "sum" +' v "x"))
 #guard (expr% s.trim().toUpper()) == upper (trim (v "s"))
 #guard (expr% s.startsWith("a")) == startsWith (v "s") (str "a")
+#guard (expr% s.endsWith("a")) == endsWith (v "s") (str "a")
 #guard (expr% s.substring(0, n)) == substring (v "s") (int53 0) (v "n")
 #guard (expr% d.get(k)) == dictGet (v "d") (v "k")
 #guard (expr% d.set(k, x)) == dictSet (v "d") (v "k") (v "x")

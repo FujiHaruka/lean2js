@@ -135,6 +135,7 @@ def applyStrUn : StrUnOp → Value → Except Err Value
 
 def applyStrBin : StrBinOp → Value → Value → Except Err Value
   | .startsWith, .str s, .str t => .ok (.bool (t.toList.isPrefixOf s.toList))
+  | .endsWith, .str s, .str t => .ok (.bool (t.toList.reverse.isPrefixOf s.toList.reverse))
   | .includes, .str s, .str t => .ok (.bool (hasInfix t.toList s.toList))
   | .split, .str s, .str sep => .ok (.arr ((splitStr s sep).map Value.str))
   | op, _, _ => .error (.typeError s!"{op.name} expects two Strings")

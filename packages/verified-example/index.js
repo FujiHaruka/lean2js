@@ -63,9 +63,11 @@ const __lower = (s) =>
     .map((c) => (c >= "A" && c <= "Z" ? c.toLowerCase() : c))
     .join("");
 
-// Native, unlike the four above: UTF-16 is prefix-preserving and no argument can hold a lone surrogate,
-// so a match on units is a match on code points.
+// Native, unlike the four above: UTF-16 preserves prefixes and suffixes and no argument can hold a lone
+// surrogate, so a match on units is a match on code points.
 const __startsWith = (s, t) => s.startsWith(t);
+
+const __endsWith = (s, t) => s.endsWith(t);
 
 const __includes = (s, t) => s.includes(t);
 
@@ -494,6 +496,12 @@ export function truncateLabel(__p0, __p1) {
   const label = __ck(__p0, ["string"]);
   const limit = __ck(__p1, ["int53"]);
   return ((__strlen(label) <= limit) ? label : (__substring(label, 0, limit) + "..."));
+}
+
+/** isSpreadsheet : (fileName : String) → Bool */
+export function isSpreadsheet(__p0) {
+  const fileName = __ck(__p0, ["string"]);
+  return __endsWith(__lower(__trim(fileName)), ".csv");
 }
 
 /** limitsFor : (role : Role) → Dict Int53 */

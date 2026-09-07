@@ -68,6 +68,8 @@ def trim (e : Expr) : Expr := .strUn .trim e
 def upper (e : Expr) : Expr := .strUn .upper e
 def lower (e : Expr) : Expr := .strUn .lower e
 def startsWith (s prefix' : Expr) : Expr := .strBin .startsWith s prefix'
+
+def endsWith (s suffix : Expr) : Expr := .strBin .endsWith s suffix
 def includes (s needle : Expr) : Expr := .strBin .includes s needle
 def split (s sep : Expr) : Expr := .strBin .split s sep
 def substring (s lo hi : Expr) : Expr := .substring s lo hi

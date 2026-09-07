@@ -283,6 +283,7 @@ private partial def methodOn (recv : Term) (name : String) (args : Array Term) :
   | "toUpper", [] => `(Expr.strUn StrUnOp.upper $recv)
   | "toLower", [] => `(Expr.strUn StrUnOp.lower $recv)
   | "startsWith", [t] => `(Expr.strBin StrBinOp.startsWith $recv $t)
+  | "endsWith", [t] => `(Expr.strBin StrBinOp.endsWith $recv $t)
   | "includes", [t] => `(Expr.strBin StrBinOp.includes $recv $t)
   | "split", [t] => `(Expr.strBin StrBinOp.split $recv $t)
   | "substring", [lo, hi] => `(Expr.substring $recv $lo $hi)

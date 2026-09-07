@@ -181,6 +181,8 @@ private def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__upper", [.str s] => some (.ok (.str (strUpper s)))
   | "__lower", [.str s] => some (.ok (.str (strLower s)))
   | "__startsWith", [.str s, .str t] => some (.ok (.bool (t.toList.isPrefixOf s.toList)))
+  | "__endsWith", [.str s, .str t] =>
+    some (.ok (.bool (t.toList.reverse.isPrefixOf s.toList.reverse)))
   | "__includes", [.str s, .str t] => some (.ok (.bool (strIncludes t.toList s.toList)))
   | "__split", [.str s, .str sep] => some (.ok (.arr (strSplit s sep)))
   | "__substring", [.str s, .num a, .num b] => some (strSlice s a b)

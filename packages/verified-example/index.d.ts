@@ -115,6 +115,8 @@ export declare function fieldCount(row: string, separator: string): number;
 
 export declare function truncateLabel(label: string, limit: number): string;
 
+export declare function isSpreadsheet(fileName: string): boolean;
+
 export declare function limitsFor(role: Role): ReadonlyMap<string, number>;
 
 export declare function dailyLimit(role: Role): number;

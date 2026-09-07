@@ -97,6 +97,7 @@ inductive StrUnOp where
 
 inductive StrBinOp where
   | startsWith
+  | endsWith
   | includes
   | split
   deriving Repr, BEq, Inhabited
@@ -108,6 +109,7 @@ def StrUnOp.name : StrUnOp → String
 
 def StrBinOp.name : StrBinOp → String
   | .startsWith => "startsWith"
+  | .endsWith => "endsWith"
   | .includes => "includes"
   | .split => "split"
 
