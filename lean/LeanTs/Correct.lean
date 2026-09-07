@@ -35,6 +35,8 @@ inductive CoveredOp : BinOp → Prop where
   | and : CoveredOp .and
   | or : CoveredOp .or
   | concat : CoveredOp .concat
+  | min : CoveredOp .min
+  | max : CoveredOp .max
 
 /-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
@@ -291,6 +293,18 @@ theorem encodeList_append (xs ys : List Value) :
 
 theorem helper_aconcat (xs ys : List Js.JsValue) :
     Js.helper "__aconcat" [.arr xs, .arr ys] = some (.ok (.arr (xs ++ ys))) := rfl
+
+theorem helper_min_num (a b : Int) :
+    Js.helper "__min" [.num a, .num b] = some (.ok (.num (if a ≤ b then a else b))) := rfl
+
+theorem helper_min_big (a b : Int) :
+    Js.helper "__min" [.bigint a, .bigint b] = some (.ok (.bigint (if a ≤ b then a else b))) := rfl
+
+theorem helper_max_num (a b : Int) :
+    Js.helper "__max" [.num a, .num b] = some (.ok (.num (if a ≤ b then b else a))) := rfl
+
+theorem helper_max_big (a b : Int) :
+    Js.helper "__max" [.bigint a, .bigint b] = some (.ok (.bigint (if a ≤ b then b else a))) := rfl
 
 theorem cond_true {m : Js.Module} {env : Js.JsEnv} {jc jt jel : Js.Expr} {v : Js.JsValue}
     (h1 : Eventually m env jc (.bool true)) (h2 : Eventually m env jt v) :
@@ -718,5 +732,153 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           exact eventually_call2 (by simpa [encodeValue] using ihl henv hcl hav)
             (by simpa [encodeValue] using ihr henv hcr hbv) (helper_aconcat _ _)
         · simp at hc
+      | min =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        cases tl <;> simp only [Compile.numericHelper] at hc <;>
+          first
+            | (exfalso; simp at hc; done)
+            | skip
+        · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+          obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyMinMax, bind, Except.bind, Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_min_num]
+          by_cases hxy : x ≤ y <;> simp [hxy, encodeValue]
+        · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+          obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyMinMax, bind, Except.bind, Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_min_num]
+          by_cases hxy : x ≤ y
+          · have h' : (x.toNat : Int) ≤ (y.toNat : Int) := by
+              exact_mod_cast UInt32.le_iff_toNat_le.mp hxy
+            simp [hxy, h', encodeValue]
+          · have h' : ¬((x.toNat : Int) ≤ (y.toNat : Int)) := by
+              intro hh
+              exact hxy (UInt32.le_iff_toNat_le.mpr (by exact_mod_cast hh))
+            simp [hxy, h', encodeValue]
+        · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+          obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyMinMax, bind, Except.bind, Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_min_big]
+          by_cases hxy : x ≤ y <;> simp [hxy, encodeValue]
 
+      | max =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        cases tl <;> simp only [Compile.numericHelper] at hc <;>
+          first
+            | (exfalso; simp at hc; done)
+            | skip
+        · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+          obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyMinMax, bind, Except.bind, Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_max_num]
+          by_cases hxy : x ≤ y <;> simp [hxy, encodeValue]
+        · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+          obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyMinMax, bind, Except.bind, Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_max_num]
+          by_cases hxy : x ≤ y
+          · have h' : (x.toNat : Int) ≤ (y.toNat : Int) := by
+              exact_mod_cast UInt32.le_iff_toNat_le.mp hxy
+            simp [hxy, h', encodeValue]
+          · have h' : ¬((x.toNat : Int) ≤ (y.toNat : Int)) := by
+              intro hh
+              exact hxy (UInt32.le_iff_toNat_le.mpr (by exact_mod_cast hh))
+            simp [hxy, h', encodeValue]
+        · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+          obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, applyMinMax, bind, Except.bind, Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using hle)
+            (by simpa [encodeValue] using hre) ?_
+          rw [helper_max_big]
+          by_cases hxy : x ≤ y <;> simp [hxy, encodeValue]
 end LeanTs.Correct

@@ -65,7 +65,7 @@ private def fnArgsPrecede (p : Program) (fn : String) (d : Decl) (args : List Ex
           | none => .error s!"{g} is not declared before this reference"
         | _ => .error s!"the function argument to {fn} has to be a declared function passed by name"
 
-private def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Expr :=
+def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Expr :=
   match ty, op with
   | .int53, .add => some (.call "__i53" [.binary "+" a b])
   | .int53, .sub => some (.call "__i53" [.binary "-" a b])
