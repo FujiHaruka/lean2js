@@ -127,3 +127,18 @@ def validateQuantity(quantity : Int53) : Validated String Int53 =
 def validationMessage(outcome : Validated String Int53) : String =
   match outcome { valid(value) => quantityLabel(value) | invalid(errors) => if (errors.length == 0) then "refused" else errors[0] }
 
+def storedCoupon(campaign : String, entered : String) : String =
+  (campaign ++ entered).trim().toUpper()
+
+def couponApplies(code : String, campaign : String) : Bool =
+  code.trim().toLower().startsWith(campaign.trim().toLower())
+
+def mentionsTerm(text : String, term : String) : Bool =
+  text.toLower().includes(term.toLower())
+
+def fieldCount(row : String, separator : String) : Int53 =
+  row.split(separator).length
+
+def truncateLabel(label : String, limit : Int53) : String =
+  if (label.length <= limit) then label else (label.substring(0, limit) ++ "...")
+

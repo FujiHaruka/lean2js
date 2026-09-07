@@ -154,6 +154,53 @@ const __strcmp = (a, b) => {
   return x.length === y.length ? 0 : x.length < y.length ? -1 : 1;
 };
 
+const __chars = (s) => Array.from(s);
+
+const __strlen = (s) => __chars(s).length;
+
+// JS's own trim also strips NBSP, the BOM and the line separators; eval strips only these four.
+const __trim = (s) => {
+  const xs = __chars(s);
+  const ws = (c) => c === \" \" || c === \"\\t\" || c === \"\\n\" || c === \"\\r\";
+  let i = 0;
+  let j = xs.length;
+  while (i < j && ws(xs[i])) i++;
+  while (j > i && ws(xs[j - 1])) j--;
+  return xs.slice(i, j).join(\"\");
+};
+
+// toUpperCase is not ASCII: it maps \"ß\" to \"SS\", changing the length of the string.
+const __upper = (s) =>
+  __chars(s)
+    .map((c) => (c >= \"a\" && c <= \"z\" ? c.toUpperCase() : c))
+    .join(\"\");
+
+const __lower = (s) =>
+  __chars(s)
+    .map((c) => (c >= \"A\" && c <= \"Z\" ? c.toLowerCase() : c))
+    .join(\"\");
+
+// Native, unlike the four above: UTF-16 is prefix-preserving and no argument can hold a lone surrogate,
+// so a match on units is a match on code points.
+const __startsWith = (s, t) => s.startsWith(t);
+
+const __includes = (s, t) => s.includes(t);
+
+// split(\"\") returns the UTF-16 units, where eval returns the whole string.
+const __split = (s, sep) => (sep === \"\" ? [s] : s.split(sep));
+
+// Indices count code points, and one outside the string fails rather than being clamped.
+const __substring = (s, lo, hi) => {
+  const xs = __chars(s);
+  return Number.isSafeInteger(lo) &&
+    Number.isSafeInteger(hi) &&
+    lo >= 0 &&
+    hi >= lo &&
+    hi <= xs.length
+    ? xs.slice(lo, hi).join(\"\")
+    : __fail(\"indexOutOfBounds\");
+};
+
 // === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
   if (a === b) return true;

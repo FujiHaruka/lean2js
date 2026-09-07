@@ -184,6 +184,24 @@ private def nested (alts : List Alt) : Decl :=
   (decl "reduceNotArray" [("n", .int53)] .int53
     (reduce' (v "n") (int53 0) "acc" "x" (v "acc")))
 
+#guard compiles (decl "trimmed" [("s", .string)] .string (trim (v "s")))
+#guard !compiles (decl "trimmed" [("n", .int53)] .string (trim (v "n")))
+#guard compiles (decl "shouted" [("s", .string)] .string (upper (lower (v "s"))))
+#guard compiles (decl "strLen" [("s", .string)] .int53 (len (v "s")))
+#guard !compiles (decl "boolLen" [("b", .bool)] .int53 (len (v "b")))
+#guard compiles (decl "parts" [("s", .string)] (.array .string) (split (v "s") (str ",")))
+#guard !compiles (decl "parts" [("s", .string)] .string (split (v "s") (str ",")))
+#guard compiles (decl "starts" [("s", .string)] .bool (startsWith (v "s") (str "a")))
+#guard !compiles
+  (decl "starts" [("s", .string), ("n", .int53)] .bool (startsWith (v "s") (v "n")))
+#guard compiles (decl "has" [("s", .string)] .bool (includes (v "s") (str "a")))
+#guard compiles
+  (decl "slice" [("s", .string)] .string (substring (v "s") (int53 0) (int53 1)))
+#guard !compiles
+  (decl "slice" [("s", .string)] .string (substring (v "s") (int53 0) (str "1")))
+#guard !compiles
+  (decl "slice" [("n", .int53)] .string (substring (v "n") (int53 0) (int53 1)))
+
 private def Box : TypeDef :=
   struct "Box" [("value", Ty.var "T")] (params := ["T"])
 

@@ -38,6 +38,10 @@ inductive Frame where
   | indexL (idx : Expr) (env : Env)
   | indexR (arr : Value)
   | lengthK
+  | strUnK (op : StrUnOp)
+  | strBinL (op : StrBinOp) (rhs : Expr) (env : Env)
+  | strBinR (op : StrBinOp) (lhs : Value)
+  | substringK (done : List Value) (rest : List Expr) (env : Env)
   | mapArrK (binder : String) (body : Expr) (env : Env)
   | mapK (binder : String) (body : Expr) (env : Env) (done rest : List Value)
   | filterArrK (binder : String) (body : Expr) (env : Env)
@@ -125,6 +129,11 @@ def step (p : Program) : State → State
     | .filterE arr binder body => .eval env arr (.filterArrK binder body env :: k)
     | .reduceE arr init accName elemName body =>
       .eval env arr (.reduceArrK init accName elemName body env :: k)
+    | .strUn op e => .eval env e (.strUnK op :: k)
+    | .strBin op lhs rhs => .eval env lhs (.strBinL op rhs env :: k)
+    | .substring str lo hi =>
+      continueArgs (buildSlice · k) [] [str, lo, hi] env k
+        (fun done rest => .substringK done rest env)
   | .apply v [] => .done (.ok v)
   | .apply v (frame :: k) =>
     match frame with
@@ -196,7 +205,23 @@ def step (p : Program) : State → State
         match mkInt53 (Int.ofNat xs.length) with
         | .ok w => finish w k
         | .error e => fail e
-      | _ => fail (.typeError "length expects an Array")
+      | .str s =>
+        match mkInt53 (Int.ofNat s.toList.length) with
+        | .ok w => finish w k
+        | .error e => fail e
+      | _ => fail (.typeError "length expects an Array or a String")
+    | .strUnK op =>
+      match applyStrUn op v with
+      | .ok w => finish w k
+      | .error e => fail e
+    | .strBinL op rhs env => .eval env rhs (.strBinR op v :: k)
+    | .strBinR op lhs =>
+      match applyStrBin op lhs v with
+      | .ok w => finish w k
+      | .error e => fail e
+    | .substringK done rest env =>
+      continueArgs (buildSlice · k) (done ++ [v]) rest env k
+        (fun done rest => .substringK done rest env)
     | .mapArrK binder body env =>
       match v with
       | .arr xs => continueMap binder body env [] xs k
@@ -236,6 +261,13 @@ where
       | some c =>
         if c.fields.length != args.length then fail (.arity ctorName)
         else finish (.obj ctorName ((c.fields.map (·.name)).zip args)) k
+  buildSlice (args : List Value) (k : List Frame) : State :=
+    match args with
+    | [s, lo, hi] =>
+      match sliceStr s lo hi with
+      | .ok w => finish w k
+      | .error e => fail e
+    | _ => fail (.arity "substring")
 
 def run (p : Program) : Nat → State → Except Err Value
   | 0, _ => .error .outOfFuel

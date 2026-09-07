@@ -64,6 +64,10 @@ partial def Expr.source : Expr → String
   | .reduceE arr init accName elemName body =>
     arr.source ++ ".reduce(" ++ init.source ++ ", (" ++ accName ++ ", " ++ elemName ++ ") => "
       ++ body.source ++ ")"
+  | .strUn op e => e.source ++ "." ++ op.name ++ "()"
+  | .strBin op lhs rhs => lhs.source ++ "." ++ op.name ++ "(" ++ rhs.source ++ ")"
+  | .substring s lo hi =>
+    s.source ++ ".substring(" ++ lo.source ++ ", " ++ hi.source ++ ")"
 
 def CtorDef.source (c : CtorDef) : String :=
   let fields := c.fields.map fun f => s!"{f.name} : {f.ty.render}"

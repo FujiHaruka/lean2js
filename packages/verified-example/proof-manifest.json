@@ -163,6 +163,26 @@
     {
       "name": "validationMessage",
       "signature": "(outcome : Validated String Int53) → String"
+    },
+    {
+      "name": "storedCoupon",
+      "signature": "(campaign : String, entered : String) → String"
+    },
+    {
+      "name": "couponApplies",
+      "signature": "(code : String, campaign : String) → Bool"
+    },
+    {
+      "name": "mentionsTerm",
+      "signature": "(text : String, term : String) → Bool"
+    },
+    {
+      "name": "fieldCount",
+      "signature": "(row : String, separator : String) → Int53"
+    },
+    {
+      "name": "truncateLabel",
+      "signature": "(label : String, limit : Int53) → String"
     }
   ],
   "theorems": [

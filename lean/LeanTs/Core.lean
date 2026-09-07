@@ -74,6 +74,30 @@ inductive BinOp where
   | concat
   deriving Repr, BEq, Inhabited
 
+/-- The string operations that take only the string. `length` is not here: an Array has one too, so the
+two share `Expr.length`. -/
+inductive StrUnOp where
+  | trim
+  | upper
+  | lower
+  deriving Repr, BEq, Inhabited
+
+inductive StrBinOp where
+  | startsWith
+  | includes
+  | split
+  deriving Repr, BEq, Inhabited
+
+def StrUnOp.name : StrUnOp → String
+  | .trim => "trim"
+  | .upper => "toUpper"
+  | .lower => "toLower"
+
+def StrBinOp.name : StrBinOp → String
+  | .startsWith => "startsWith"
+  | .includes => "includes"
+  | .split => "split"
+
 /-- What one `match` arm tests the scrutinee against. Nesting is what lets a rule branch on a combination
 — a state together with a role — instead of one constructor at a time, and a wildcard is what lets it
 name the combinations it cares about and leave the rest to a fallback.
@@ -113,6 +137,9 @@ inductive Expr where
   | mapE (arr : Expr) (binder : String) (body : Expr)
   | filterE (arr : Expr) (binder : String) (body : Expr)
   | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)
+  | strUn (op : StrUnOp) (e : Expr)
+  | strBin (op : StrBinOp) (lhs rhs : Expr)
+  | substring (s lo hi : Expr)
   deriving Repr, Inhabited
 
 abbrev Alt := Pat × Expr

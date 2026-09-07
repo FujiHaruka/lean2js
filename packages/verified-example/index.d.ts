@@ -104,3 +104,13 @@ export declare function firstPage(amounts: readonly number[]): Paginated<number>
 export declare function validateQuantity(quantity: number): Validated<string, number>;
 
 export declare function validationMessage(outcome: Validated<string, number>): string;
+
+export declare function storedCoupon(campaign: string, entered: string): string;
+
+export declare function couponApplies(code: string, campaign: string): boolean;
+
+export declare function mentionsTerm(text: string, term: string): boolean;
+
+export declare function fieldCount(row: string, separator: string): number;
+
+export declare function truncateLabel(label: string, limit: number): string;

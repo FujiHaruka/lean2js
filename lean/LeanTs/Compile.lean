@@ -55,6 +55,20 @@ private def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Exp
   | .bigint, .mod => some (.call "__bigmod" [a, b])
   | _, _ => none
 
+private def strUnHelper : StrUnOp → String
+  | .trim => "__trim"
+  | .upper => "__upper"
+  | .lower => "__lower"
+
+private def strBinHelper : StrBinOp → String
+  | .startsWith => "__startsWith"
+  | .includes => "__includes"
+  | .split => "__split"
+
+private def strBinResult : StrBinOp → Ty
+  | .startsWith | .includes => .bool
+  | .split => .array .string
+
 private def orderSymbol : BinOp → Option String
   | .lt => some "<"
   | .le => some "<="
@@ -393,7 +407,8 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     let (jarr, tarr) ← compileExpr p ctx arr
     match tarr with
     | .array _ => .ok (.member jarr "length", .int53)
-    | ty => .error s!"length expects an Array, not {ty.render}"
+    | .string => .ok (.call "__strlen" [jarr], .int53)
+    | ty => .error s!"length expects an Array or a String, not {ty.render}"
   | .mapE arr binder body => do
     let (jarr, tarr) ← compileExpr p ctx arr
     match tarr with
@@ -424,6 +439,24 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
         .error s!"reduce folds into {tinit.render} but its body is {tbody.render}"
       else .ok (.reduceJs jarr jinit accName elemName jbody, tinit)
     | ty => .error s!"reduce expects an Array, not {ty.render}"
+  | .strUn op e => do
+    let (je, te) ← compileExpr p ctx e
+    if te != .string then .error s!"{op.name} expects a String, not {te.render}"
+    else .ok (.call (strUnHelper op) [je], .string)
+  | .strBin op lhs rhs => do
+    let (jl, tl) ← compileExpr p ctx lhs
+    let (jr, tr) ← compileExpr p ctx rhs
+    if tl != .string then .error s!"{op.name} expects a String, not {tl.render}"
+    else if tr != .string then .error s!"{op.name} takes a String, not {tr.render}"
+    else .ok (.call (strBinHelper op) [jl, jr], strBinResult op)
+  | .substring str lo hi => do
+    let (js, ts) ← compileExpr p ctx str
+    let (jlo, tlo) ← compileExpr p ctx lo
+    let (jhi, thi) ← compileExpr p ctx hi
+    if ts != .string then .error s!"substring expects a String, not {ts.render}"
+    else if tlo != .int53 || thi != .int53 then
+      .error "the bounds of substring must be Int53"
+    else .ok (.call "__substring" [js, jlo, jhi], .string)
 termination_by sizeOf e
 where
   chain : List Arm → Js.Expr

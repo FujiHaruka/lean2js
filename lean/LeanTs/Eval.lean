@@ -93,6 +93,50 @@ def applyBin (op : BinOp) (a b : Value) : Except Err Value :=
     | .str x, .str y => .ok (.str (x ++ y))
     | _, _ => .error (.typeError "concat expects two strings")
 
+/-- The whitespace `trim` strips. Written out rather than delegated to `Char.isWhitespace` because the
+generated code has to strip exactly this set, and JS's own `trim` also takes NBSP, the BOM and the line
+separators. -/
+def isTrimmable (c : Char) : Bool := c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
+/-- Case conversion is ASCII only. JS's `toUpperCase` is neither: it maps `ß` to `SS`, which changes the
+length of the string. -/
+def asciiUpper (c : Char) : Char := if 'a' ≤ c && c ≤ 'z' then Char.ofNat (c.toNat - 32) else c
+
+def asciiLower (c : Char) : Char := if 'A' ≤ c && c ≤ 'Z' then Char.ofNat (c.toNat + 32) else c
+
+def trimChars (cs : List Char) : List Char :=
+  ((cs.dropWhile isTrimmable).reverse.dropWhile isTrimmable).reverse
+
+def hasInfix (needle : List Char) : List Char → Bool
+  | [] => needle.isEmpty
+  | c :: rest => needle.isPrefixOf (c :: rest) || hasInfix needle rest
+
+/-- Splitting on the empty separator gives back the whole string. JS's `split("")` instead returns the
+UTF-16 units, which is why the generated code cannot call it unguarded. -/
+def splitStr (s sep : String) : List String :=
+  if sep.isEmpty then [s] else s.splitOn sep
+
+def applyStrUn : StrUnOp → Value → Except Err Value
+  | .trim, .str s => .ok (.str (String.ofList (trimChars s.toList)))
+  | .upper, .str s => .ok (.str (String.ofList (s.toList.map asciiUpper)))
+  | .lower, .str s => .ok (.str (String.ofList (s.toList.map asciiLower)))
+  | op, _ => .error (.typeError s!"{op.name} expects a String")
+
+def applyStrBin : StrBinOp → Value → Value → Except Err Value
+  | .startsWith, .str s, .str t => .ok (.bool (t.toList.isPrefixOf s.toList))
+  | .includes, .str s, .str t => .ok (.bool (hasInfix t.toList s.toList))
+  | .split, .str s, .str sep => .ok (.arr ((splitStr s sep).map Value.str))
+  | op, _, _ => .error (.typeError s!"{op.name} expects two Strings")
+
+/-- Indices count code points, and one outside the string traps the way an array read does. Clamping is
+what JS's own `substring` would do, and silently returning a shorter string is worse than failing. -/
+def sliceStr (s : Value) (lo hi : Value) : Except Err Value :=
+  match s, lo, hi with
+  | .str str, .int53 a, .int53 b =>
+    if a < 0 || b < a || Int.ofNat str.toList.length < b then .error .indexOutOfBounds
+    else .ok (.str (String.ofList ((str.toList.drop a.toNat).take (b - a).toNat)))
+  | _, _, _ => .error (.typeError "substring expects a String and two Int53 bounds")
+
 def asBool : Value → Except Err Value
   | .bool b => .ok (.bool b)
   | _ => .error (.typeError "expected a Bool")
@@ -223,7 +267,8 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
     | .length arr => do
       match ← evalExpr p f env arr with
       | .arr xs => mkInt53 (Int.ofNat xs.length)
-      | _ => .error (.typeError "length expects an Array")
+      | .str s => mkInt53 (Int.ofNat s.toList.length)
+      | _ => .error (.typeError "length expects an Array or a String")
     | .mapE arr binder body => do
       match ← evalExpr p f env arr with
       | .arr xs => do .ok (.arr (← evalMapItems p f env binder body xs))
@@ -238,6 +283,16 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
         let acc ← evalExpr p f env init
         evalReduceItems p f env accName elemName body acc xs
       | _ => .error (.typeError "reduce expects an Array")
+    | .strUn op e => do applyStrUn op (← evalExpr p f env e)
+    | .strBin op lhs rhs => do
+      let a ← evalExpr p f env lhs
+      let b ← evalExpr p f env rhs
+      applyStrBin op a b
+    | .substring str lo hi => do
+      let s ← evalExpr p f env str
+      let a ← evalExpr p f env lo
+      let b ← evalExpr p f env hi
+      sliceStr s a b
 termination_by (fuel, 0, 0)
 
 def evalArgs (p : Program) (fuel : Nat) (env : Env) (es : List Expr) :

@@ -58,6 +58,14 @@ def filter' (arr : Expr) (binder : String) (body : Expr) : Expr := .filterE arr 
 def reduce' (arr init : Expr) (accName elemName : String) (body : Expr) : Expr :=
   .reduceE arr init accName elemName body
 
+def trim (e : Expr) : Expr := .strUn .trim e
+def upper (e : Expr) : Expr := .strUn .upper e
+def lower (e : Expr) : Expr := .strUn .lower e
+def startsWith (s prefix' : Expr) : Expr := .strBin .startsWith s prefix'
+def includes (s needle : Expr) : Expr := .strBin .includes s needle
+def split (s sep : Expr) : Expr := .strBin .split s sep
+def substring (s lo hi : Expr) : Expr := .substring s lo hi
+
 def pWild : Pat := .wild
 def pBind (name : String) : Pat := .bind name
 def pBool (b : Bool) : Pat := .lit (.bool b)

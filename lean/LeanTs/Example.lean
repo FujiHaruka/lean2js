@@ -283,6 +283,35 @@ def validationMessage : Decl :=
         (ite' (len (v "errors") ==' int53 0) (str "refused") (at' (v "errors") (int53 0)))
     ])
 
+/-- A coupon code as it is stored: the campaign prefix and what the customer typed, upper-cased and with
+the surrounding whitespace gone. -/
+def storedCoupon : Decl :=
+  decl "storedCoupon" [("campaign", .string), ("entered", .string)] .string
+    (upper (trim (v "campaign" ++' v "entered")))
+
+/-- Whether a coupon belongs to a campaign, comparing the way the codes are stored. -/
+def couponApplies : Decl :=
+  decl "couponApplies" [("code", .string), ("campaign", .string)] .bool
+    (startsWith (lower (trim (v "code"))) (lower (trim (v "campaign"))))
+
+/-- Whether a free-text note mentions a search term, ignoring case. -/
+def mentionsTerm : Decl :=
+  decl "mentionsTerm" [("text", .string), ("term", .string)] .bool
+    (includes (lower (v "text")) (lower (v "term")))
+
+/-- How many columns a line of an uploaded file carries. An empty separator leaves the line whole rather
+than cutting it into characters. -/
+def fieldCount : Decl :=
+  decl "fieldCount" [("row", .string), ("separator", .string)] .int53
+    (len (split (v "row") (v "separator")))
+
+/-- A label cut to fit, counted in code points so a surrogate pair is never split in half. A negative
+limit has no string to return and fails the way an out-of-range index does. -/
+def truncateLabel : Decl :=
+  decl "truncateLabel" [("label", .string), ("limit", .int53)] .string
+    (ite' (len (v "label") ≤' v "limit") (v "label")
+      (substring (v "label") (int53 0) (v "limit") ++' str "..."))
+
 def program : Program := {
   types := [Money, Role, OrderState, Paginated, Validated]
   decls := [
@@ -293,7 +322,8 @@ def program : Program := {
     total, headOr, firstTracking,
     lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
     quantityLabel, renewalLabel, chargeable, settleMessage,
-    remainingItems, firstPage, validateQuantity, validationMessage
+    remainingItems, firstPage, validateQuantity, validationMessage,
+    storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel
   ]
 }
 

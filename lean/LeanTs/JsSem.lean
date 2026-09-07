@@ -112,6 +112,30 @@ def strcmp (a b : String) : Int :=
   | .eq => 0
   | .gt => 1
 
+def isSpace (c : Char) : Bool := c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
+def strTrim (s : String) : String :=
+  String.ofList (((s.toList.dropWhile isSpace).reverse.dropWhile isSpace).reverse)
+
+def strUpper (s : String) : String :=
+  String.ofList (s.toList.map fun c => if 'a' ≤ c && c ≤ 'z' then Char.ofNat (c.toNat - 32) else c)
+
+def strLower (s : String) : String :=
+  String.ofList (s.toList.map fun c => if 'A' ≤ c && c ≤ 'Z' then Char.ofNat (c.toNat + 32) else c)
+
+def strIncludes (needle : List Char) : List Char → Bool
+  | [] => needle.isEmpty
+  | c :: rest => needle.isPrefixOf (c :: rest) || strIncludes needle rest
+
+def strSplit (s sep : String) : List JsValue :=
+  (if sep.isEmpty then [s] else s.splitOn sep).map JsValue.str
+
+def strSlice (s : String) (lo hi : Int) : JsResult :=
+  if lo < safeMin || safeMax < lo || hi < safeMin || safeMax < hi
+      || lo < 0 || hi < lo || Int.ofNat s.toList.length < hi then
+    fail "indexOutOfBounds"
+  else .ok (.str (String.ofList ((s.toList.drop lo.toNat).take (hi - lo).toNat)))
+
 def at? (xs : List JsValue) (i : Int) : JsResult :=
   if i < safeMin || safeMax < i || i < 0 || Int.ofNat xs.length ≤ i then
     fail "indexOutOfBounds"
@@ -137,6 +161,14 @@ private def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__strcmp", [.str a, .str b] => some (.ok (.num (strcmp a b)))
   | "__eq", [a, b] => some (.ok (.bool (a == b)))
   | "__at", [.arr xs, .num i] => some (at? xs i)
+  | "__strlen", [.str s] => some (.ok (.num s.toList.length))
+  | "__trim", [.str s] => some (.ok (.str (strTrim s)))
+  | "__upper", [.str s] => some (.ok (.str (strUpper s)))
+  | "__lower", [.str s] => some (.ok (.str (strLower s)))
+  | "__startsWith", [.str s, .str t] => some (.ok (.bool (t.toList.isPrefixOf s.toList)))
+  | "__includes", [.str s, .str t] => some (.ok (.bool (strIncludes t.toList s.toList)))
+  | "__split", [.str s, .str sep] => some (.ok (.arr (strSplit s sep)))
+  | "__substring", [.str s, .num a, .num b] => some (strSlice s a b)
   | _, _ => none
 
 private def arith (op : String) (a b : JsValue) : JsResult :=
