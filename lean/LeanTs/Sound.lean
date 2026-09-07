@@ -36,6 +36,9 @@ inductive TypeChecked : Expr → Prop where
   | var (name : String) : TypeChecked (.var name)
   | cond {c t e : Expr} :
       TypeChecked c → TypeChecked t → TypeChecked e → TypeChecked (.cond c t e)
+  | letE {name : String} {ty : Ty} {val body : Expr} :
+      TypeChecked val → TypeChecked body → TypeChecked (.letE name ty val body)
+  | un {op : UnOp} {e : Expr} : TypeChecked e → TypeChecked (.un op e)
 
 mutual
 
@@ -98,6 +101,81 @@ end
 theorem Ty.eq_of_not_bne {a b : Ty} (h : ¬(a != b) = true) : a = b := by
   refine Ty.eq_of_beq ?_
   simpa [bne, BEq.beq] using h
+
+theorem hasTy_bool_inv {p : Program} {v : Value} (h : Value.hasTy p v .bool = true) :
+    ∃ b, v = .bool b := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_int53_inv {p : Program} {v : Value} (h : Value.hasTy p v .int53 = true) :
+    ∃ i, v = .int53 i := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_uint32_inv {p : Program} {v : Value} (h : Value.hasTy p v .uint32 = true) :
+    ∃ n, v = .uint32 n := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_string_inv {p : Program} {v : Value} (h : Value.hasTy p v .string = true) :
+    ∃ s, v = .str s := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_bigint_inv {p : Program} {v : Value} (h : Value.hasTy p v .bigint = true) :
+    ∃ i, v = .bigint i := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem mkInt53_hasTy {p : Program} {i : Int} {v : Value} (h : mkInt53 i = .ok v) :
+    Value.hasTy p v .int53 = true := by
+  simp only [mkInt53] at h
+  split at h
+  · simp at h
+  · rename_i hrange
+    simp only [Except.ok.injEq] at h
+    simp only [← h, hasTy_int53]
+    simp at hrange
+    simp [decide_eq_true, hrange.1, hrange.2]
+
+theorem applyUn_not_hasTy {p : Program} {w v : Value} (h : applyUn .not w = .ok v) :
+    Value.hasTy p v .bool = true := by
+  cases w <;> simp [applyUn] at h
+  subst h
+  exact hasTy_bool p _
+
+theorem applyUn_neg_int53 {p : Program} {i : Int} {v : Value}
+    (h : applyUn .neg (.int53 i) = .ok v) : Value.hasTy p v .int53 = true := by
+  simp only [applyUn] at h
+  exact mkInt53_hasTy h
+
+theorem applyUn_neg_bigint {p : Program} {i : Int} {v : Value}
+    (h : applyUn .neg (.bigint i) = .ok v) : Value.hasTy p v .bigint = true := by
+  simp only [applyUn, Except.ok.injEq] at h
+  subst h
+  exact hasTy_bigint p _
+
+theorem applyUn_abs_int53 {p : Program} {i : Int} {v : Value}
+    (h : applyUn .abs (.int53 i) = .ok v) : Value.hasTy p v .int53 = true := by
+  simp only [applyUn] at h
+  exact mkInt53_hasTy h
+
+theorem applyUn_abs_bigint {p : Program} {i : Int} {v : Value}
+    (h : applyUn .abs (.bigint i) = .ok v) : Value.hasTy p v .bigint = true := by
+  simp only [applyUn, Except.ok.injEq] at h
+  subst h
+  exact hasTy_bigint p _
+
+theorem EnvTyped.cons {p : Program} {env : Env} {ctx : Compile.Ctx} {name : String} {ty : Ty}
+    {v : Value} (henv : EnvTyped p env ctx) (hv : Value.hasTy p v ty = true) :
+    EnvTyped p ((name, v) :: env) ((name, ty) :: ctx) := by
+  intro n t w hct hev
+  simp only [Env.lookup?, List.find?_cons] at hev
+  simp only [List.find?_cons] at hct
+  cases hn : name == n with
+  | true =>
+    rw [hn] at hct hev
+    simp only [Option.map] at hct hev
+    simp only [Option.some.injEq] at hct hev
+    exact hct ▸ hev ▸ hv
+  | false =>
+    rw [hn] at hct hev
+    exact henv n t w hct hev
 
 theorem litValue_hasTy (p : Program) (ctx : Compile.Ctx) (l : Lit) (je : Js.Expr) (ty : Ty)
     (hc : Compile.compileExpr p ctx (.lit l) = .ok (je, ty)) :
@@ -187,5 +265,93 @@ theorem typeSound (p : Program) :
         subst htt
         exact hc.2 ▸ ih ctx env eE jel tt v he' henv hce he
       · simp at he
+    | un hx =>
+      rename_i op xE
+      rw [evalExpr_un] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      cases op with
+      | not =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        split at hc
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          exact hc.2 ▸ applyUn_not_hasTy he
+        · simp at hc
+      | neg =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        have hwt := ih ctx env xE jx tx w hx henv hcx hw
+        split at hc
+        · rename_i htx
+          have htx' : tx = Ty.int53 := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨i, hi⟩ := hasTy_int53_inv (htx' ▸ hwt)
+          subst hi
+          exact hc.2 ▸ applyUn_neg_int53 he
+        · rename_i htx
+          have htx' : tx = Ty.bigint := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨i, hi⟩ := hasTy_bigint_inv (htx' ▸ hwt)
+          subst hi
+          exact hc.2 ▸ applyUn_neg_bigint he
+        · simp at hc
+      | abs =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        have hwt := ih ctx env xE jx tx w hx henv hcx hw
+        split at hc
+        · rename_i htx
+          have htx' : tx = Ty.int53 := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨i, hi⟩ := hasTy_int53_inv (htx' ▸ hwt)
+          subst hi
+          exact hc.2 ▸ applyUn_abs_int53 he
+        · rename_i htx
+          have htx' : tx = Ty.bigint := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨i, hi⟩ := hasTy_bigint_inv (htx' ▸ hwt)
+          subst hi
+          exact hc.2 ▸ applyUn_abs_bigint he
+        · simp at hc
+    | letE hval hbody =>
+      rename_i name tyL valE bodyE
+      rw [evalExpr_letE] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i valPair hcv
+      obtain ⟨jv, tv⟩ := valPair
+      split at hc
+      · simp at hc
+      rename_i hsame
+      split at hc
+      · simp at hc
+      rename_i bodyPair hcb
+      obtain ⟨jb, tb⟩ := bodyPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vv hvv
+      have hvty : Value.hasTy p vv tyL = true :=
+        Ty.eq_of_not_bne hsame ▸ ih ctx env valE jv tv vv hval henv hcv hvv
+      exact hc.2 ▸ ih ((name, tyL) :: ctx) ((name, vv) :: env) bodyE jb tb v hbody
+        (henv.cons hvty) hcb he
 
 end LeanTs
