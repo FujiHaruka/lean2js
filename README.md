@@ -95,7 +95,9 @@ docs/                       提案書と実装プラン
 
 ```sh
 pnpm install
+pnpm lean:build     # Lean ライブラリと定理をビルドする
+pnpm lean:emit      # 検証つき npm パッケージを生成する
 pnpm typecheck
 pnpm test
-pnpm lean:build
+pnpm package:check  # publint / attw
 ```
