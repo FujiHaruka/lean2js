@@ -157,8 +157,9 @@ private def renderCtor (c : Core.CtorDef) : String :=
   "{ readonly tag: \"" ++ c.name ++ "\"" ++ String.join fields ++ " }"
 
 private def declareType (t : Core.TypeDef) : String :=
-  "export type " ++ t.name ++ " =\n  | "
-    ++ String.intercalate "\n  | " (t.ctors.map renderCtor) ++ ";"
+  match t.ctors.map renderCtor with
+  | [only] => "export type " ++ t.name ++ " = " ++ only ++ ";"
+  | ctors => "export type " ++ t.name ++ " =\n  | " ++ String.intercalate "\n  | " ctors ++ ";"
 
 def declareFunc (d : Core.Decl) : String :=
   let params := d.params.map fun p => p.name ++ ": " ++ tsType p.ty

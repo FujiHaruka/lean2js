@@ -197,3 +197,5 @@ export function headOr(xs, fallback) {
 export function firstTracking(states) {
   return (((states).length === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
 }
+
+//# sourceMappingURL=index.js.map

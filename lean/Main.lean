@@ -12,10 +12,15 @@ private def packageJson (m : Manifest) : Json :=
     ("version", .str m.version),
     ("private", .bool true),
     ("type", .str "module"),
-    ("main", .str "index.js"),
-    ("types", .str "index.d.ts"),
+    ("exports", .obj [(".", .obj [
+      ("types", .str "./index.d.ts"),
+      ("default", .str "./index.js")
+    ])]),
+    ("types", .str "./index.d.ts"),
     ("sideEffects", .bool false),
-    ("files", .arr [.str "index.js", .str "index.d.ts", .str "proof-manifest.json"])
+    ("engines", .obj [("node", .str ">=18")]),
+    ("files", .arr [.str "index.js", .str "index.js.map", .str "index.d.ts",
+                    .str "example.leants", .str "proof-manifest.json"])
   ]
 
 def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
@@ -25,8 +30,12 @@ def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
   match Compile.compileProgram m.program with
   | .error e => throw (IO.userError s!"compile failed: {e}")
   | .ok jsModule =>
+    let emitted := emitModule jsModule
     IO.FS.createDirAll outDir
-    IO.FS.writeFile (outDir / "index.js") jsModule.render
+    IO.FS.writeFile (outDir / "index.js") emitted.text
+    IO.FS.writeFile (outDir / "example.leants") m.program.source.text
+    IO.FS.writeFile (outDir / "index.js.map")
+      ((sourceMapFor m.program emitted "example.leants").renderPretty ++ "\n")
     IO.FS.writeFile (outDir / "index.d.ts") (Js.renderDts m.program)
     IO.FS.writeFile (outDir / "proof-manifest.json") (m.toJson.renderPretty ++ "\n")
     IO.FS.writeFile (outDir / "package.json") ((packageJson m).renderPretty ++ "\n")

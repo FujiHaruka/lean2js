@@ -12,11 +12,15 @@
     "test": "vitest run",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "lean:build": "lake --dir=lean build"
+    "lean:build": "lake --dir=lean build",
+    "package:check": "publint packages/verified-example && attw --pack packages/verified-example --profile esm-only"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@biomejs/biome": "^2.5.12",
     "@types/node": "^26.4.1",
+    "esbuild": "^0.28.2",
+    "publint": "^0.3.24",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   },

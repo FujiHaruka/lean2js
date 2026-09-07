@@ -3,12 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "types": "./index.d.ts",
   "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "files": [
     "index.js",
+    "index.js.map",
     "index.d.ts",
+    "example.leants",
     "proof-manifest.json"
   ]
 }

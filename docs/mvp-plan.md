@@ -6,9 +6,18 @@
 
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
-| 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） | 進行中 |
-| 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） | 未着手 |
-| 3. SHIP | npm 開発体験（source maps、tree shaking、CI / package publishing） | 未着手 |
+| 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） | 完了 |
+| 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） | 一部 |
+| 3. SHIP | npm 開発体験（source maps、tree shaking、CI / package publishing） | 進行中 |
+
+### Phase 2 の到達点
+
+- proof manifest — 完了。`Claim` が証明項を持つので、定理を消すと `lake build` が落ちる
+- JS の意味論の模型（`JsSem.lean`）と、出荷する成果物がリファレンス意味論と一致することの実行時検査
+  （`Agree.lean`）— 完了
+- compiler correctness — リテラル・変数・条件式の断片について証明済み（`Correct.lean`）。
+  算術・関数呼び出し・`match`・配列は未証明で、`Agree` の実行時検査が受け持っている
+- small-step semantics — 未着手
 
 ## Approach
 

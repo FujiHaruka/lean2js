@@ -8,8 +8,7 @@ export type Result<T, E> =
   | { readonly tag: "ok"; readonly value: T }
   | { readonly tag: "error"; readonly error: E };
 
-export type Money =
-  | { readonly tag: "Money"; readonly amount: number; readonly currency: string };
+export type Money = { readonly tag: "Money"; readonly amount: number; readonly currency: string };
 
 export type Role =
   | { readonly tag: "guest" }
