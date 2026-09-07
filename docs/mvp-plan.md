@@ -48,6 +48,7 @@ Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-ma
 | UInt32 | 加減算後に `>>> 0`、乗算は `Math.imul`、除算は truncation + ゼロ検査 |
 | String 長 | Lean はコードポイント、JS の `.length` は UTF-16 単位。`Array.from(s).length` を出力する |
 | 構造的等価 | Lean の `==` と JS の `===` は一致しない。型ごとに `eq` 関数を生成する |
+| 負のゼロ | JS では `0 - 0` も `-4 % 2` も `-0` になる。Int53 は数学的な整数なので `+0` に正規化する |
 | inductive 表現 | 一律にタグ付きオブジェクト `{ tag, ... }`。`Option` を `T \| null` に特殊化しない（入れ子で壊れる） |
 
 ## 進め方

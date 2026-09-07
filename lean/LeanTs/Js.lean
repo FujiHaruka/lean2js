@@ -72,12 +72,14 @@ def runtime : String :=
   throw error;
 };
 
-const __i53 = (x) => (Number.isSafeInteger(x) ? x : __fail(\"int53Overflow\"));
+// Int53 は数学的な整数なので -0 を残さない。JS では 0 - 0 も -4 % 2 も -0 になる。
+const __i53 = (x) =>
+  Number.isSafeInteger(x) ? (x === 0 ? 0 : x) : __fail(\"int53Overflow\");
 
 const __i53div = (a, b) =>
   b === 0 ? __fail(\"divByZero\") : Number(BigInt(a) / BigInt(b));
 
-const __i53mod = (a, b) => (b === 0 ? __fail(\"divByZero\") : a % b);
+const __i53mod = (a, b) => (b === 0 ? __fail(\"divByZero\") : __i53(a % b));
 
 const __u32div = (a, b) => (b === 0 ? __fail(\"divByZero\") : Math.trunc(a / b) >>> 0);
 

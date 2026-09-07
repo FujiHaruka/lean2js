@@ -7,3 +7,4 @@ import LeanTs.Compile
 import LeanTs.Manifest
 import LeanTs.Vectors
 import LeanTs.Example
+import LeanTs.Builder

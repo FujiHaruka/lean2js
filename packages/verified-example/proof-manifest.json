@@ -11,6 +11,66 @@
     {
       "name": "add",
       "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "clampQuantity",
+      "signature": "(quantity : Int53, upper : Int53) → Int53"
+    },
+    {
+      "name": "lineTotal",
+      "signature": "(unitPrice : Int53, quantity : Int53) → Int53"
+    },
+    {
+      "name": "discounted",
+      "signature": "(amount : Int53, percent : Int53) → Int53"
+    },
+    {
+      "name": "divide",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "remainder",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "negate",
+      "signature": "(a : Int53) → Int53"
+    },
+    {
+      "name": "safeQuotientIsPositive",
+      "signature": "(a : Int53, b : Int53) → Bool"
+    },
+    {
+      "name": "canCheckout",
+      "signature": "(signedIn : Bool, cartTotal : Int53, stock : Int53) → Bool"
+    },
+    {
+      "name": "mixChannels",
+      "signature": "(a : UInt32, b : UInt32) → UInt32"
+    },
+    {
+      "name": "bucketOf",
+      "signature": "(key : UInt32, buckets : UInt32) → UInt32"
+    },
+    {
+      "name": "scaleFee",
+      "signature": "(fee : BigInt, factor : BigInt) → BigInt"
+    },
+    {
+      "name": "bigQuotient",
+      "signature": "(a : BigInt, b : BigInt) → BigInt"
+    },
+    {
+      "name": "slugOf",
+      "signature": "(prefix : String, name : String) → String"
+    },
+    {
+      "name": "sortsBefore",
+      "signature": "(a : String, b : String) → Bool"
+    },
+    {
+      "name": "sameLabel",
+      "signature": "(a : String, b : String) → Bool"
     }
   ],
   "theorems": [

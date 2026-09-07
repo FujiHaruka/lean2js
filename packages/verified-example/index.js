@@ -6,12 +6,14 @@ const __fail = (code) => {
   throw error;
 };
 
-const __i53 = (x) => (Number.isSafeInteger(x) ? x : __fail("int53Overflow"));
+// Int53 は数学的な整数なので -0 を残さない。JS では 0 - 0 も -4 % 2 も -0 になる。
+const __i53 = (x) =>
+  Number.isSafeInteger(x) ? (x === 0 ? 0 : x) : __fail("int53Overflow");
 
 const __i53div = (a, b) =>
   b === 0 ? __fail("divByZero") : Number(BigInt(a) / BigInt(b));
 
-const __i53mod = (a, b) => (b === 0 ? __fail("divByZero") : a % b);
+const __i53mod = (a, b) => (b === 0 ? __fail("divByZero") : __i53(a % b));
 
 const __u32div = (a, b) => (b === 0 ? __fail("divByZero") : Math.trunc(a / b) >>> 0);
 
@@ -35,4 +37,80 @@ const __strcmp = (a, b) => {
 /** add : (a : Int53, b : Int53) → Int53 */
 export function add(a, b) {
   return __i53((a + b));
+}
+
+/** clampQuantity : (quantity : Int53, upper : Int53) → Int53 */
+export function clampQuantity(quantity, upper) {
+  return ((quantity < 1) ? 1 : ((quantity > upper) ? upper : quantity));
+}
+
+/** lineTotal : (unitPrice : Int53, quantity : Int53) → Int53 */
+export function lineTotal(unitPrice, quantity) {
+  return __i53((unitPrice * clampQuantity(quantity, 999)));
+}
+
+/** discounted : (amount : Int53, percent : Int53) → Int53 */
+export function discounted(amount, percent) {
+  const rate = __i53((100 - ((percent < 0) ? 0 : ((percent > 100) ? 100 : percent))));
+  return __i53div(__i53((amount * rate)), 100);
+}
+
+/** divide : (a : Int53, b : Int53) → Int53 */
+export function divide(a, b) {
+  return __i53div(a, b);
+}
+
+/** remainder : (a : Int53, b : Int53) → Int53 */
+export function remainder(a, b) {
+  return __i53mod(a, b);
+}
+
+/** negate : (a : Int53) → Int53 */
+export function negate(a) {
+  return __i53((-a));
+}
+
+/** safeQuotientIsPositive : (a : Int53, b : Int53) → Bool */
+export function safeQuotientIsPositive(a, b) {
+  return ((b !== 0) && (__i53div(a, b) > 0));
+}
+
+/** canCheckout : (signedIn : Bool, cartTotal : Int53, stock : Int53) → Bool */
+export function canCheckout(signedIn, cartTotal, stock) {
+  return ((signedIn && (cartTotal > 0)) && (stock >= 1));
+}
+
+/** mixChannels : (a : UInt32, b : UInt32) → UInt32 */
+export function mixChannels(a, b) {
+  return (((Math.imul(a, b) >>> 0) + ((a - b) >>> 0)) >>> 0);
+}
+
+/** bucketOf : (key : UInt32, buckets : UInt32) → UInt32 */
+export function bucketOf(key, buckets) {
+  return __u32mod(key, buckets);
+}
+
+/** scaleFee : (fee : BigInt, factor : BigInt) → BigInt */
+export function scaleFee(fee, factor) {
+  return ((fee * factor) - 1n);
+}
+
+/** bigQuotient : (a : BigInt, b : BigInt) → BigInt */
+export function bigQuotient(a, b) {
+  return __bigdiv(a, b);
+}
+
+/** slugOf : (prefix : String, name : String) → String */
+export function slugOf(prefix, name) {
+  return ((prefix + "-") + name);
+}
+
+/** sortsBefore : (a : String, b : String) → Bool */
+export function sortsBefore(a, b) {
+  return (__strcmp(a, b) < 0);
+}
+
+/** sameLabel : (a : String, b : String) → Bool */
+export function sameLabel(a, b) {
+  return (a === b);
 }
