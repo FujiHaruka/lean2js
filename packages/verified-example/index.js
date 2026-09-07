@@ -62,139 +62,242 @@ const __at = (xs, i) =>
     ? xs[i]
     : __fail("indexOutOfBounds");
 
+const __isObj = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+
+// Fields are compared in order and by count, because eval compares them that way: a missing field, an
+// extra one and a reordering are all type errors.
+const __hasFields = (x, fields) => {
+  const keys = Object.keys(x);
+  if (keys.length !== fields.length + 1) return false;
+  for (let i = 0; i < fields.length; i++) {
+    if (keys[i + 1] !== fields[i][0] || !__has(x[fields[i][0]], fields[i][1])) return false;
+  }
+  return true;
+};
+
+const __has = (x, t) => {
+  switch (t[0]) {
+    case "bool":
+      return typeof x === "boolean";
+    case "int53":
+      return typeof x === "number" && Number.isSafeInteger(x);
+    case "uint32":
+      return typeof x === "number" && Number.isInteger(x) && x >= 0 && x <= 4294967295;
+    case "string":
+      return typeof x === "string";
+    case "bigint":
+      return typeof x === "bigint";
+    case "array":
+      return Array.isArray(x) && x.every((e) => __has(e, t[1]));
+    case "option":
+      return (
+        __isObj(x) &&
+        (x.tag === "none"
+          ? __hasFields(x, [])
+          : x.tag === "some" && __hasFields(x, [["value", t[1]]]))
+      );
+    case "result":
+      return (
+        __isObj(x) &&
+        (x.tag === "ok"
+          ? __hasFields(x, [["value", t[1]]])
+          : x.tag === "error" && __hasFields(x, [["error", t[2]]]))
+      );
+    default: {
+      if (!__isObj(x)) return false;
+      const alt = t[1].find((a) => a[0] === x.tag);
+      return alt !== undefined && __hasFields(x, alt[1]);
+    }
+  }
+};
+
+// Validates without normalising, unlike __i53. A -0 argument is a safe integer, and every answer built
+// from it passes through __i53 or a comparison that already treats -0 and 0 alike, so normalising here
+// would change nothing a caller can observe.
+const __ck = (x, t) => (__has(x, t) ? x : __fail("typeError"));
+
 /** add : (a : Int53, b : Int53) → Int53 */
-export function add(a, b) {
+export function add(__p0, __p1) {
+  const a = __ck(__p0, ["int53"]);
+  const b = __ck(__p1, ["int53"]);
   return __i53((a + b));
 }
 
 /** clampQuantity : (quantity : Int53, upper : Int53) → Int53 */
-export function clampQuantity(quantity, upper) {
+export function clampQuantity(__p0, __p1) {
+  const quantity = __ck(__p0, ["int53"]);
+  const upper = __ck(__p1, ["int53"]);
   return ((quantity < 1) ? 1 : ((quantity > upper) ? upper : quantity));
 }
 
 /** lineTotal : (unitPrice : Int53, quantity : Int53) → Int53 */
-export function lineTotal(unitPrice, quantity) {
+export function lineTotal(__p0, __p1) {
+  const unitPrice = __ck(__p0, ["int53"]);
+  const quantity = __ck(__p1, ["int53"]);
   return __i53((unitPrice * clampQuantity(quantity, 999)));
 }
 
 /** discounted : (amount : Int53, percent : Int53) → Int53 */
-export function discounted(amount, percent) {
+export function discounted(__p0, __p1) {
+  const amount = __ck(__p0, ["int53"]);
+  const percent = __ck(__p1, ["int53"]);
   const rate = __i53((100 - ((percent < 0) ? 0 : ((percent > 100) ? 100 : percent))));
   return __i53div(__i53((amount * rate)), 100);
 }
 
 /** divide : (a : Int53, b : Int53) → Int53 */
-export function divide(a, b) {
+export function divide(__p0, __p1) {
+  const a = __ck(__p0, ["int53"]);
+  const b = __ck(__p1, ["int53"]);
   return __i53div(a, b);
 }
 
 /** remainder : (a : Int53, b : Int53) → Int53 */
-export function remainder(a, b) {
+export function remainder(__p0, __p1) {
+  const a = __ck(__p0, ["int53"]);
+  const b = __ck(__p1, ["int53"]);
   return __i53mod(a, b);
 }
 
 /** negate : (a : Int53) → Int53 */
-export function negate(a) {
+export function negate(__p0) {
+  const a = __ck(__p0, ["int53"]);
   return __i53((-a));
 }
 
 /** safeQuotientIsPositive : (a : Int53, b : Int53) → Bool */
-export function safeQuotientIsPositive(a, b) {
+export function safeQuotientIsPositive(__p0, __p1) {
+  const a = __ck(__p0, ["int53"]);
+  const b = __ck(__p1, ["int53"]);
   return ((b !== 0) && (__i53div(a, b) > 0));
 }
 
 /** canCheckout : (signedIn : Bool, cartTotal : Int53, stock : Int53) → Bool */
-export function canCheckout(signedIn, cartTotal, stock) {
+export function canCheckout(__p0, __p1, __p2) {
+  const signedIn = __ck(__p0, ["bool"]);
+  const cartTotal = __ck(__p1, ["int53"]);
+  const stock = __ck(__p2, ["int53"]);
   return ((signedIn && (cartTotal > 0)) && (stock >= 1));
 }
 
 /** mixChannels : (a : UInt32, b : UInt32) → UInt32 */
-export function mixChannels(a, b) {
+export function mixChannels(__p0, __p1) {
+  const a = __ck(__p0, ["uint32"]);
+  const b = __ck(__p1, ["uint32"]);
   return ((__u32mul(a, b) + ((a - b) >>> 0)) >>> 0);
 }
 
 /** bucketOf : (key : UInt32, buckets : UInt32) → UInt32 */
-export function bucketOf(key, buckets) {
+export function bucketOf(__p0, __p1) {
+  const key = __ck(__p0, ["uint32"]);
+  const buckets = __ck(__p1, ["uint32"]);
   return __u32mod(key, buckets);
 }
 
 /** scaleFee : (fee : BigInt, factor : BigInt) → BigInt */
-export function scaleFee(fee, factor) {
+export function scaleFee(__p0, __p1) {
+  const fee = __ck(__p0, ["bigint"]);
+  const factor = __ck(__p1, ["bigint"]);
   return ((fee * factor) - 1n);
 }
 
 /** bigQuotient : (a : BigInt, b : BigInt) → BigInt */
-export function bigQuotient(a, b) {
+export function bigQuotient(__p0, __p1) {
+  const a = __ck(__p0, ["bigint"]);
+  const b = __ck(__p1, ["bigint"]);
   return __bigdiv(a, b);
 }
 
 /** slugOf : (prefix : String, name : String) → String */
-export function slugOf(prefix, name) {
+export function slugOf(__p0, __p1) {
+  const prefix = __ck(__p0, ["string"]);
+  const name = __ck(__p1, ["string"]);
   return ((prefix + "-") + name);
 }
 
 /** sortsBefore : (a : String, b : String) → Bool */
-export function sortsBefore(a, b) {
+export function sortsBefore(__p0, __p1) {
+  const a = __ck(__p0, ["string"]);
+  const b = __ck(__p1, ["string"]);
   return (__strcmp(a, b) < 0);
 }
 
 /** sameLabel : (a : String, b : String) → Bool */
-export function sameLabel(a, b) {
+export function sameLabel(__p0, __p1) {
+  const a = __ck(__p0, ["string"]);
+  const b = __ck(__p1, ["string"]);
   return (a === b);
 }
 
 /** rebindTwice : (amount : Int53) → Int53 */
-export function rebindTwice(amount) {
+export function rebindTwice(__p0) {
+  const amount = __ck(__p0, ["int53"]);
   return ((amount) => (((amount) => (amount))(__i53((amount * 2)))))(__i53((amount + 1)));
 }
 
 /** roleRank : (role : Role) → Int53 */
-export function roleRank(role) {
+export function roleRank(__p0) {
+  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
   return ((__s) => ((((__s).tag === "guest") ? 0 : (((__s).tag === "member") ? 1 : 2))))(role);
 }
 
 /** addMoney : (a : Money, b : Money) → Result Money String */
-export function addMoney(a, b) {
+export function addMoney(__p0, __p1) {
+  const a = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const b = __ck(__p1, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   return (((a).currency !== (b).currency) ? { "tag": "error", "error": "currency mismatch" } : { "tag": "ok", "value": { "tag": "Money", "amount": __i53(((a).amount + (b).amount)), "currency": (a).currency } });
 }
 
 /** sameMoney : (a : Money, b : Money) → Bool */
-export function sameMoney(a, b) {
+export function sameMoney(__p0, __p1) {
+  const a = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const b = __ck(__p1, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   return __eq(a, b);
 }
 
 /** ship : (state : OrderState, trackingId : String) → Result OrderState String */
-export function ship(state, trackingId) {
+export function ship(__p0, __p1) {
+  const state = __ck(__p0, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
+  const trackingId = __ck(__p1, ["string"]);
   return ((__s) => ((((__s).tag === "draft") ? { "tag": "error", "error": "a draft order cannot ship" } : (((__s).tag === "placed") ? ((orderId) => (((trackingId === "") ? { "tag": "error", "error": "a tracking id is required" } : { "tag": "ok", "value": { "tag": "shipped", "orderId": orderId, "trackingId": trackingId } })))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ({ "tag": "error", "error": "the order has already shipped" }))((__s).orderId, (__s).trackingId) : ((reason) => ({ "tag": "error", "error": "a cancelled order cannot ship" }))((__s).reason))))))(state);
 }
 
 /** trackingOf : (state : OrderState) → Option String */
-export function trackingOf(state) {
+export function trackingOf(__p0) {
+  const state = __ck(__p0, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
   return ((__s) => ((((__s).tag === "draft") ? { "tag": "none" } : (((__s).tag === "placed") ? ((orderId) => ({ "tag": "none" }))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ({ "tag": "some", "value": trackingId }))((__s).orderId, (__s).trackingId) : ((reason) => ({ "tag": "none" }))((__s).reason))))))(state);
 }
 
 /** canRefund : (role : Role, state : OrderState) → Bool */
-export function canRefund(role, state) {
+export function canRefund(__p0, __p1) {
+  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  const state = __ck(__p1, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
   return ((__s) => ((((__s).tag === "draft") ? false : (((__s).tag === "placed") ? ((orderId) => ((roleRank(role) >= 1)))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ((roleRank(role) >= 2)))((__s).orderId, (__s).trackingId) : ((reason) => (false))((__s).reason))))))(state);
 }
 
 /** sumFrom : (xs : Array Int53, from : Int53) → Int53 */
-export function sumFrom(xs, from) {
+export function sumFrom(__p0, __p1) {
+  const xs = __ck(__p0, ["array", ["int53"]]);
+  const from = __ck(__p1, ["int53"]);
   return ((from >= (xs).length) ? 0 : __i53((__at(xs, from) + sumFrom(xs, __i53((from + 1))))));
 }
 
 /** total : (xs : Array Int53) → Int53 */
-export function total(xs) {
+export function total(__p0) {
+  const xs = __ck(__p0, ["array", ["int53"]]);
   return sumFrom(xs, 0);
 }
 
 /** headOr : (xs : Array Int53, fallback : Int53) → Int53 */
-export function headOr(xs, fallback) {
+export function headOr(__p0, __p1) {
+  const xs = __ck(__p0, ["array", ["int53"]]);
+  const fallback = __ck(__p1, ["int53"]);
   return (((xs).length === 0) ? fallback : __at(xs, 0));
 }
 
 /** firstTracking : (states : Array OrderState) → Option String */
-export function firstTracking(states) {
+export function firstTracking(__p0) {
+  const states = __ck(__p0, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
   return (((states).length === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
 }
 

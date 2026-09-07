@@ -172,6 +172,48 @@ where
     | .str a, .str b => .ok (.bool (keep (compare a.toList b.toList)))
     | _, _ => .error "typeError"
 
+mutual
+
+/-- Whether a value matches the type its declaration promised. This mirrors `Value.hasTy`; the two are
+held together by the vectors that call an exported function with an argument of the wrong shape. -/
+def checkTy : JsValue → TyDesc → Bool
+  | .bool _, .bool => true
+  | .num i, .int53 => safeMin ≤ i && i ≤ safeMax
+  | .num i, .uint32 => 0 ≤ i && i < wrap32
+  | .str _, .string => true
+  | .bigint _, .bigint => true
+  | .arr xs, .array t => checkList xs t
+  | .obj (("tag", .str ctor) :: rest), .option t =>
+    match ctor with
+    | "none" => rest.isEmpty
+    | "some" => checkFields rest [("value", t)]
+    | _ => false
+  | .obj (("tag", .str ctor) :: rest), .result ok err =>
+    match ctor with
+    | "ok" => checkFields rest [("value", ok)]
+    | "error" => checkFields rest [("error", err)]
+    | _ => false
+  | .obj (("tag", .str ctor) :: rest), .ctors _ alts =>
+    match alts.find? (·.1 == ctor) with
+    | some (_, fields) => checkFields rest fields
+    | none => false
+  | _, _ => false
+termination_by v => sizeOf v
+
+def checkFields : List (String × JsValue) → List (String × TyDesc) → Bool
+  | [], [] => true
+  | (key, value) :: rest, (name, t) :: ts =>
+    key == name && checkTy value t && checkFields rest ts
+  | _, _ => false
+termination_by fields => sizeOf fields
+
+def checkList : List JsValue → TyDesc → Bool
+  | [], _ => true
+  | x :: rest, t => checkTy x t && checkList rest t
+termination_by xs => sizeOf xs
+
+end
+
 def bindAll : List String → List JsValue → JsEnv
   | n :: ns, v :: vs => (n, v) :: bindAll ns vs
   | _, _ => []
@@ -247,6 +289,9 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
       | .arr xs => if field == "length" then .ok (.num xs.length) else .error "typeError"
       | _ => .error "typeError"
     | .arrayLit items => do .ok (.arr (← evalList m f env items))
+    | .check d x => do
+      let v ← eval m f env x
+      if checkTy v d then .ok v else .error "typeError"
 termination_by (fuel, 0, 0)
 
 def evalList (m : Module) (fuel : Nat) (env : JsEnv) (es : List Expr) :

@@ -283,6 +283,33 @@ where
     let (je, te) ← compileExpr p ctx e
     .ok (acc.reverse ++ [.ret je], te)
 
+/-- Expands a declared type into the shape the generated code checks an argument against. A type that
+reaches itself is rejected instead of expanded: it would not terminate here, and nothing in the subset can
+build a value of one yet. -/
+private partial def tyDesc (p : Program) (seen : List String) : Ty → Except String Js.TyDesc
+  | .bool => .ok .bool
+  | .int53 => .ok .int53
+  | .uint32 => .ok .uint32
+  | .string => .ok .string
+  | .bigint => .ok .bigint
+  | .option t => do .ok (.option (← tyDesc p seen t))
+  | .result ok err => do .ok (.result (← tyDesc p seen ok) (← tyDesc p seen err))
+  | .array t => do .ok (.array (← tyDesc p seen t))
+  | .named n =>
+    if seen.contains n then .error s!"{n} refers to itself; a recursive type cannot cross the boundary"
+    else
+      match p.findType? n with
+      | none => .error s!"unknown type: {n}"
+      | some t => do
+        let alts ← t.ctors.mapM fun c => do
+          let fields ← c.fields.mapM fun f => do .ok (f.name, ← tyDesc p (n :: seen) f.ty)
+          .ok (c.name, fields)
+        .ok (.ctors n alts)
+
+/-- The name an exported function takes its argument under, before the entry check hands it to the body
+under the declared name. -/
+private def rawParam (i : Nat) : String := s!"__p{i}"
+
 def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
   validateIdent "function" d.name
   d.params.forM fun param => validateIdent "parameter" param.name
@@ -291,12 +318,15 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
   let (stmts, ty) ← compileBody p ctx d.body []
   if ty != d.ret then
     .error s!"{d.name} is declared to return {d.ret.render} but its body is {ty.render}"
-  else
+  else do
+    let checks ← d.params.zipIdx.mapM fun (param, i) => do
+      let desc ← tyDesc p [] param.ty
+      .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i))))
     let sig := d.params.map fun param => s!"{param.name} : {param.ty.render}"
     .ok {
       name := d.name
-      params := d.params.map (·.name)
-      body := stmts
+      params := d.params.zipIdx.map fun (_, i) => rawParam i
+      body := checks ++ stmts
       doc := s!"{d.name} : ({String.intercalate ", " sig}) → {d.ret.render}"
     }
 

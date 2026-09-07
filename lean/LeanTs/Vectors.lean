@@ -139,9 +139,42 @@ def vectorsFor (p : Program) (d : Decl) (edgeLimit randomCount : Nat) (seed : UI
   let tuples := (edgeTuples p tys).take edgeLimit ++ randomTuples p seed tys randomCount
   tuples.map fun args => { fn := d.name, args, expected := evalCall p d.name args }
 
+/-- Values to offer a parameter that did not ask for them. The shapes a hand-written checker is most
+likely to wave through are here on purpose: an Int53 past the safe range, a constructor value missing a
+field, one carrying an extra field, and one whose tag names no constructor at all. -/
+private def illTypedPool : List Value :=
+  [.bool true, .int53 0, .int53 (int53Max + 1), .int53 (int53Min - 1), .uint32 7, .str "x",
+   .bigint 0, .arr [], .arr [.str "x"], .arr [.int53 0],
+   .obj "none" [], .obj "some" [("value", .str "x")], .obj "ok" [("value", .int53 0)],
+   .obj "nope" [], .obj "Money" [("amount", .int53 1)],
+   .obj "Money" [("amount", .int53 1), ("currency", .str "JPY"), ("extra", .bool true)]]
+
+/-- Whether the entry check can tell this value apart from one the parameter accepts. `Int53` and
+`UInt32` are both plain numbers by the time they reach JS, so a small non-negative `Int53` offered to a
+`UInt32` parameter is rejected by `eval` and accepted by the generated code — a disagreement about how
+Lean represents values, not about the artifact. -/
+private def rejectedInJs : Value → Ty → Bool
+  | .int53 i, .uint32 => i < 0 || 4294967295 < i
+  | .uint32 _, .int53 => false
+  | _, _ => true
+
+/-- Calls each exported function with one argument of the wrong shape and the rest well typed. Without
+these the entry check would never be exercised, and the agreement between `eval`'s `typeError` and the
+generated code's would go unmeasured. -/
+private def illTypedVectorsFor (p : Program) (d : Decl) (perParam : Nat) : List TestVector :=
+  let tys := d.params.map (·.ty)
+  match (edgeTuples p tys).head? with
+  | none => []
+  | some base =>
+    tys.zipIdx.flatMap fun (ty, i) =>
+      ((illTypedPool.filter fun v => !v.hasTy p ty && rejectedInJs v ty).take perParam).map fun bad =>
+        let args := base.zipIdx.map fun (v, j) => if i == j then bad else v
+        { fn := d.name, args, expected := evalCall p d.name args }
+
 def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
   let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
-  (p.decls.zip seeds).flatMap fun (d, seed) => vectorsFor p d edgeLimit randomCount seed
+  (p.decls.zip seeds).flatMap fun (d, seed) =>
+    vectorsFor p d edgeLimit randomCount seed ++ illTypedVectorsFor p d 3
 
 /-- Fuel is a device for keeping termination inside the proof, not part of the subset's semantics. Since
 nothing on the JS side corresponds to it, writing `outOfFuel` as an expected value would be the lie that
