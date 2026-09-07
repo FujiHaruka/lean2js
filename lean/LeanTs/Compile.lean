@@ -118,7 +118,7 @@ def isOrdered : Ty → Bool
 
 /-- Scalars can be compared with `===`, but constructor values and arrays would end up compared by
 reference. -/
-private def isScalar : Ty → Bool
+def isScalar : Ty → Bool
   | .bool | .int53 | .uint32 | .string | .bigint => true
   | _ => false
 

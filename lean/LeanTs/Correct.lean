@@ -12,35 +12,13 @@ fragment, `Agree.checkAgreement` checks agreement at run time against the shippe
 
 ## Why the fragment stops here
 
-Equality has to be stated at a type. "Encoding preserves equality" is false without one: `Int53 0` and
-`UInt32 0` are different values that both encode to `.num 0`, so an induction on the structure of values
-cannot close it.
-
-A call needs `Sound.TypeChecked` over the whole subset, because the callee's body is arbitrary syntax.
+Every binary operator is in, so the next form to reach for is the call, and that needs
+`Sound.TypeChecked` over the whole subset: the callee's body is arbitrary syntax.
 -/
 
 namespace LeanTs.Correct
 
 open Core
-
-/-- The binary operators the proof reaches. The rest are still carried by `Agree`'s run-time check:
-`&&` and `||` are here because their operands can only be `Bool`, so no case split on the operand type
-is left open. -/
-inductive CoveredOp : BinOp → Prop where
-  | and : CoveredOp .and
-  | or : CoveredOp .or
-  | concat : CoveredOp .concat
-  | min : CoveredOp .min
-  | max : CoveredOp .max
-  | add : CoveredOp .add
-  | sub : CoveredOp .sub
-  | mul : CoveredOp .mul
-  | div : CoveredOp .div
-  | mod : CoveredOp .mod
-  | lt : CoveredOp .lt
-  | le : CoveredOp .le
-  | gt : CoveredOp .gt
-  | ge : CoveredOp .ge
 
 /-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
@@ -52,7 +30,7 @@ inductive InFragment : Expr → Prop where
       InFragment val → InFragment body → InFragment (.letE name ty val body)
   | un {op : UnOp} {e : Expr} : InFragment e → InFragment (.un op e)
   | bin {op : BinOp} {lhs rhs : Expr} :
-      CoveredOp op → InFragment lhs → InFragment rhs → InFragment (.bin op lhs rhs)
+      InFragment lhs → InFragment rhs → InFragment (.bin op lhs rhs)
 
 /-- Everything the correctness proof reaches is also reached by type soundness, which the arithmetic
 cases need to know that the values in the environment match the types the compiler read. -/
@@ -62,7 +40,7 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .cond hc ht he => .cond hc.typeChecked ht.typeChecked he.typeChecked
   | .letE hv hb => .letE hv.typeChecked hb.typeChecked
   | .un hx => .un hx.typeChecked
-  | .bin _ hl hr => .bin hl.typeChecked hr.typeChecked
+  | .bin hl hr => .bin hl.typeChecked hr.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -522,6 +500,194 @@ theorem order_num (x y : Int) (keep : Ordering → Bool) :
 theorem order_big (x y : Int) (keep : Ordering → Bool) :
     Js.arith.order (.bigint x) (.bigint y) keep = .ok (.bool (keep (compare x y))) := rfl
 
+theorem u32_beq (x y : UInt32) : ((x.toNat : Int) == (y.toNat : Int)) = (x == y) := by
+  by_cases h : x = y
+  · subst h; simp
+  · have hne : (x.toNat : Int) ≠ (y.toNat : Int) := by
+      intro hh
+      exact h (UInt32.toNat_inj.mp (by exact_mod_cast hh))
+    rw [beq_eq_false_iff_ne.mpr hne, beq_eq_false_iff_ne.mpr h]
+
+mutual
+
+/-- Encoding preserves equality, but only between values of one type. Untyped the statement is false:
+`Int53 0` and `UInt32 0` are different values that both encode to `.num 0`. -/
+theorem beq_encodeValue (p : Program) : ∀ (t : Ty) (a b : Value),
+    Value.hasTy p a t = true → Value.hasTy p b t = true →
+    Js.JsValue.beq (encodeValue a) (encodeValue b) = Value.beq a b
+  | .bool, a, b, ha, hb => by
+    obtain ⟨x, rfl⟩ := hasTy_bool_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_bool_inv hb
+    simp [encodeValue, Js.JsValue.beq, Value.beq]
+  | .int53, a, b, ha, hb => by
+    obtain ⟨x, rfl⟩ := hasTy_int53_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_int53_inv hb
+    simp [encodeValue, Js.JsValue.beq, Value.beq]
+  | .uint32, a, b, ha, hb => by
+    obtain ⟨x, rfl⟩ := hasTy_uint32_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_uint32_inv hb
+    simp only [encodeValue, Js.JsValue.beq, Value.beq]
+    exact u32_beq x y
+  | .string, a, b, ha, hb => by
+    obtain ⟨x, rfl⟩ := hasTy_string_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_string_inv hb
+    simp [encodeValue, Js.JsValue.beq, Value.beq]
+  | .bigint, a, b, ha, hb => by
+    obtain ⟨x, rfl⟩ := hasTy_bigint_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_bigint_inv hb
+    simp [encodeValue, Js.JsValue.beq, Value.beq]
+  | .var _, _, _, ha, _ => (hasTy_var_inv ha).elim
+  | .named n args, a, b, ha, hb => by
+    obtain ⟨ca, fa, rfl⟩ := hasTy_named_inv ha
+    obtain ⟨cb, fb, rfl⟩ := hasTy_named_inv hb
+    obtain ⟨ta, ka, hta, hka, hfa⟩ := hasTy_named_fields ha
+    obtain ⟨tb, kb, htb, hkb, hfb⟩ := hasTy_named_fields hb
+    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq,
+      beq_self_eq_true, Bool.true_and]
+    by_cases hcc : ca = cb
+    · subst hcc
+      have htt : ta = tb := Option.some.inj (hta ▸ htb)
+      subst htt
+      have hkk : ka = kb := Option.some.inj (hka ▸ hkb)
+      subst hkk
+      rw [beq_encodeFields p _ fa fb hfa hfb]
+    · rw [beq_eq_false_iff_ne.mpr hcc]
+      simp
+  | .option elem, a, b, ha, hb => by
+    obtain ⟨ca, fa, rfl⟩ := hasTy_option_inv ha
+    obtain ⟨cb, fb, rfl⟩ := hasTy_option_inv hb
+    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq,
+      beq_self_eq_true, Bool.true_and]
+    rcases hasTy_option_fields ha with ⟨rfl, rfl⟩ | ⟨rfl, hfa⟩ <;>
+      rcases hasTy_option_fields hb with ⟨rfl, rfl⟩ | ⟨rfl, hfb⟩
+    · simp [encodeFields, Js.JsValue.beqFields, Value.beqFields]
+    · simp [encodeFields]
+    · simp [encodeFields]
+    · rw [beq_encodeFields p [("value", elem)] fa fb hfa hfb]
+  | .result ok err, a, b, ha, hb => by
+    obtain ⟨ca, fa, rfl⟩ := hasTy_result_inv ha
+    obtain ⟨cb, fb, rfl⟩ := hasTy_result_inv hb
+    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq,
+      beq_self_eq_true, Bool.true_and]
+    rcases hasTy_result_fields ha with ⟨rfl, hfa⟩ | ⟨rfl, hfa⟩ <;>
+      rcases hasTy_result_fields hb with ⟨rfl, hfb⟩ | ⟨rfl, hfb⟩
+    · rw [beq_encodeFields p [("value", ok)] fa fb hfa hfb]
+    · simp
+    · simp
+    · rw [beq_encodeFields p [("error", err)] fa fb hfa hfb]
+  | .array elem, a, b, ha, hb => by
+    obtain ⟨xs, rfl⟩ := hasTy_array_inv ha
+    obtain ⟨ys, rfl⟩ := hasTy_array_inv hb
+    simp only [Value.hasTy] at ha hb
+    simp only [encodeValue, Js.JsValue.beq, Value.beq]
+    exact beq_encodeList p elem xs ys ha hb
+  | .dict elem, a, b, ha, hb => by
+    obtain ⟨ea, rfl⟩ := hasTy_dict_inv ha
+    obtain ⟨eb, rfl⟩ := hasTy_dict_inv hb
+    simp only [Value.hasTy, Bool.and_eq_true] at ha hb
+    simp only [encodeValue, Js.JsValue.beq, Value.beq]
+    exact beq_encodeEntries p elem ea eb ha.2 hb.2
+  | .fn params ret, a, b, ha, hb => by
+    obtain ⟨na, rfl⟩ := hasTy_fn_inv ha
+    obtain ⟨nb, rfl⟩ := hasTy_fn_inv hb
+    simp [encodeValue, Js.JsValue.beq, Value.beq]
+termination_by _ a => sizeOf a
+
+theorem beq_encodeFields (p : Program) :
+    ∀ (tys : List (String × Ty)) (fa fb : List (String × Value)),
+      Value.hasFieldTys p fa tys = true → Value.hasFieldTys p fb tys = true →
+      Js.JsValue.beqFields (encodeFields fa) (encodeFields fb) = Value.beqFields fa fb
+  | [], [], [], _, _ => by simp [encodeFields, Js.JsValue.beqFields, Value.beqFields]
+  | [], [], _ :: _, _, hb => by simp [Value.hasFieldTys] at hb
+  | [], _ :: _, _, ha, _ => by simp [Value.hasFieldTys] at ha
+  | _ :: _, [], _, ha, _ => by simp [Value.hasFieldTys] at ha
+  | _ :: _, _ :: _, [], _, hb => by simp [Value.hasFieldTys] at hb
+  | (_, ty) :: tys, (_, va) :: ta, (_, vb) :: tb, ha, hb => by
+    simp only [Value.hasFieldTys, Bool.and_eq_true] at ha hb
+    simp only [encodeFields, Js.JsValue.beqFields, Value.beqFields]
+    rw [beq_encodeValue p ty va vb ha.1.2 hb.1.2, beq_encodeFields p tys ta tb ha.2 hb.2]
+termination_by _ fa => sizeOf fa
+
+theorem beq_encodeList (p : Program) : ∀ (elem : Ty) (xa xb : List Value),
+    Value.hasElemTy p xa elem = true → Value.hasElemTy p xb elem = true →
+    Js.JsValue.beqList (encodeList xa) (encodeList xb) = Value.beqList xa xb
+  | _, [], [], _, _ => by simp [encodeList, Js.JsValue.beqList, Value.beqList]
+  | _, [], _ :: _, _, _ => by simp [encodeList, Js.JsValue.beqList, Value.beqList]
+  | _, _ :: _, [], _, _ => by simp [encodeList, Js.JsValue.beqList, Value.beqList]
+  | elem, x :: xa, y :: xb, ha, hb => by
+    simp only [Value.hasElemTy, Bool.and_eq_true] at ha hb
+    simp only [encodeList, Js.JsValue.beqList, Value.beqList]
+    rw [beq_encodeValue p elem x y ha.1 hb.1, beq_encodeList p elem xa xb ha.2 hb.2]
+termination_by _ xa => sizeOf xa
+
+theorem beq_encodeEntries (p : Program) : ∀ (elem : Ty) (ea eb : List (String × Value)),
+    Value.hasEntryTys p ea elem = true → Value.hasEntryTys p eb elem = true →
+    Js.JsValue.beqFields (encodeFields ea) (encodeFields eb) = Value.beqFields ea eb
+  | _, [], [], _, _ => by simp [encodeFields, Js.JsValue.beqFields, Value.beqFields]
+  | _, [], (_, _) :: _, _, _ => by simp [encodeFields, Js.JsValue.beqFields, Value.beqFields]
+  | _, (_, _) :: _, [], _, _ => by simp [encodeFields, Js.JsValue.beqFields, Value.beqFields]
+  | elem, (_, va) :: ea, (_, vb) :: eb, ha, hb => by
+    simp only [Value.hasEntryTys, Bool.and_eq_true] at ha hb
+    simp only [encodeFields, Js.JsValue.beqFields, Value.beqFields]
+    rw [beq_encodeValue p elem va vb ha.1 hb.1, beq_encodeEntries p elem ea eb ha.2 hb.2]
+termination_by _ ea => sizeOf ea
+
+end
+
+theorem eval_binary_eqq (m : Js.Module) (g : Nat) (env : Js.JsEnv) (jl jr : Js.Expr) :
+    Js.eval m (g + 1) env (.binary "===" jl jr) =
+      (do
+        let a ← Js.eval m g env jl
+        let b ← Js.eval m g env jr
+        Js.arith "===" a b) := by
+  rw [Js.eval.eq_def]
+  rfl
+
+theorem eval_binary_neqq (m : Js.Module) (g : Nat) (env : Js.JsEnv) (jl jr : Js.Expr) :
+    Js.eval m (g + 1) env (.binary "!==" jl jr) =
+      (do
+        let a ← Js.eval m g env jl
+        let b ← Js.eval m g env jr
+        Js.arith "!==" a b) := by
+  rw [Js.eval.eq_def]
+  rfl
+
+theorem arith_eqq (x y : Js.JsValue) :
+    Js.arith "===" x y = .ok (.bool (Js.arith.sameValue x y)) := rfl
+
+theorem arith_neqq (x y : Js.JsValue) :
+    Js.arith "!==" x y = .ok (.bool (!Js.arith.sameValue x y)) := rfl
+
+theorem helper_eq (x y : Js.JsValue) :
+    Js.helper "__eq" [x, y] = some (.ok (.bool (Js.JsValue.beq x y))) := rfl
+
+/-- `===` compares scalars by value, so the model's `sameValue` reaches `Value.beq` only where the
+compiler has already decided the operands are scalars. -/
+theorem sameValue_encodeValue {p : Program} {t : Ty} {a b : Value}
+    (hs : Compile.isScalar t = true)
+    (ha : Value.hasTy p a t = true) (hb : Value.hasTy p b t = true) :
+    Js.arith.sameValue (encodeValue a) (encodeValue b) = Value.beq a b := by
+  cases t <;> simp only [Compile.isScalar] at hs <;>
+    first
+      | exact Bool.noConfusion hs
+      | skip
+  · obtain ⟨x, rfl⟩ := hasTy_bool_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_bool_inv hb
+    simp [encodeValue, Js.arith.sameValue, Value.beq]
+  · obtain ⟨x, rfl⟩ := hasTy_int53_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_int53_inv hb
+    simp [encodeValue, Js.arith.sameValue, Value.beq]
+  · obtain ⟨x, rfl⟩ := hasTy_uint32_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_uint32_inv hb
+    simp only [encodeValue, Js.arith.sameValue, Value.beq]
+    exact u32_beq x y
+  · obtain ⟨x, rfl⟩ := hasTy_string_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_string_inv hb
+    simp [encodeValue, Js.arith.sameValue, Value.beq]
+  · obtain ⟨x, rfl⟩ := hasTy_bigint_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_bigint_inv hb
+    simp [encodeValue, Js.arith.sameValue, Value.beq]
+
 theorem cond_true {m : Js.Module} {env : Js.JsEnv} {jc jt jel : Js.Expr} {v : Js.JsValue}
     (h1 : Eventually m env jc (.bool true)) (h2 : Eventually m env jt v) :
     Eventually m env (.cond jc jt jel) v := by
@@ -789,13 +955,13 @@ theorem fragment_correct (p : Program) (m : Js.Module)
             Eventually m (encodeEnv env) jx (.bigint i)) ?_
           simp [helper_abs_big, absInt i, encodeValue]
         · simp at hc
-  | bin hop hl hr ihl ihr =>
+  | bin hl hr ihl ihr =>
     rename_i op lhsE rhsE
     intro ctx env je ty f v henv hc he
     cases f with
     | zero => simp [evalExpr] at he
     | succ f =>
-      cases hop with
+      cases op with
       | and =>
         simp only [Compile.compileExpr, bind, Except.bind] at hc
         split at hc
@@ -1801,4 +1967,96 @@ theorem fragment_correct (p : Program) (m : Js.Module)
               (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
             rw [arith_ge, order_big]
             simp only [encodeValue]
+      | eq =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        simp only [applyBin, Except.ok.injEq] at he
+        subst he
+        split at hc
+        · rename_i hsc
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          refine eventually_binary (fun g => eval_binary_eqq m g _ jl jr) hle hre ?_
+          rw [arith_eqq, sameValue_encodeValue hsc hat hbt]
+          simp only [encodeValue]
+          rfl
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          refine eventually_call2 hle hre ?_
+          rw [helper_eq, beq_encodeValue p tl av bv hat hbt]
+          simp only [encodeValue]
+          rfl
+      | ne =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        simp only [applyBin, Except.ok.injEq] at he
+        subst he
+        split at hc
+        · rename_i hsc
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          refine eventually_binary (fun g => eval_binary_neqq m g _ jl jr) hle hre ?_
+          rw [arith_neqq, sameValue_encodeValue hsc hat hbt]
+          simp only [encodeValue, bne]
+          rfl
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          have hcall : Eventually m (encodeEnv env) (.call "__eq" [jl, jr])
+              (.bool (av == bv)) := by
+            refine eventually_call2 hle hre ?_
+            rw [helper_eq, beq_encodeValue p tl av bv hat hbt]
+            rfl
+          simpa [encodeValue, bne] using eventually_not hcall
 end LeanTs.Correct

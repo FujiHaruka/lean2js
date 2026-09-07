@@ -128,6 +128,67 @@ theorem hasTy_bigint_inv {p : Program} {v : Value} (h : Value.hasTy p v .bigint 
     ∃ i, v = .bigint i := by
   cases v <;> simp_all [Value.hasTy]
 
+theorem hasTy_named_inv {p : Program} {v : Value} {n : String} {args : List Ty}
+    (h : Value.hasTy p v (.named n args) = true) : ∃ ctor fields, v = .obj ctor fields := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_option_inv {p : Program} {v : Value} {elem : Ty}
+    (h : Value.hasTy p v (.option elem) = true) : ∃ ctor fields, v = .obj ctor fields := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_result_inv {p : Program} {v : Value} {ok err : Ty}
+    (h : Value.hasTy p v (.result ok err) = true) : ∃ ctor fields, v = .obj ctor fields := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_dict_inv {p : Program} {v : Value} {elem : Ty}
+    (h : Value.hasTy p v (.dict elem) = true) : ∃ entries, v = .dict entries := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_fn_inv {p : Program} {v : Value} {params : List Ty} {ret : Ty}
+    (h : Value.hasTy p v (.fn params ret) = true) : ∃ name, v = .fn name := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_var_inv {p : Program} {v : Value} {name : String}
+    (h : Value.hasTy p v (.var name) = true) : False := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_named_fields {p : Program} {ctor : String} {fields : List (String × Value)}
+    {n : String} {args : List Ty}
+    (h : Value.hasTy p (.obj ctor fields) (.named n args) = true) :
+    ∃ t c, p.findType? n = some t ∧ t.findAt? args ctor = some c ∧
+      Value.hasFieldTys p fields (c.fields.map fun f => (f.name, f.ty)) = true := by
+  rw [Value.hasTy.eq_def] at h
+  simp only at h
+  split at h
+  · rename_i t ht
+    split at h
+    · rename_i c hc
+      exact ⟨t, c, ht, hc, h⟩
+    · simp at h
+  · simp at h
+
+theorem hasTy_option_fields {p : Program} {ctor : String} {fields : List (String × Value)}
+    {elem : Ty} (h : Value.hasTy p (.obj ctor fields) (.option elem) = true) :
+    (ctor = "none" ∧ fields = []) ∨
+      (ctor = "some" ∧ Value.hasFieldTys p fields [("value", elem)] = true) := by
+  rw [Value.hasTy.eq_def] at h
+  simp only at h
+  split at h
+  · exact Or.inl ⟨rfl, by simpa using h⟩
+  · exact Or.inr ⟨rfl, h⟩
+  · simp at h
+
+theorem hasTy_result_fields {p : Program} {ctor : String} {fields : List (String × Value)}
+    {ok err : Ty} (h : Value.hasTy p (.obj ctor fields) (.result ok err) = true) :
+    (ctor = "ok" ∧ Value.hasFieldTys p fields [("value", ok)] = true) ∨
+      (ctor = "error" ∧ Value.hasFieldTys p fields [("error", err)] = true) := by
+  rw [Value.hasTy.eq_def] at h
+  simp only at h
+  split at h
+  · exact Or.inl ⟨rfl, h⟩
+  · exact Or.inr ⟨rfl, h⟩
+  · simp at h
+
 theorem mkInt53_hasTy {p : Program} {i : Int} {v : Value} (h : mkInt53 i = .ok v) :
     Value.hasTy p v .int53 = true := by
   simp only [mkInt53] at h
