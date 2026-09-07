@@ -470,6 +470,229 @@ theorem evalExpr_proj (p : Program) (f : Nat) (env : Env) (e : Expr) (field : St
           | _ => .error (.typeError "field access expects a constructor value")) := by
   rw [evalExpr.eq_def]
 
+theorem evalExpr_un (p : Program) (f : Nat) (env : Env) (op : UnOp) (e : Expr) :
+    evalExpr p (f + 1) env (.un op e) = (do applyUn op (← evalExpr p f env e)) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_and (p : Program) (f : Nat) (env : Env) (lhs rhs : Expr) :
+    evalExpr p (f + 1) env (.bin .and lhs rhs) =
+      (do match ← evalExpr p f env lhs with
+          | .bool false => .ok (.bool false)
+          | .bool true => asBool (← evalExpr p f env rhs)
+          | _ => .error (.typeError "&& expects Bool operands")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_or (p : Program) (f : Nat) (env : Env) (lhs rhs : Expr) :
+    evalExpr p (f + 1) env (.bin .or lhs rhs) =
+      (do match ← evalExpr p f env lhs with
+          | .bool true => .ok (.bool true)
+          | .bool false => asBool (← evalExpr p f env rhs)
+          | _ => .error (.typeError "|| expects Bool operands")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_letE (p : Program) (f : Nat) (env : Env) (name : String) (ty : Ty)
+    (val body : Expr) :
+    evalExpr p (f + 1) env (.letE name ty val body) =
+      (do
+        let v ← evalExpr p f env val
+        evalExpr p f ((name, v) :: env) body) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_call (p : Program) (f : Nat) (env : Env) (fn : String) (args : List Expr) :
+    evalExpr p (f + 1) env (.call fn args) =
+      (do
+        let vs ← evalArgs p f env args
+        match p.find? fn with
+        | none => .error (.unknownFn fn)
+        | some d =>
+          if d.params.length != vs.length then .error (.arity fn)
+          else evalExpr p f (bindParams d.params vs) d.body) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_noneE (p : Program) (f : Nat) (env : Env) (elem : Ty) :
+    evalExpr p (f + 1) env (.noneE elem) = .ok (.obj "none" []) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_someE (p : Program) (f : Nat) (env : Env) (e : Expr) :
+    evalExpr p (f + 1) env (.someE e) =
+      (do .ok (.obj "some" [("value", ← evalExpr p f env e)])) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_arrayLit (p : Program) (f : Nat) (env : Env) (elem : Ty) (items : List Expr) :
+    evalExpr p (f + 1) env (.arrayLit elem items) =
+      (do .ok (.arr (← evalArgs p f env items))) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_index (p : Program) (f : Nat) (env : Env) (arr idx : Expr) :
+    evalExpr p (f + 1) env (.index arr idx) =
+      (do
+        let a ← evalExpr p f env arr
+        let i ← evalExpr p f env idx
+        match a, i with
+        | .arr xs, .int53 n =>
+          if n < 0 || Int.ofNat xs.length ≤ n then .error .indexOutOfBounds
+          else
+            match xs[n.toNat]? with
+            | some v => .ok v
+            | none => .error .indexOutOfBounds
+        | _, _ => .error (.typeError "index expects an Array and an Int53")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_length (p : Program) (f : Nat) (env : Env) (arr : Expr) :
+    evalExpr p (f + 1) env (.length arr) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => mkInt53 (Int.ofNat xs.length)
+          | .str s => mkInt53 (Int.ofNat s.toList.length)
+          | .dict entries => mkInt53 (Int.ofNat entries.length)
+          | _ => .error (.typeError "length expects an Array, a String or a Dict")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_mapE (p : Program) (f : Nat) (env : Env) (arr : Expr) (binder : String)
+    (body : Expr) :
+    evalExpr p (f + 1) env (.mapE arr binder body) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => do .ok (.arr (← evalMapItems p f env binder body xs))
+          | _ => .error (.typeError "map expects an Array")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_filterE (p : Program) (f : Nat) (env : Env) (arr : Expr) (binder : String)
+    (body : Expr) :
+    evalExpr p (f + 1) env (.filterE arr binder body) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => do .ok (.arr (← evalFilterItems p f env binder body xs))
+          | _ => .error (.typeError "filter expects an Array")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_reduceE (p : Program) (f : Nat) (env : Env) (arr init : Expr)
+    (accName elemName : String) (body : Expr) :
+    evalExpr p (f + 1) env (.reduceE arr init accName elemName body) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => do
+            let acc ← evalExpr p f env init
+            evalReduceItems p f env accName elemName body acc xs
+          | _ => .error (.typeError "reduce expects an Array")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_dictLit (p : Program) (f : Nat) (env : Env) (value : Ty)
+    (entries : List (String × Expr)) :
+    evalExpr p (f + 1) env (.dictLit value entries) =
+      (do
+        let vs ← evalArgs p f env (entries.map (·.2))
+        .ok (.dict ((entries.map (·.1)).zip vs))) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_dictGet (p : Program) (f : Nat) (env : Env) (d key : Expr) :
+    evalExpr p (f + 1) env (.dictGet d key) =
+      (do
+        let dv ← evalExpr p f env d
+        let kv ← evalExpr p f env key
+        match dv, kv with
+        | .dict entries, .str k => .ok (dictLookup entries k)
+        | _, _ => .error (.typeError "get expects a Dict and a String key")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_dictHas (p : Program) (f : Nat) (env : Env) (d key : Expr) :
+    evalExpr p (f + 1) env (.dictHas d key) =
+      (do
+        let dv ← evalExpr p f env d
+        let kv ← evalExpr p f env key
+        match dv, kv with
+        | .dict entries, .str k => .ok (.bool (entries.any (·.1 == k)))
+        | _, _ => .error (.typeError "has expects a Dict and a String key")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_dictSet (p : Program) (f : Nat) (env : Env) (d key val : Expr) :
+    evalExpr p (f + 1) env (.dictSet d key val) =
+      (do
+        let dv ← evalExpr p f env d
+        let kv ← evalExpr p f env key
+        let vv ← evalExpr p f env val
+        match dv, kv with
+        | .dict entries, .str k => .ok (.dict (dictWith entries k vv))
+        | _, _ => .error (.typeError "set expects a Dict and a String key")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_dictKeys (p : Program) (f : Nat) (env : Env) (d : Expr) :
+    evalExpr p (f + 1) env (.dictKeys d) =
+      (do match ← evalExpr p f env d with
+          | .dict entries => .ok (.arr (entries.map fun e => .str e.1))
+          | _ => .error (.typeError "keys expects a Dict")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_strUn (p : Program) (f : Nat) (env : Env) (op : StrUnOp) (e : Expr) :
+    evalExpr p (f + 1) env (.strUn op e) = (do applyStrUn op (← evalExpr p f env e)) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_strBin (p : Program) (f : Nat) (env : Env) (op : StrBinOp) (lhs rhs : Expr) :
+    evalExpr p (f + 1) env (.strBin op lhs rhs) =
+      (do
+        let a ← evalExpr p f env lhs
+        let b ← evalExpr p f env rhs
+        applyStrBin op a b) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_substring (p : Program) (f : Nat) (env : Env) (str lo hi : Expr) :
+    evalExpr p (f + 1) env (.substring str lo hi) =
+      (do
+        let s ← evalExpr p f env str
+        let a ← evalExpr p f env lo
+        let b ← evalExpr p f env hi
+        sliceStr s a b) := by
+  rw [evalExpr.eq_def]
+
+/-! The four traversals `evalExpr` delegates to. A proof about a declaration that uses a combinator
+walks the list here rather than through `evalExpr`. -/
+
+theorem evalArgs_nil (p : Program) (f : Nat) (env : Env) : evalArgs p f env [] = .ok [] := by
+  rw [evalArgs.eq_def]
+
+theorem evalArgs_cons (p : Program) (f : Nat) (env : Env) (e : Expr) (rest : List Expr) :
+    evalArgs p f env (e :: rest) =
+      (do
+        let v ← evalExpr p f env e
+        let vs ← evalArgs p f env rest
+        .ok (v :: vs)) := by
+  rw [evalArgs.eq_def]
+
+theorem evalMapItems_nil (p : Program) (f : Nat) (env : Env) (binder : String) (body : Expr) :
+    evalMapItems p f env binder body [] = .ok [] := by
+  rw [evalMapItems.eq_def]
+
+theorem evalMapItems_cons (p : Program) (f : Nat) (env : Env) (binder : String) (body : Expr)
+    (x : Value) (rest : List Value) :
+    evalMapItems p f env binder body (x :: rest) =
+      (do
+        let v ← evalExpr p f ((binder, x) :: env) body
+        let vs ← evalMapItems p f env binder body rest
+        .ok (v :: vs)) := by
+  rw [evalMapItems.eq_def]
+
+theorem evalFilterItems_nil (p : Program) (f : Nat) (env : Env) (binder : String) (body : Expr) :
+    evalFilterItems p f env binder body [] = .ok [] := by
+  rw [evalFilterItems.eq_def]
+
+theorem evalFilterItems_cons (p : Program) (f : Nat) (env : Env) (binder : String) (body : Expr)
+    (x : Value) (rest : List Value) :
+    evalFilterItems p f env binder body (x :: rest) =
+      (do match ← evalExpr p f ((binder, x) :: env) body with
+          | .bool true => do .ok (x :: (← evalFilterItems p f env binder body rest))
+          | .bool false => evalFilterItems p f env binder body rest
+          | _ => .error (.typeError "filter expects a Bool predicate")) := by
+  rw [evalFilterItems.eq_def]
+
+theorem evalReduceItems_nil (p : Program) (f : Nat) (env : Env) (accName elemName : String)
+    (body : Expr) (acc : Value) :
+    evalReduceItems p f env accName elemName body acc [] = .ok acc := by
+  rw [evalReduceItems.eq_def]
+
+theorem evalReduceItems_cons (p : Program) (f : Nat) (env : Env) (accName elemName : String)
+    (body : Expr) (acc x : Value) (rest : List Value) :
+    evalReduceItems p f env accName elemName body acc (x :: rest) =
+      (do
+        let next ← evalExpr p f ((elemName, x) :: (accName, acc) :: env) body
+        evalReduceItems p f env accName elemName body next rest) := by
+  rw [evalReduceItems.eq_def]
+
 /-- Enters the body of an exported function once the entry checks are known to pass. Stating a theorem
 about a declaration otherwise means unfolding the whole program at the call, which puts every other
 declaration in front of the tactic. -/

@@ -60,12 +60,10 @@ def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
   | .array t => .array (Ty.subst sigma t)
   | .dict v => .dict (Ty.subst sigma v)
   | ty => ty
-termination_by t => sizeOf t
 
 def Ty.substArgs (sigma : List (String × Ty)) : List Ty → List Ty
   | [] => []
   | t :: rest => Ty.subst sigma t :: Ty.substArgs sigma rest
-termination_by ts => sizeOf ts
 
 end
 

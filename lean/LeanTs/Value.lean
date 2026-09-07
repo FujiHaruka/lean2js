@@ -148,4 +148,92 @@ termination_by entries => sizeOf entries
 
 end
 
+/-! ### Reading the entry check
+
+The check a public function runs on its arguments is stated over `Value.hasTy`, which is defined by
+well-founded recursion and so does not reduce on its own. One lemma per shape lets a proof about a
+declaration discharge the check without unfolding the type machinery by hand. -/
+
+theorem hasTy_bool (p : Program) (b : Bool) : Value.hasTy p (.bool b) .bool = true := by
+  rw [Value.hasTy.eq_def]
+
+theorem hasTy_uint32 (p : Program) (n : UInt32) : Value.hasTy p (.uint32 n) .uint32 = true := by
+  rw [Value.hasTy.eq_def]
+
+theorem hasTy_str (p : Program) (s : String) : Value.hasTy p (.str s) .string = true := by
+  rw [Value.hasTy.eq_def]
+
+theorem hasTy_bigint (p : Program) (i : Int) : Value.hasTy p (.bigint i) .bigint = true := by
+  rw [Value.hasTy.eq_def]
+
+theorem hasTy_int53 (p : Program) (i : Int) :
+    Value.hasTy p (.int53 i) .int53 = (decide (int53Min ≤ i) && decide (i ≤ int53Max)) := by
+  rw [Value.hasTy.eq_def]
+
+theorem hasTy_named (p : Program) (ctor : String) (fields : List (String × Value))
+    (n : String) (args : List Ty) (t : TypeDef) (c : CtorDef)
+    (ht : p.findType? n = some t) (hc : t.findAt? args ctor = some c) :
+    Value.hasTy p (.obj ctor fields) (.named n args)
+      = Value.hasFieldTys p fields (c.fields.map fun f => (f.name, f.ty)) := by
+  rw [Value.hasTy.eq_def]
+  simp [ht, hc]
+
+theorem hasTy_none (p : Program) (elem : Ty) :
+    Value.hasTy p (.obj "none" []) (.option elem) = true := by
+  rw [Value.hasTy.eq_def]
+  simp
+
+theorem hasTy_some (p : Program) (fields : List (String × Value)) (elem : Ty) :
+    Value.hasTy p (.obj "some" fields) (.option elem)
+      = Value.hasFieldTys p fields [("value", elem)] := by
+  rw [Value.hasTy.eq_def]
+  simp
+
+theorem hasTy_ok (p : Program) (fields : List (String × Value)) (ok err : Ty) :
+    Value.hasTy p (.obj "ok" fields) (.result ok err)
+      = Value.hasFieldTys p fields [("value", ok)] := by
+  rw [Value.hasTy.eq_def]
+  simp
+
+theorem hasTy_error (p : Program) (fields : List (String × Value)) (ok err : Ty) :
+    Value.hasTy p (.obj "error" fields) (.result ok err)
+      = Value.hasFieldTys p fields [("error", err)] := by
+  rw [Value.hasTy.eq_def]
+  simp
+
+theorem hasTy_array (p : Program) (xs : List Value) (elem : Ty) :
+    Value.hasTy p (.arr xs) (.array elem) = Value.hasElemTy p xs elem := by
+  rw [Value.hasTy.eq_def]
+
+theorem hasTy_dict (p : Program) (entries : List (String × Value)) (elem : Ty) :
+    Value.hasTy p (.dict entries) (.dict elem)
+      = (keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem) := by
+  rw [Value.hasTy.eq_def]
+
+theorem hasFieldTys_nil (p : Program) : Value.hasFieldTys p [] [] = true := by
+  rw [Value.hasFieldTys.eq_def]
+
+theorem hasFieldTys_cons (p : Program) (key : String) (value : Value)
+    (rest : List (String × Value)) (name : String) (ty : Ty) (tys : List (String × Ty)) :
+    Value.hasFieldTys p ((key, value) :: rest) ((name, ty) :: tys)
+      = (key == name && Value.hasTy p value ty && Value.hasFieldTys p rest tys) := by
+  rw [Value.hasFieldTys.eq_def]
+
+theorem hasElemTy_nil (p : Program) (elem : Ty) : Value.hasElemTy p [] elem = true := by
+  rw [Value.hasElemTy.eq_def]
+
+theorem hasElemTy_cons (p : Program) (x : Value) (rest : List Value) (elem : Ty) :
+    Value.hasElemTy p (x :: rest) elem
+      = (Value.hasTy p x elem && Value.hasElemTy p rest elem) := by
+  rw [Value.hasElemTy.eq_def]
+
+theorem hasEntryTys_nil (p : Program) (elem : Ty) : Value.hasEntryTys p [] elem = true := by
+  rw [Value.hasEntryTys.eq_def]
+
+theorem hasEntryTys_cons (p : Program) (key : String) (v : Value)
+    (rest : List (String × Value)) (elem : Ty) :
+    Value.hasEntryTys p ((key, v) :: rest) elem
+      = (Value.hasTy p v elem && Value.hasEntryTys p rest elem) := by
+  rw [Value.hasEntryTys.eq_def]
+
 end LeanTs

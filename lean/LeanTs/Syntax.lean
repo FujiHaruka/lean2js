@@ -102,12 +102,10 @@ def bindVars (params : List String) : Ty → Ty
   | .array t => .array (bindVars params t)
   | .dict v => .dict (bindVars params v)
   | ty => ty
-termination_by t => sizeOf t
 
 def bindVarsArgs (params : List String) : List Ty → List Ty
   | [] => []
   | t :: rest => bindVars params t :: bindVarsArgs params rest
-termination_by ts => sizeOf ts
 
 end
 

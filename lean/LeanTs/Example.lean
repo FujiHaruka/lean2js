@@ -323,18 +323,23 @@ private theorem findType_OrderState : program.findType? "OrderState" = some Orde
 
 private theorem findType_Money : program.findType? "Money" = some Money := rfl
 
+private theorem findAt_draft : OrderState.findAt? [] "draft" = some ⟨"draft", []⟩ := rfl
+
+private theorem ctor_Money :
+    Money.find? "Money" = some ⟨"Money", [⟨"amount", .int53⟩, ⟨"currency", .string⟩]⟩ := rfl
+
+private theorem findAt_Money :
+    Money.findAt? [] "Money" = some ⟨"Money", [⟨"amount", .int53⟩, ⟨"currency", .string⟩]⟩ := rfl
+
 /-- An amount of money as it crosses the boundary. -/
 def money (amount : Int) (currency : String) : Value :=
   .obj "Money" [("amount", .int53 amount), ("currency", .str currency)]
-
-private theorem findAt_draft :
-    OrderState.findAt? [] "draft" = some { name := "draft", fields := [] } := rfl
 
 theorem draft_never_ships (trackingId : String) :
     evalCall program "ship" [.obj "draft" [], .str trackingId]
       = .ok (.obj "error" [("error", .str "a draft order cannot ship")]) := by
   rw [evalCall_eq find_ship rfl
-    (by simp [ship, Value.hasTy, Value.hasFieldTys, findType_OrderState, findAt_draft]),
+    (by simp [ship, hasTy_named, findType_OrderState, findAt_draft, hasFieldTys_nil, hasTy_str]),
     defaultFuel_succ]
   simp [ship, bindParams, evalExpr_matchE, evalExpr_var, evalExpr_errorE, evalExpr_lit,
     Env.lookup?, firstMatch, matchPat, matchPats, litValue, Alt.pat, Alt.body, bind, Except.bind]
@@ -346,8 +351,9 @@ theorem clamped_quantity_in_range (quantity : Int)
   simp only [int53Min, int53Max] at hlo hhi
   rw [evalCall_eq find_clampQuantity rfl
     (by
-      simp [clampQuantity, Value.hasTy, int53Min, int53Max]
-      exact ⟨decide_eq_true hlo, decide_eq_true hhi⟩),
+      simp [clampQuantity, hasTy_int53, int53Min, int53Max]
+      repeat' apply And.intro
+      all_goals exact decide_eq_true (by omega)),
     defaultFuel_succ]
   simp [clampQuantity, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_lit,
     Env.lookup?, litValue, applyBin, compareValues, compareValues.orderBy, bind, Except.bind]
@@ -375,8 +381,8 @@ theorem same_currency_adds (x y : Int) (currency : String)
   simp only [int53Min, int53Max] at hxlo hxhi hylo hyhi hslo hshi
   rw [evalCall_eq find_addMoney rfl
     (by
-      simp [addMoney, money, Value.hasTy, Value.hasFieldTys, findType_Money, Money, typeDef,
-        TypeDef.findAt?, TypeDef.ctorsAt, Ty.subst, bindVars, int53Min, int53Max]
+      simp [addMoney, money, hasTy_named, findType_Money, findAt_Money, hasFieldTys_cons,
+        hasFieldTys_nil, hasTy_int53, hasTy_str, int53Min, int53Max]
       repeat' apply And.intro
       all_goals exact decide_eq_true (by omega)),
     defaultFuel_succ]
@@ -389,8 +395,8 @@ theorem same_currency_adds (x y : Int) (currency : String)
   have hne : (Value.str currency != Value.str currency) = false := by
     simp [bne, hbeq]
   simp [addMoney, money, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_proj,
-    evalExpr_okE, evalExpr_ctor, evalArgs, Env.lookup?, applyBin, applyArith, mkInt53, hne,
-    findType_Money, Money, typeDef, TypeDef.find?, hno, bind, Except.bind]
+    evalExpr_okE, evalExpr_ctor, evalArgs_nil, evalArgs_cons, Env.lookup?, applyBin, applyArith,
+    mkInt53, hne, findType_Money, ctor_Money, hno, bind, Except.bind]
 
 def manifest : Manifest := {
   package := "@leants/verified-example"
