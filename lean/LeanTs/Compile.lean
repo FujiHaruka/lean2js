@@ -105,14 +105,14 @@ private def strBinResult : StrBinOp → Ty
   | .startsWith | .endsWith | .includes => .bool
   | .split => .array .string
 
-private def orderSymbol : BinOp → Option String
+def orderSymbol : BinOp → Option String
   | .lt => some "<"
   | .le => some "<="
   | .gt => some ">"
   | .ge => some ">="
   | _ => none
 
-private def isOrdered : Ty → Bool
+def isOrdered : Ty → Bool
   | .int53 | .uint32 | .bigint | .string => true
   | _ => false
 

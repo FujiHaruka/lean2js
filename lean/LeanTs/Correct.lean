@@ -12,13 +12,6 @@ fragment, `Agree.checkAgreement` checks agreement at run time against the shippe
 
 ## Why the fragment stops here
 
-Comparison and equality are what comes next, and each rests on a lemma that unfolding does not give.
-
-Comparison branches on the operand type, and two branches leave a gap. On `String` the generated code
-compares lists of code points while `eval` goes through Lean's `Ord String`, and that the two agree is
-not `rfl`. On `UInt32` `eval` compares `Nat` where the model compares `Int`, which `omega` does not
-bridge.
-
 Equality has to be stated at a type. "Encoding preserves equality" is false without one: `Int53 0` and
 `UInt32 0` are different values that both encode to `.num 0`, so an induction on the structure of values
 cannot close it.
@@ -44,6 +37,10 @@ inductive CoveredOp : BinOp → Prop where
   | mul : CoveredOp .mul
   | div : CoveredOp .div
   | mod : CoveredOp .mod
+  | lt : CoveredOp .lt
+  | le : CoveredOp .le
+  | gt : CoveredOp .gt
+  | ge : CoveredOp .ge
 
 /-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
@@ -435,6 +432,95 @@ theorem helper_max_num (a b : Int) :
 
 theorem helper_max_big (a b : Int) :
     Js.helper "__max" [.bigint a, .bigint b] = some (.ok (.bigint (if a ≤ b then b else a))) := rfl
+
+/-- Lean orders `String` through `String.lt`, the generated code's `__strcmp` through code points.
+Neither reduces to the other, so both are taken to `List.compareLex` on the characters. -/
+private theorem compareOfLessAndEq_chars : ∀ l₁ l₂ : List Char,
+    compareOfLessAndEq l₁ l₂ = List.compareLex compare l₁ l₂
+  | [], [] => by simp [compareOfLessAndEq, List.compareLex]
+  | [], _ :: _ => by simp [compareOfLessAndEq, List.compareLex]
+  | _ :: _, [] => by simp [compareOfLessAndEq, List.compareLex]
+  | x :: xs, y :: ys => by
+    have ih := compareOfLessAndEq_chars xs ys
+    rw [List.compareLex_cons_cons, show (compare x y) = compareOfLessAndEq x y from rfl]
+    by_cases hlt : x < y
+    · simp [compareOfLessAndEq, hlt, List.cons_lt_cons_iff]
+    · by_cases heq : x = y
+      · subst heq
+        simp only [compareOfLessAndEq, hlt, if_false, if_true, List.cons_lt_cons_iff,
+          List.cons.injEq, true_and, false_or, Ordering.then]
+        exact ih
+      · simp [compareOfLessAndEq, hlt, heq, List.cons_lt_cons_iff, List.cons.injEq]
+
+theorem string_compare_toList (a b : String) : compare a b = compare a.toList b.toList := by
+  rw [show (compare a b) = compareOfLessAndEq a b from rfl,
+    show (compare a.toList b.toList) = List.compareLex compare a.toList b.toList from rfl,
+    ← compareOfLessAndEq_chars]
+  simp only [compareOfLessAndEq, String.toList_inj]
+  rfl
+
+theorem helper_strcmp (a b : String) :
+    Js.helper "__strcmp" [.str a, .str b] = some (.ok (.num (Js.Runtime.strcmp a b))) := rfl
+
+theorem strcmp_compare (a b : String) :
+    compare (Js.Runtime.strcmp a b) (0 : Int) = compare a b := by
+  rw [string_compare_toList]
+  unfold Js.Runtime.strcmp
+  generalize compare a.toList b.toList = o
+  cases o <;> rfl
+
+theorem u32_compare (m n : Nat) : compare (m : Int) (n : Int) = compare m n := by
+  simp only [compare, compareOfLessAndEq, Int.ofNat_lt, Int.natCast_inj]
+
+theorem eval_binary_lt (m : Js.Module) (g : Nat) (env : Js.JsEnv) (jl jr : Js.Expr) :
+    Js.eval m (g + 1) env (.binary "<" jl jr) =
+      (do
+        let a ← Js.eval m g env jl
+        let b ← Js.eval m g env jr
+        Js.arith "<" a b) := by
+  rw [Js.eval.eq_def]
+  rfl
+
+theorem eval_binary_le (m : Js.Module) (g : Nat) (env : Js.JsEnv) (jl jr : Js.Expr) :
+    Js.eval m (g + 1) env (.binary "<=" jl jr) =
+      (do
+        let a ← Js.eval m g env jl
+        let b ← Js.eval m g env jr
+        Js.arith "<=" a b) := by
+  rw [Js.eval.eq_def]
+  rfl
+
+theorem eval_binary_gt (m : Js.Module) (g : Nat) (env : Js.JsEnv) (jl jr : Js.Expr) :
+    Js.eval m (g + 1) env (.binary ">" jl jr) =
+      (do
+        let a ← Js.eval m g env jl
+        let b ← Js.eval m g env jr
+        Js.arith ">" a b) := by
+  rw [Js.eval.eq_def]
+  rfl
+
+theorem eval_binary_ge (m : Js.Module) (g : Nat) (env : Js.JsEnv) (jl jr : Js.Expr) :
+    Js.eval m (g + 1) env (.binary ">=" jl jr) =
+      (do
+        let a ← Js.eval m g env jl
+        let b ← Js.eval m g env jr
+        Js.arith ">=" a b) := by
+  rw [Js.eval.eq_def]
+  rfl
+
+theorem arith_lt (x y : Js.JsValue) : Js.arith "<" x y = Js.arith.order x y (· == .lt) := rfl
+
+theorem arith_le (x y : Js.JsValue) : Js.arith "<=" x y = Js.arith.order x y (· != .gt) := rfl
+
+theorem arith_gt (x y : Js.JsValue) : Js.arith ">" x y = Js.arith.order x y (· == .gt) := rfl
+
+theorem arith_ge (x y : Js.JsValue) : Js.arith ">=" x y = Js.arith.order x y (· != .lt) := rfl
+
+theorem order_num (x y : Int) (keep : Ordering → Bool) :
+    Js.arith.order (.num x) (.num y) keep = .ok (.bool (keep (compare x y))) := rfl
+
+theorem order_big (x y : Int) (keep : Ordering → Bool) :
+    Js.arith.order (.bigint x) (.bigint y) keep = .ok (.bool (keep (compare x y))) := rfl
 
 theorem cond_true {m : Js.Module} {env : Js.JsEnv} {jc jt jel : Js.Expr} {v : Js.JsValue}
     (h1 : Eventually m env jc (.bool true)) (h2 : Eventually m env jt v) :
@@ -1371,4 +1457,348 @@ theorem fragment_correct (p : Program) (m : Js.Module)
             (by simpa [encodeValue] using hre) ?_
           rw [helper_bigmod]
           simp only [Js.Runtime.bigmod, if_neg hy0, encodeValue]
+
+      | lt =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        simp only [Compile.orderSymbol] at hc
+        split at hc
+        · simp at hc
+        rename_i hord
+        split at hc
+        · rename_i hstr
+          have htls : tl = Ty.string := Ty.eq_of_beq hstr
+          subst htls
+          obtain ⟨x, hx⟩ := hasTy_string_inv hat
+          obtain ⟨y, hy⟩ := hasTy_string_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+          subst he
+          refine eventually_binary (fun g => eval_binary_lt m g _ _ _)
+            (eventually_call2 (by simpa [encodeValue] using hle)
+              (by simpa [encodeValue] using hre) (helper_strcmp x y))
+            (eventually_num m _ 0) ?_
+          rw [arith_lt, order_num, strcmp_compare]
+          simp only [encodeValue]
+        · rename_i hstr
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          cases tl <;>
+            first
+              | (exfalso; exact hord rfl)
+              | (exfalso; exact hstr rfl)
+              | skip
+          · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+            obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_lt m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_lt, order_num]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+            obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_lt m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_lt, order_num, u32_compare]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+            obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_lt m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_lt, order_big]
+            simp only [encodeValue]
+
+      | le =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        simp only [Compile.orderSymbol] at hc
+        split at hc
+        · simp at hc
+        rename_i hord
+        split at hc
+        · rename_i hstr
+          have htls : tl = Ty.string := Ty.eq_of_beq hstr
+          subst htls
+          obtain ⟨x, hx⟩ := hasTy_string_inv hat
+          obtain ⟨y, hy⟩ := hasTy_string_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+          subst he
+          refine eventually_binary (fun g => eval_binary_le m g _ _ _)
+            (eventually_call2 (by simpa [encodeValue] using hle)
+              (by simpa [encodeValue] using hre) (helper_strcmp x y))
+            (eventually_num m _ 0) ?_
+          rw [arith_le, order_num, strcmp_compare]
+          simp only [encodeValue]
+        · rename_i hstr
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          cases tl <;>
+            first
+              | (exfalso; exact hord rfl)
+              | (exfalso; exact hstr rfl)
+              | skip
+          · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+            obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_le m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_le, order_num]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+            obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_le m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_le, order_num, u32_compare]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+            obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_le m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_le, order_big]
+            simp only [encodeValue]
+
+      | gt =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        simp only [Compile.orderSymbol] at hc
+        split at hc
+        · simp at hc
+        rename_i hord
+        split at hc
+        · rename_i hstr
+          have htls : tl = Ty.string := Ty.eq_of_beq hstr
+          subst htls
+          obtain ⟨x, hx⟩ := hasTy_string_inv hat
+          obtain ⟨y, hy⟩ := hasTy_string_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+          subst he
+          refine eventually_binary (fun g => eval_binary_gt m g _ _ _)
+            (eventually_call2 (by simpa [encodeValue] using hle)
+              (by simpa [encodeValue] using hre) (helper_strcmp x y))
+            (eventually_num m _ 0) ?_
+          rw [arith_gt, order_num, strcmp_compare]
+          simp only [encodeValue]
+        · rename_i hstr
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          cases tl <;>
+            first
+              | (exfalso; exact hord rfl)
+              | (exfalso; exact hstr rfl)
+              | skip
+          · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+            obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_gt m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_gt, order_num]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+            obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_gt m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_gt, order_num, u32_compare]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+            obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_gt m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_gt, order_big]
+            simp only [encodeValue]
+
+      | ge =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i lPair hcl
+        obtain ⟨jl, tl⟩ := lPair
+        split at hc
+        · simp at hc
+        rename_i rPair hcr
+        obtain ⟨jr, tr⟩ := rPair
+        split at hc
+        · simp at hc
+        rename_i hsame
+        have htlr : tl = tr := Ty.eq_of_not_bne hsame
+        subst htlr
+        rw [evalExpr_bin _ _ _ _ _ _ (by simp) (by simp)] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · simp at he
+        rename_i av hav
+        split at he
+        · simp at he
+        rename_i bv hbv
+        have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+        have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+        have hle := ihl henv hcl hav
+        have hre := ihr henv hcr hbv
+        simp only [Compile.orderSymbol] at hc
+        split at hc
+        · simp at hc
+        rename_i hord
+        split at hc
+        · rename_i hstr
+          have htls : tl = Ty.string := Ty.eq_of_beq hstr
+          subst htls
+          obtain ⟨x, hx⟩ := hasTy_string_inv hat
+          obtain ⟨y, hy⟩ := hasTy_string_inv hbt
+          subst hx; subst hy
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+          subst he
+          refine eventually_binary (fun g => eval_binary_ge m g _ _ _)
+            (eventually_call2 (by simpa [encodeValue] using hle)
+              (by simpa [encodeValue] using hre) (helper_strcmp x y))
+            (eventually_num m _ 0) ?_
+          rw [arith_ge, order_num, strcmp_compare]
+          simp only [encodeValue]
+        · rename_i hstr
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          cases tl <;>
+            first
+              | (exfalso; exact hord rfl)
+              | (exfalso; exact hstr rfl)
+              | skip
+          · obtain ⟨x, hx⟩ := hasTy_int53_inv hat
+            obtain ⟨y, hy⟩ := hasTy_int53_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_ge m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_ge, order_num]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_uint32_inv hat
+            obtain ⟨y, hy⟩ := hasTy_uint32_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_ge m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_ge, order_num, u32_compare]
+            simp only [encodeValue]
+          · obtain ⟨x, hx⟩ := hasTy_bigint_inv hat
+            obtain ⟨y, hy⟩ := hasTy_bigint_inv hbt
+            subst hx; subst hy
+            simp only [applyBin, compareValues, compareValues.orderBy, Except.ok.injEq] at he
+            subst he
+            refine eventually_binary (fun g => eval_binary_ge m g _ jl jr)
+              (by simpa [encodeValue] using hle) (by simpa [encodeValue] using hre) ?_
+            rw [arith_ge, order_big]
+            simp only [encodeValue]
 end LeanTs.Correct
