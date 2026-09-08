@@ -57,6 +57,9 @@ inductive TypeChecked : Expr → Prop where
   | arraySlice {arr lo hi : Expr} :
       TypeChecked arr → TypeChecked lo → TypeChecked hi → TypeChecked (.arraySlice arr lo hi)
   | arrayReverse {arr : Expr} : TypeChecked arr → TypeChecked (.arrayReverse arr)
+  | ctor (typeName : String) (tyArgs : List Ty) (ctorName : String) {args : List Expr} :
+      (∀ e ∈ args, TypeChecked e) → TypeChecked (.ctor typeName tyArgs ctorName args)
+  | proj {e : Expr} (field : String) : TypeChecked e → TypeChecked (.proj e field)
 
 mutual
 
@@ -514,6 +517,51 @@ private theorem compileExpr_bin_inv {p : Program} {ctx : Compile.Ctx} {op : BinO
       | (exfalso; simp at hc; done)
       | (simp only [Except.ok.injEq, Prod.mk.injEq] at hc; simp_all [binResultTy])
 
+/-- The constructors a use of the type at `args` sees are the declared ones with their field types
+substituted, so a lookup by name lands on the same constructor either way. -/
+theorem findAt?_eq (t : TypeDef) (args : List Ty) (ctor : String) :
+    t.findAt? args ctor
+      = (t.find? ctor).map fun c =>
+          { c with fields := c.fields.map fun f => { f with ty := f.ty.subst (t.params.zip args) } } := by
+  simp only [TypeDef.findAt?, TypeDef.ctorsAt, TypeDef.find?, List.find?_map, Function.comp_def]
+
+theorem hasFieldTys_find {p : Program} :
+    ∀ (fields : List (String × Value)) (tys : List (String × Ty)) (k : String) (v : Value) (t : Ty),
+      Value.hasFieldTys p fields tys = true →
+      (fields.find? (·.1 == k)).map (·.2) = some v →
+      (tys.find? (·.1 == k)).map (·.2) = some t →
+      Value.hasTy p v t = true := by
+  intro fields
+  induction fields with
+  | nil => intro _ _ _ _ _ hf _; simp at hf
+  | cons field rest ih =>
+    intro tys k v t h hf ht
+    obtain ⟨key, value⟩ := field
+    cases tys with
+    | nil => simp [Value.hasFieldTys] at h
+    | cons ty tys' =>
+      obtain ⟨name, tv⟩ := ty
+      rw [hasFieldTys_cons] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨hkey, hval⟩, hrest⟩ := h
+      have hkn : key = name := beq_iff_eq.mp hkey
+      subst hkn
+      simp only [List.find?_cons] at hf ht
+      cases hk : key == k with
+      | true =>
+        rw [hk] at hf ht
+        simp only [Option.map_some, Option.some.injEq] at hf ht
+        exact hf ▸ ht ▸ hval
+      | false =>
+        rw [hk] at hf ht
+        exact ih tys' k v t hrest hf ht
+
+theorem find?_field_ty {fields : List Field} {field : String} {f : Field}
+    (h : fields.find? (·.name == field) = some f) :
+    ((fields.map fun g => (g.name, g.ty)).find? (·.1 == field)).map (·.2) = some f.ty := by
+  rw [List.find?_map]
+  simp [Function.comp_def, h]
+
 /-- The array reads: what the compiler must have concluded about the operand for it to have emitted
 anything at all. -/
 private theorem compileExpr_index_inv {p : Program} {ctx : Compile.Ctx} {arr idx : Expr}
@@ -570,6 +618,115 @@ private theorem compileExpr_arrayReverse_inv {p : Program} {ctx : Compile.Ctx} {
   · rename_i elem hta
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, elem, hta ▸ hca, hc.2.symm⟩
+  · simp at hc
+
+/-- The fields of a constructor, carrying the induction hypothesis of `typeSound` along the arguments. -/
+private theorem hasFieldTys_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+    (ih : ∀ (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value), TypeChecked e →
+      Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .ok v →
+      Value.hasTy p v ty = true) :
+    ∀ (args : List Expr) (js : List (Js.Expr × Ty)) (vs : List Value) (fields : List Field),
+      (∀ e ∈ args, TypeChecked e) →
+      Compile.compileArgs p ctx args = .ok js →
+      evalArgs p f env args = .ok vs →
+      ((fields.zip js).all fun x => x.1.ty == x.2.2) = true →
+      fields.length = js.length →
+      Value.hasFieldTys p ((fields.map (·.name)).zip vs)
+        (fields.map fun g => (g.name, g.ty)) = true := by
+  intro args
+  induction args with
+  | nil =>
+    intro js vs fields _ hcs hes _ hlen
+    rw [Compile.compileArgs] at hcs
+    rw [evalArgs_nil] at hes
+    simp only [Except.ok.injEq] at hcs hes
+    subst hcs; subst hes
+    match fields with
+    | [] => exact hasFieldTys_nil p
+    | g :: gs => simp at hlen
+  | cons arg rest ihr =>
+    intro js vs fields hchk hcs hes hall hlen
+    rw [Compile.compileArgs] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i v hv
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    match fields with
+    | [] => simp at hlen
+    | g :: gs =>
+      simp only [List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at hall
+      simp only [List.map_cons, List.zip_cons_cons, hasFieldTys_cons, Bool.and_eq_true]
+      refine ⟨⟨beq_self_eq_true _, Ty.eq_of_beq hall.1 ▸ ih arg jh th v (hchk arg (by simp)) hchead hv⟩,
+        ihr tail vs' gs (fun e he => hchk e (by simp [he])) hctail hvs hall.2 (by simpa using hlen)⟩
+
+private theorem compileExpr_ctor_inv {p : Program} {ctx : Compile.Ctx}
+    {typeName ctorName : String} {tyArgs : List Ty} {args : List Expr} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.ctor typeName tyArgs ctorName args) = .ok (je, ty)) :
+    ∃ t c js, p.findType? typeName = some t ∧ t.findAt? tyArgs ctorName = some c
+      ∧ Compile.compileArgs p ctx args = .ok js
+      ∧ c.fields.length = js.length
+      ∧ ((c.fields.zip js).all fun x => x.1.ty == x.2.2) = true
+      ∧ ty = .named typeName tyArgs := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i t ht
+  split at hc
+  · simp at hc
+  rename_i c hcc
+  split at hc
+  · simp at hc
+  rename_i js hcs
+  split at hc
+  · simp at hc
+  rename_i hlen
+  split at hc
+  · simp at hc
+  rename_i hall
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+  exact ⟨t, c, js, ht, hcc, hcs, by simpa using hlen, by simpa using hall, hc.2.symm⟩
+
+private theorem compileExpr_proj_inv {p : Program} {ctx : Compile.Ctx} {e : Expr} {field : String}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.proj e field) = .ok (je, ty)) :
+    ∃ jx n targs t c f, Compile.compileExpr p ctx e = .ok (jx, .named n targs)
+      ∧ p.findType? n = some t ∧ t.ctorsAt targs = [c]
+      ∧ c.fields.find? (·.name == field) = some f ∧ ty = f.ty := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i xPair hcx
+  obtain ⟨jx, tx⟩ := xPair
+  split at hc
+  · rename_i n targs htx
+    split at hc
+    · simp at hc
+    rename_i t ht
+    split at hc
+    · rename_i c hctors
+      split at hc
+      · rename_i f hf
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+        exact ⟨jx, n, targs, t, c, f, htx ▸ hcx, ht, hctors, hf, hc.2.symm⟩
+      · simp at hc
+    · simp at hc
   · simp at hc
 
 /-- The list of an array literal, carrying the induction hypothesis of `typeSound` along the items. -/
@@ -1020,6 +1177,71 @@ theorem typeSound (p : Program) :
       split at he
       · simp at he
       exact sliceArr_hasTy (ih ctx env arrE jarr (.array elem) av harr henv hca hav) he
+    | ctor typeName tyArgs ctorName hargs =>
+      rename_i args
+      obtain ⟨t, c', js, ht, hc', hcs, hlen, hall, hty⟩ := compileExpr_ctor_inv hc
+      subst hty
+      rw [evalExpr_ctor] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vs hvs
+      split at he
+      · simp at he
+      rename_i t2 ht2
+      rw [ht] at ht2
+      injection ht2 with ht2
+      subst ht2
+      split at he
+      · simp at he
+      rename_i c hcf
+      have hfa : t.findAt? tyArgs ctorName = some c' := hc'
+      rw [findAt?_eq, hcf] at hc'
+      simp only [Option.map_some, Option.some.injEq] at hc'
+      split at he
+      · simp at he
+      simp only [Except.ok.injEq] at he
+      subst he
+      rw [hasTy_named p ctorName _ typeName tyArgs t c' ht hfa]
+      have hnames : c.fields.map (·.name) = c'.fields.map (·.name) := by
+        rw [← hc']; simp
+      rw [hnames]
+      exact hasFieldTys_of_args (fun e je t w hchk' => ih ctx env e je t w hchk' henv)
+        args js vs c'.fields hargs hcs hvs hall hlen
+    | proj field hx =>
+      rename_i xE
+      obtain ⟨jx, n, targs, t, c, f, hcx, ht, hctors, hf, hty⟩ := compileExpr_proj_inv hc
+      subst hty
+      rw [evalExpr_proj] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env xE jx (.named n targs) av hx henv hcx hav
+      obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hat
+      obtain ⟨t', c'', ht', hc'', hfields⟩ := hasTy_named_fields hat
+      rw [ht] at ht'
+      injection ht' with ht'
+      subst ht'
+      rw [TypeDef.findAt?, hctors] at hc''
+      simp only [List.find?_cons, List.find?_nil] at hc''
+      split at hc''
+      · simp only [Option.some.injEq] at hc''
+        subst hc''
+        split at he
+        · rename_i ctor' fields' hobj
+          injection hobj with hctor hfld
+          subst hctor
+          subst hfld
+          split at he
+          · rename_i v' hv'
+            simp only [Except.ok.injEq] at he
+            subst he
+            exact hasFieldTys_find _ _ field v' f.ty hfields hv' (find?_field_ty hf)
+          · simp at he
+        · rename_i hne
+          exact (hne ctor fields rfl).elim
+      · simp at hc''
     | arrayReverse harr =>
       rename_i arrE
       obtain ⟨jarr, elem, hca, hty⟩ := compileExpr_arrayReverse_inv hc
