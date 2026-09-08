@@ -13,6 +13,7 @@ import LeanTs.Syntax
 import LeanTs.Ident
 import LeanTs.Parse
 import LeanTs.Roundtrip
+import LeanTs.Renderable
 import LeanTs.JsSem
 import LeanTs.Agree
 import LeanTs.Exhaustive
