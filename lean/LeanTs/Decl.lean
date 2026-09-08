@@ -1148,22 +1148,10 @@ theorem compileBody_correct (m : Js.Module) (p : Program) {e : Expr} (hfrag : In
       intro g' hge
       rw [evalStmts_const m g' jenv name jv _ innerB (hgV g' (by omega))]
       exact hgB g' (by omega)
-  | lit l =>
+  | _ =>
     intro ctx env jenv acc stmts ty f v hc henv hjenv he
-    exact compileBody_finish m p (.lit l) (by rwa [compileBody.eq_def] at hc) henv hjenv he
-  | var n =>
-    intro ctx env jenv acc stmts ty f v hc henv hjenv he
-    exact compileBody_finish m p (.var n) (by rwa [compileBody.eq_def] at hc) henv hjenv he
-  | @cond c t' e' hc' ht' he' _ _ _ =>
-    intro ctx env jenv acc stmts ty f v hc henv hjenv he
-    exact compileBody_finish m p (.cond hc' ht' he') (by rwa [compileBody.eq_def] at hc)
-      henv hjenv he
-  | @un op x hx _ =>
-    intro ctx env jenv acc stmts ty f v hc henv hjenv he
-    exact compileBody_finish m p (.un hx) (by rwa [compileBody.eq_def] at hc) henv hjenv he
-  | @bin op l r hl hr _ _ =>
-    intro ctx env jenv acc stmts ty f v hc henv hjenv he
-    exact compileBody_finish m p (.bin hl hr) (by rwa [compileBody.eq_def] at hc) henv hjenv he
+    exact compileBody_finish m p (by constructor <;> assumption)
+      (by rwa [compileBody.eq_def] at hc) henv hjenv he
 
 /-! ### The body throws
 
@@ -1206,13 +1194,9 @@ theorem compileBody_shape (p : Program) {e : Expr} (hfrag : InFragment e) :
     · exact (errNeOk hc).elim
     obtain ⟨innerB, hshape⟩ := ihb hc
     exact ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape⟩
-  | lit l => intro ctx acc stmts ty hc; exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
-  | var n => intro ctx acc stmts ty hc; exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
-  | cond _ _ _ _ _ _ =>
-    intro ctx acc stmts ty hc; exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
-  | un _ _ => intro ctx acc stmts ty hc; exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
-  | bin _ _ _ _ =>
-    intro ctx acc stmts ty hc; exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
+  | _ =>
+    intro ctx acc stmts ty hc
+    exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
 
 theorem compileBody_finish_traps (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFragment e)
     {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
@@ -1279,26 +1263,10 @@ theorem compileBody_traps (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFr
       intro g' hge
       rw [evalStmts_const m g' jenv name jv _ innerB (hgV g' (by omega))]
       exact hgB g' (by omega)
-  | lit l =>
+  | _ =>
     intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
-    exact compileBody_finish_traps m p (.lit l) (by rwa [compileBody.eq_def] at hc)
-      henv hcov hjenv he hne
-  | var n =>
-    intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
-    exact compileBody_finish_traps m p (.var n) (by rwa [compileBody.eq_def] at hc)
-      henv hcov hjenv he hne
-  | @cond c t' e' hc' ht' he' _ _ _ =>
-    intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
-    exact compileBody_finish_traps m p (.cond hc' ht' he') (by rwa [compileBody.eq_def] at hc)
-      henv hcov hjenv he hne
-  | @un op x hx _ =>
-    intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
-    exact compileBody_finish_traps m p (.un hx) (by rwa [compileBody.eq_def] at hc)
-      henv hcov hjenv he hne
-  | @bin op l r hl hr _ _ =>
-    intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
-    exact compileBody_finish_traps m p (.bin hl hr) (by rwa [compileBody.eq_def] at hc)
-      henv hcov hjenv he hne
+    exact compileBody_finish_traps m p (by constructor <;> assumption)
+      (by rwa [compileBody.eq_def] at hc) henv hcov hjenv he hne
 
 /-! ## Two programs, one declaration
 
@@ -1411,6 +1379,22 @@ theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Exp
     intro ctx
     rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
     simp only [ihl ctx, ihr ctx]
+  | noneE elem =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [wfTy_types_irrel h [] elem]
+  | someE _ ihx =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihx ctx]
+  | @okE err _ _ ihx =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [wfTy_types_irrel h [] err, ihx ctx]
+  | @errorE ok _ _ ihx =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [wfTy_types_irrel h [] ok, ihx ctx]
 
 theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
     (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :
@@ -1426,26 +1410,10 @@ theorem compileBody_types_irrel {p q : Program} (h : q.types = p.types) {e : Exp
     rw [compileBody.eq_def, compileBody.eq_def]
     simp only [compileFinish_types_irrel h (.letE hval hbody) ctx acc,
       compileExpr_types_irrel h hval ctx, ihb]
-  | lit l =>
+  | _ =>
     intro ctx acc
     rw [compileBody.eq_def, compileBody.eq_def]
-    exact compileFinish_types_irrel h (.lit l) ctx acc
-  | var n =>
-    intro ctx acc
-    rw [compileBody.eq_def, compileBody.eq_def]
-    exact compileFinish_types_irrel h (.var n) ctx acc
-  | cond hc ht he _ _ _ =>
-    intro ctx acc
-    rw [compileBody.eq_def, compileBody.eq_def]
-    exact compileFinish_types_irrel h (.cond hc ht he) ctx acc
-  | un hx _ =>
-    intro ctx acc
-    rw [compileBody.eq_def, compileBody.eq_def]
-    exact compileFinish_types_irrel h (.un hx) ctx acc
-  | bin hl hr _ _ =>
-    intro ctx acc
-    rw [compileBody.eq_def, compileBody.eq_def]
-    exact compileFinish_types_irrel h (.bin hl hr) ctx acc
+    exact compileFinish_types_irrel h (by constructor <;> assumption) ctx acc
 
 /-! ## One public function
 

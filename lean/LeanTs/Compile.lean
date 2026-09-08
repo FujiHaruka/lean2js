@@ -233,7 +233,7 @@ private structure Arm where
   body : Js.Expr
   ty : Ty
 
-private def objOf (ctor : String) (fields : List (String × Js.Expr)) : Js.Expr :=
+def objOf (ctor : String) (fields : List (String × Js.Expr)) : Js.Expr :=
   .objLit (("tag", .str ctor) :: fields)
 
 /-- A literal pattern is held to the same rules as a literal expression: an Int53 outside the safe range

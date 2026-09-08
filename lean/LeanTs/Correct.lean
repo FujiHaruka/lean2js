@@ -31,6 +31,10 @@ inductive InFragment : Expr → Prop where
   | un {op : UnOp} {e : Expr} : InFragment e → InFragment (.un op e)
   | bin {op : BinOp} {lhs rhs : Expr} :
       InFragment lhs → InFragment rhs → InFragment (.bin op lhs rhs)
+  | noneE (elem : Ty) : InFragment (.noneE elem)
+  | someE {e : Expr} : InFragment e → InFragment (.someE e)
+  | okE {err : Ty} {e : Expr} : InFragment e → InFragment (.okE err e)
+  | errorE {ok : Ty} {e : Expr} : InFragment e → InFragment (.errorE ok e)
 
 /-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
 their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
@@ -41,6 +45,10 @@ def inFragmentB : Expr → Bool
   | .letE _ _ val body => inFragmentB val && inFragmentB body
   | .un _ x => inFragmentB x
   | .bin _ lhs rhs => inFragmentB lhs && inFragmentB rhs
+  | .noneE _ => true
+  | .someE x => inFragmentB x
+  | .okE _ x => inFragmentB x
+  | .errorE _ x => inFragmentB x
   | _ => false
 
 theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
@@ -59,15 +67,15 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
     rw [inFragmentB] at h
     simp only [Bool.and_eq_true] at h
     exact .bin (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .noneE elem, _ => .noneE elem
+  | .someE _, h => by rw [inFragmentB] at h; exact .someE (of_inFragmentB h)
+  | .okE _ _, h => by rw [inFragmentB] at h; exact .okE (of_inFragmentB h)
+  | .errorE _ _, h => by rw [inFragmentB] at h; exact .errorE (of_inFragmentB h)
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
   | .ctor _ _ _ _, h => by simp [inFragmentB] at h
   | .proj _ _, h => by simp [inFragmentB] at h
   | .matchE _ _, h => by simp [inFragmentB] at h
-  | .noneE _, h => by simp [inFragmentB] at h
-  | .someE _, h => by simp [inFragmentB] at h
-  | .okE _ _, h => by simp [inFragmentB] at h
-  | .errorE _ _, h => by simp [inFragmentB] at h
   | .arrayLit _ _, h => by simp [inFragmentB] at h
   | .index _ _, h => by simp [inFragmentB] at h
   | .length _, h => by simp [inFragmentB] at h
@@ -98,6 +106,10 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .letE hv hb => .letE hv.typeChecked hb.typeChecked
   | .un hx => .un hx.typeChecked
   | .bin hl hr => .bin hl.typeChecked hr.typeChecked
+  | .noneE elem => .noneE elem
+  | .someE hx => .someE hx.typeChecked
+  | .okE hx => .okE hx.typeChecked
+  | .errorE hx => .errorE hx.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -211,6 +223,38 @@ theorem eventually_call1 {m : Js.Module} {env : Js.JsEnv} {name : String} {jx : 
     simp only [bind, Except.bind, Js.evalList]
     rw [hg1 g (by omega)]
     simp [hh]
+
+private theorem eval_str_of_pos {m : Js.Module} {env : Js.JsEnv} {s : String} {g : Nat}
+    (h : 1 ≤ g) : Js.eval m g env (.str s) = .ok (.str s) := by
+  match g with
+  | 0 => omega
+  | _ + 1 => rw [Js.eval.eq_def]
+
+/-- A constructor value is an object literal whose first field is the tag. -/
+theorem eventually_objLit0 (m : Js.Module) (env : Js.JsEnv) (ctor : String) :
+    Eventually m env (.objLit [("tag", .str ctor)]) (.obj [("tag", .str ctor)]) := by
+  refine ⟨2, fun g' hgle => ?_⟩
+  match g' with
+  | 0 => omega
+  | g + 1 =>
+    rw [Js.eval.eq_def]
+    simp only [List.map_cons, List.map_nil, Js.evalList, bind, Except.bind]
+    rw [eval_str_of_pos (m := m) (env := env) (s := ctor) (by omega)]
+    rfl
+
+theorem eventually_objLit1 {m : Js.Module} {env : Js.JsEnv} {ctor field : String} {jx : Js.Expr}
+    {w : Js.JsValue} (h : Eventually m env jx w) :
+    Eventually m env (.objLit [("tag", .str ctor), (field, jx)])
+      (.obj [("tag", .str ctor), (field, w)]) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 2, fun g' hgle => ?_⟩
+  match g' with
+  | 0 => omega
+  | g + 1 =>
+    rw [Js.eval.eq_def]
+    simp only [List.map_cons, List.map_nil, Js.evalList, bind, Except.bind]
+    rw [eval_str_of_pos (m := m) (env := env) (s := ctor) (by omega), hg1 g (by omega)]
+    rfl
 
 theorem helper_i53 (a : Int) : Js.helper "__i53" [.num a] = some (Js.Runtime.i53 a) := rfl
 
@@ -922,6 +966,18 @@ theorem eventuallyErr_arrowBody {m : Js.Module} {env : Js.JsEnv} {name : String}
     simp only [bind, Except.bind, Js.evalList]
     rw [hg1 g (by omega)]
     simpa [Js.bindAll] using hg2 g (by omega)
+
+theorem eventuallyErr_objLit1 {m : Js.Module} {env : Js.JsEnv} {ctor field : String}
+    {jx : Js.Expr} {code : String} (h : EventuallyErr m env jx code) :
+    EventuallyErr m env (.objLit [("tag", .str ctor), (field, jx)]) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 2, fun g' hgle => ?_⟩
+  match g' with
+  | 0 => omega
+  | g + 1 =>
+    rw [Js.eval.eq_def]
+    simp only [List.map_cons, List.map_nil, Js.evalList, bind, Except.bind]
+    rw [eval_str_of_pos (m := m) (env := env) (s := ctor) (by omega), hg1 g (by omega)]
 
 theorem eventuallyErr_call1 {m : Js.Module} {env : Js.JsEnv} {name : String} {jx : Js.Expr}
     {code : String} (h : EventuallyErr m env jx code) :
@@ -2511,6 +2567,89 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
             rw [helper_eq, beq_encodeValue p tl av bv hat hbt]
             rfl
           simpa [encodeValue, bne] using eventually_not hcall
+  | noneE elem =>
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_noneE] at he
+      simp only [Except.ok.injEq] at he
+      subst he
+      simpa [encodeValue, encodeFields, Compile.objOf] using eventually_objLit0 m jenv "none"
+  | someE hx ihx =>
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_someE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      simp only [Except.ok.injEq] at he
+      subst he
+      simpa [encodeValue, encodeFields, Compile.objOf] using eventually_objLit1 (ihx henv hjenv hcx hw)
+  | okE hx ihx =>
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_okE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      simp only [Except.ok.injEq] at he
+      subst he
+      simpa [encodeValue, encodeFields, Compile.objOf] using eventually_objLit1 (ihx henv hjenv hcx hw)
+  | errorE hx ihx =>
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_errorE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      simp only [Except.ok.injEq] at he
+      subst he
+      simpa [encodeValue, encodeFields, Compile.objOf] using eventually_objLit1 (ihx henv hjenv hcx hw)
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -3093,5 +3232,75 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
         (typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv) he
         (fragment_correct_in p m hl henv hjenv hcl hav)
         (fragment_correct_in p m hr henv hjenv hcr hbv)
+
+  | noneE elem =>
+    intro ctx env jenv je ty f err _ _ _ _ he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f => rw [evalExpr_noneE] at he; simp at he
+  | someE hx ihx =>
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_someE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hxe
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_objLit1 (ihx henv hcov hjenv hcx hxe hne)
+      · simp at he
+  | okE hx ihx =>
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_okE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hxe
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_objLit1 (ihx henv hcov hjenv hcx hxe hne)
+      · simp at he
+  | errorE hx ihx =>
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_errorE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hxe
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_objLit1 (ihx henv hcov hjenv hcx hxe hne)
+      · simp at he
 
 end LeanTs.Correct
