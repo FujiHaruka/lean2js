@@ -23,11 +23,6 @@ reads back as the form the reader has a constructor for. -/
 def dispatchNames : List String :=
   ["true", "false", "new", "__ck", "__map", "__filter", "__find", "__all", "__any", "__reduce"]
 
-def okName (s : String) : Bool :=
-  match s.toList with
-  | [] => false
-  | c :: cs => isIdentStart c && (c :: cs).all isIdentPart
-
 def okCallee (s : String) : Bool := okName s && !dispatchNames.contains s
 
 def okOp (s : String) : Bool :=

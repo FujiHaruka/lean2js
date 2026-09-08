@@ -23,6 +23,14 @@ def isIdentStart (c : Char) : Bool := c.isAlpha || c == '_' || c == '$'
 
 def isIdentPart (c : Char) : Bool := isIdentStart c || c.isDigit
 
+/-- Whether a name is spelled as a JavaScript identifier. Written on the characters rather than through
+`String.front` for the reason `isReserved` is: the reader in `Parse` has to be shown that a name the
+compiler let through is one it can read back, and that argument reads the characters. -/
+def okName (s : String) : Bool :=
+  match s.toList with
+  | [] => false
+  | c :: cs => isIdentStart c && (c :: cs).all isIdentPart
+
 /-- Every helper in the generated code starts with `__`. The prefix is reserved so that user names cannot
 collide with them. -/
 def reservedPrefix : String := "__"
@@ -37,9 +45,7 @@ def isReserved (name : String) : Bool :=
 
 def validateIdent (kind name : String) : Except String Unit :=
   if name.isEmpty then .error s!"{kind} name is empty"
-  else if !isIdentStart name.front then
-    .error s!"{kind} name is not a JavaScript identifier: {name}"
-  else if !(name.toList.all isIdentPart) then
+  else if !okName name then
     .error s!"{kind} name is not a JavaScript identifier: {name}"
   else if isReserved name then
     .error s!"{kind} name uses the reserved {reservedPrefix} prefix: {name}"
@@ -58,10 +64,20 @@ theorem unreserved_of_validateIdent {kind name : String} {u : Unit}
   · exact absurd h (by simp)
   split at h
   · exact absurd h (by simp)
-  split at h
-  · exact absurd h (by simp)
   rename_i hpre
   simpa using hpre
+
+/-- Nothing that passed the check is spelled as anything but an identifier, which is what lets the reader
+in `Parse` take a compiled name back. -/
+theorem okName_of_validateIdent {kind name : String} {u : Unit}
+    (h : validateIdent kind name = .ok u) : okName name = true := by
+  rw [validateIdent] at h
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  rename_i hok
+  simpa using hok
 
 def validateDistinct (kind : String) (names : List String) : Except String Unit :=
   match names with
