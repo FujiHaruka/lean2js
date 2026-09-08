@@ -786,6 +786,16 @@ def paramChecks (p : Program) : Nat → List Param → Except String (List Js.St
       .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i)))
         :: (← paramChecks p (i + 1) rest))
 
+def declSigRest : List Param → String
+  | [] => ""
+  | param :: rest => ", " ++ param.name ++ " : " ++ param.ty.render ++ declSigRest rest
+
+/-- The parameter list as it appears in the doc comment. `String.intercalate` walks an accumulator, which
+a proof about the characters the doc contains cannot unfold. -/
+def declSig : List Param → String
+  | [] => ""
+  | param :: rest => param.name ++ " : " ++ param.ty.render ++ declSigRest rest
+
 def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
   validateIdent "function" d.name
   d.params.forM fun param => validateIdent "parameter" param.name
@@ -798,12 +808,11 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
     .error s!"{d.name} is declared to return {d.ret.render} but its body is {ty.render}"
   else do
     let checks ← paramChecks p 0 d.params
-    let sig := d.params.map fun param => s!"{param.name} : {param.ty.render}"
     .ok {
       name := d.name
       params := rawParams 0 d.params
       body := checks ++ stmts
-      doc := s!"{d.name} : ({String.intercalate ", " sig}) → {d.ret.render}"
+      doc := d.name ++ " : (" ++ declSig d.params ++ ") → " ++ d.ret.render
       exported := d.isPublic
     }
 

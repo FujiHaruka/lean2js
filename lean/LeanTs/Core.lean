@@ -82,21 +82,37 @@ def Ty.sizeList : List Ty → Nat
 
 end
 
-partial def Ty.render : Ty → String
+mutual
+
+def Ty.render : Ty → String
   | .bool => "Bool"
   | .int53 => "Int53"
   | .uint32 => "UInt32"
   | .string => "String"
   | .bigint => "BigInt"
   | .var n => n
-  | .named n [] => n
-  | .named n args => n ++ " " ++ String.intercalate " " (args.map Ty.render)
-  | .option t => s!"Option {t.render}"
-  | .result ok err => s!"Result {ok.render} {err.render}"
-  | .array t => s!"Array {t.render}"
-  | .dict v => s!"Dict {v.render}"
-  | .fn params ret =>
-    "(" ++ String.intercalate ", " (params.map Ty.render) ++ ") => " ++ ret.render
+  | .named n args => n ++ Ty.renderArgs args
+  | .option t => "Option " ++ Ty.render t
+  | .result ok err => "Result " ++ Ty.render ok ++ " " ++ Ty.render err
+  | .array t => "Array " ++ Ty.render t
+  | .dict v => "Dict " ++ Ty.render v
+  | .fn params ret => "(" ++ Ty.renderParams params ++ ") => " ++ Ty.render ret
+
+/-- Each argument carries its own leading space rather than being joined by one, so that a name applied
+to nothing renders as the bare name without a case split on the list. -/
+def Ty.renderArgs : List Ty → String
+  | [] => ""
+  | t :: rest => " " ++ Ty.render t ++ Ty.renderArgs rest
+
+def Ty.renderParams : List Ty → String
+  | [] => ""
+  | t :: rest => Ty.render t ++ Ty.renderParamsRest rest
+
+def Ty.renderParamsRest : List Ty → String
+  | [] => ""
+  | t :: rest => ", " ++ Ty.render t ++ Ty.renderParamsRest rest
+
+end
 
 mutual
 
