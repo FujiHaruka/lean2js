@@ -110,6 +110,7 @@ private theorem bind_ok {ε α β : Type} {x : Except ε α} {f : α → Except 
 private theorem seq_ok {ε : Type} {x y : Except ε PUnit} (h : (do x; y) = .ok ()) :
     x = .ok () ∧ y = .ok () := by
   obtain ⟨a, h1, h2⟩ := bind_ok h
+  try simp only at h
   obtain rfl : a = () := rfl
   exact ⟨h1, h2⟩
 
@@ -449,7 +450,7 @@ theorem okName_of_signature {p : Program} (hf : FieldNamesOk p) :
 /-- What a pattern's bindings have to be for the arm built from them to be readable back: a name the
 reader can read, bound to a path it can read. -/
 def BindsOk (binds : List (String × Js.Expr × Ty)) : Bool :=
-  binds.all fun b => okName b.1 && RenderableExpr b.2.1
+  binds.all fun b => okCallee b.1 && RenderableExpr b.2.1
 
 theorem renderable_litJs {ty : Ty} {l : Lit} {j : Js.Expr} (h : litJs ty l = .ok j) :
     RenderableExpr j = true := by
@@ -486,7 +487,7 @@ theorem renderable_patParts {p : Program} (hfn : FieldNamesOk p) :
       simp only [bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
       refine ⟨renderableList_nil, ?_⟩
-      simp [BindsOk, okName_of_validateIdent hv, hpath]
+      simp [BindsOk, okCallee_of_validateIdent hv, hpath]
   -- `.lit l`
   · intro ty path l hpath tests binds h
     rw [patParts] at h
@@ -565,7 +566,7 @@ theorem renderable_patParts {p : Program} (hfn : FieldNamesOk p) :
       | ok tpr =>
         obtain ⟨ttests, tbinds⟩ := tpr
         rw [htail] at h
-        simp only [Except.ok.injEq] at h
+        simp only at h
         obtain ⟨rfl, rfl⟩ := h
         obtain ⟨h1, h2⟩ := ih hpaths.1 htests hbinds hhead
         obtain ⟨h3, h4⟩ := ihs hpaths.2 ttests tbinds htail
@@ -580,3 +581,887 @@ theorem renderable_patParts {p : Program} (hfn : FieldNamesOk p) :
       cases paths with
       | nil => rw [patPartsList.eq_def] at h; exact (errNotOk h).elim
       | cons path paths' => exact (hne ty tys' path paths' rfl rfl).elim
+
+/-! ## Building readable expressions
+
+One lemma per shape the compiler builds, so that the case analysis over `compileExpr` reads as the shape
+it emits rather than as an unfolding of `RenderableExpr`. -/
+
+theorem renderableList_cons {e : Js.Expr} {es : List Js.Expr}
+    (he : RenderableExpr e = true) (hes : RenderableList es = true) :
+    RenderableList (e :: es) = true := by rw [RenderableList]; simp [he, hes]
+
+theorem renderable_num (i : Int) : RenderableExpr (.num i) = true := by rw [RenderableExpr]
+theorem renderable_bigLit (i : Int) : RenderableExpr (.bigLit i) = true := by rw [RenderableExpr]
+theorem renderable_str (s : String) : RenderableExpr (.str s) = true := by rw [RenderableExpr]
+theorem renderable_bool (b : Bool) : RenderableExpr (.bool b) = true := by rw [RenderableExpr]
+
+theorem renderable_ident {n : String} (h : okCallee n = true) :
+    RenderableExpr (.ident n) = true := by rw [RenderableExpr]; exact h
+
+theorem renderable_unary {op : String} {e : Js.Expr} (ho : (op == "!" || op == "-") = true)
+    (he : RenderableExpr e = true) : RenderableExpr (.unary op e) = true := by
+  rw [RenderableExpr]; simp [ho, he]
+
+theorem renderable_binary {op : String} {l r : Js.Expr} (ho : okOp op = true)
+    (hl : RenderableExpr l = true) (hr : RenderableExpr r = true) :
+    RenderableExpr (.binary op l r) = true := by rw [RenderableExpr]; simp [ho, hl, hr]
+
+theorem renderable_cond {c t e : Js.Expr} (hc : RenderableExpr c = true)
+    (ht : RenderableExpr t = true) (he : RenderableExpr e = true) :
+    RenderableExpr (.cond c t e) = true := by rw [RenderableExpr]; simp [hc, ht, he]
+
+theorem renderable_call {c : String} {as : List Js.Expr} (hc : okCallee c = true)
+    (ha : RenderableList as = true) : RenderableExpr (.call c as) = true := by
+  rw [RenderableExpr]; simp [hc, ha]
+
+theorem renderable_arrowCall {ps : List String} {body : Js.Expr} {as : List Js.Expr}
+    (hp : ps.all okName = true) (hb : RenderableExpr body = true) (ha : RenderableList as = true) :
+    RenderableExpr (.arrowCall ps body as) = true := by rw [RenderableExpr]; simp [hp, hb, ha]
+
+theorem renderable_member {o : Js.Expr} {f : String} (ho : RenderableExpr o = true)
+    (hf : okName f = true) : RenderableExpr (.member o f) = true := by
+  rw [RenderableExpr]; simp [ho, hf]
+
+theorem renderable_arrayLit {es : List Js.Expr} (h : RenderableList es = true) :
+    RenderableExpr (.arrayLit es) = true := by rw [RenderableExpr]; exact h
+
+theorem renderable_dictLit {es : List (String × Js.Expr)} (h : RenderablePairs es = true) :
+    RenderableExpr (.dictLit es) = true := by rw [RenderableExpr]; exact h
+
+theorem renderable_mapJs {arr : Js.Expr} {b : String} {body : Js.Expr}
+    (ha : RenderableExpr arr = true) (hb : okName b = true) (hy : RenderableExpr body = true) :
+    RenderableExpr (.mapJs arr b body) = true := by rw [RenderableExpr]; simp [ha, hb, hy]
+
+theorem renderable_filterJs {arr : Js.Expr} {b : String} {body : Js.Expr}
+    (ha : RenderableExpr arr = true) (hb : okName b = true) (hy : RenderableExpr body = true) :
+    RenderableExpr (.filterJs arr b body) = true := by rw [RenderableExpr]; simp [ha, hb, hy]
+
+theorem renderable_findJs {arr : Js.Expr} {b : String} {body : Js.Expr}
+    (ha : RenderableExpr arr = true) (hb : okName b = true) (hy : RenderableExpr body = true) :
+    RenderableExpr (.findJs arr b body) = true := by rw [RenderableExpr]; simp [ha, hb, hy]
+
+theorem renderable_quantJs {op : Core.QuantOp} {arr : Js.Expr} {b : String} {body : Js.Expr}
+    (ha : RenderableExpr arr = true) (hb : okName b = true) (hy : RenderableExpr body = true) :
+    RenderableExpr (.quantJs op arr b body) = true := by rw [RenderableExpr]; simp [ha, hb, hy]
+
+theorem renderable_reduceJs {arr init : Js.Expr} {a e : String} {body : Js.Expr}
+    (ha : RenderableExpr arr = true) (hi : RenderableExpr init = true) (hac : okName a = true)
+    (he : okName e = true) (hy : RenderableExpr body = true) :
+    RenderableExpr (.reduceJs arr init a e body) = true := by
+  rw [RenderableExpr]; simp [ha, hi, hac, he, hy]
+
+theorem renderable_check {d : Js.TyDesc} {e : Js.Expr} (he : RenderableExpr e = true) :
+    RenderableExpr (.check d e) = true := by rw [RenderableExpr]; exact he
+
+private theorem renderable_of_ok {jx : Js.Expr} {tx : Ty} {j : Js.Expr} {t : Ty}
+    (h : (Except.ok (jx, tx) : Except String (Js.Expr × Ty)) = .ok (j, t))
+    (hj : RenderableExpr jx = true) : RenderableExpr j = true := by
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  exact h.1 ▸ hj
+
+theorem okCallee_of_ctx {ctx : Ctx} {name : String} {ty : Ty} (hctx : CtxOk ctx)
+    (h : (ctx.find? (·.1 == name)).map (·.2) = some ty) : okCallee name = true := by
+  cases hb : List.find? (fun x : String × Ty => x.1 == name) ctx with
+  | none => rw [hb] at h; exact absurd h (by simp)
+  | some x =>
+    have hname : x.1 = name := by simpa using List.find?_some hb
+    exact hname ▸ hctx x (List.mem_of_find?_eq_some hb)
+
+theorem okCallee_of_decl {p : Program} {name : String} {d : Decl} (hp : DeclNamesOk p)
+    (h : p.find? name = some d) : okCallee name = true := by
+  have h' : List.find? (fun e => e.name == name) p.decls = some d := h
+  have hname : d.name = name := by simpa using List.find?_some h'
+  exact hname ▸ hp d (List.mem_of_find?_eq_some h')
+
+theorem okName_of_okCallee {s : String} (h : okCallee s = true) : okName s = true := by
+  rw [okCallee] at h; simp only [Bool.and_eq_true] at h; exact h.1
+
+theorem ctxOk_cons {ctx : Ctx} {n : String} {ty : Ty} (hn : okCallee n = true) (h : CtxOk ctx) :
+    CtxOk ((n, ty) :: ctx) := by
+  intro x hx
+  cases hx with
+  | head => exact hn
+  | tail _ hx => exact h x hx
+
+theorem ctxOk_append {ctx : Ctx} {binds : List (String × Js.Expr × Ty)}
+    (hb : BindsOk binds = true) (h : CtxOk ctx) :
+    CtxOk ((binds.map fun b => (b.1, b.2.2)) ++ ctx) := by
+  intro x hx
+  rcases List.mem_append.1 hx with hx | hx
+  · obtain ⟨b, hbm, rfl⟩ := List.mem_map.1 hx
+    have := List.all_eq_true.1 hb b hbm
+    simp only [Bool.and_eq_true] at this
+    exact this.1
+  · exact h x hx
+
+theorem okCallee_of_decl_name {p : Program} {name : String} {d : Decl} (hp : DeclNamesOk p)
+    (h : p.find? name = some d) : okCallee d.name = true := by
+  have h' : List.find? (fun e => e.name == name) p.decls = some d := h
+  exact hp d (List.mem_of_find?_eq_some h')
+
+theorem renderable_numericHelper {ty : Ty} {op : BinOp} {a b j : Js.Expr}
+    (ha : RenderableExpr a = true) (hb : RenderableExpr b = true)
+    (h : numericHelper ty op a b = some j) : RenderableExpr j = true := by
+  have hab : RenderableList [a, b] = true :=
+    renderableList_cons ha (renderableList_cons hb renderableList_nil)
+  rw [numericHelper.eq_def] at h
+  split at h <;>
+    first
+      | (simp only [Option.some.injEq] at h
+         subst h
+         first
+           | exact renderable_call (by decide) hab
+           | exact renderable_call (by decide)
+               (renderableList_cons (renderable_binary (by decide) ha hb) renderableList_nil)
+           | exact renderable_binary (by decide)
+               (renderable_binary (by decide) ha hb) (renderable_num 0)
+           | exact renderable_binary (by decide) ha hb)
+      | exact absurd h (by simp)
+
+theorem okOp_of_orderSymbol {op : BinOp} {sym : String} (h : orderSymbol op = some sym) :
+    okOp sym = true := by
+  cases op <;>
+    first
+      | (rw [orderSymbol.eq_def] at h
+         simp only [Option.some.injEq] at h
+         subst h
+         decide)
+      | (rw [orderSymbol.eq_def] at h; exact absurd h (by simp))
+
+theorem okCallee_strUnHelper (op : StrUnOp) : okCallee (strUnHelper op) = true := by
+  cases op <;> decide
+
+theorem okCallee_strBinHelper (op : StrBinOp) : okCallee (strBinHelper op) = true := by
+  cases op <;> decide
+
+theorem okName_of_ctorsAt {p : Program} (hfn : FieldNamesOk p) {n : String} {t : TypeDef}
+    (ht : p.findType? n = some t) {args : List Ty} {c : CtorDef} (hc : c ∈ t.ctorsAt args)
+    {f : Field} (hf : f ∈ c.fields) : okName f.name = true := by
+  rw [TypeDef.ctorsAt] at hc
+  obtain ⟨c₀, hc₀, rfl⟩ := List.mem_map.1 hc
+  obtain ⟨f₀, hf₀, rfl⟩ := List.mem_map.1 hf
+  exact hfn t (List.mem_of_find?_eq_some ht) c₀ hc₀ f₀ hf₀
+
+/-- The name a field read writes after the dot is the name of a field the type declares, and
+`validateType` has already put that through `validateIdent`. -/
+theorem okName_of_proj {p : Program} (hfn : FieldNamesOk p) {n : String} {args : List Ty}
+    {t : TypeDef} {c : CtorDef} {f : Field} {field : String}
+    (hft : p.findType? n = some t) (hc : t.ctorsAt args = [c])
+    (hf : List.find? (fun x : Field => x.name == field) c.fields = some f) : okName field = true := by
+  have hname : f.name = field := by simpa using List.find?_some hf
+  exact hname ▸ okName_of_ctorsAt hfn hft (by rw [hc]; exact List.mem_singleton_self c)
+    (List.mem_of_find?_eq_some hf)
+
+theorem renderablePairs_cons {k : String} {v : Js.Expr} {rest : List (String × Js.Expr)}
+    (hv : RenderableExpr v = true) (hr : RenderablePairs rest = true) :
+    RenderablePairs ((k, v) :: rest) = true := by rw [RenderablePairs]; simp [hv, hr]
+
+/-! ## Every expression the compiler builds
+
+The recursion is `compileExpr`'s own: the names it picks up come from the scope and from the declarations,
+the operators and callees it writes it spells itself, and everything else is one of its subexpressions. -/
+
+/-- Closes a branch whose compilation already failed. `compileExpr`'s equation lemmas carry the case's
+own guard, so a branch reached with the guard in hand arrives already reduced to an error, and one reached
+without it arrives as the `if` or `match` still to be split. -/
+local macro "peel " h:ident : tactic => `(tactic| first | exact (errNotOk $h).elim | skip)
+
+/-- Splits every `if` and `match` still standing between the compiler's binds, closing the branches that
+end in a compile error and leaving the ones that end in a tree. -/
+local macro "shred " h:ident : tactic =>
+  `(tactic| repeat (any_goals (first | exact (errNotOk $h).elim | split at $h:ident)))
+
+theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNamesOk p) :
+    (∀ (ctx : Ctx) (e : Expr), CtxOk ctx →
+        ∀ j t, compileExpr p ctx e = .ok (j, t) → RenderableExpr j = true)
+    ∧ (∀ (ctx : Ctx) (entries : List (String × Expr)), CtxOk ctx →
+        ∀ js, compileValues p ctx entries = .ok js → RenderableList (js.map (·.1)) = true)
+    ∧ (∀ (ctx : Ctx) (ty : Ty) (alts : List Alt), CtxOk ctx →
+        ∀ arms, compileAlts p ctx ty alts = .ok arms → arms.all ArmOk = true)
+    ∧ (∀ (ctx : Ctx) (es : List Expr), CtxOk ctx →
+        ∀ js, compileArgs p ctx es = .ok js → RenderableList (js.map (·.1)) = true) := by
+  apply compileExpr.mutual_induct p
+  -- 1: a Bool literal
+  · intro ctx b _ j t h
+    rw [compileExpr] at h
+    exact renderable_of_ok h (renderable_bool b)
+  -- 2, 3: an Int53 literal, out of range and in
+  · intro ctx i _ _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (split at h <;> peel h)
+    all_goals exact renderable_of_ok h (renderable_num i)
+  · intro ctx i _ _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (split at h <;> peel h)
+    all_goals exact renderable_of_ok h (renderable_num i)
+  -- 4, 5, 6: the remaining literals
+  · intro ctx n _ j t h
+    rw [compileExpr] at h
+    exact renderable_of_ok h (renderable_num _)
+  · intro ctx s _ j t h
+    rw [compileExpr] at h
+    exact renderable_of_ok h (renderable_str s)
+  · intro ctx i _ j t h
+    rw [compileExpr] at h
+    exact renderable_of_ok h (renderable_bigLit i)
+  -- 7, 8: a variable
+  · intro ctx name ty hfound hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hfound] at h)
+    all_goals exact renderable_of_ok h (renderable_ident (okCallee_of_ctx hctx hfound))
+  · intro ctx name hfound _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hfound] at h; exact (errNotOk h).elim)
+  -- 9, 10, 11: a function reference
+  · intro ctx name hsome _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (split at h <;> peel h)
+    all_goals (rename_i hnot; exact absurd hsome (by simpa using hnot))
+  · intro ctx name _ hfind _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (split at h <;> peel h)
+    all_goals (rw [hfind] at h; peel h)
+  · intro ctx name _ d hfind _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (split at h <;> peel h)
+    all_goals (rw [hfind] at h)
+    all_goals exact renderable_of_ok h (renderable_ident (okCallee_of_decl hp hfind))
+  -- 12: negation
+  · intro ctx x ihx hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jx, tx⟩, hx, h⟩ := bind_ok h
+       try simp only at h
+       have hjx := ihx hctx jx tx hx
+       shred h
+       all_goals exact renderable_of_ok h (renderable_unary (by decide) hjx))
+  -- 13, 14: unary minus and abs
+  · intro ctx x ihx hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jx, tx⟩, hx, h⟩ := bind_ok h
+       try simp only at h
+       have hjx := ihx hctx jx tx hx
+       shred h
+       all_goals
+         first
+           | exact renderable_of_ok h (renderable_unary (by decide) hjx)
+           | exact renderable_of_ok h (renderable_call (by decide)
+               (renderableList_cons (renderable_unary (by decide) hjx) renderableList_nil)))
+  · intro ctx x ihx hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jx, tx⟩, hx, h⟩ := bind_ok h
+       try simp only at h
+       have hjx := ihx hctx jx tx hx
+       shred h
+       all_goals
+         first
+           | exact renderable_of_ok h (renderable_call (by decide)
+               (renderableList_cons hjx renderableList_nil))
+           | exact renderable_of_ok h (renderable_call (by decide)
+               (renderableList_cons (renderable_call (by decide)
+                 (renderableList_cons hjx renderableList_nil)) renderableList_nil)))
+  -- 15: a binary operator
+  · intro ctx op lhs rhs ihl ihr hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jl, tl⟩, hl, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jr, tr⟩, hr, h⟩ := bind_ok h
+       try simp only at h
+       have hjl := ihl hctx jl tl hl
+       have hjr := ihr hctx jr tr hr
+       have hpair : RenderableList [jl, jr] = true :=
+         renderableList_cons hjl (renderableList_cons hjr renderableList_nil)
+       shred h
+       all_goals
+         first
+           | exact renderable_of_ok h (renderable_binary (by decide) hjl hjr)
+           | exact renderable_of_ok h (renderable_call (by decide) hpair)
+           | exact renderable_of_ok h
+               (renderable_unary (by decide) (renderable_call (by decide) hpair))
+           | exact renderable_of_ok h (renderable_numericHelper hjl hjr (by assumption))
+           | exact renderable_of_ok h
+               (renderable_binary (okOp_of_orderSymbol (by assumption))
+                 (renderable_call (by decide) hpair) (renderable_num 0))
+           | exact renderable_of_ok h
+               (renderable_binary (okOp_of_orderSymbol (by assumption)) hjl hjr))
+  -- 16: a conditional
+  · intro ctx c t' e ihc iht ihe hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jc, tc⟩, hc, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨⟨jt, tt⟩, ht, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+          try simp only at h
+          split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h
+              (renderable_cond (ihc hctx jc tc hc) (iht hctx jt tt ht) (ihe hctx je te he))))
+  -- 17: a let inside an expression
+  · intro ctx name ty val body ihv ihb hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨_, hvi, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jv, tv⟩, hv, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨⟨jb, tb⟩, hb, h⟩ := bind_ok h
+          try simp only at h
+          exact renderable_of_ok h (renderable_arrowCall
+            (by simp [okName_of_validateIdent hvi])
+            (ihb (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jb tb hb)
+            (renderableList_cons (ihv hctx jv tv hv) renderableList_nil))))
+  -- 18, 19: a call through a parameter holding a function
+  · intro ctx fn args params ret hfound hsome _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hfound] at h; peel h)
+    all_goals (split at h <;> peel h)
+    all_goals (rename_i hnot; exact absurd hsome (by simpa using hnot))
+  · intro ctx fn args params ret hfound _ ihargs hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hfound] at h)
+    all_goals (split at h <;> peel h)
+    all_goals
+      (obtain ⟨js, hjs, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h
+              (renderable_call (okCallee_of_ctx hctx hfound) (ihargs hctx js hjs))))
+  -- 20, 21: a name in scope that is not a function, and a name that is nowhere
+  · intro ctx fn args val hne hfound _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hfound] at h)
+    all_goals (cases val <;> first | exact (errNotOk h).elim | exact (hne _ _ rfl).elim)
+  · intro ctx fn args hnone hfind _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hnone, hfind] at h; peel h)
+  -- 22: a call on a declaration
+  · intro ctx fn args hnone d hfind ihargs hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hnone, hfind] at h)
+    all_goals
+      (obtain ⟨js, hjs, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            (obtain ⟨_, _, h⟩ := bind_ok h
+             try simp only at h
+             exact renderable_of_ok h
+               (renderable_call (okCallee_of_decl_name hp hfind) (ihargs hctx js hjs)))))
+  -- 23: a constructor
+  · intro ctx typeName tyArgs ctorName args ihargs hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            (obtain ⟨js, hjs, h⟩ := bind_ok h
+             try simp only at h
+             split at h <;> peel h
+             all_goals
+               (split at h <;> peel h
+                all_goals
+                  exact renderable_of_ok h
+                    (renderable_objOf _ _ (renderablePairs_zip _ _ (ihargs hctx js hjs)))))))
+  -- 24, 25: a field read
+  · intro ctx e field hg _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals (simp only [hg, if_true] at h; peel h)
+  · intro ctx e field _ ihe hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (split at h <;> peel h
+       all_goals
+         (obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+          try simp only at h
+          have hje := ihe hctx je te he
+          shred h
+          all_goals
+            exact renderable_of_ok h
+              (renderable_member hje
+                (okName_of_proj hfn (by assumption) (by assumption) (by assumption)))))
+  -- 26: a match
+  · intro ctx scrut alts ihs iha hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jscrut, tscrut⟩, hsc, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨arms, harms, h⟩ := bind_ok h
+       try simp only at h
+       have harmsok := iha tscrut hctx arms harms
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            (split at h <;> peel h
+             all_goals
+               (split at h <;> peel h
+                all_goals
+                  exact renderable_of_ok h
+                    (renderable_arrowCall (by decide) (renderable_chain _ harmsok)
+                    (renderableList_cons (ihs hctx jscrut tscrut hsc) renderableList_nil))))))
+  -- 27, 28, 29, 30: the built-in constructors
+  · intro ctx elem _ j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       exact renderable_of_ok h (renderable_objOf _ _ renderablePairs_nil))
+  · intro ctx e ihe hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+       try simp only at h
+       exact renderable_of_ok h
+         (renderable_objOf _ _ (renderablePairs_cons (ihe hctx je te he) renderablePairs_nil)))
+  · intro ctx err e ihe hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+       try simp only at h
+       exact renderable_of_ok h
+         (renderable_objOf _ _ (renderablePairs_cons (ihe hctx je te he) renderablePairs_nil)))
+  · intro ctx ok e ihe hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+       try simp only at h
+       exact renderable_of_ok h
+         (renderable_objOf _ _ (renderablePairs_cons (ihe hctx je te he) renderablePairs_nil)))
+  -- 31: an array literal
+  · intro ctx elem items iha hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨js, hjs, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals exact renderable_of_ok h (renderable_arrayLit (iha hctx js hjs)))
+  -- 32: an index
+  · intro ctx arr idx iharr ihidx hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jidx, tidx⟩, hidx, h⟩ := bind_ok h
+       try simp only at h
+       have hpair : RenderableList [jarr, jidx] = true :=
+         renderableList_cons (iharr hctx jarr tarr harr)
+           (renderableList_cons (ihidx hctx jidx tidx hidx) renderableList_nil)
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
+  -- 33: a length
+  · intro ctx arr iharr hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       shred h
+       all_goals
+         first
+           | exact renderable_of_ok h (renderable_call (by decide)
+               (renderableList_cons (renderable_member h1 (by decide)) renderableList_nil))
+           | exact renderable_of_ok h (renderable_call (by decide)
+               (renderableList_cons (renderable_call (by decide)
+                 (renderableList_cons h1 renderableList_nil)) renderableList_nil)))
+  -- 34: a slice
+  · intro ctx arr lo hi iharr ihlo ihhi hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jlo, tlo⟩, hlo, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jhi, thi⟩, hhi, h⟩ := bind_ok h
+       try simp only at h
+       have htriple : RenderableList [jarr, jlo, jhi] = true :=
+         renderableList_cons (iharr hctx jarr tarr harr)
+           (renderableList_cons (ihlo hctx jlo tlo hlo)
+             (renderableList_cons (ihhi hctx jhi thi hhi) renderableList_nil))
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals exact renderable_of_ok h (renderable_call (by decide) htriple)))
+  -- 35: a reverse
+  · intro ctx arr iharr hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       split at h <;> peel h
+       all_goals
+         exact renderable_of_ok h (renderable_call (by decide)
+           (renderableList_cons h1 renderableList_nil)))
+  -- 36, 37, 38, 39: the traversals that take one binder
+  · intro ctx arr binder body iharr ihbody hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨_, hvi, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨⟨jbody, tbody⟩, hbody, h⟩ := bind_ok h
+          try simp only at h
+          exact renderable_of_ok h (renderable_mapJs h1 (okName_of_validateIdent hvi)
+            (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
+  · intro ctx arr binder body iharr ihbody hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨_, hvi, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨⟨jbody, tbody⟩, hbody, h⟩ := bind_ok h
+          try simp only at h
+          split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h (renderable_filterJs h1 (okName_of_validateIdent hvi)
+              (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
+  · intro ctx arr binder body iharr ihbody hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨_, hvi, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨⟨jbody, tbody⟩, hbody, h⟩ := bind_ok h
+          try simp only at h
+          split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h (renderable_findJs h1 (okName_of_validateIdent hvi)
+              (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
+  · intro ctx op arr binder body iharr ihbody hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨_, hvi, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨⟨jbody, tbody⟩, hbody, h⟩ := bind_ok h
+          try simp only at h
+          split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h (renderable_quantJs h1 (okName_of_validateIdent hvi)
+              (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
+  -- 40: a reduce
+  · intro ctx arr init accName elemName body iharr ihinit ihbody hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jinit, tinit⟩, hinit, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       have h2 := ihinit hctx jinit tinit hinit
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨_, hva, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨_, hve, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨_, _, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨⟨jbody, tbody⟩, hbody, h⟩ := bind_ok h
+          try simp only at h
+          split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h (renderable_reduceJs h1 h2
+              (okName_of_validateIdent hva) (okName_of_validateIdent hve)
+              (ihbody _ _ (ctxOk_cons (okCallee_of_validateIdent hve)
+              (ctxOk_cons (okCallee_of_validateIdent hva) hctx)) jbody tbody hbody))))
+  -- 41: a dictionary literal
+  · intro ctx value entries ihv hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨js, hjs, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         exact renderable_of_ok h
+           (renderable_dictLit (renderablePairs_zip _ _ (ihv hctx js hjs))))
+  -- 42, 43, 47: reading and deleting from a dictionary
+  · intro ctx d key ihd ihk hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jd, td⟩, hd, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jk, tk⟩, hk, h⟩ := bind_ok h
+       try simp only at h
+       have hpair : RenderableList [jd, jk] = true :=
+         renderableList_cons (ihd hctx jd td hd)
+           (renderableList_cons (ihk hctx jk tk hk) renderableList_nil)
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
+  · intro ctx d key ihd ihk hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jd, td⟩, hd, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jk, tk⟩, hk, h⟩ := bind_ok h
+       try simp only at h
+       have hpair : RenderableList [jd, jk] = true :=
+         renderableList_cons (ihd hctx jd td hd)
+           (renderableList_cons (ihk hctx jk tk hk) renderableList_nil)
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
+  -- 44: writing to a dictionary
+  · intro ctx d key val ihd ihk ihv hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jd, td⟩, hd, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jk, tk⟩, hk, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jv, tv⟩, hv, h⟩ := bind_ok h
+       try simp only at h
+       have htriple : RenderableList [jd, jk, jv] = true :=
+         renderableList_cons (ihd hctx jd td hd)
+           (renderableList_cons (ihk hctx jk tk hk)
+             (renderableList_cons (ihv hctx jv tv hv) renderableList_nil))
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            (split at h <;> peel h
+             all_goals exact renderable_of_ok h (renderable_call (by decide) htriple))))
+  -- 45, 46: the keys and the values
+  · intro ctx d ihd hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jd, td⟩, hd, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := ihd hctx jd td hd
+       split at h <;> peel h
+       all_goals
+         exact renderable_of_ok h (renderable_call (by decide)
+           (renderableList_cons h1 renderableList_nil)))
+  · intro ctx d ihd hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jd, td⟩, hd, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := ihd hctx jd td hd
+       split at h <;> peel h
+       all_goals
+         exact renderable_of_ok h (renderable_call (by decide)
+           (renderableList_cons h1 renderableList_nil)))
+  · intro ctx d key ihd ihk hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jd, td⟩, hd, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jk, tk⟩, hk, h⟩ := bind_ok h
+       try simp only at h
+       have hpair : RenderableList [jd, jk] = true :=
+         renderableList_cons (ihd hctx jd td hd)
+           (renderableList_cons (ihk hctx jk tk hk) renderableList_nil)
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
+  -- 48, 49: the string helpers
+  · intro ctx op e ihe hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         exact renderable_of_ok h (renderable_call (okCallee_strUnHelper op)
+           (renderableList_cons (ihe hctx je te he) renderableList_nil)))
+  · intro ctx op lhs rhs ihl ihr hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jl, tl⟩, hl, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jr, tr⟩, hr, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h (renderable_call (okCallee_strBinHelper op)
+              (renderableList_cons (ihl hctx jl tl hl)
+              (renderableList_cons (ihr hctx jr tr hr) renderableList_nil)))))
+  -- 50: a substring
+  · intro ctx str lo hi ihs ihlo ihhi hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jstr, tstr⟩, hs, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jlo, tlo⟩, hlo, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨⟨jhi, thi⟩, hhi, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h (renderable_call (by decide)
+              (renderableList_cons (ihs hctx jstr tstr hs)
+              (renderableList_cons (ihlo hctx jlo tlo hlo)
+                (renderableList_cons (ihhi hctx jhi thi hhi) renderableList_nil))))))
+  -- 51, 52: the values of a dictionary literal
+  · intro ctx _ js h
+    rw [compileValues] at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    simp only [List.map_nil]
+    exact renderableList_nil
+  · intro ctx _ e rest ihe ihr hctx js h
+    rw [compileValues] at h
+    obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨tail, htail, h⟩ := bind_ok h
+    try simp only at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    simp only [List.map_cons]
+    exact renderableList_cons (ihe hctx je te he) (ihr hctx tail htail)
+  -- 53, 54: the alternatives of a match
+  · intro ctx ty _ arms h
+    rw [compileAlts] at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    rfl
+  · intro ctx ty pat body rest ihbody ihrest hctx arms h
+    rw [compileAlts] at h
+    obtain ⟨⟨tests, binds⟩, hpp, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨_, _, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨⟨jbody, tbody⟩, hb, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨tail, htail, h⟩ := bind_ok h
+    try simp only at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    obtain ⟨htests, hbinds⟩ := (renderable_patParts hfn).1 ty (.ident scrutName) pat
+      (renderable_ident (by decide)) tests binds hpp
+    have hnames : (binds.map (·.1)).all okName = true := by
+      refine List.all_eq_true.2 fun x hx => ?_
+      obtain ⟨b, hb', rfl⟩ := List.mem_map.1 hx
+      have hb2 := List.all_eq_true.1 hbinds b hb'
+      simp only [Bool.and_eq_true] at hb2
+      exact okName_of_okCallee hb2.1
+    have hpaths : RenderableList (binds.map (·.2.1)) = true := by
+      refine renderableList_of_all _ (List.all_eq_true.2 fun x hx => ?_)
+      obtain ⟨b, hb', rfl⟩ := List.mem_map.1 hx
+      have hb2 := List.all_eq_true.1 hbinds b hb'
+      simp only [Bool.and_eq_true] at hb2
+      exact hb2.2
+    simp only [List.all_cons, Bool.and_eq_true]
+    refine ⟨?_, ihrest hctx tail htail⟩
+    simp only [ArmOk, Bool.and_eq_true]
+    exact ⟨⟨⟨htests, hnames⟩, hpaths⟩, ihbody binds (ctxOk_append hbinds hctx) jbody tbody hb⟩
+  -- 55, 56: the arguments of a call
+  · intro ctx _ js h
+    rw [compileArgs] at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    simp only [List.map_nil]
+    exact renderableList_nil
+  · intro ctx e rest ihe ihr hctx js h
+    rw [compileArgs] at h
+    obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨tail, htail, h⟩ := bind_ok h
+    try simp only at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    simp only [List.map_cons]
+    exact renderableList_cons (ihe hctx je te he) (ihr hctx tail htail)
