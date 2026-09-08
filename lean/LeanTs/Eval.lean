@@ -486,6 +486,10 @@ theorem defaultFuel_succ : defaultFuel = 9999 + 1 := rfl
 rewriting with it does not stop. One lemma per syntactic form fires only where that form actually is,
 which is what lets a proof about a declaration walk its body. -/
 
+theorem evalExpr_zero (p : Program) (env : Env) (e : Expr) :
+    evalExpr p 0 env e = .error .outOfFuel := by
+  rw [evalExpr.eq_def]
+
 theorem evalExpr_lit (p : Program) (f : Nat) (env : Env) (l : Lit) :
     evalExpr p (f + 1) env (.lit l) = .ok (litValue l) := by
   rw [evalExpr.eq_def]

@@ -2521,4 +2521,577 @@ theorem fragment_correct (p : Program) (m : Js.Module)
       Eventually m (encodeEnv env) je (encodeValue v) :=
   fun henv hc he => fragment_correct_in p m hfrag henv (jsEnvAgrees_encodeEnv _) hc he
 
+/-! ## Refusing what the reference semantics refuses
+
+The other direction of `fragment_correct_in`. `Agree` compares two failures by their thrown code, so
+that is what this carries across too: not "both fail" but "both fail the same way". -/
+
+theorem i53_err_of_mkInt53 {i : Int} {err : Err} (h : mkInt53 i = .error err) :
+    err = .int53Overflow ∧ Js.Runtime.i53 i = .error "int53Overflow" := by
+  simp only [mkInt53] at h
+  split at h
+  · rename_i hr
+    obtain rfl : err = Err.int53Overflow := (Except.error.inj h).symm
+    refine ⟨rfl, ?_⟩
+    have hr' : (i < Js.Runtime.safeMin || Js.Runtime.safeMax < i) = true := hr
+    simp [Js.Runtime.i53, Js.Runtime.fail, hr']
+  · simp at h
+
+theorem i53_guard_trap {y q : Int} {err : Err}
+    (h : (if y == 0 then .error Err.divByZero else mkInt53 q) = .error err) :
+    (if y == 0 then Js.Runtime.fail "divByZero" else Js.Runtime.i53 q) = .error err.code := by
+  split at h
+  · rename_i hy
+    obtain rfl : err = Err.divByZero := (Except.error.inj h).symm
+    rw [if_pos hy]
+    rfl
+  · rename_i hy
+    obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 h
+    rw [if_neg hy, hi]
+    rfl
+
+theorem numericHelper_trap {p : Program} {ty : Ty} {op : BinOp} {jl jr je : Js.Expr}
+    {a b : Value} {err : Err}
+    (hnh : Compile.numericHelper ty op jl jr = some je)
+    (ha : Value.hasTy p a ty = true) (hb : Value.hasTy p b ty = true)
+    (herr : applyBin op a b = .error err)
+    (hla : Eventually m jenv jl (encodeValue a)) (hrb : Eventually m jenv jr (encodeValue b)) :
+    EventuallyErr m jenv je err.code := by
+  cases ty
+  case int53 =>
+    obtain ⟨x, rfl⟩ := hasTy_int53_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_int53_inv hb
+    cases op <;> simp only [Compile.numericHelper] at hnh
+    case add =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 herr
+      refine eventuallyErr_call1_helper (eventually_binary
+        (fun g => eval_binary_plus m g _ jl jr) (by simpa [encodeValue] using hla)
+        (by simpa [encodeValue] using hrb) rfl) ?_
+      rw [helper_i53, hi]
+      rfl
+    case sub =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 herr
+      refine eventuallyErr_call1_helper (eventually_binary
+        (fun g => eval_binary_minus m g _ jl jr) (by simpa [encodeValue] using hla)
+        (by simpa [encodeValue] using hrb) rfl) ?_
+      rw [helper_i53, hi]
+      rfl
+    case mul =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 herr
+      refine eventuallyErr_call1_helper (eventually_binary
+        (fun g => eval_binary_times m g _ jl jr) (by simpa [encodeValue] using hla)
+        (by simpa [encodeValue] using hrb) rfl) ?_
+      rw [helper_i53, hi]
+      rfl
+    case div =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      refine eventuallyErr_call2_helper (by simpa [encodeValue] using hla)
+        (by simpa [encodeValue] using hrb) ?_
+      rw [helper_i53div, Js.Runtime.i53div, i53_guard_trap herr]
+    case mod =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      refine eventuallyErr_call2_helper (by simpa [encodeValue] using hla)
+        (by simpa [encodeValue] using hrb) ?_
+      rw [helper_i53mod, Js.Runtime.i53mod, i53_guard_trap herr]
+    case min => simp [applyBin, applyMinMax, bind, Except.bind] at herr
+    case max => simp [applyBin, applyMinMax, bind, Except.bind] at herr
+    all_goals simp at hnh
+  case uint32 =>
+    obtain ⟨x, rfl⟩ := hasTy_uint32_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_uint32_inv hb
+    cases op <;> simp only [Compile.numericHelper] at hnh
+    case div =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      split at herr
+      · rename_i hy
+        obtain rfl : err = Err.divByZero := (Except.error.inj herr).symm
+        refine eventuallyErr_call2_helper (by simpa [encodeValue] using hla)
+          (by simpa [encodeValue] using hrb) ?_
+        rw [helper_u32div]
+        have hz : y.toNat = 0 := by rw [eq_of_beq hy]; rfl
+        simp [Js.Runtime.u32div, Js.Runtime.fail, hz, Err.code]
+      · simp at herr
+    case mod =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      split at herr
+      · rename_i hy
+        obtain rfl : err = Err.divByZero := (Except.error.inj herr).symm
+        refine eventuallyErr_call2_helper (by simpa [encodeValue] using hla)
+          (by simpa [encodeValue] using hrb) ?_
+        rw [helper_u32mod]
+        have hz : y.toNat = 0 := by rw [eq_of_beq hy]; rfl
+        simp [Js.Runtime.u32mod, Js.Runtime.fail, hz, Err.code]
+      · simp at herr
+    case add => simp [applyBin, applyArith] at herr
+    case sub => simp [applyBin, applyArith] at herr
+    case mul => simp [applyBin, applyArith] at herr
+    case min => simp [applyBin, applyMinMax, bind, Except.bind] at herr
+    case max => simp [applyBin, applyMinMax, bind, Except.bind] at herr
+    all_goals simp at hnh
+  case bigint =>
+    obtain ⟨x, rfl⟩ := hasTy_bigint_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_bigint_inv hb
+    cases op <;> simp only [Compile.numericHelper] at hnh
+    case div =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      split at herr
+      · rename_i hy
+        obtain rfl : err = Err.divByZero := (Except.error.inj herr).symm
+        refine eventuallyErr_call2_helper (by simpa [encodeValue] using hla)
+          (by simpa [encodeValue] using hrb) ?_
+        rw [helper_bigdiv]
+        simp [Js.Runtime.bigdiv, Js.Runtime.fail, hy, Err.code]
+      · simp at herr
+    case mod =>
+      injection hnh with hje; subst hje
+      simp only [applyBin, applyArith] at herr
+      split at herr
+      · rename_i hy
+        obtain rfl : err = Err.divByZero := (Except.error.inj herr).symm
+        refine eventuallyErr_call2_helper (by simpa [encodeValue] using hla)
+          (by simpa [encodeValue] using hrb) ?_
+        rw [helper_bigmod]
+        simp [Js.Runtime.bigmod, Js.Runtime.fail, hy, Err.code]
+      · simp at herr
+    case add => simp [applyBin, applyArith] at herr
+    case sub => simp [applyBin, applyArith] at herr
+    case mul => simp [applyBin, applyArith] at herr
+    case min => simp [applyBin, applyMinMax, bind, Except.bind] at herr
+    case max => simp [applyBin, applyMinMax, bind, Except.bind] at herr
+    all_goals simp at hnh
+  all_goals (cases op <;> simp [Compile.numericHelper] at hnh)
+
+/-- Every name the compiler has in scope is bound in the reference environment. `EnvTyped` says only
+that the two agree where both have the name, which leaves `eval` free to fail on a lookup the generated
+code answers. -/
+def EnvCovers (env : Env) (ctx : Compile.Ctx) : Prop :=
+  ∀ name ty, (ctx.find? (·.1 == name)).map (·.2) = some ty → ∃ v, Env.lookup? env name = some v
+
+theorem EnvCovers.cons {env : Env} {ctx : Compile.Ctx} {name : String} {ty : Ty} {v : Value}
+    (h : EnvCovers env ctx) : EnvCovers ((name, v) :: env) ((name, ty) :: ctx) := by
+  intro key t hkey
+  simp only [List.find?_cons] at hkey
+  cases hn : (name == key) with
+  | true => exact ⟨v, by simp [Env.lookup?, hn]⟩
+  | false =>
+    rw [hn] at hkey
+    simp only at hkey
+    obtain ⟨w, hw⟩ := h key t hkey
+    refine ⟨w, ?_⟩
+    simp only [Env.lookup?, List.find?_cons, hn]
+    exact hw
+
+theorem evalExpr_zero (p : Program) (env : Env) (e : Expr) :
+    evalExpr p 0 env e = .error .outOfFuel := by rw [evalExpr.eq_def]
+
+theorem compareValues_ok {p : Program} {ty : Ty} {a b : Value} {op : BinOp}
+    (hord : Compile.isOrdered ty = true)
+    (ha : Value.hasTy p a ty = true) (hb : Value.hasTy p b ty = true) :
+    ∃ v, compareValues op a b = .ok v := by
+  cases ty
+  case int53 =>
+    obtain ⟨x, rfl⟩ := hasTy_int53_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_int53_inv hb
+    exact ⟨_, rfl⟩
+  case uint32 =>
+    obtain ⟨x, rfl⟩ := hasTy_uint32_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_uint32_inv hb
+    exact ⟨_, rfl⟩
+  case bigint =>
+    obtain ⟨x, rfl⟩ := hasTy_bigint_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_bigint_inv hb
+    exact ⟨_, rfl⟩
+  case string =>
+    obtain ⟨x, rfl⟩ := hasTy_string_inv ha
+    obtain ⟨y, rfl⟩ := hasTy_string_inv hb
+    exact ⟨_, rfl⟩
+  all_goals simp [Compile.isOrdered] at hord
+
+theorem compileExpr_bin_trap {p : Program} {ctx : Compile.Ctx} {op : BinOp} {lhsE rhsE : Expr}
+    {je jl jr : Js.Expr} {ty tl : Ty} {a b : Value} {err : Err}
+    (hand : op ≠ .and) (hor : op ≠ .or)
+    (hcl : Compile.compileExpr p ctx lhsE = .ok (jl, tl))
+    (hcr : Compile.compileExpr p ctx rhsE = .ok (jr, tl))
+    (hc : Compile.compileExpr p ctx (.bin op lhsE rhsE) = .ok (je, ty))
+    (ha : Value.hasTy p a tl = true) (hb : Value.hasTy p b tl = true)
+    (herr : applyBin op a b = .error err)
+    (hla : Eventually m jenv jl (encodeValue a)) (hrb : Eventually m jenv jr (encodeValue b)) :
+    EventuallyErr m jenv je err.code := by
+  simp only [Compile.compileExpr, bind, Except.bind, hcl, hcr] at hc
+  split at hc
+  · simp at hc
+  cases op <;> simp only at hc
+  case add | sub | mul | div | mod | min | max =>
+    split at hc
+    · rename_i j hnh
+      have hje : j = je := congrArg Prod.fst (Except.ok.inj hc)
+      subst hje
+      exact numericHelper_trap hnh ha hb herr hla hrb
+    · simp at hc
+  case lt | le | gt | ge =>
+    simp only [Compile.orderSymbol] at hc
+    split at hc
+    · simp at hc
+    · rename_i hord
+      obtain ⟨v, hv⟩ := compareValues_ok (by simpa using hord) ha hb
+      rw [applyBin, hv] at herr
+      simp at herr
+  case eq => simp [applyBin] at herr
+  case ne => simp [applyBin] at herr
+  case and => exact absurd rfl hand
+  case or => exact absurd rfl hor
+  case concat =>
+    cases tl <;> simp only at hc
+    case string =>
+      obtain ⟨x, rfl⟩ := hasTy_string_inv ha
+      obtain ⟨y, rfl⟩ := hasTy_string_inv hb
+      simp [applyBin] at herr
+    case array elem =>
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv ha
+      obtain ⟨ys, rfl⟩ := hasTy_array_inv hb
+      simp [applyBin] at herr
+    all_goals simp at hc
+
+/-- If the reference semantics refuses, the generated code refuses with the same thrown code.
+
+`outOfFuel` is excluded: fuel is what makes `eval` total, and the conclusion is stated at every large
+enough amount of the model's, so a run that only the reference side ran out of has nothing to match. -/
+theorem fragment_traps_in (p : Program) (m : Js.Module)
+    {e : Expr} (hfrag : InFragment e) :
+    ∀ {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat}
+      {err : Err},
+      EnvTyped p env ctx →
+      EnvCovers env ctx →
+      JsEnvAgrees env jenv →
+      Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .error err →
+      err ≠ .outOfFuel →
+      EventuallyErr m jenv je err.code := by
+  induction hfrag with
+  | lit l =>
+    intro ctx env jenv je ty f err _ _ _ _ he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f => rw [evalExpr_lit] at he; simp at he
+  | var name =>
+    intro ctx env jenv je ty f err _ hcov _ hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr] at hc
+      split at hc
+      · rename_i t hctx
+        obtain ⟨v, hv⟩ := hcov name t hctx
+        rw [evalExpr_var, hv] at he
+        simp at he
+      · simp at hc
+  | cond hc' ht' he' ihc iht ihe =>
+    rename_i cE tE eE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i condPair hcc
+      obtain ⟨jc, tc⟩ := condPair
+      split at hc
+      · simp at hc
+      rename_i htcb
+      split at hc
+      · simp at hc
+      rename_i thenPair hct
+      obtain ⟨jt, tt⟩ := thenPair
+      split at hc
+      · simp at hc
+      rename_i elsePair hce
+      obtain ⟨jel, te⟩ := elsePair
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, _⟩ := hc
+      subst hje
+      rw [evalExpr_cond] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hec
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_condC (ihc henv hcov hjenv hcc hec hne)
+      rename_i cv hec
+      have htc' : tc = Ty.bool := Ty.eq_of_not_bne htcb
+      obtain ⟨cb, rfl⟩ := hasTy_bool_inv
+        (htc' ▸ typeSound p f ctx env cE jc tc cv hc'.typeChecked henv hcc hec)
+      have hcond : Eventually m jenv jc (.bool cb) := by
+        simpa [encodeValue] using fragment_correct_in p m hc' henv hjenv hcc hec
+      cases cb with
+      | true =>
+        simp only at he
+        exact eventuallyErr_condT hcond (iht henv hcov hjenv hct he hne)
+      | false =>
+        simp only at he
+        exact eventuallyErr_condE hcond (ihe henv hcov hjenv hce he hne)
+  | letE hval hbody ihv ihb =>
+    rename_i name lty valE bodyE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i valPair hcv
+      obtain ⟨jv, tv⟩ := valPair
+      split at hc
+      · simp at hc
+      rename_i hsame
+      split at hc
+      · simp at hc
+      rename_i bodyPair hcb
+      obtain ⟨jb, tb⟩ := bodyPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, _⟩ := hc
+      subst hje
+      rw [evalExpr_letE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hve
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_arrowArg (ihv henv hcov hjenv hcv hve hne)
+      rename_i vv hvv
+      have hvt : Value.hasTy p vv tv = true :=
+        typeSound p f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
+      exact eventuallyErr_arrowBody (fragment_correct_in p m hval henv hjenv hcv hvv)
+        (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt)) hcov.cons hjenv.cons hcb he hne)
+  | un hx ihx =>
+    rename_i op xE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      rw [evalExpr_un] at he
+      simp only [bind, Except.bind] at he
+      cases op with
+      | not =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        split at hc
+        · rename_i htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          split at he
+          · rename_i e0 hxe
+            obtain rfl : err = e0 := (Except.error.inj he).symm
+            exact eventuallyErr_not (ihx henv hcov hjenv hcx hxe hne)
+          rename_i w hw
+          have htxb : tx = Ty.bool := Ty.eq_of_beq htx
+          have hwt := typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw
+          obtain ⟨wb, rfl⟩ := hasTy_bool_inv (htxb ▸ hwt)
+          simp [applyUn] at he
+        · simp at hc
+      | neg =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        split at hc
+        · rename_i htx
+          have htx' : tx = Ty.int53 := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          split at he
+          · rename_i e0 hxe
+            obtain rfl : err = e0 := (Except.error.inj he).symm
+            exact eventuallyErr_call1 (eventuallyErr_neg (ihx henv hcov hjenv hcx hxe hne))
+          rename_i w hw
+          obtain ⟨i, rfl⟩ := hasTy_int53_inv
+            (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          simp only [applyUn] at he
+          obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
+          refine eventuallyErr_call1_helper (eventually_neg_num
+            (by simpa [encodeValue] using fragment_correct_in p m hx henv hjenv hcx hw)) ?_
+          rw [helper_i53, hi]
+          rfl
+        · rename_i htx
+          have htx' : tx = Ty.bigint := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          split at he
+          · rename_i e0 hxe
+            obtain rfl : err = e0 := (Except.error.inj he).symm
+            exact eventuallyErr_neg (ihx henv hcov hjenv hcx hxe hne)
+          rename_i w hw
+          obtain ⟨i, rfl⟩ := hasTy_bigint_inv
+            (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          simp [applyUn] at he
+        · simp at hc
+      | abs =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        split at hc
+        · rename_i htx
+          have htx' : tx = Ty.int53 := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          split at he
+          · rename_i e0 hxe
+            obtain rfl : err = e0 := (Except.error.inj he).symm
+            exact eventuallyErr_call1 (eventuallyErr_call1 (ihx henv hcov hjenv hcx hxe hne))
+          rename_i w hw
+          obtain ⟨i, rfl⟩ := hasTy_int53_inv
+            (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          simp only [applyUn] at he
+          obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
+          have h1 : Eventually m jenv jx (.num i) := by
+            simpa [encodeValue] using fragment_correct_in p m hx henv hjenv hcx hw
+          have h2 : Eventually m jenv (.call "__abs" [jx]) (.num i.natAbs) := by
+            refine eventually_call1 h1 ?_
+            simp [helper_abs_num, absInt i]
+          refine eventuallyErr_call1_helper h2 ?_
+          rw [helper_i53, hi]
+          rfl
+        · rename_i htx
+          have htx' : tx = Ty.bigint := htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨hje, _⟩ := hc
+          subst hje
+          split at he
+          · rename_i e0 hxe
+            obtain rfl : err = e0 := (Except.error.inj he).symm
+            exact eventuallyErr_call1 (ihx henv hcov hjenv hcx hxe hne)
+          rename_i w hw
+          obtain ⟨i, rfl⟩ := hasTy_bigint_inv
+            (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          simp [applyUn] at he
+        · simp at hc
+  | bin hl hr ihl ihr =>
+    rename_i op lhsE rhsE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      have hbin := hc
+      simp only [Compile.compileExpr, bind, Except.bind] at hbin
+      split at hbin
+      · simp at hbin
+      rename_i lPair hcl
+      obtain ⟨jl, tl⟩ := lPair
+      split at hbin
+      · simp at hbin
+      rename_i rPair hcr
+      obtain ⟨jr, tr⟩ := rPair
+      split at hbin
+      · simp at hbin
+      rename_i hsame
+      have htlr : tl = tr := Ty.eq_of_not_bne hsame
+      subst htlr
+      by_cases hand : op = BinOp.and
+      · subst hand
+        simp only at hbin
+        split at hbin
+        · rename_i htb
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hbin
+          obtain ⟨hje, _⟩ := hbin
+          subst hje
+          rw [evalExpr_and] at he
+          simp only [bind, Except.bind] at he
+          split at he
+          · rename_i e0 hle
+            obtain rfl : err = e0 := (Except.error.inj he).symm
+            exact eventuallyErr_binaryL (ihl henv hcov hjenv hcl hle hne)
+          rename_i av hav
+          have htlb : tl = Ty.bool := Ty.eq_of_beq htb
+          obtain ⟨ab, rfl⟩ := hasTy_bool_inv
+            (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          cases ab with
+          | false => simp at he
+          | true =>
+            simp only at he
+            split at he
+            · rename_i e0 hre
+              obtain rfl : err = e0 := (Except.error.inj he).symm
+              refine eventuallyErr_andR ?_ (ihr henv hcov hjenv hcr hre hne)
+              simpa [encodeValue] using fragment_correct_in p m hl henv hjenv hcl hav
+            rename_i bv hbv
+            obtain ⟨bb, rfl⟩ := hasTy_bool_inv
+              (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            simp [asBool] at he
+        · simp at hbin
+      by_cases hor : op = BinOp.or
+      · subst hor
+        simp only at hbin
+        split at hbin
+        · rename_i htb
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hbin
+          obtain ⟨hje, _⟩ := hbin
+          subst hje
+          rw [evalExpr_or] at he
+          simp only [bind, Except.bind] at he
+          split at he
+          · rename_i e0 hle
+            obtain rfl : err = e0 := (Except.error.inj he).symm
+            exact eventuallyErr_binaryL (ihl henv hcov hjenv hcl hle hne)
+          rename_i av hav
+          have htlb : tl = Ty.bool := Ty.eq_of_beq htb
+          obtain ⟨ab, rfl⟩ := hasTy_bool_inv
+            (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          cases ab with
+          | true => simp at he
+          | false =>
+            simp only at he
+            split at he
+            · rename_i e0 hre
+              obtain rfl : err = e0 := (Except.error.inj he).symm
+              refine eventuallyErr_orR ?_ (ihr henv hcov hjenv hcr hre hne)
+              simpa [encodeValue] using fragment_correct_in p m hl henv hjenv hcl hav
+            rename_i bv hbv
+            obtain ⟨bb, rfl⟩ := hasTy_bool_inv
+              (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            simp [asBool] at he
+        · simp at hbin
+      rw [evalExpr_bin _ _ _ _ _ _ hand hor] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hle
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact compileExpr_bin_errL hcl hcr hc (ihl henv hcov hjenv hcl hle hne)
+      rename_i av hav
+      split at he
+      · rename_i e0 hre
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact compileExpr_bin_errR hand hor hcl hcr hc
+          (fragment_correct_in p m hl henv hjenv hcl hav) (ihr henv hcov hjenv hcr hre hne)
+      rename_i bv hbv
+      exact compileExpr_bin_trap hand hor hcl hcr hc
+        (typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+        (typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv) he
+        (fragment_correct_in p m hl henv hjenv hcl hav)
+        (fragment_correct_in p m hr henv hjenv hcr hbv)
+
 end LeanTs.Correct
