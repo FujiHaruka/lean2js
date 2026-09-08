@@ -62,6 +62,14 @@ termination_by alts => sizeOf alts
 
 end
 
+/-- A comma-separated list of names. Written as a recursion rather than `String.intercalate`, which walks
+an accumulator and does not unfold in a proof, for the reason the rest of the printer is: the file the
+compiler writes has to be something a proof can read back. -/
+def renderNames : List String → String
+  | [] => ""
+  | [n] => n
+  | n :: rest => n ++ ", " ++ renderNames rest
+
 inductive Expr where
   | num (i : Int)
   | bigLit (i : Int)
@@ -117,7 +125,7 @@ def Expr.render : Expr → String
   | .cond c t e => "(" ++ c.render ++ " ? " ++ t.render ++ " : " ++ e.render ++ ")"
   | .call callee args => callee ++ "(" ++ Expr.renderList args ++ ")"
   | .arrowCall params body args =>
-    "((" ++ String.intercalate ", " params ++ ") => (" ++ body.render ++ "))("
+    "((" ++ renderNames params ++ ") => (" ++ body.render ++ "))("
       ++ Expr.renderList args ++ ")"
   | .objLit fields => "{ " ++ Expr.renderFields fields ++ " }"
   | .member obj field => "(" ++ obj.render ++ ")." ++ field
@@ -162,11 +170,16 @@ def Stmt.render : Stmt → String
   | .const name val => "  const " ++ name ++ " = " ++ val.render ++ ";"
   | .ret e => "  return " ++ e.render ++ ";"
 
+def Stmt.renderAll : List Stmt → String
+  | [] => ""
+  | [s] => s.render
+  | s :: rest => s.render ++ "\n" ++ Stmt.renderAll rest
+
 def Func.render (f : Func) : String :=
   let header := if f.doc.isEmpty then "" else "/** " ++ f.doc ++ " */\n"
   let keyword := if f.exported then "export function " else "function "
-  header ++ keyword ++ f.name ++ "(" ++ String.intercalate ", " f.params ++ ") {\n"
-    ++ String.intercalate "\n" (f.body.map Stmt.render) ++ "\n}"
+  header ++ keyword ++ f.name ++ "(" ++ renderNames f.params ++ ") {\n"
+    ++ Stmt.renderAll f.body ++ "\n}"
 
 /-- The runtime helpers the generated code calls. The operations where JS and Lean split on the answer
 are confined here. -/

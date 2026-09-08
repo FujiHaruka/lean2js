@@ -100,7 +100,7 @@ theorem render_call (callee : String) (args : List Js.Expr) :
   rw [Js.Expr.render]
 theorem render_arrowCall (ps : List String) (body : Js.Expr) (args : List Js.Expr) :
     Js.Expr.render (.arrowCall ps body args) =
-      "((" ++ String.intercalate ", " ps ++ ") => (" ++ body.render ++ "))("
+      "((" ++ Js.renderNames ps ++ ") => (" ++ body.render ++ "))("
         ++ Js.Expr.renderList args ++ ")" := by rw [Js.Expr.render]
 theorem render_objLit (fs : List (String × Js.Expr)) :
     Js.Expr.render (.objLit fs) = "{ " ++ Js.Expr.renderFields fs ++ " }" := by rw [Js.Expr.render]
@@ -326,7 +326,7 @@ theorem render_call_toList (callee : String) (args : List Js.Expr) :
 
 theorem render_arrowCall_toList (ps : List String) (body : Js.Expr) (args : List Js.Expr) :
     (Js.Expr.render (.arrowCall ps body args)).toList =
-      '(' :: '(' :: ((String.intercalate ", " ps).toList ++
+      '(' :: '(' :: ((Js.renderNames ps).toList ++
         (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' :: (body.render.toList ++
           (')' :: ')' :: '(' :: ((Js.Expr.renderList args).toList ++ [')']))))) := by
   rw [render_arrowCall]
@@ -982,5 +982,998 @@ theorem parseExprList_step (f : Nat) (close : Char) {c : Char} (hne : (c == clos
         pure (e :: es, r)) := by
   rw [parseExprList, if_neg (by simp [hne])]
   rfl
+
+/-! ## Name lists and operators -/
+
+theorem renderNames_nil_toList : (Js.renderNames []).toList = [] := by
+  rw [Js.renderNames]; rfl
+
+theorem renderNames_one_toList (n : String) : (Js.renderNames [n]).toList = n.toList := by
+  rw [Js.renderNames]
+
+theorem renderNames_cons_toList (n a : String) (rest : List String) :
+    (Js.renderNames (n :: a :: rest)).toList =
+      n.toList ++ (',' :: ' ' :: (Js.renderNames (a :: rest)).toList) := by
+  rw [Js.renderNames]
+  · simp only [String.toList_append, List.append_assoc]
+    rfl
+  · simp
+
+theorem parseIdent_none {cs : List Char} (h : notIdentFirst cs) : parseIdent cs = none := by
+  match cs with
+  | [] => rfl
+  | c :: r => simp [parseIdent, parseIdentChars, h c r rfl]
+
+theorem parseIdentList_names (ps : List String) (hps : ps.all okName = true) (f : Nat)
+    (hf : ps.length < f) (rest : List Char) (hrest : notIdentFirst rest)
+    (hcomma : expect [',', ' '] rest = none) :
+    parseIdentList f ((Js.renderNames ps).toList ++ rest) = some (ps, rest) := by
+  induction ps generalizing f with
+  | nil =>
+    match f with
+    | 0 => omega
+    | f + 1 =>
+      rw [renderNames_nil_toList, List.nil_append, parseIdentList, parseIdent_none hrest]
+  | cons p qs ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at hps
+    match f with
+    | 0 => omega
+    | f + 1 =>
+      match qs with
+      | [] =>
+        rw [renderNames_one_toList, parseIdentList,
+          parseIdent_append p (okName_ne_nil hps.1) (okName_all hps.1) rest hrest]
+        simp [hcomma]
+      | a :: qs =>
+        rw [renderNames_cons_toList]
+        simp only [List.append_assoc, List.cons_append]
+        rw [parseIdentList, parseIdent_append p (okName_ne_nil hps.1) (okName_all hps.1) _
+          (by intro c r hc; cases hc; decide)]
+        simp only [show expect [',', ' '] (',' :: ' ' :: ((Js.renderNames (a :: qs)).toList ++ rest))
+              = some ((Js.renderNames (a :: qs)).toList ++ rest) from by simp [expect]]
+        rw [ih hps.2 f (by simp at hf ⊢; omega)]
+        rfl
+
+theorem renderNames_length (ps : List String) (hps : ps.all okName = true) :
+    ps.length ≤ (Js.renderNames ps).toList.length := by
+  induction ps with
+  | nil => simp [renderNames_nil_toList]
+  | cons p qs ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at hps
+    match qs with
+    | [] =>
+      rw [renderNames_one_toList]
+      have := okName_ne_nil hps.1
+      match hm : p.toList with
+      | [] => exact absurd hm this
+      | c :: cs => simp [hm]
+    | a :: qs =>
+      rw [renderNames_cons_toList]
+      have := ih hps.2
+      simp only [List.length_cons, List.length_append] at this ⊢
+      omega
+
+theorem okOp_ne_nil {s : String} (h : okOp s = true) : s.toList ≠ [] := by
+  intro hnil
+  rw [okOp, hnil] at h
+  simp at h
+
+theorem okOp_all {s : String} (h : okOp s = true) : s.toList.all isOpChar = true := by
+  rw [okOp] at h
+  rcases hm : s.toList with _ | ⟨c, cs⟩
+  · rw [hm] at h; simp at h
+  · rw [hm] at h; exact h
+
+theorem okOp_head {s : String} (h : okOp s = true) {c : Char} {cs : List Char}
+    (hm : s.toList = c :: cs) : isOpChar c = true := by
+  have hall := okOp_all h
+  rw [hm] at hall
+  simp only [List.all_cons, Bool.and_eq_true] at hall
+  exact hall.1
+
+theorem parseOpChars_append (ds : List Char) (hds : ds.all isOpChar = true) (rest : List Char)
+    (hrest : ∀ c r, rest = c :: r → isOpChar c = false) :
+    parseOpChars (ds ++ rest) = (ds, rest) := by
+  induction ds with
+  | nil =>
+    match rest with
+    | [] => rfl
+    | c :: cs => simp [parseOpChars, hrest c cs rfl]
+  | cons d ds ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at hds
+    simp [parseOpChars, hds.1, ih hds.2]
+
+theorem parseOp_append (op : String) (hop : okOp op = true) (rest : List Char)
+    (hrest : ∀ c r, rest = c :: r → isOpChar c = false) :
+    parseOp (op.toList ++ rest) = some (op, rest) := by
+  rw [parseOp, parseOpChars_append _ (okOp_all hop) rest hrest]
+  simp only [String.ofList_toList]
+  rw [if_neg (by simpa using okOp_ne_nil hop)]
+
+theorem exists_cons_of_ne_nil {α : Type _} {l : List α} (h : l ≠ []) : ∃ a as, l = a :: as := by
+  cases l with
+  | nil => exact absurd rfl h
+  | cons a as => exact ⟨a, as, rfl⟩
+
+theorem parseExpr_name (f : Nat) (name : String) (hn : okName name = true) (rest : List Char)
+    (hrest : notIdentFirst rest) :
+    parseExpr (f + 1) (name.toList ++ rest) = parseNamed f name rest := by
+  have h1 : parseExpr (f + 1) (name.toList ++ rest) =
+      (match parseIdent (name.toList ++ rest) with
+       | none => none
+       | some (nm, r) => parseNamed f nm r) := by
+    match hm : name.toList with
+    | [] => exact absurd hm (okName_ne_nil hn)
+    | c :: cs => exact parseExpr_start f (okName_start hn hm) _
+  rw [h1, parseIdent_append name (okName_ne_nil hn) (okName_all hn) rest hrest]
+
+theorem expect_open_none {rest : List Char} (hrest : Sep rest) : expect ['('] rest = none := by
+  cases rest with
+  | nil => rfl
+  | cons c cs => simp [expect, Ne.symm (hrest c cs rfl).2.1]
+
+/-! ## Reaching the parenthesised branches -/
+
+theorem parseParen_bang (g : Nat) (r : List Char) :
+    parseParen (g + 1 + 1) ('!' :: r) = (do
+      let (e, r) ← parseExpr (g + 1) r
+      let r ← expect [')'] r
+      pure (Js.Expr.unary "!" e, r)) := by
+  rw [parseParen, arrowHead_ne (g + 1) (by decide) r]
+
+theorem parseParen_minusDigit (g : Nat) {d : Char} (hd : d.isDigit = true) (r : List Char) :
+    parseParen (g + 1 + 1) ('-' :: d :: r) = (do
+      let (e, r') ← parseNumeral ('-' :: d :: r)
+      parseAfterHead (g + 1) e r') := by
+  rw [parseParen, arrowHead_ne (g + 1) (by decide) _, if_pos hd]
+
+theorem parseParen_minusOther (g : Nat) {d : Char} (hd : d.isDigit = false) (r : List Char) :
+    parseParen (g + 1 + 1) ('-' :: d :: r) = (do
+      let (e, r) ← parseExpr (g + 1) (d :: r)
+      let r ← expect [')'] r
+      pure (Js.Expr.unary "-" e, r)) := by
+  rw [parseParen, arrowHead_ne (g + 1) (by decide) _, if_neg (by simp [hd])]
+
+theorem parseParen_fallback (g : Nat) {c : Char} (h1 : c ≠ '!') (h2 : c ≠ '-') (cs : List Char)
+    (harrow : parseArrowHead (g + 1) (c :: cs) = none) :
+    parseParen (g + 1 + 1) (c :: cs) = (do
+      let (e, r) ← parseExpr (g + 1) (c :: cs)
+      parseAfterHead (g + 1) e r) := by
+  rw [parseParen] <;> first
+    | rw [harrow]
+    | (intros; simp_all)
+
+theorem parseAfterHead_member (g : Nat) (e : Js.Expr) (field : String) (hfield : okName field = true)
+    (rest : List Char) (hrest : notIdentFirst rest) :
+    parseAfterHead (g + 1) e (')' :: '.' :: (field.toList ++ rest))
+      = some (Js.Expr.member e field, rest) := by
+  rw [parseAfterHead,
+    parseIdent_append field (okName_ne_nil hfield) (okName_all hfield) rest hrest]
+  rfl
+
+theorem parseAfterHead_negate (g : Nat) (e : Js.Expr) {c : Char} (hc : c ≠ '.') (rest : List Char) :
+    parseAfterHead (g + 1) e (')' :: c :: rest)
+      = (negateNumeral e).map fun e => (Js.Expr.unary "-" e, c :: rest) := by
+  rw [parseAfterHead] <;> first
+    | rfl
+    | (intros; simp_all)
+
+theorem parseAfterHead_negate_nil (g : Nat) (e : Js.Expr) :
+    parseAfterHead (g + 1) e [')'] = (negateNumeral e).map fun e => (Js.Expr.unary "-" e, []) := by
+  rw [parseAfterHead] <;> first
+    | rfl
+    | (intros; simp_all)
+
+theorem parseAfterHead_neg (g : Nat) (e : Js.Expr) (rest : List Char) (hrest : Sep rest) :
+    parseAfterHead (g + 1) e (')' :: rest)
+      = (negateNumeral e).map fun e => (Js.Expr.unary "-" e, rest) := by
+  cases rest with
+  | nil => exact parseAfterHead_negate_nil g e
+  | cons c r => exact parseAfterHead_negate g e (hrest c r rfl).2.2 r
+
+theorem parseAfterHead_binary (g : Nat) (e : Js.Expr) {c : Char} (hc : c ≠ '?') (cs : List Char) :
+    parseAfterHead (g + 1) e (' ' :: c :: cs) = (do
+      let (op, r) ← parseOp (c :: cs)
+      let r ← expect [' '] r
+      let (rhs, r) ← parseExpr g r
+      let r ← expect [')'] r
+      pure (Js.Expr.binary op e rhs, r)) := by
+  rw [parseAfterHead] <;> first
+    | rfl
+    | (intros; simp_all)
+
+/-! ## The roundtrip on expressions
+
+Each case reads back exactly what the matching printer branch wrote. The fuel is bounded by the length of
+the text, which every recursive call shortens by at least the delimiters around it. -/
+
+mutual
+
+theorem parseExpr_append (e : Js.Expr) (he : RenderableExpr e = true) (f : Nat)
+    (hf : e.render.toList.length < f) (rest : List Char) (hrest : Sep rest) :
+    parseExpr f (e.render.toList ++ rest) = some (e, rest) := by
+  match f with
+  | 0 => omega
+  | f + 1 =>
+  match e with
+  | .num i =>
+    rw [render_num_toList, parseExpr_int]
+    exact parseNumeral_num i rest hrest
+  | .bigLit i =>
+    rw [render_bigLit_toList]
+    simp only [List.append_assoc, List.singleton_append]
+    rw [parseExpr_int]
+    exact parseNumeral_bigLit i rest
+  | .str s =>
+    rw [render_str_toList]
+    simp only [List.cons_append, List.append_assoc, List.singleton_append]
+    rw [parseExpr, parseStr_cons]
+    rfl
+  | .bool b =>
+    match b with
+    | true =>
+      rw [render_bool_true_toList] at hf ⊢
+      simp only [List.length_cons, List.length_nil] at hf
+      obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+      · show parseExpr (g + 1 + 1) ("true".toList ++ rest) = _
+        rw [parseExpr_name (g + 1) "true" (by decide) rest hrest.toIdent]
+        simp [parseNamed]
+    | false =>
+      rw [render_bool_false_toList] at hf ⊢
+      simp only [List.length_cons, List.length_nil] at hf
+      obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+      · show parseExpr (g + 1 + 1) ("false".toList ++ rest) = _
+        rw [parseExpr_name (g + 1) "false" (by decide) rest hrest.toIdent]
+        simp [parseNamed]
+  | .ident name =>
+    rw [RenderableExpr] at he
+    have hn := okCallee_name he
+    rw [render_ident_toList] at hf ⊢
+    have hcl1 : 1 ≤ name.toList.length := by
+      obtain ⟨c, cs, hc⟩ := exists_cons_of_ne_nil (okName_ne_nil hn)
+      rw [hc]; simp
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    · rw [parseExpr_name (g + 1) name hn rest hrest.toIdent,
+        parseNamed_other g name (okCallee_not_dispatch he) rest, expect_open_none hrest]
+  | .call callee args =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    have hn := okCallee_name he.1
+    rw [render_call_toList] at hf ⊢
+    simp only [List.append_assoc, List.cons_append, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_append, List.length_cons, List.length_nil] at hf
+    have hcl1 : 1 ≤ callee.toList.length := by
+      obtain ⟨c, cs, hc⟩ := exists_cons_of_ne_nil (okName_ne_nil hn)
+      rw [hc]; simp
+    obtain ⟨k, rfl⟩ : ∃ k, f = k + 2 := ⟨f - 2, by omega⟩
+    · rw [parseExpr_name (k + 1 + 1) callee hn _ (by intro c r hc; cases hc; decide),
+        parseNamed_other (k + 1) callee (okCallee_not_dispatch he.1) _]
+      show (do
+        let (args', cs) ← parseExprList (k + 1) ')'
+          ((Js.Expr.renderList args).toList ++ (')' :: rest))
+        let cs ← expect [')'] cs
+        pure (Js.Expr.call callee args', cs)) = some (Js.Expr.call callee args, rest)
+      rw [parseExprList_append args he.2 (k + 1) (by omega) ')' (Or.inl rfl) rest]
+      simp [expect]
+  | .objLit fields =>
+    rw [RenderableExpr] at he
+    rw [render_objLit_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append, List.length_nil] at hf
+    rw [parseExpr, parseObjFields_append fields he f (by omega) rest]
+    simp [expect]
+  | .arrayLit items =>
+    rw [RenderableExpr] at he
+    rw [render_arrayLit_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append, List.length_nil] at hf
+    rw [parseExpr, parseExprList_append items he f (by omega) ']' (Or.inr rfl) rest]
+    simp [expect]
+  | .dictLit entries =>
+    rw [RenderableExpr] at he
+    rw [render_dictLit_toList] at hf ⊢
+    simp only [List.append_assoc, List.cons_append, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append, List.length_nil] at hf
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    · show parseExpr (g + 1 + 1) ("new".toList ++ (' ' :: 'M' :: 'a' :: 'p' :: '(' :: '[' ::
+        ((Js.Expr.renderEntries entries).toList ++ (']' :: ')' :: rest)))) = _
+      rw [parseExpr_name (g + 1) "new" (by decide) _ (by intro c r hc; cases hc; decide),
+        parseNamed]
+      show (do
+        let (entries', cs) ← parseEntries g
+          ((Js.Expr.renderEntries entries).toList ++ (']' :: ')' :: rest))
+        let cs ← expect [']', ')'] cs
+        pure (Js.Expr.dictLit entries', cs)) = some (Js.Expr.dictLit entries, rest)
+      rw [parseEntries_append entries he g (by omega) (')' :: rest)]
+      simp [expect]
+  | .check d e' =>
+    rw [RenderableExpr] at he
+    rw [render_check_toList] at hf ⊢
+    simp only [List.append_assoc, List.cons_append, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append, List.length_nil] at hf
+    have hd := descSize_le d
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    · show parseExpr (g + 1 + 1) ("__ck".toList ++ ('(' :: (e'.render.toList ++
+        (',' :: ' ' :: (d.render.toList ++ (')' :: rest)))))) = _
+      rw [parseExpr_name (g + 1) "__ck" (by decide) _ (by intro c r hc; cases hc; decide),
+        parseNamed]
+      show (do
+        let (x, cs) ← parseExpr g
+          (e'.render.toList ++ (',' :: ' ' :: (d.render.toList ++ (')' :: rest))))
+        let cs ← expect [',', ' '] cs
+        let (dd, cs) ← parseDesc g cs
+        let cs ← expect [')'] cs
+        pure (Js.Expr.check dd x, cs)) = some (Js.Expr.check d e', rest)
+      rw [parseExpr_append e' he g (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      show (do
+        let (dd, cs) ← parseDesc g (d.render.toList ++ (')' :: rest))
+        let cs ← expect [')'] cs
+        pure (Js.Expr.check dd e', cs)) = some (Js.Expr.check d e', rest)
+      rw [parseDesc_append d g (by omega) (')' :: rest)]
+      simp [expect]
+  | .unary op e' =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at he
+    rw [render_unary_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨d, ds, hm, -⟩ := render_head e' he.2
+    have hlen : 1 ≤ e'.render.toList.length := by rw [hm]; simp
+    rcases he.1 with rfl | rfl
+    · rw [show (("!" : String).toList.length) = 1 from rfl] at hf
+      obtain ⟨g, rfl⟩ : ∃ g, f = g + 2 := ⟨f - 2, by omega⟩
+      · show parseExpr (g + 1 + 1 + 1) ('(' :: '!' :: (e'.render.toList ++ (')' :: rest))) = _
+        rw [parseExpr, parseParen_bang g,
+          parseExpr_append e' he.2 (g + 1) (by omega) _
+            (Sep.cons (by decide) (by decide) (by decide) _)]
+        simp [expect]
+    · rw [show (("-" : String).toList.length) = 1 from rfl] at hf
+      obtain ⟨g, rfl⟩ : ∃ g, f = g + 2 := ⟨f - 2, by omega⟩
+      · by_cases hdig : d.isDigit = true
+        · rcases render_head_num e' he.2 hm (Or.inl hdig) with ⟨i, rfl⟩ | ⟨i, rfl⟩
+          · match i with
+            | .ofNat n =>
+              have hstep : parseParen (g + 1 + 1)
+                  ('-' :: ((Js.Expr.num (Int.ofNat n)).render.toList ++ (')' :: rest)))
+                  = (do
+                    let (x, r) ← parseNumeral
+                      ('-' :: ((Js.Expr.num (Int.ofNat n)).render.toList ++ (')' :: rest)))
+                    parseAfterHead (g + 1) x r) := by
+                rw [hm]
+                exact parseParen_minusDigit g hdig _
+              show parseExpr (g + 1 + 1 + 1)
+                ('(' :: '-' :: ((Js.Expr.num (Int.ofNat n)).render.toList ++ (')' :: rest))) = _
+              rw [parseExpr, hstep, render_num_toList, renderInt_ofNat_toList, parseNumeral,
+                parseInt_neg_ofNat n (')' :: rest) (by intro c r hc; cases hc; decide)]
+              show parseAfterHead (g + 1) (Js.Expr.num (-(n : Int))) (')' :: rest) = _
+              rw [parseAfterHead_neg g _ rest hrest]
+              simp [negateNumeral]
+            | .negSucc n =>
+              exfalso
+              rw [render_num_toList, renderInt_negSucc_toList] at hm
+              simp only [List.cons.injEq] at hm
+              rw [← hm.1] at hdig
+              exact absurd hdig (by decide)
+          · match i with
+            | .ofNat n =>
+              have hstep : parseParen (g + 1 + 1)
+                  ('-' :: ((Js.Expr.bigLit (Int.ofNat n)).render.toList ++ (')' :: rest)))
+                  = (do
+                    let (x, r) ← parseNumeral
+                      ('-' :: ((Js.Expr.bigLit (Int.ofNat n)).render.toList ++ (')' :: rest)))
+                    parseAfterHead (g + 1) x r) := by
+                rw [hm]
+                exact parseParen_minusDigit g hdig _
+              show parseExpr (g + 1 + 1 + 1)
+                ('(' :: '-' :: ((Js.Expr.bigLit (Int.ofNat n)).render.toList ++ (')' :: rest))) = _
+              rw [parseExpr, hstep, render_bigLit_toList]
+              simp only [List.append_assoc, List.singleton_append]
+              rw [renderInt_ofNat_toList, parseNumeral,
+                parseInt_neg_ofNat n ('n' :: (')' :: rest)) (by intro c r hc; cases hc; decide)]
+              show parseAfterHead (g + 1) (Js.Expr.bigLit (-(n : Int))) (')' :: rest) = _
+              rw [parseAfterHead_neg g _ rest hrest]
+              simp [negateNumeral]
+            | .negSucc n =>
+              exfalso
+              rw [render_bigLit_toList, renderInt_negSucc_toList] at hm
+              simp only [List.cons_append, List.cons.injEq] at hm
+              rw [← hm.1] at hdig
+              exact absurd hdig (by decide)
+        · have hstep : parseParen (g + 1 + 1) ('-' :: (e'.render.toList ++ (')' :: rest)))
+              = (do
+                let (x, r) ← parseExpr (g + 1) (e'.render.toList ++ (')' :: rest))
+                let r ← expect [')'] r
+                pure (Js.Expr.unary "-" x, r)) := by
+            rw [hm]
+            exact parseParen_minusOther g (by simpa using hdig) _
+          show parseExpr (g + 1 + 1 + 1) ('(' :: '-' :: (e'.render.toList ++ (')' :: rest))) = _
+          rw [parseExpr, hstep, parseExpr_append e' he.2 (g + 1) (by omega) _
+            (Sep.cons (by decide) (by decide) (by decide) _)]
+          simp [expect]
+  | .binary op l r =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    obtain ⟨oc, ocs, hom⟩ := exists_cons_of_ne_nil (okOp_ne_nil he.1.1)
+    have hoc : oc ≠ '?' := by
+      have hop := okOp_head he.1.1 hom
+      intro hx; rw [hx] at hop; exact absurd hop (by decide)
+    have holen : 1 ≤ op.toList.length := by rw [hom]; simp
+    obtain ⟨lc, lcs, hlm, -⟩ := render_head l he.1.2
+    have hllen : 1 ≤ l.render.toList.length := by rw [hlm]; simp
+    rw [render_binary_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 2 := ⟨f - 2, by omega⟩
+    · rw [parseExpr, parseParen_head l he.1.2 (g + 1) (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)
+        (AfterHead.cons (by decide) (by decide) (by decide) _)]
+      rw [show parseAfterHead (g + 1) l
+            (' ' :: (op.toList ++ (' ' :: (r.render.toList ++ (')' :: rest)))))
+          = (do
+            let (op', r') ← parseOp (op.toList ++ (' ' :: (r.render.toList ++ (')' :: rest))))
+            let r' ← expect [' '] r'
+            let (rhs, r') ← parseExpr g r'
+            let r' ← expect [')'] r'
+            pure (Js.Expr.binary op' l rhs, r')) from by
+          rw [hom]; exact parseAfterHead_binary g l hoc _]
+      rw [parseOp_append op he.1.1 _ (by intro c r' hc; cases hc; decide)]
+      show (do
+        let (rhs, r') ← parseExpr g (r.render.toList ++ (')' :: rest))
+        let r' ← expect [')'] r'
+        pure (Js.Expr.binary op l rhs, r')) = some (Js.Expr.binary op l r, rest)
+      rw [parseExpr_append r he.2 g (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      simp [expect]
+  | .cond c t e' =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    obtain ⟨cc, ccs, hcm, -⟩ := render_head c he.1.1
+    have hclen : 1 ≤ c.render.toList.length := by rw [hcm]; simp
+    rw [render_cond_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 2 := ⟨f - 2, by omega⟩
+    · rw [parseExpr, parseParen_head c he.1.1 (g + 1) (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)
+        (AfterHead.cons (by decide) (by decide) (by decide) _), parseAfterHead]
+      show (do
+        let (x, r') ← parseExpr g (t.render.toList ++
+          (' ' :: ':' :: ' ' :: (e'.render.toList ++ (')' :: rest))))
+        let r' ← expect [' ', ':', ' '] r'
+        let (y, r') ← parseExpr g r'
+        let r' ← expect [')'] r'
+        pure (Js.Expr.cond c x y, r')) = some (Js.Expr.cond c t e', rest)
+      rw [parseExpr_append t he.1.2 g (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      show (do
+        let (y, r') ← parseExpr g (e'.render.toList ++ (')' :: rest))
+        let r' ← expect [')'] r'
+        pure (Js.Expr.cond c t y, r')) = some (Js.Expr.cond c t e', rest)
+      rw [parseExpr_append e' he.2 g (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      simp [expect]
+  | .member obj field =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    obtain ⟨oc, ocs, hom, -⟩ := render_head obj he.1
+    have holen : 1 ≤ obj.render.toList.length := by rw [hom]; simp
+    have hflen : 1 ≤ field.toList.length := by
+      obtain ⟨c, cs, hc⟩ := exists_cons_of_ne_nil (okName_ne_nil he.2)
+      rw [hc]; simp
+    rw [render_member_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 2 := ⟨f - 2, by omega⟩
+    · rw [parseExpr, parseParen_head obj he.1 (g + 1) (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _) (AfterHead.close _),
+        parseAfterHead_member g obj field he.2 rest hrest.toIdent]
+  | .arrowCall ps body args =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    have hpl := renderNames_length ps he.1.1
+    rw [render_arrowCall_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    · have harrow : parseArrowHead g ('(' :: ((Js.renderNames ps).toList ++
+          (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' :: (body.render.toList ++
+            (')' :: ')' :: '(' :: ((Js.Expr.renderList args).toList ++ (')' :: rest)))))))
+          = some (ps, body.render.toList ++
+            (')' :: ')' :: '(' :: ((Js.Expr.renderList args).toList ++ (')' :: rest)))) := by
+        show (do
+          let (ps', cs) ← parseIdentList g ((Js.renderNames ps).toList ++
+            (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' :: (body.render.toList ++
+              (')' :: ')' :: '(' :: ((Js.Expr.renderList args).toList ++ (')' :: rest))))))
+          let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+          pure (ps', cs)) = _
+        rw [parseIdentList_names ps he.1.1 g (by omega) _ (by intro c r hc; cases hc; decide)
+          (by simp [expect])]
+        simp [expect]
+      have hstep : parseParen (g + 1) ('(' :: ((Js.renderNames ps).toList ++
+          (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' :: (body.render.toList ++
+            (')' :: ')' :: '(' :: ((Js.Expr.renderList args).toList ++ (')' :: rest))))))) = (do
+          let (bd, r) ← parseExpr g (body.render.toList ++
+            (')' :: ')' :: '(' :: ((Js.Expr.renderList args).toList ++ (')' :: rest))))
+          let r ← expect [')', ')', '('] r
+          let (as, r) ← parseExprList g ')' r
+          let r ← expect [')'] r
+          pure (Js.Expr.arrowCall ps bd as, r)) := by
+        rw [parseParen] <;> first
+          | rw [harrow]
+          | (intros; simp_all)
+      rw [parseExpr, hstep]
+      rw [parseExpr_append body he.1.2 g (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      show (do
+        let (as, r) ← parseExprList g ')' ((Js.Expr.renderList args).toList ++ (')' :: rest))
+        let r ← expect [')'] r
+        pure (Js.Expr.arrowCall ps body as, r)) = some (Js.Expr.arrowCall ps body args, rest)
+      rw [parseExprList_append args he.2 g (by omega) ')' (Or.inl rfl) rest]
+      simp [expect]
+  | .mapJs arr b body =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    rw [render_mapJs_toList, lambdaTail] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨k, rfl⟩ : ∃ k, f = k + 2 := ⟨f - 2, by omega⟩
+    · show parseExpr (k + 1 + 1 + 1) ("__map".toList ++ ('(' :: (arr.render.toList ++
+        (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+          (body.render.toList ++ (')' :: ')' :: rest)))))))) = _
+      rw [parseExpr_name (k + 1 + 1) "__map" (by decide) _
+        (by intro c r hc; cases hc; decide), parseNamed]
+      show (do
+        let (x, bn, bd, cs) ← parseLambdaCall (k + 1) ('(' :: (arr.render.toList ++
+          (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest)))))))
+        pure (Js.Expr.mapJs x bn bd, cs)) = some (Js.Expr.mapJs arr b body, rest)
+      rw [parseLambdaCall_append arr b body he.1.1 he.1.2 he.2 k (by omega) (by omega) rest hrest]
+      rfl
+  | .filterJs arr b body =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    rw [render_filterJs_toList, lambdaTail] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨k, rfl⟩ : ∃ k, f = k + 2 := ⟨f - 2, by omega⟩
+    · show parseExpr (k + 1 + 1 + 1) ("__filter".toList ++ ('(' :: (arr.render.toList ++
+        (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+          (body.render.toList ++ (')' :: ')' :: rest)))))))) = _
+      rw [parseExpr_name (k + 1 + 1) "__filter" (by decide) _
+        (by intro c r hc; cases hc; decide), parseNamed]
+      show (do
+        let (x, bn, bd, cs) ← parseLambdaCall (k + 1) ('(' :: (arr.render.toList ++
+          (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest)))))))
+        pure (Js.Expr.filterJs x bn bd, cs)) = some (Js.Expr.filterJs arr b body, rest)
+      rw [parseLambdaCall_append arr b body he.1.1 he.1.2 he.2 k (by omega) (by omega) rest hrest]
+      rfl
+  | .findJs arr b body =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    rw [render_findJs_toList, lambdaTail] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨k, rfl⟩ : ∃ k, f = k + 2 := ⟨f - 2, by omega⟩
+    · show parseExpr (k + 1 + 1 + 1) ("__find".toList ++ ('(' :: (arr.render.toList ++
+        (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+          (body.render.toList ++ (')' :: ')' :: rest)))))))) = _
+      rw [parseExpr_name (k + 1 + 1) "__find" (by decide) _
+        (by intro c r hc; cases hc; decide), parseNamed]
+      show (do
+        let (x, bn, bd, cs) ← parseLambdaCall (k + 1) ('(' :: (arr.render.toList ++
+          (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest)))))))
+        pure (Js.Expr.findJs x bn bd, cs)) = some (Js.Expr.findJs arr b body, rest)
+      rw [parseLambdaCall_append arr b body he.1.1 he.1.2 he.2 k (by omega) (by omega) rest hrest]
+      rfl
+  | .quantJs op arr b body =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    match op with
+    | .all =>
+      rw [render_allJs_toList, lambdaTail] at hf ⊢
+      simp only [List.cons_append, List.append_assoc, List.nil_append,
+        List.singleton_append] at hf ⊢
+      simp only [List.length_cons, List.length_append] at hf
+      obtain ⟨k, rfl⟩ : ∃ k, f = k + 2 := ⟨f - 2, by omega⟩
+      · show parseExpr (k + 1 + 1 + 1) ("__all".toList ++ ('(' :: (arr.render.toList ++
+          (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest)))))))) = _
+        rw [parseExpr_name (k + 1 + 1) "__all" (by decide) _
+          (by intro c r hc; cases hc; decide), parseNamed]
+        show (do
+          let (x, bn, bd, cs) ← parseLambdaCall (k + 1) ('(' :: (arr.render.toList ++
+            (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+              (body.render.toList ++ (')' :: ')' :: rest)))))))
+          pure (Js.Expr.quantJs .all x bn bd, cs)) = some (Js.Expr.quantJs .all arr b body, rest)
+        rw [parseLambdaCall_append arr b body he.1.1 he.1.2 he.2 k (by omega) (by omega) rest hrest]
+        rfl
+    | .any =>
+      rw [render_anyJs_toList, lambdaTail] at hf ⊢
+      simp only [List.cons_append, List.append_assoc, List.nil_append,
+        List.singleton_append] at hf ⊢
+      simp only [List.length_cons, List.length_append] at hf
+      obtain ⟨k, rfl⟩ : ∃ k, f = k + 2 := ⟨f - 2, by omega⟩
+      · show parseExpr (k + 1 + 1 + 1) ("__any".toList ++ ('(' :: (arr.render.toList ++
+          (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest)))))))) = _
+        rw [parseExpr_name (k + 1 + 1) "__any" (by decide) _
+          (by intro c r hc; cases hc; decide), parseNamed]
+        show (do
+          let (x, bn, bd, cs) ← parseLambdaCall (k + 1) ('(' :: (arr.render.toList ++
+            (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+              (body.render.toList ++ (')' :: ')' :: rest)))))))
+          pure (Js.Expr.quantJs .any x bn bd, cs)) = some (Js.Expr.quantJs .any arr b body, rest)
+        rw [parseLambdaCall_append arr b body he.1.1 he.1.2 he.2 k (by omega) (by omega) rest hrest]
+        rfl
+  | .reduceJs arr init a e' body =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    rw [render_reduceJs_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨k, rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+    · show parseExpr (k + 1 + 1) ("__reduce".toList ++ ('(' :: (arr.render.toList ++
+        (',' :: ' ' :: (init.render.toList ++ (',' :: ' ' :: '(' :: (a.toList ++
+          (',' :: ' ' :: (e'.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest)))))))))))) = _
+      rw [parseExpr_name (k + 1) "__reduce" (by decide) _
+        (by intro c r hc; cases hc; decide), parseNamed]
+      show (do
+        let (x, cs) ← parseExpr k (arr.render.toList ++
+          (',' :: ' ' :: (init.render.toList ++ (',' :: ' ' :: '(' :: (a.toList ++
+            (',' :: ' ' :: (e'.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+              (body.render.toList ++ (')' :: ')' :: rest))))))))))
+        let cs ← expect [',', ' '] cs
+        let (y, cs) ← parseExpr k cs
+        let cs ← expect [',', ' ', '('] cs
+        let (acc, cs) ← parseIdent cs
+        let cs ← expect [',', ' '] cs
+        let (el, cs) ← parseIdent cs
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.reduceJs x y acc el bd, cs))
+          = some (Js.Expr.reduceJs arr init a e' body, rest)
+      rw [parseExpr_append arr he.1.1.1.1 k (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      show (do
+        let (y, cs) ← parseExpr k (init.render.toList ++
+          (',' :: ' ' :: '(' :: (a.toList ++ (',' :: ' ' :: (e'.toList ++
+            (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+              (body.render.toList ++ (')' :: ')' :: rest))))))))
+        let cs ← expect [',', ' ', '('] cs
+        let (acc, cs) ← parseIdent cs
+        let cs ← expect [',', ' '] cs
+        let (el, cs) ← parseIdent cs
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.reduceJs arr y acc el bd, cs))
+          = some (Js.Expr.reduceJs arr init a e' body, rest)
+      rw [parseExpr_append init he.1.1.1.2 k (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      show (do
+        let (acc, cs) ← parseIdent (a.toList ++ (',' :: ' ' :: (e'.toList ++
+          (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest))))))
+        let cs ← expect [',', ' '] cs
+        let (el, cs) ← parseIdent cs
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.reduceJs arr init acc el bd, cs))
+          = some (Js.Expr.reduceJs arr init a e' body, rest)
+      rw [parseIdent_append a (okName_ne_nil he.1.1.2) (okName_all he.1.1.2) _
+        (by intro c r hc; cases hc; decide)]
+      show (do
+        let (el, cs) ← parseIdent (e'.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+          (body.render.toList ++ (')' :: ')' :: rest))))
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.reduceJs arr init a el bd, cs))
+          = some (Js.Expr.reduceJs arr init a e' body, rest)
+      rw [parseIdent_append e' (okName_ne_nil he.1.2) (okName_all he.1.2) _
+        (by intro c r hc; cases hc; decide)]
+      show (do
+        let (bd, cs) ← parseExpr k (body.render.toList ++ (')' :: ')' :: rest))
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.reduceJs arr init a e' bd, cs))
+          = some (Js.Expr.reduceJs arr init a e' body, rest)
+      rw [parseExpr_append body he.2 k (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      simp [expect]
+termination_by f
+decreasing_by all_goals first | omega | (simp_wf; omega)
+
+theorem parseParen_head (h : Js.Expr) (hh : RenderableExpr h = true) (f : Nat)
+    (hf : h.render.toList.length < f) (tail : List Char) (hsep : Sep tail)
+    (hafter : AfterHead tail) :
+    parseParen (f + 1) (h.render.toList ++ tail) = parseAfterHead f h tail := by
+  obtain ⟨c, cs, hm, -⟩ := render_head h hh
+  have hlen : 1 ≤ h.render.toList.length := by rw [hm]; simp
+  obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+  · have harrow : parseArrowHead (g + 1) (h.render.toList ++ tail) = none :=
+      parseArrowHead_render h hh g tail hafter
+    obtain ⟨-, -, -, h4⟩ := render_head_ne h hh hm
+    by_cases hmin : c = '-'
+    · rcases render_head_num h hh hm (Or.inr hmin) with ⟨i, rfl⟩ | ⟨i, rfl⟩
+      · match i with
+        | .ofNat n =>
+          exfalso
+          rw [render_num_toList, renderInt_ofNat_toList, hmin] at hm
+          exact absurd (head_digit_of_natDigits hm) (by decide)
+        | .negSucc n =>
+          obtain ⟨d, ds, hn⟩ := exists_cons_of_ne_nil (natDigits_ne_nil (n + 1))
+          have hstep : parseParen (g + 1 + 1)
+              ((Js.Expr.num (Int.negSucc n)).render.toList ++ tail)
+              = (do
+                let (x, r) ← parseNumeral ((Js.Expr.num (Int.negSucc n)).render.toList ++ tail)
+                parseAfterHead (g + 1) x r) := by
+            rw [render_num_toList, renderInt_negSucc_toList, hn]
+            exact parseParen_minusDigit g (head_digit_of_natDigits hn) _
+          rw [hstep, render_num_toList, parseNumeral_num (Int.negSucc n) tail hsep]
+          rfl
+      · match i with
+        | .ofNat n =>
+          exfalso
+          rw [render_bigLit_toList, renderInt_ofNat_toList, hmin] at hm
+          obtain ⟨d, ds, hn⟩ := exists_cons_of_ne_nil (natDigits_ne_nil n)
+          rw [hn] at hm
+          simp only [List.cons_append, List.cons.injEq] at hm
+          have hd := head_digit_of_natDigits hn
+          rw [hm.1] at hd
+          exact absurd hd (by decide)
+        | .negSucc n =>
+          obtain ⟨d, ds, hn⟩ := exists_cons_of_ne_nil (natDigits_ne_nil (n + 1))
+          have hstep : parseParen (g + 1 + 1)
+              ((Js.Expr.bigLit (Int.negSucc n)).render.toList ++ tail)
+              = (do
+                let (x, r) ← parseNumeral ((Js.Expr.bigLit (Int.negSucc n)).render.toList ++ tail)
+                parseAfterHead (g + 1) x r) := by
+            rw [render_bigLit_toList, renderInt_negSucc_toList, hn]
+            simp only [List.cons_append, List.append_assoc]
+            exact parseParen_minusDigit g (head_digit_of_natDigits hn) _
+          rw [hstep, render_bigLit_toList]
+          simp only [List.append_assoc, List.singleton_append]
+          rw [parseNumeral_bigLit (Int.negSucc n) tail]
+          rfl
+    · have hstep : parseParen (g + 1 + 1) (h.render.toList ++ tail) = (do
+          let (x, r) ← parseExpr (g + 1) (h.render.toList ++ tail)
+          parseAfterHead (g + 1) x r) := by
+        rw [hm] at harrow ⊢
+        exact parseParen_fallback g h4 hmin _ harrow
+      rw [hstep, parseExpr_append h hh (g + 1) hf tail hsep]
+      rfl
+termination_by f + 1
+decreasing_by all_goals first | omega | (simp_wf; omega)
+
+theorem parseLambdaCall_append (arr : Js.Expr) (b : String) (body : Js.Expr)
+    (harr : RenderableExpr arr = true) (hb : okName b = true) (hbody : RenderableExpr body = true)
+    (k : Nat) (hk1 : arr.render.toList.length < k) (hk2 : body.render.toList.length < k)
+    (rest : List Char) (hrest : Sep rest) :
+    parseLambdaCall (k + 1) ('(' :: (arr.render.toList ++
+      (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+        (body.render.toList ++ (')' :: ')' :: rest)))))))
+      = some (arr, b, body, rest) := by
+  rw [parseLambdaCall]
+  show (do
+    let (x, cs) ← parseExpr k (arr.render.toList ++
+      (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+        (body.render.toList ++ (')' :: ')' :: rest))))))
+    let cs ← expect [',', ' ', '('] cs
+    let (bn, cs) ← parseIdent cs
+    let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+    let (bd, cs) ← parseExpr k cs
+    let cs ← expect [')', ')'] cs
+    pure (x, bn, bd, cs)) = some (arr, b, body, rest)
+  rw [parseExpr_append arr harr k hk1 _ (Sep.cons (by decide) (by decide) (by decide) _)]
+  show (do
+    let (bn, cs) ← parseIdent (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+      (body.render.toList ++ (')' :: ')' :: rest))))
+    let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+    let (bd, cs) ← parseExpr k cs
+    let cs ← expect [')', ')'] cs
+    pure (arr, bn, bd, cs)) = some (arr, b, body, rest)
+  rw [parseIdent_append b (okName_ne_nil hb) (okName_all hb) _
+    (by intro c r hc; cases hc; decide)]
+  show (do
+    let (bd, cs) ← parseExpr k (body.render.toList ++ (')' :: ')' :: rest))
+    let cs ← expect [')', ')'] cs
+    pure (arr, b, bd, cs)) = some (arr, b, body, rest)
+  rw [parseExpr_append body hbody k hk2 _ (Sep.cons (by decide) (by decide) (by decide) _)]
+  simp [expect]
+termination_by k + 1
+decreasing_by all_goals first | omega | (simp_wf; omega)
+
+theorem parseExprList_append (es : List Js.Expr) (hes : RenderableList es = true) (f : Nat)
+    (hf : (Js.Expr.renderList es).toList.length + 1 < f) (close : Char)
+    (hclose : close = ')' ∨ close = ']') (rest : List Char) :
+    parseExprList f close ((Js.Expr.renderList es).toList ++ close :: rest)
+      = some (es, close :: rest) := by
+  have hsep : Sep (close :: rest) := by
+    rcases hclose with rfl | rfl
+    · exact Sep.cons (by decide) (by decide) (by decide) _
+    · exact Sep.cons (by decide) (by decide) (by decide) _
+  have hcm : ¬(',' = close) := by rcases hclose with rfl | rfl <;> decide
+  match f with
+  | 0 => omega
+  | f + 1 =>
+    match es with
+    | [] =>
+      rw [renderList_nil_toList, List.nil_append, parseExprList]
+      simp
+    | [e] =>
+      rw [RenderableList] at hes
+      simp only [Bool.and_eq_true] at hes
+      rw [renderList_one_toList] at hf ⊢
+      obtain ⟨c, cs, hm, -⟩ := render_head e hes.1
+      have hne : (c == close) = false := by
+        rcases render_head_ne e hes.1 hm with ⟨h1, h2, -⟩
+        rcases hclose with rfl | rfl <;> simp [h1, h2]
+      have hstep : parseExprList (f + 1) close (e.render.toList ++ close :: rest) = (do
+          let (x, r) ← parseExpr f (e.render.toList ++ close :: rest)
+          match expect [',', ' '] r with
+          | none => pure ([x], r)
+          | some r => do
+            let (xs, r) ← parseExprList f close r
+            pure (x :: xs, r)) := by
+        rw [hm]
+        exact parseExprList_step f close hne _
+      rw [hstep, parseExpr_append e hes.1 f (by omega) (close :: rest) hsep]
+      simp [expect, hcm]
+    | e :: a :: tl =>
+      rw [RenderableList] at hes
+      simp only [Bool.and_eq_true] at hes
+      rw [renderList_cons_toList] at hf ⊢
+      simp only [List.append_assoc, List.cons_append, List.nil_append,
+        List.singleton_append] at hf ⊢
+      simp only [List.length_append, List.length_cons] at hf
+      obtain ⟨c, cs, hm, -⟩ := render_head e hes.1
+      have hne : (c == close) = false := by
+        rcases render_head_ne e hes.1 hm with ⟨h1, h2, -⟩
+        rcases hclose with rfl | rfl <;> simp [h1, h2]
+      have hstep : parseExprList (f + 1) close (e.render.toList ++
+          (',' :: ' ' :: ((Js.Expr.renderList (a :: tl)).toList ++ close :: rest))) = (do
+          let (x, r) ← parseExpr f (e.render.toList ++
+            (',' :: ' ' :: ((Js.Expr.renderList (a :: tl)).toList ++ close :: rest)))
+          match expect [',', ' '] r with
+          | none => pure ([x], r)
+          | some r => do
+            let (xs, r) ← parseExprList f close r
+            pure (x :: xs, r)) := by
+        rw [hm]
+        exact parseExprList_step f close hne _
+      rw [hstep, parseExpr_append e hes.1 f (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      simp only [Option.bind_eq_bind, Option.bind_some,
+        show expect [',', ' '] (',' :: ' ' :: ((Js.Expr.renderList (a :: tl)).toList ++
+            close :: rest)) = some ((Js.Expr.renderList (a :: tl)).toList ++ close :: rest)
+          from by simp [expect]]
+      rw [parseExprList_append (a :: tl) hes.2 f (by omega) close hclose rest]
+      simp
+termination_by f
+decreasing_by all_goals first | omega | (simp_wf; omega)
+
+theorem parseObjFields_append (fs : List (String × Js.Expr)) (hfs : RenderablePairs fs = true)
+    (f : Nat) (hf : (Js.Expr.renderFields fs).toList.length + 1 < f) (rest : List Char) :
+    parseObjFields f ((Js.Expr.renderFields fs).toList ++ ' ' :: '}' :: rest)
+      = some (fs, ' ' :: '}' :: rest) := by
+  match f with
+  | 0 => omega
+  | f + 1 =>
+    match fs with
+    | [] =>
+      rw [renderFields_nil_toList, List.nil_append, parseObjFields]
+    | [(k, v)] =>
+      rw [RenderablePairs] at hfs
+      simp only [Bool.and_eq_true] at hfs
+      rw [renderFields_one_toList] at hf ⊢
+      simp only [List.cons_append, List.append_assoc, List.nil_append,
+        List.singleton_append] at hf ⊢
+      simp only [List.length_cons, List.length_append] at hf
+      rw [parseObjFields]
+      · simp only [parseStr_cons k, Option.bind_eq_bind, Option.bind_some,
+          show expect [':', ' '] (':' :: ' ' :: (v.render.toList ++ ' ' :: '}' :: rest))
+            = some (v.render.toList ++ ' ' :: '}' :: rest) from by simp [expect]]
+        rw [parseExpr_append v hfs.1 f (by omega) _
+          (Sep.cons (by decide) (by decide) (by decide) _)]
+        simp [expect]
+      · intro r h; simp at h
+    | (k, v) :: b :: tl =>
+      rw [RenderablePairs] at hfs
+      simp only [Bool.and_eq_true] at hfs
+      rw [renderFields_cons_toList] at hf ⊢
+      simp only [List.cons_append, List.append_assoc, List.nil_append,
+        List.singleton_append] at hf ⊢
+      simp only [List.length_cons, List.length_append] at hf
+      rw [parseObjFields]
+      · simp only [parseStr_cons k, Option.bind_eq_bind, Option.bind_some,
+          show expect [':', ' '] (':' :: ' ' :: (v.render.toList ++ (',' :: ' ' ::
+              ((Js.Expr.renderFields (b :: tl)).toList ++ ' ' :: '}' :: rest))))
+            = some (v.render.toList ++ (',' :: ' ' ::
+              ((Js.Expr.renderFields (b :: tl)).toList ++ ' ' :: '}' :: rest)))
+            from by simp [expect]]
+        rw [parseExpr_append v hfs.1 f (by omega) _
+          (Sep.cons (by decide) (by decide) (by decide) _)]
+        simp only [Option.bind_eq_bind, Option.bind_some,
+          show expect [',', ' '] (',' :: ' ' :: ((Js.Expr.renderFields (b :: tl)).toList ++
+              ' ' :: '}' :: rest))
+            = some ((Js.Expr.renderFields (b :: tl)).toList ++ ' ' :: '}' :: rest)
+            from by simp [expect]]
+        rw [parseObjFields_append (b :: tl) hfs.2 f (by omega) rest]
+        simp
+      · intro r h; simp at h
+termination_by f
+decreasing_by all_goals first | omega | (simp_wf; omega)
+
+theorem parseEntries_append (es : List (String × Js.Expr)) (hes : RenderablePairs es = true)
+    (f : Nat) (hf : (Js.Expr.renderEntries es).toList.length + 1 < f) (rest : List Char) :
+    parseEntries f ((Js.Expr.renderEntries es).toList ++ ']' :: rest) = some (es, ']' :: rest) := by
+  match f with
+  | 0 => omega
+  | f + 1 =>
+    match es with
+    | [] =>
+      rw [renderEntries_nil_toList, List.nil_append, parseEntries]
+    | [(k, v)] =>
+      rw [RenderablePairs] at hes
+      simp only [Bool.and_eq_true] at hes
+      rw [renderEntries_one_toList] at hf ⊢
+      simp only [List.cons_append, List.append_assoc, List.nil_append,
+        List.singleton_append] at hf ⊢
+      simp only [List.length_cons, List.length_append, List.length_nil] at hf
+      rw [parseEntries]
+      · simp only [show expect ['['] ('[' :: '"' :: ((escapeString k).toList ++ ('"' :: ',' :: ' ' ::
+              (v.render.toList ++ (']' :: ']' :: rest)))))
+            = some ('"' :: ((escapeString k).toList ++ ('"' :: ',' :: ' ' ::
+              (v.render.toList ++ (']' :: ']' :: rest))))) from by simp [expect],
+          parseStr_cons k, Option.bind_eq_bind, Option.bind_some,
+          show expect [',', ' '] (',' :: ' ' :: (v.render.toList ++ (']' :: ']' :: rest)))
+            = some (v.render.toList ++ (']' :: ']' :: rest)) from by simp [expect]]
+        rw [parseExpr_append v hes.1 f (by omega) _
+          (Sep.cons (by decide) (by decide) (by decide) _)]
+        simp [expect]
+      · intro r h; simp at h
+    | (k, v) :: b :: tl =>
+      rw [RenderablePairs] at hes
+      simp only [Bool.and_eq_true] at hes
+      rw [renderEntries_cons_toList] at hf ⊢
+      simp only [List.cons_append, List.append_assoc, List.nil_append,
+        List.singleton_append] at hf ⊢
+      simp only [List.length_cons, List.length_append] at hf
+      rw [parseEntries]
+      · simp only [show expect ['['] ('[' :: '"' :: ((escapeString k).toList ++ ('"' :: ',' :: ' ' ::
+              (v.render.toList ++ (']' :: ',' :: ' ' ::
+                ((Js.Expr.renderEntries (b :: tl)).toList ++ ']' :: rest))))))
+            = some ('"' :: ((escapeString k).toList ++ ('"' :: ',' :: ' ' ::
+              (v.render.toList ++ (']' :: ',' :: ' ' ::
+                ((Js.Expr.renderEntries (b :: tl)).toList ++ ']' :: rest))))))
+            from by simp [expect],
+          parseStr_cons k, Option.bind_eq_bind, Option.bind_some,
+          show expect [',', ' '] (',' :: ' ' :: (v.render.toList ++ (']' :: ',' :: ' ' ::
+              ((Js.Expr.renderEntries (b :: tl)).toList ++ ']' :: rest))))
+            = some (v.render.toList ++ (']' :: ',' :: ' ' ::
+              ((Js.Expr.renderEntries (b :: tl)).toList ++ ']' :: rest))) from by simp [expect]]
+        rw [parseExpr_append v hes.1 f (by omega) _
+          (Sep.cons (by decide) (by decide) (by decide) _)]
+        simp only [Option.bind_eq_bind, Option.bind_some,
+          show expect [']'] (']' :: ',' :: ' ' :: ((Js.Expr.renderEntries (b :: tl)).toList ++
+              ']' :: rest)) = some (',' :: ' ' :: ((Js.Expr.renderEntries (b :: tl)).toList ++
+              ']' :: rest)) from by simp [expect],
+          show expect [',', ' '] (',' :: ' ' :: ((Js.Expr.renderEntries (b :: tl)).toList ++
+              ']' :: rest)) = some ((Js.Expr.renderEntries (b :: tl)).toList ++ ']' :: rest)
+            from by simp [expect]]
+        rw [parseEntries_append (b :: tl) hes.2 f (by omega) rest]
+        simp
+      · intro r h; simp at h
+termination_by f
+decreasing_by all_goals first | omega | (simp_wf; omega)
+
+
+end
 
 end LeanTs.Parse
