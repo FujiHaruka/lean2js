@@ -1019,22 +1019,16 @@ same order, so the name each lookup lands on is the same one. -/
 theorem envTyped_bindParams (p : Program) :
     ∀ (params : List Param) (args : List Value), ParamsTyped p params args →
       EnvTyped p (bindParams params args) (params.map fun param => (param.name, param.ty))
-  | [], [], _ => by intro name ty v hctx _; simp at hctx
+  | [], [], _ => by
+    constructor
+    · intro name ty v hctx _; simp at hctx
+    · intro name g hbound; simp [bindParams, Env.lookup?] at hbound
   | [], _ :: _, htyped => by simp [ParamsTyped] at htyped
   | _ :: _, [], htyped => by simp [ParamsTyped] at htyped
   | param :: ps, a :: as, htyped => by
-    intro name ty v hctx henv
-    simp only [List.map_cons, List.find?_cons, Env.lookup?, bindParams] at hctx henv
-    cases hname : param.name == name with
-    | true =>
-      rw [hname] at hctx henv
-      simp only [Option.map_some] at hctx henv
-      obtain rfl : ty = param.ty := (Option.some.inj hctx).symm
-      obtain rfl : v = a := (Option.some.inj henv).symm
-      exact htyped.1
-    | false =>
-      rw [hname] at hctx henv
-      exact envTyped_bindParams p ps as htyped.2 name ty v hctx henv
+    have := (envTyped_bindParams p ps as htyped.2).cons (name := param.name) (ty := param.ty)
+      htyped.1
+    simpa [bindParams] using this
 
 theorem checkedBindings_find_none :
     ∀ (ps : List Param) (as : List Value) (nm : String),

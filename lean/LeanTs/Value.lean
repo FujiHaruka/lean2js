@@ -216,6 +216,13 @@ theorem hasTy_dict (p : Program) (entries : List (String × Value)) (elem : Ty) 
       = (keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem) := by
   rw [Value.hasTy.eq_def]
 
+theorem hasTy_fn (p : Program) (name : String) (params : List Ty) (ret : Ty) :
+    Value.hasTy p (.fn name) (.fn params ret)
+      = (match p.find? name with
+        | some d => (d.params.map (·.ty)) == params && d.ret == ret
+        | none => false) := by
+  rw [Value.hasTy.eq_def]
+
 theorem hasFieldTys_nil (p : Program) : Value.hasFieldTys p [] [] = true := by
   rw [Value.hasFieldTys.eq_def]
 

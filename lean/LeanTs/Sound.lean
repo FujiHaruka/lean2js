@@ -25,10 +25,16 @@ namespace LeanTs
 open Core
 
 /-- Every name the compiler's context has typed holds, if the environment binds it at all, a value of
-that type. -/
-def EnvTyped (p : Program) (env : Env) (ctx : Compile.Ctx) : Prop :=
-  ∀ name ty v, (ctx.find? (·.1 == name)).map (·.2) = some ty →
+that type, and a function value in the environment is one the context typed as a function.
+
+The second half is what a call needs. `eval` reads the callee out of the environment while the generated
+code was compiled against the context, so a function value the context did not type would send the two
+sides to different declarations. -/
+structure EnvTyped (p : Program) (env : Env) (ctx : Compile.Ctx) : Prop where
+  typed : ∀ name ty v, (ctx.find? (·.1 == name)).map (·.2) = some ty →
     Env.lookup? env name = some v → Value.hasTy p v ty = true
+  fnScoped : ∀ name g, Env.lookup? env name = some (.fn g) →
+    ∃ params ret, (ctx.find? (·.1 == name)).map (·.2) = some (.fn params ret)
 
 /-- The expression forms type soundness reaches. -/
 inductive TypeChecked : Expr → Prop where
@@ -189,6 +195,12 @@ theorem hasTy_dict_inv {p : Program} {v : Value} {elem : Ty}
 theorem hasTy_fn_inv {p : Program} {v : Value} {params : List Ty} {ret : Ty}
     (h : Value.hasTy p v (.fn params ret) = true) : ∃ name, v = .fn name := by
   cases v <;> simp_all [Value.hasTy]
+
+/-- The converse direction: a function value satisfies no type but a function type. What a call needs,
+since `eval` reads the callee out of the environment. -/
+theorem hasTy_fnValue_inv {p : Program} {name : String} {ty : Ty}
+    (h : Value.hasTy p (.fn name) ty = true) : ∃ params ret, ty = .fn params ret := by
+  cases ty <;> simp_all [Value.hasTy]
 
 theorem hasTy_var_inv {p : Program} {v : Value} {name : String}
     (h : Value.hasTy p v (.var name) = true) : False := by
@@ -472,18 +484,31 @@ theorem asBool_hasTy {p : Program} {w v : Value} (h : asBool w = .ok v) :
 theorem EnvTyped.cons {p : Program} {env : Env} {ctx : Compile.Ctx} {name : String} {ty : Ty}
     {v : Value} (henv : EnvTyped p env ctx) (hv : Value.hasTy p v ty = true) :
     EnvTyped p ((name, v) :: env) ((name, ty) :: ctx) := by
-  intro n t w hct hev
-  simp only [Env.lookup?, List.find?_cons] at hev
-  simp only [List.find?_cons] at hct
-  cases hn : name == n with
-  | true =>
-    rw [hn] at hct hev
-    simp only [Option.map] at hct hev
-    simp only [Option.some.injEq] at hct hev
-    exact hct ▸ hev ▸ hv
-  | false =>
-    rw [hn] at hct hev
-    exact henv n t w hct hev
+  constructor
+  · intro n t w hct hev
+    simp only [Env.lookup?, List.find?_cons] at hev
+    simp only [List.find?_cons] at hct
+    cases hn : name == n with
+    | true =>
+      rw [hn] at hct hev
+      simp only [Option.map] at hct hev
+      simp only [Option.some.injEq] at hct hev
+      exact hct ▸ hev ▸ hv
+    | false =>
+      rw [hn] at hct hev
+      exact henv.typed n t w hct hev
+  · intro n g hev
+    simp only [Env.lookup?, List.find?_cons] at hev
+    cases hn : name == n with
+    | true =>
+      rw [hn] at hev
+      simp only [Option.map_some, Option.some.injEq] at hev
+      obtain ⟨params, ret, rfl⟩ := hasTy_fnValue_inv (hev ▸ hv)
+      exact ⟨params, ret, by simp [List.find?_cons, hn]⟩
+    | false =>
+      rw [hn] at hev
+      obtain ⟨params, ret, hfind⟩ := henv.fnScoped n g hev
+      exact ⟨params, ret, by simp [List.find?_cons, hn, hfind]⟩
 
 theorem litValue_hasTy (p : Program) (ctx : Compile.Ctx) (l : Lit) (je : Js.Expr) (ty : Ty)
     (hc : Compile.compileExpr p ctx (.lit l) = .ok (je, ty)) :
@@ -1762,7 +1787,7 @@ theorem typeSound (p : Program) :
         split at he
         · rename_i w hw
           simp only [Except.ok.injEq] at he
-          exact he ▸ hc.2 ▸ henv name ty' w hty hw
+          exact he ▸ hc.2 ▸ henv.typed name ty' w hty hw
         · simp at he
       · simp at hc
     | cond hc' ht' he' =>
