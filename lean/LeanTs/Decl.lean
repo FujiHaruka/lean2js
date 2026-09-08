@@ -1449,6 +1449,10 @@ theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Exp
     intro ctx
     rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
     simp only [ihd ctx, ihk ctx]
+  | proj _ _ ihx =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihx ctx, Program.findType?, h]
 
 theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
     (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :

@@ -52,6 +52,8 @@ inductive InFragment : Expr → Prop where
   | dictKeys {d : Expr} : InFragment d → InFragment (.dictKeys d)
   | dictValues {d : Expr} : InFragment d → InFragment (.dictValues d)
   | dictDelete {d key : Expr} : InFragment d → InFragment key → InFragment (.dictDelete d key)
+  | proj {e : Expr} {field : String} :
+      field ≠ "tag" → InFragment e → InFragment (.proj e field)
 
 /-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
 their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
@@ -79,6 +81,7 @@ def inFragmentB : Expr → Bool
   | .dictKeys d => inFragmentB d
   | .dictValues d => inFragmentB d
   | .dictDelete d key => inFragmentB d && inFragmentB key
+  | .proj x field => (field != "tag") && inFragmentB x
   | _ => false
 
 theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
@@ -133,6 +136,10 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
     simp only [Bool.and_eq_true] at h
     exact .dictSet (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
   | .dictKeys _, h => by rw [inFragmentB] at h; exact .dictKeys (of_inFragmentB h)
+  | .proj _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .proj (by simpa using h.1) (of_inFragmentB h.2)
   | .dictValues _, h => by rw [inFragmentB] at h; exact .dictValues (of_inFragmentB h)
   | .dictDelete _ _, h => by
     rw [inFragmentB] at h
@@ -141,7 +148,6 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
   | .ctor _ _ _ _, h => by simp [inFragmentB] at h
-  | .proj _ _, h => by simp [inFragmentB] at h
   | .matchE _ _, h => by simp [inFragmentB] at h
   | .arrayLit _ _, h => by simp [inFragmentB] at h
   | .mapE _ _ _, h => by simp [inFragmentB] at h
@@ -177,6 +183,7 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .dictKeys hd => .dictKeys hd.typeChecked
   | .dictValues hd => .dictValues hd.typeChecked
   | .dictDelete hd hk => .dictDelete hd.typeChecked hk.typeChecked
+  | .proj (field := field) _ hx => .proj field hx.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -543,6 +550,18 @@ theorem helper_dvalues (entries : List (String × Js.JsValue)) :
 theorem helper_ddelete (entries : List (String × Js.JsValue)) (k : String) :
     Js.helper "__ddelete" [.dict entries, .str k]
       = some (.ok (.dict (entries.filter (·.1 != k)))) := rfl
+
+/-- A field read finds the field, not the tag the constructor value carries in front of it. The two
+cannot collide: a type may not declare a field named `tag`, and the fragment reads no such name. -/
+theorem member_encodeObj {ctor field : String} {fields : List (String × Value)} {v : Value}
+    (hne : field ≠ "tag")
+    (hf : (fields.find? (·.1 == field)).map (·.2) = some v) :
+    ((("tag", Js.JsValue.str ctor) :: encodeFields fields).find? (·.1 == field)).map (·.2)
+      = some (encodeValue v) := by
+  have htag : ("tag" == field) = false := by simpa using Ne.symm hne
+  simp only [List.find?_cons, htag]
+  rw [encodeFields_find, hf]
+  rfl
 
 theorem encodeFields_eq (fields : List (String × Value)) :
     encodeFields fields = fields.map fun e => (e.1, encodeValue e.2) := by
@@ -1657,6 +1676,32 @@ private theorem compileExpr_length_parts {p : Program} {ctx : Compile.Ctx} {arr 
 
 /-- The dictionary operations: the operand the compiler read as a `Dict`, the expression it emitted, and
 the type it gave back. -/
+private theorem compileExpr_proj_parts {p : Program} {ctx : Compile.Ctx} {e : Expr} {field : String}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.proj e field) = .ok (je, ty)) :
+    ∃ jx n targs t c f, Compile.compileExpr p ctx e = .ok (jx, .named n targs)
+      ∧ p.findType? n = some t ∧ t.ctorsAt targs = [c]
+      ∧ c.fields.find? (·.name == field) = some f
+      ∧ je = .member jx field ∧ ty = f.ty := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i xPair hcx
+  obtain ⟨jx, tx⟩ := xPair
+  split at hc
+  · rename_i n targs htx
+    split at hc
+    · simp at hc
+    rename_i t ht
+    split at hc
+    · rename_i c hctors
+      split at hc
+      · rename_i f hf
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+        exact ⟨jx, n, targs, t, c, f, htx ▸ hcx, ht, hctors, hf, hc.1.symm, hc.2.symm⟩
+      · simp at hc
+    · simp at hc
+  · simp at hc
+
 private theorem compileExpr_dictGet_parts {p : Program} {ctx : Compile.Ctx} {d key : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictGet d key) = .ok (je, ty)) :
     ∃ jd jk value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
@@ -3768,6 +3813,35 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
       · rename_i hno
         exact (hno entries t rfl rfl).elim
 
+  | proj hne hx ihx =>
+    rename_i xE field
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jx, n, targs, t, c, fd, hcx, ht, hctors, hfd, rfl, rfl⟩ := compileExpr_proj_parts hc
+      rw [evalExpr_proj] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := typeSound p f ctx env xE jx (.named n targs) av hx.typeChecked henv hcx hav
+      obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hat
+      split at he
+      · rename_i ctor' fields' hobj
+        injection hobj with hc1 hc2
+        subst hc1
+        subst hc2
+        split at he
+        · rename_i w hw
+          simp only [Except.ok.injEq] at he
+          subst he
+          refine eventually_member (by simpa [encodeValue] using ihx henv hjenv hcx hav) ?_
+          exact member_encodeObj hne hw
+        · simp at he
+      · rename_i hno
+        exact (hno ctor fields rfl).elim
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -4904,5 +4978,43 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
       · simp at he
       · rename_i hno
         exact (hno entries rfl).elim
+
+  | proj hne hx ihx =>
+    rename_i xE field
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne'
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne'
+    | succ f =>
+      obtain ⟨jx, n, targs, t, c, fd, hcx, ht, hctors, hfd, rfl, rfl⟩ := compileExpr_proj_parts hc
+      rw [evalExpr_proj] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hxe
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_member (ihx henv hcov hjenv hcx hxe hne')
+      rename_i av hav
+      have hat := typeSound p f ctx env xE jx (.named n targs) av hx.typeChecked henv hcx hav
+      obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hat
+      obtain ⟨t', c'', ht', hc'', hfields⟩ := hasTy_named_fields hat
+      rw [ht] at ht'
+      injection ht' with ht'
+      subst ht'
+      rw [TypeDef.findAt?, hctors] at hc''
+      simp only [List.find?_cons, List.find?_nil] at hc''
+      split at hc''
+      · simp only [Option.some.injEq] at hc''
+        subst hc''
+        obtain ⟨w, hw, -⟩ :=
+          hasFieldTys_find_some fields _ field fd.ty hfields (find?_field_ty hfd)
+        split at he
+        · rename_i ctor' fields' hobj
+          injection hobj with hc1 hc2
+          subst hc1
+          subst hc2
+          rw [hw] at he
+          simp at he
+        · rename_i hno
+          exact (hno ctor fields rfl).elim
+      · simp at hc''
 
 end LeanTs.Correct

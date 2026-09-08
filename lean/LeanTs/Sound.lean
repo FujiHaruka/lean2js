@@ -660,6 +660,36 @@ theorem hasFieldTys_find {p : Program} :
         rw [hk] at hf ht
         exact ih tys' k v t hrest hf ht
 
+theorem hasFieldTys_find_some {p : Program} :
+    ∀ (fields : List (String × Value)) (tys : List (String × Ty)) (k : String) (t : Ty),
+      Value.hasFieldTys p fields tys = true →
+      (tys.find? (·.1 == k)).map (·.2) = some t →
+      ∃ v, (fields.find? (·.1 == k)).map (·.2) = some v ∧ Value.hasTy p v t = true := by
+  intro fields
+  induction fields with
+  | nil => intro tys _ _ h ht; cases tys <;> simp_all [Value.hasFieldTys]
+  | cons field rest ih =>
+    intro tys k t h ht
+    obtain ⟨key, value⟩ := field
+    cases tys with
+    | nil => simp [Value.hasFieldTys] at h
+    | cons ty tys' =>
+      obtain ⟨name, tv⟩ := ty
+      rw [hasFieldTys_cons] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨hkey, hval⟩, hrest⟩ := h
+      have hkn : key = name := beq_iff_eq.mp hkey
+      subst hkn
+      simp only [List.find?_cons] at ht ⊢
+      cases hk : key == k with
+      | true =>
+        rw [hk] at ht
+        simp only [Option.map_some, Option.some.injEq] at ht
+        exact ⟨value, rfl, ht ▸ hval⟩
+      | false =>
+        rw [hk] at ht
+        exact ih tys' k t hrest ht
+
 theorem find?_field_ty {fields : List Field} {field : String} {f : Field}
     (h : fields.find? (·.name == field) = some f) :
     ((fields.map fun g => (g.name, g.ty)).find? (·.1 == field)).map (·.2) = some f.ty := by
