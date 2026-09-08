@@ -634,4 +634,91 @@ theorem jsEnvAgrees_checkedBindings :
         name v hv
       simpa [List.find?_append] using this
 
+/-! ## The body as statements
+
+`compileBody` opens the `let`s lined up at the head of a function into `const` statements instead of
+nesting arrows, so the fragment's expression-level result has to be walked back along that list. -/
+
+def EventuallyStmts (m : Js.Module) (jenv : Js.JsEnv) (stmts : List Js.Stmt) (v : Js.JsValue) : Prop :=
+  ∃ g, ∀ g', g ≤ g' → Js.evalStmts m g' jenv stmts = .ok v
+
+theorem evalStmts_ret (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (je : Js.Expr)
+    (rest : List Js.Stmt) : Js.evalStmts m f jenv (.ret je :: rest) = Js.eval m f jenv je := by
+  rw [Js.evalStmts.eq_def]
+
+theorem compileBody_finish (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFragment e)
+    {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
+    {v : Value}
+    (hc : compileFinish p ctx e acc = .ok (stmts, ty))
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (he : evalExpr p f env e = .ok v) :
+    ∃ inner, stmts = acc.reverse ++ inner ∧ EventuallyStmts m jenv inner (encodeValue v) := by
+  rw [compileFinish] at hc
+  cases hce : Compile.compileExpr p ctx e with
+  | error _ => rw [hce] at hc; exact (errNeOk hc).elim
+  | ok pair =>
+    obtain ⟨je, te⟩ := pair
+    rw [hce] at hc
+    have hs : stmts = acc.reverse ++ [Js.Stmt.ret je] :=
+      (congrArg Prod.fst (Except.ok.inj hc)).symm
+    obtain ⟨g, hg⟩ := fragment_correct_in p m hfrag henv hjenv hce he
+    exact ⟨[.ret je], hs, g, fun g' hge => by rw [evalStmts_ret]; exact hg g' hge⟩
+
+theorem compileBody_correct (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFragment e) :
+    ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
+      {v : Value},
+      compileBody p ctx e acc = .ok (stmts, ty) →
+      EnvTyped p env ctx → JsEnvAgrees env jenv →
+      evalExpr p f env e = .ok v →
+      ∃ inner, stmts = acc.reverse ++ inner ∧ EventuallyStmts m jenv inner (encodeValue v) := by
+  induction hfrag with
+  | @letE name t val body hval hbody ihv ihb =>
+    intro ctx env jenv acc stmts ty f v hc henv hjenv he
+    rw [compileBody.eq_def] at hc
+    simp only [bind, Except.bind] at hc
+    split at hc
+    · exact compileBody_finish m p (.letE hval hbody) hc henv hjenv he
+    split at hc
+    · exact (errNeOk hc).elim
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i valPair hcv
+    obtain ⟨jv, tv⟩ := valPair
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i hsame
+    obtain rfl : tv = t := Ty.eq_of_not_bne hsame
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      rw [evalExpr_letE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vv hvv
+      have hvt : Value.hasTy p vv tv = true :=
+        typeSound p f ctx env val jv tv vv hval.typeChecked henv hcv hvv
+      obtain ⟨innerB, hshape, gB, hgB⟩ := ihb hc (henv.cons hvt) hjenv.cons he
+      obtain ⟨gV, hgV⟩ := fragment_correct_in p m hval henv hjenv hcv hvv
+      refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
+      intro g' hge
+      rw [evalStmts_const m g' jenv name jv _ innerB (hgV g' (by omega))]
+      exact hgB g' (by omega)
+  | lit l =>
+    intro ctx env jenv acc stmts ty f v hc henv hjenv he
+    exact compileBody_finish m p (.lit l) (by rwa [compileBody.eq_def] at hc) henv hjenv he
+  | var n =>
+    intro ctx env jenv acc stmts ty f v hc henv hjenv he
+    exact compileBody_finish m p (.var n) (by rwa [compileBody.eq_def] at hc) henv hjenv he
+  | @cond c t' e' hc' ht' he' _ _ _ =>
+    intro ctx env jenv acc stmts ty f v hc henv hjenv he
+    exact compileBody_finish m p (.cond hc' ht' he') (by rwa [compileBody.eq_def] at hc)
+      henv hjenv he
+  | @un op x hx _ =>
+    intro ctx env jenv acc stmts ty f v hc henv hjenv he
+    exact compileBody_finish m p (.un hx) (by rwa [compileBody.eq_def] at hc) henv hjenv he
+  | @bin op l r hl hr _ _ =>
+    intro ctx env jenv acc stmts ty f v hc henv hjenv he
+    exact compileBody_finish m p (.bin hl hr) (by rwa [compileBody.eq_def] at hc) henv hjenv he
+
 end LeanTs.Decl

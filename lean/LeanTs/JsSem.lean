@@ -478,11 +478,17 @@ termination_by (fuel, 1, stmts.length + 1)
 
 end
 
-def callFunction (m : Module) (name : String) (args : List JsValue) : JsResult :=
+/-- Calling an exported function at a stated amount of fuel. The model's fuel is what makes `eval` total;
+real JavaScript has none, so a claim about the generated code is stated for every large enough amount and
+`callFunction` fixes the one the shipped artifact is checked at. -/
+def callFunctionAt (m : Module) (fuel : Nat) (name : String) (args : List JsValue) : JsResult :=
   match m.funcs.find? (·.name == name) with
   | none => .error "unboundIdentifier"
   | some fn =>
     if fn.params.length != args.length then .error "typeError"
-    else evalStmts m 10000 (bindAll fn.params args) fn.body
+    else evalStmts m fuel (bindAll fn.params args) fn.body
+
+def callFunction (m : Module) (name : String) (args : List JsValue) : JsResult :=
+  callFunctionAt m 10000 name args
 
 end LeanTs.Js
