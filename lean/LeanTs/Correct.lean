@@ -2395,7 +2395,20 @@ rejects the `__` prefix. -/
 structure JsEnvAgrees (env : Env) (jenv : Js.JsEnv) : Prop where
   binds : ∀ name v, Env.lookup? env name = some v →
     ((jenv.find? (·.1 == name)).map (·.2)) = some (encodeValue v)
-  scrutFree : Env.lookup? env Compile.scrutName = none
+  unreserved : ∀ name v, Env.lookup? env name = some v →
+    name.startsWith reservedPrefix = false
+  fresh : ∀ name jv, name.startsWith reservedPrefix = false →
+    ((jenv.find? (·.1 == name)).map (·.2)) = some jv → ∃ v, Env.lookup? env name = some v
+
+/-- The reference environment binds no reserved name, so in particular not the scrutinee's. -/
+theorem JsEnvAgrees.scrutFree {env : Env} {jenv : Js.JsEnv} (h : JsEnvAgrees env jenv) :
+    Env.lookup? env Compile.scrutName = none := by
+  cases hv : Env.lookup? env Compile.scrutName with
+  | none => rfl
+  | some v =>
+    have hr := scrutName_reserved
+    rw [h.unreserved _ v hv] at hr
+    exact Bool.noConfusion hr
 
 theorem lookup_cons_none {env : Env} {name : String} {v : Value} {key : String}
     (hname : name ≠ key) (h : Env.lookup? env key = none) :
@@ -2405,25 +2418,61 @@ theorem lookup_cons_none {env : Env} {name : String} {v : Value} {key : String}
   exact h
 
 theorem JsEnvAgrees.cons {env : Env} {jenv : Js.JsEnv} {name : String} {v : Value}
-    (h : JsEnvAgrees env jenv) (hname : name ≠ Compile.scrutName) :
+    (h : JsEnvAgrees env jenv) (hname : name.startsWith reservedPrefix = false) :
     JsEnvAgrees ((name, v) :: env) ((name, encodeValue v) :: jenv) := by
-  refine ⟨?_, lookup_cons_none hname h.scrutFree⟩
-  intro key w hw
-  simp only [Env.lookup?, List.find?_cons] at hw
-  cases hkey : name == key with
-  | true =>
-    rw [hkey] at hw
-    simp only [Option.map_some] at hw
-    obtain rfl : v = w := Option.some.inj hw
-    simp [hkey]
-  | false =>
-    rw [hkey] at hw
-    simp only [List.find?_cons, hkey]
-    exact h.binds key w hw
+  refine ⟨?_, ?_, ?_⟩
+  · intro key w hw
+    simp only [Env.lookup?, List.find?_cons] at hw
+    cases hkey : name == key with
+    | true =>
+      rw [hkey] at hw
+      simp only [Option.map_some] at hw
+      obtain rfl : v = w := Option.some.inj hw
+      simp [hkey]
+    | false =>
+      rw [hkey] at hw
+      simp only [List.find?_cons, hkey]
+      exact h.binds key w hw
+  · intro key w hw
+    simp only [Env.lookup?, List.find?_cons] at hw
+    cases hkey : name == key with
+    | true => exact (eq_of_beq hkey) ▸ hname
+    | false =>
+      rw [hkey] at hw
+      exact h.unreserved key w hw
+  · intro key jv hkeyfree hfound
+    cases hkey : name == key with
+    | true =>
+      obtain rfl : name = key := eq_of_beq hkey
+      exact ⟨v, by simp [Env.lookup?, List.find?_cons]⟩
+    | false =>
+      simp only [List.find?_cons, hkey] at hfound
+      obtain ⟨w, hw⟩ := h.fresh key jv hkeyfree hfound
+      refine ⟨w, ?_⟩
+      simp only [Env.lookup?, List.find?_cons, hkey, Bool.false_eq_true, if_false]
+      exact hw
 
-theorem jsEnvAgrees_encodeEnv (env : Env) (hfree : Env.lookup? env Compile.scrutName = none) :
+/-- The names of `encodeEnv env` are the names of `env`, so an unreserved one found there is bound. -/
+theorem lookup_of_encodeEnv :
+    ∀ {env : Env} {name : String} {jv : Js.JsValue},
+      ((encodeEnv env).find? (·.1 == name)).map (·.2) = some jv →
+      ∃ v, Env.lookup? env name = some v
+  | [], _, _, h => by simp [encodeEnv] at h
+  | (key, w) :: rest, name, jv, h => by
+    simp only [encodeEnv, List.map_cons, List.find?_cons] at h
+    cases hkey : key == name with
+    | true => exact ⟨w, by simp [Env.lookup?, List.find?_cons, hkey]⟩
+    | false =>
+      simp only [hkey, Bool.false_eq_true, if_false] at h
+      obtain ⟨v, hv⟩ := lookup_of_encodeEnv (by simpa [encodeEnv] using h)
+      refine ⟨v, ?_⟩
+      simp only [Env.lookup?, List.find?_cons, hkey, Bool.false_eq_true, if_false]
+      exact hv
+
+theorem jsEnvAgrees_encodeEnv (env : Env)
+    (hres : ∀ name v, Env.lookup? env name = some v → name.startsWith reservedPrefix = false) :
     JsEnvAgrees env (encodeEnv env) :=
-  ⟨fun _ _ h => lookup_encodeEnv h, hfree⟩
+  ⟨fun _ _ h => lookup_encodeEnv h, hres, fun _ _ _ h => lookup_of_encodeEnv h⟩
 
 /-! ## Traversals
 
@@ -2454,7 +2503,7 @@ private theorem eventuallyMap_of_items (p : Program) (m : Js.Module) {ctx : Comp
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody))
-    (hbinder : binder ≠ Compile.scrutName) :
+    (hbinder : binder.startsWith reservedPrefix = false) :
     ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
       evalMapItems p f env binder bodyE xs = .ok vs →
       ∃ g, ∀ g', g ≤ g' →
@@ -2553,7 +2602,7 @@ private theorem eventuallyFilter_of_items (p : Program) (m : Js.Module) (hprog :
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) :
+    (hbinder : binder.startsWith reservedPrefix = false) :
     ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
       evalFilterItems p f env binder bodyE xs = .ok vs →
       ∃ g, ∀ g', g ≤ g' →
@@ -2605,7 +2654,7 @@ private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) (hprog : P
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) :
+    (hbinder : binder.startsWith reservedPrefix = false) :
     ∀ (xs : List Value) (v : Value), Value.hasElemTy p xs elem = true →
       evalFindItems p f env binder bodyE xs = .ok v →
       ∃ g, ∀ g', g ≤ g' →
@@ -2652,7 +2701,7 @@ private theorem eventuallyQuant_of_items (p : Program) (m : Js.Module) (hprog : 
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) :
+    (hbinder : binder.startsWith reservedPrefix = false) :
     ∀ (xs : List Value) (v : Value), Value.hasElemTy p xs elem = true →
       evalQuantItems p f env op binder bodyE xs = .ok v →
       ∃ g, ∀ g', g ≤ g' →
@@ -2715,7 +2764,8 @@ private theorem eventuallyReduce_of_items (p : Program) (m : Js.Module) (hprog :
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
       = .ok (jbody, tinit))
-    (haccName : accName ≠ Compile.scrutName) (helemName : elemName ≠ Compile.scrutName) :
+    (haccName : accName.startsWith reservedPrefix = false)
+    (helemName : elemName.startsWith reservedPrefix = false) :
     ∀ (xs : List Value) (acc v : Value), Value.hasElemTy p xs elem = true →
       Value.hasTy p acc tinit = true →
       evalReduceItems p f env accName elemName bodyE acc xs = .ok v →
@@ -2907,7 +2957,7 @@ def PathsAgree (m : Js.Module) (jenv : Js.JsEnv) :
     List (String × Js.Expr × Ty) → Env → Prop
   | [], [] => True
   | (n, path, _) :: ps, (n', v) :: bs =>
-    n = n' ∧ n ≠ Compile.scrutName ∧ Eventually m jenv path (encodeValue v) ∧
+    n = n' ∧ n.startsWith reservedPrefix = false ∧ Eventually m jenv path (encodeValue v) ∧
       PathsAgree m jenv ps bs
   | _, _ => False
 
@@ -3093,7 +3143,7 @@ theorem patParts_matched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig :
     simp only [Option.some.injEq] at hm
     obtain ⟨rfl, rfl⟩ := hpp
     subst hm
-    exact ⟨by simp, rfl, ne_scrutName_of_validateIdent hvi, hpath, trivial⟩
+    exact ⟨by simp, rfl, startsWith_false_of_validateIdent hvi, hpath, trivial⟩
   | ty, path, .lit l, v, _, _, _, hv, hpp, hpath, hm => by
     rw [Compile.patParts] at hpp
     simp only [bind, Except.bind] at hpp
@@ -3374,14 +3424,22 @@ theorem eventually_ident {m : Js.Module} {jenv : Js.JsEnv} {name : String} {w : 
 
 theorem JsEnvAgrees.consScrut {env : Env} {jenv : Js.JsEnv} (h : JsEnvAgrees env jenv)
     (w : Js.JsValue) : JsEnvAgrees env ((Compile.scrutName, w) :: jenv) := by
-  refine ⟨?_, h.scrutFree⟩
-  intro name v hv
-  have hne : (Compile.scrutName == name) = false := by
-    refine beq_eq_false_iff_ne.mpr fun hEq => ?_
-    rw [← hEq, h.scrutFree] at hv
-    exact absurd hv (by simp)
-  rw [List.find?_cons, hne]
-  exact h.binds name v hv
+  refine ⟨?_, h.unreserved, ?_⟩
+  · intro name v hv
+    have hne : (Compile.scrutName == name) = false := by
+      refine beq_eq_false_iff_ne.mpr fun hEq => ?_
+      rw [← hEq, h.scrutFree] at hv
+      exact absurd hv (by simp)
+    rw [List.find?_cons, hne]
+    exact h.binds name v hv
+  · intro name jv hfree hfound
+    have hne : (Compile.scrutName == name) = false := by
+      refine beq_eq_false_iff_ne.mpr fun hEq => ?_
+      have hr := scrutName_reserved
+      rw [hEq, hfree] at hr
+      exact Bool.noConfusion hr
+    rw [List.find?_cons, hne] at hfound
+    exact h.fresh name jv hfree hfound
 
 theorem PathsAgree.names {m : Js.Module} {jenv : Js.JsEnv} :
     ∀ {pbinds : List (String × Js.Expr × Ty)} {binds : Env}, PathsAgree m jenv pbinds binds →
@@ -3669,7 +3727,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       typeSound p hprog f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
     exact eventually_arrowCall (ihv henv hjenv hcv hvv)
       (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt))
-        (hjenv.cons (ne_scrutName_of_validateIdent hvi)) hcb he)
+        (hjenv.cons (startsWith_false_of_validateIdent hvi)) hcb he)
   | un hx =>
     rename_i op xE
     have ihx := ih hx
@@ -5658,15 +5716,17 @@ theorem fragment_correct_in (p : Program) (m : Js.Module) (hsig : SignatureOk p)
 
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one.
 
-The environment must not bind `scrutName`, which is what `match` calls its scrutinee. Every name a
-program can bind went through `validateIdent`, so an environment a compiled declaration builds satisfies
-it; `Decl.decl_correct` discharges it there. -/
+The environment must bind no reserved name. Two things need it: `match` gives its scrutinee one, and a
+call reads its callee out of the environment, so a binding the generated code cannot have would send the
+two sides to different declarations. Every name a program can bind went through `validateIdent`, which
+rejects the prefix, so an environment a compiled declaration builds satisfies it; `Decl.decl_correct`
+discharges it there. -/
 theorem fragment_correct (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     (hprog : ProgramTyped p)
     {e : Expr} (hfrag : InFragment e) :
     ∀ {ctx : Compile.Ctx} {env : Env} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},
       EnvTyped p env ctx →
-      Env.lookup? env Compile.scrutName = none →
+      (∀ name w, Env.lookup? env name = some w → name.startsWith reservedPrefix = false) →
       Compile.compileExpr p ctx e = .ok (je, ty) →
       evalExpr p f env e = .ok v →
       Eventually m (encodeEnv env) je (encodeValue v) :=
@@ -5960,7 +6020,7 @@ private theorem eventuallyMapErr_of_items (p : Program) (m : Js.Module) (hprog :
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody))
-    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
+    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalMapItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6122,7 +6182,7 @@ private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) (hpro
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
+    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalFilterItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6178,7 +6238,7 @@ private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) (hprog 
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
+    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalFindItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6225,7 +6285,7 @@ private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) (hprog
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
+    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalQuantItems p f env op binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6282,7 +6342,8 @@ private theorem eventuallyReduceErr_of_items (p : Program) (m : Js.Module) (hpro
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
       = .ok (jbody, tinit))
-    (haccName : accName ≠ Compile.scrutName) (helemName : elemName ≠ Compile.scrutName)
+    (haccName : accName.startsWith reservedPrefix = false)
+    (helemName : elemName.startsWith reservedPrefix = false)
     (hne : Mirrorable err) :
     ∀ (xs : List Value) (acc : Value), Value.hasElemTy p xs elem = true →
       Value.hasTy p acc tinit = true →
@@ -6643,7 +6704,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       typeSound p hprog f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
     exact eventuallyErr_arrowBody (iha hval henv hjenv hcv hvv)
       (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt)) hcov.cons
-        (hjenv.cons (ne_scrutName_of_validateIdent hvi)) hcb he hne)
+        (hjenv.cons (startsWith_false_of_validateIdent hvi)) hcb he hne)
   | un hx =>
     rename_i op xE
     have ihx := ih hx

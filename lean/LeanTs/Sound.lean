@@ -933,7 +933,7 @@ theorem compileExpr_mapE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
     ∃ jarr jbody elem tbody, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, tbody)
       ∧ ty = .array tbody ∧ je = .mapJs jarr binder jbody
-      ∧ binder ≠ Compile.scrutName := by
+      ∧ binder.startsWith reservedPrefix = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -950,7 +950,7 @@ theorem compileExpr_mapE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
     obtain ⟨jbody, tbody⟩ := bodyPair
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, tbody, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      ne_scrutName_of_validateIdent hvi⟩
+      startsWith_false_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
@@ -959,7 +959,7 @@ theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Ex
     ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
       ∧ ty = .array elem ∧ je = .filterJs jarr binder jbody
-      ∧ binder ≠ Compile.scrutName := by
+      ∧ binder.startsWith reservedPrefix = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -980,7 +980,7 @@ theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Ex
     obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      ne_scrutName_of_validateIdent hvi⟩
+      startsWith_false_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_findE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
@@ -989,7 +989,7 @@ theorem compileExpr_findE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr
     ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
       ∧ ty = .option elem ∧ je = .findJs jarr binder jbody
-      ∧ binder ≠ Compile.scrutName := by
+      ∧ binder.startsWith reservedPrefix = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1010,7 +1010,7 @@ theorem compileExpr_findE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr
     obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      ne_scrutName_of_validateIdent hvi⟩
+      startsWith_false_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_quantE_inv {p : Program} {ctx : Compile.Ctx} {op : QuantOp} {arr body : Expr}
@@ -1019,7 +1019,7 @@ theorem compileExpr_quantE_inv {p : Program} {ctx : Compile.Ctx} {op : QuantOp} 
     ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
       ∧ ty = .bool ∧ je = .quantJs op jarr binder jbody
-      ∧ binder ≠ Compile.scrutName := by
+      ∧ binder.startsWith reservedPrefix = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1040,7 +1040,7 @@ theorem compileExpr_quantE_inv {p : Program} {ctx : Compile.Ctx} {op : QuantOp} 
     obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      ne_scrutName_of_validateIdent hvi⟩
+      startsWith_false_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_reduceE_inv {p : Program} {ctx : Compile.Ctx} {arr init body : Expr}
@@ -1050,7 +1050,8 @@ theorem compileExpr_reduceE_inv {p : Program} {ctx : Compile.Ctx} {arr init body
       ∧ Compile.compileExpr p ctx init = .ok (jinit, ty)
       ∧ Compile.compileExpr p ((elemName, elem) :: (accName, ty) :: ctx) body = .ok (jbody, ty)
       ∧ je = .reduceJs jarr jinit accName elemName jbody
-      ∧ accName ≠ Compile.scrutName ∧ elemName ≠ Compile.scrutName := by
+      ∧ accName.startsWith reservedPrefix = false
+      ∧ elemName.startsWith reservedPrefix = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1080,7 +1081,8 @@ theorem compileExpr_reduceE_inv {p : Program} {ctx : Compile.Ctx} {arr init body
     obtain rfl : tbody = tinit := Ty.eq_of_not_bne hsame
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jinit, jbody, elem, hta ▸ hca, hc.2 ▸ hci, hc.2 ▸ hcb, hc.1.symm,
-      ne_scrutName_of_validateIdent hvia, ne_scrutName_of_validateIdent hvie⟩
+      startsWith_false_of_validateIdent hvia,
+      startsWith_false_of_validateIdent hvie⟩
   · simp at hc
 
 /-- The entries of a dictionary literal: their types, and the fact that zipping the keys back on keeps

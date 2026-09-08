@@ -1078,11 +1078,85 @@ theorem bindParams_scrutFree :
     rw [beq_eq_false_iff_ne.mpr (ne_scrutName_of_unreserved hres.1)]
     exact bindParams_scrutFree ps as hres.2
 
+/-- Every name the entry binds is a parameter name, and those went through `validateIdent`. -/
+theorem bindParams_unreserved :
+    ∀ (params : List Param) (args : List Value), Unreserved params →
+      ∀ (name : String) (v : Value), Env.lookup? (bindParams params args) name = some v →
+        name.startsWith reservedPrefix = false
+  | [], _, _, _, _, h => by simp [bindParams, Env.lookup?] at h
+  | _ :: _, [], _, _, _, h => by simp [bindParams, Env.lookup?] at h
+  | param :: ps, a :: as, hres, name, v, h => by
+    simp only [bindParams, Env.lookup?, List.find?_cons] at h
+    cases hname : param.name == name with
+    | true => exact (eq_of_beq hname) ▸ hres.1
+    | false =>
+      rw [hname] at h
+      exact bindParams_unreserved ps as hres.2 name v h
+
+/-- Beyond the parameters the entry binds, the generated environment holds only the raw arguments, whose
+names carry the reserved prefix. So an unreserved name the generated code can read is one the reference
+environment binds too — which is what a call needs, since it reads its callee out of the environment. -/
+theorem checkedBindings_fresh (jenv : Js.JsEnv)
+    (hraw : ∀ (name : String) (jv : Js.JsValue),
+      ((jenv.find? (·.1 == name)).map (·.2)) = some jv → name.startsWith reservedPrefix = true) :
+    ∀ (params : List Param) (args : List Value) (name : String) (jv : Js.JsValue),
+      name.startsWith reservedPrefix = false →
+      (((checkedBindings params args ++ jenv).find? (·.1 == name)).map (·.2)) = some jv →
+      ∃ v, Env.lookup? (bindParams params args) name = some v
+  | [], _, name, jv, hfree, h => by
+    simp only [checkedBindings, List.nil_append] at h
+    rw [hraw name jv h] at hfree
+    exact Bool.noConfusion hfree
+  | _ :: _, [], name, jv, hfree, h => by
+    simp only [checkedBindings, List.nil_append] at h
+    rw [hraw name jv h] at hfree
+    exact Bool.noConfusion hfree
+  | param :: ps, a :: as, name, jv, hfree, h => by
+    cases hname : param.name == name with
+    | true =>
+      obtain rfl : param.name = name := eq_of_beq hname
+      exact ⟨a, by simp [bindParams, Env.lookup?, List.find?_cons]⟩
+    | false =>
+      have h' : (((checkedBindings ps as ++ jenv).find? (·.1 == name)).map (·.2)) = some jv := by
+        simp only [checkedBindings, List.append_assoc, List.find?_append] at h ⊢
+        cases hhead : (checkedBindings ps as).find? (·.1 == name) with
+        | some _ =>
+          rw [hhead] at h
+          simp only [Option.some_or] at h ⊢
+          exact h
+        | none =>
+          rw [hhead] at h
+          simp only [Option.none_or] at h ⊢
+          simpa [List.find?_cons, hname] using h
+      obtain ⟨v, hv⟩ := checkedBindings_fresh jenv hraw ps as name jv hfree h'
+      refine ⟨v, ?_⟩
+      simp only [bindParams, Env.lookup?, List.find?_cons, hname, Bool.false_eq_true, if_false]
+      exact hv
+
+/-- The raw arguments the generated function is handed are bound to reserved names only. -/
+theorem bindAll_rawParams_reserved :
+    ∀ (params : List Param) (jargs : List Js.JsValue) (i : Nat) (name : String) (jv : Js.JsValue),
+      (((Js.bindAll (rawParams i params) jargs).find? (·.1 == name)).map (·.2)) = some jv →
+      name.startsWith reservedPrefix = true
+  | [], _, _, _, _, h => by simp [rawParams, Js.bindAll] at h
+  | _ :: _, [], _, _, _, h => by simp [rawParams, Js.bindAll] at h
+  | _ :: ps, _ :: jas, i, name, jv, h => by
+    simp only [rawParams, Js.bindAll, List.find?_cons] at h
+    cases hname : rawParam i == name with
+    | true => exact (eq_of_beq hname) ▸ rawParam_reserved i
+    | false =>
+      rw [hname] at h
+      exact bindAll_rawParams_reserved ps jas (i + 1) name jv h
+
 theorem jsEnvAgrees_checkedBindings (params : List Param) (args : List Value) (jenv : Js.JsEnv)
     (hlen : params.length = args.length) (hdist : DistinctNames params)
-    (hres : Unreserved params) :
+    (hres : Unreserved params)
+    (hraw : ∀ (name : String) (jv : Js.JsValue),
+      ((jenv.find? (·.1 == name)).map (·.2)) = some jv → name.startsWith reservedPrefix = true) :
     JsEnvAgrees (bindParams params args) (checkedBindings params args ++ jenv) :=
-  ⟨jsEnvBinds_checkedBindings params args jenv hlen hdist, bindParams_scrutFree params args hres⟩
+  ⟨jsEnvBinds_checkedBindings params args jenv hlen hdist,
+    bindParams_unreserved params args hres,
+    fun name jv hfree h => checkedBindings_fresh jenv hraw params args name jv hfree h⟩
 
 /-! ## The body as statements
 
@@ -1155,7 +1229,7 @@ theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p)
       have hvt : Value.hasTy p vv tv = true :=
         typeSound p hprog f ctx env val jv tv vv hval.typeChecked henv hcv hvv
       obtain ⟨innerB, hshape, gB, hgB⟩ :=
-        ihb hc (henv.cons hvt) (hjenv.cons (ne_scrutName_of_validateIdent hvi)) he
+        ihb hc (henv.cons hvt) (hjenv.cons (startsWith_false_of_validateIdent hvi)) he
       obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hprog hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
@@ -1357,7 +1431,7 @@ theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) (
       have hvt : Value.hasTy p vv tv = true :=
         typeSound p hprog f ctx env val jv tv vv hval.typeChecked henv hcv hvv
       obtain ⟨innerB, hshape, gB, hgB⟩ :=
-        ihb hc (henv.cons hvt) hcov.cons (hjenv.cons (ne_scrutName_of_validateIdent hvi)) he hne
+        ihb hc (henv.cons hvt) hcov.cons (hjenv.cons (startsWith_false_of_validateIdent hvi)) he hne
       obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hprog hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
@@ -1706,7 +1780,8 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
     compileDecl_shape hf
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_correct m p hsig hprog hfrag hcb (envTyped_bindParams p d.params args htyped)
-      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres) hbody
+      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres
+        (bindAll_rawParams_reserved d.params _ 0)) hbody
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
   refine ⟨gB + 2, fun g' hge => ?_⟩
@@ -1744,7 +1819,8 @@ theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args 
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_traps m p hsig hprog hfrag hcb (envTyped_bindParams p d.params args htyped)
       (envCovers_bindParams d.params args hlen)
-      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres) he hne
+      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres
+        (bindAll_rawParams_reserved d.params _ 0)) he hne
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
   refine ⟨gB + 2, fun g' hge => ?_⟩
