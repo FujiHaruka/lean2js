@@ -444,14 +444,14 @@ theorem ne_rawParam {name : String} {i : Nat} (h : name.startsWith reservedPrefi
 
 /-- Which raw name each argument is reachable under. Stated as a lookup rather than as a shape so that
 the checked parameters the entry keeps stacking on top do not disturb it. -/
-def RawBound (jenv : Js.JsEnv) : Nat → List Value → Prop
+def RawBound (jenv : Js.JsEnv) : Nat → List Js.JsValue → Prop
   | _, [] => True
-  | i, a :: as =>
-    ((jenv.find? (·.1 == rawParam i)).map (·.2)) = some (encodeValue a) ∧ RawBound jenv (i + 1) as
+  | i, jv :: rest =>
+    ((jenv.find? (·.1 == rawParam i)).map (·.2)) = some jv ∧ RawBound jenv (i + 1) rest
 
 theorem RawBound.cons_unreserved {jenv : Js.JsEnv} {name : String} {v : Js.JsValue} {i : Nat}
     (hname : name.startsWith reservedPrefix = false) :
-    ∀ {as : List Value}, RawBound jenv i as → RawBound ((name, v) :: jenv) i as
+    ∀ {as : List Js.JsValue}, RawBound jenv i as → RawBound ((name, v) :: jenv) i as
   | [], _ => trivial
   | _ :: as, h => by
     refine ⟨?_, RawBound.cons_unreserved hname h.2⟩
@@ -459,7 +459,7 @@ theorem RawBound.cons_unreserved {jenv : Js.JsEnv} {name : String} {v : Js.JsVal
     exact h.1
 
 theorem RawBound.cons_raw {jenv : Js.JsEnv} {v : Js.JsValue} {i : Nat} :
-    ∀ {j : Nat} {as : List Value}, i < j → RawBound jenv j as →
+    ∀ {j : Nat} {as : List Js.JsValue}, i < j → RawBound jenv j as →
       RawBound ((rawParam i, v) :: jenv) j as
   | _, [], _, _ => trivial
   | j, _ :: as, hlt, h => by
@@ -468,16 +468,16 @@ theorem RawBound.cons_raw {jenv : Js.JsEnv} {v : Js.JsValue} {i : Nat} :
       beq_eq_false_iff_ne.mpr (fun he => by have := rawParam_inj he; omega : rawParam i ≠ rawParam j)]
     exact h.1
 
-theorem rawBound_bindAll : ∀ (params : List Param) (args : List Value) (i : Nat),
-    params.length = args.length →
-    RawBound (Js.bindAll (rawParams i params) (args.map encodeValue)) i args
+theorem rawBound_bindAll : ∀ (params : List Param) (jargs : List Js.JsValue) (i : Nat),
+    params.length = jargs.length →
+    RawBound (Js.bindAll (rawParams i params) jargs) i jargs
   | [], [], _, _ => trivial
   | [], _ :: _, _, hlen => by simp at hlen
   | _ :: _, [], _, hlen => by simp at hlen
-  | _ :: ps, a :: as, i, hlen => by
+  | _ :: ps, ja :: jas, i, hlen => by
     simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
-    refine ⟨by simp [rawParams, List.map_cons, Js.bindAll], ?_⟩
-    exact RawBound.cons_raw (by omega) (rawBound_bindAll ps as (i + 1) hlen)
+    refine ⟨by simp [rawParams, Js.bindAll], ?_⟩
+    exact RawBound.cons_raw (by omega) (rawBound_bindAll ps jas (i + 1) hlen)
 
 /-- Every argument has the type its parameter declared. -/
 def ParamsTyped (p : Program) : List Param → List Value → Prop
@@ -526,7 +526,7 @@ theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat) :
       paramChecks p i params = .ok checks →
       ParamsTyped p params args →
       Unreserved params →
-      RawBound jenv i args →
+      RawBound jenv i (args.map encodeValue) →
       Js.evalStmts m (g + 2) jenv (checks ++ rest)
         = Js.evalStmts m (g + 2) (checkedBindings params args ++ jenv) rest
   | [], [], _, checks, rest, jenv, hchecks, _, _, _ => by
@@ -1037,7 +1037,7 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
   simp only [hparams, hfbody]
   rw [if_neg (by simp [rawParams_length, hlen]),
     evalStmts_paramChecks m p g d.params args 0 checks stmts _ hchecks htyped hres
-      (rawBound_bindAll d.params args 0 hlen)]
+      (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
   exact hgB (g + 2) (by omega)
 
 end LeanTs.Decl
