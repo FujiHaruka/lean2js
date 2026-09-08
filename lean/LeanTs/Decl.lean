@@ -1356,6 +1356,26 @@ theorem paramChecks_types_irrel {p q : Program} (h : q.types = p.types) :
     simp only [tyDescBudget_types_irrel h param.ty, tyDesc_types_irrel h _ param.ty,
       paramChecks_types_irrel h (i + 1) rest]
 
+theorem compileArgs_types_irrel {p q : Program} :
+    ∀ (items : List Expr),
+      (∀ e ∈ items, ∀ ctx, Compile.compileExpr q ctx e = Compile.compileExpr p ctx e) →
+      ∀ ctx, Compile.compileArgs q ctx items = Compile.compileArgs p ctx items
+  | [], _, _ => by rw [Compile.compileArgs, Compile.compileArgs]
+  | e :: rest, ih, ctx => by
+    rw [Compile.compileArgs, Compile.compileArgs]
+    simp only [ih e (by simp) ctx,
+      compileArgs_types_irrel rest (fun x hx => ih x (by simp [hx])) ctx]
+
+theorem compileValues_types_irrel {p q : Program} :
+    ∀ (entries : List (String × Expr)),
+      (∀ e ∈ entries, ∀ ctx, Compile.compileExpr q ctx e.2 = Compile.compileExpr p ctx e.2) →
+      ∀ ctx, Compile.compileValues q ctx entries = Compile.compileValues p ctx entries
+  | [], _, _ => by rw [Compile.compileValues, Compile.compileValues]
+  | (k, e) :: rest, ih, ctx => by
+    rw [Compile.compileValues, Compile.compileValues]
+    simp only [ih (k, e) (by simp) ctx,
+      compileValues_types_irrel rest (fun x hx => ih x (by simp [hx])) ctx]
+
 theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
     (hfrag : InFragment e) :
     ∀ (ctx : Ctx), Compile.compileExpr q ctx e = Compile.compileExpr p ctx e := by
@@ -1453,6 +1473,20 @@ theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Exp
     intro ctx
     rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
     simp only [ihx ctx, Program.findType?, h]
+  | ctor typeName tyArgs _ _ ihargs =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [wfTy_types_irrel h [] (.named typeName tyArgs), Program.findType?, h,
+      compileArgs_types_irrel _ (fun e he => ihargs e he) ctx]
+  | arrayLit elem _ ihitems =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [wfTy_types_irrel h [] elem, compileArgs_types_irrel _ (fun e he => ihitems e he) ctx]
+  | dictLit value _ ihentries =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [wfTy_types_irrel h [] value,
+      compileValues_types_irrel _ (fun e he => ihentries e he) ctx]
 
 theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
     (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :

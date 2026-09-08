@@ -54,6 +54,14 @@ inductive InFragment : Expr → Prop where
   | dictDelete {d key : Expr} : InFragment d → InFragment key → InFragment (.dictDelete d key)
   | proj {e : Expr} {field : String} :
       field ≠ "tag" → InFragment e → InFragment (.proj e field)
+  | ctor (typeName : String) (tyArgs : List Ty) (ctorName : String) {args : List Expr} :
+      (∀ e ∈ args, InFragment e) → InFragment (.ctor typeName tyArgs ctorName args)
+  | arrayLit (elem : Ty) {items : List Expr} :
+      (∀ e ∈ items, InFragment e) → InFragment (.arrayLit elem items)
+  | dictLit (value : Ty) {entries : List (String × Expr)} :
+      (∀ e ∈ entries, InFragment e.2) → InFragment (.dictLit value entries)
+
+mutual
 
 /-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
 their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
@@ -82,7 +90,22 @@ def inFragmentB : Expr → Bool
   | .dictValues d => inFragmentB d
   | .dictDelete d key => inFragmentB d && inFragmentB key
   | .proj x field => (field != "tag") && inFragmentB x
+  | .ctor _ _ _ args => inFragmentBList args
+  | .arrayLit _ items => inFragmentBList items
+  | .dictLit _ entries => inFragmentBValues entries
   | _ => false
+
+def inFragmentBList : List Expr → Bool
+  | [] => true
+  | e :: rest => inFragmentB e && inFragmentBList rest
+
+def inFragmentBValues : List (String × Expr) → Bool
+  | [] => true
+  | e :: rest => inFragmentB e.2 && inFragmentBValues rest
+
+end
+
+mutual
 
 theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
   | .lit l, _ => .lit l
@@ -140,6 +163,15 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
     rw [inFragmentB] at h
     simp only [Bool.and_eq_true] at h
     exact .proj (by simpa using h.1) (of_inFragmentB h.2)
+  | .ctor tn ta cn _, h => by
+    rw [inFragmentB] at h
+    exact .ctor tn ta cn (of_inFragmentBList h)
+  | .arrayLit elem _, h => by
+    rw [inFragmentB] at h
+    exact .arrayLit elem (of_inFragmentBList h)
+  | .dictLit value _, h => by
+    rw [inFragmentB] at h
+    exact .dictLit value (of_inFragmentBValues h)
   | .dictValues _, h => by rw [inFragmentB] at h; exact .dictValues (of_inFragmentB h)
   | .dictDelete _ _, h => by
     rw [inFragmentB] at h
@@ -147,15 +179,39 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
     exact .dictDelete (of_inFragmentB h.1) (of_inFragmentB h.2)
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
-  | .ctor _ _ _ _, h => by simp [inFragmentB] at h
   | .matchE _ _, h => by simp [inFragmentB] at h
-  | .arrayLit _ _, h => by simp [inFragmentB] at h
   | .mapE _ _ _, h => by simp [inFragmentB] at h
   | .filterE _ _ _, h => by simp [inFragmentB] at h
   | .findE _ _ _, h => by simp [inFragmentB] at h
   | .quantE _ _ _ _, h => by simp [inFragmentB] at h
   | .reduceE _ _ _ _ _, h => by simp [inFragmentB] at h
-  | .dictLit _ _, h => by simp [inFragmentB] at h
+termination_by e => sizeOf e
+
+theorem InFragment.of_inFragmentBList :
+    ∀ {es : List Expr}, inFragmentBList es = true → ∀ e ∈ es, InFragment e
+  | [], _, _, he => by simp at he
+  | x :: rest, h, e, he => by
+    rw [inFragmentBList] at h
+    simp only [Bool.and_eq_true] at h
+    rcases List.mem_cons.mp he with heq | hrest
+    · exact heq ▸ of_inFragmentB h.1
+    · exact of_inFragmentBList h.2 e hrest
+termination_by es => sizeOf es
+decreasing_by all_goals (simp_wf; omega)
+
+theorem InFragment.of_inFragmentBValues :
+    ∀ {es : List (String × Expr)}, inFragmentBValues es = true → ∀ e ∈ es, InFragment e.2
+  | [], _, _, he => by simp at he
+  | (_, x) :: rest, h, e, he => by
+    rw [inFragmentBValues] at h
+    simp only [Bool.and_eq_true] at h
+    rcases List.mem_cons.mp he with heq | hrest
+    · exact heq ▸ of_inFragmentB h.1
+    · exact of_inFragmentBValues h.2 e hrest
+termination_by es => sizeOf es
+decreasing_by all_goals (simp_wf; omega)
+
+end
 
 /-- Everything the correctness proof reaches is also reached by type soundness, which the arithmetic
 cases need to know that the values in the environment match the types the compiler read. -/
@@ -184,6 +240,9 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .dictValues hd => .dictValues hd.typeChecked
   | .dictDelete hd hk => .dictDelete hd.typeChecked hk.typeChecked
   | .proj (field := field) _ hx => .proj field hx.typeChecked
+  | .ctor tn ta cn hargs => .ctor tn ta cn fun e he => (hargs e he).typeChecked
+  | .arrayLit elem hitems => .arrayLit elem fun e he => (hitems e he).typeChecked
+  | .dictLit value hentries => .dictLit value fun e he => (hentries e he).typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -329,6 +388,56 @@ theorem eventually_objLit1 {m : Js.Module} {env : Js.JsEnv} {ctor field : String
     simp only [List.map_cons, List.map_nil, Js.evalList, bind, Except.bind]
     rw [eval_str_of_pos (m := m) (env := env) (s := ctor) (by omega), hg1 g (by omega)]
     rfl
+
+/-- The list an object, array or dictionary literal evaluates before it builds the value. -/
+def EventuallyList (m : Js.Module) (env : Js.JsEnv) (jes : List Js.Expr) (vs : List Js.JsValue) :
+    Prop :=
+  ∃ g, ∀ g', g ≤ g' → Js.evalList m g' env jes = .ok vs
+
+theorem eventuallyList_nil (m : Js.Module) (env : Js.JsEnv) : EventuallyList m env [] [] :=
+  ⟨0, fun _ _ => by rw [Js.evalList]⟩
+
+theorem eventuallyList_cons {m : Js.Module} {env : Js.JsEnv} {je : Js.Expr} {jes : List Js.Expr}
+    {v : Js.JsValue} {vs : List Js.JsValue} (h : Eventually m env je v)
+    (ht : EventuallyList m env jes vs) : EventuallyList m env (je :: jes) (v :: vs) := by
+  obtain ⟨g1, hg1⟩ := h
+  obtain ⟨g2, hg2⟩ := ht
+  refine ⟨max g1 g2, fun g' hgle => ?_⟩
+  rw [Js.evalList]
+  simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+
+theorem eventually_arrayLit {m : Js.Module} {env : Js.JsEnv} {jes : List Js.Expr}
+    {vs : List Js.JsValue} (h : EventuallyList m env jes vs) :
+    Eventually m env (.arrayLit jes) (.arr vs) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventually_objLit {m : Js.Module} {env : Js.JsEnv} {fields : List (String × Js.Expr)}
+    {vs : List Js.JsValue} (h : EventuallyList m env (fields.map (·.2)) vs) :
+    Eventually m env (.objLit fields) (.obj ((fields.map (·.1)).zip vs)) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventually_dictLit {m : Js.Module} {env : Js.JsEnv} {entries : List (String × Js.Expr)}
+    {vs : List Js.JsValue} (h : EventuallyList m env (entries.map (·.2)) vs) :
+    Eventually m env (.dictLit entries) (.dict ((entries.map (·.1)).zip vs)) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
 
 theorem eventually_call3 {m : Js.Module} {env : Js.JsEnv} {name : String} {j1 j2 j3 : Js.Expr}
     {a b c r : Js.JsValue} (h1 : Eventually m env j1 a) (h2 : Eventually m env j2 b)
@@ -1378,6 +1487,116 @@ theorem eventuallyErr_member {m : Js.Module} {env : Js.JsEnv} {jobj : Js.Expr} {
     rw [Js.eval.eq_def]
     simp only [bind, Except.bind, hg1 g (by omega)]
 
+theorem encodeFields_zip (ks : List String) (vs : List Value) :
+    encodeFields (ks.zip vs) = ks.zip (encodeList vs) := by
+  induction ks generalizing vs with
+  | nil => simp [encodeFields]
+  | cons k rest ih =>
+    cases vs with
+    | nil => simp [encodeFields, encodeList]
+    | cons v vs' => simp [encodeFields, encodeList, ih]
+
+/-- A constructor value is the tag followed by the fields, zipped back onto the names the type declares
+them under. -/
+theorem eventually_ctorObj {m : Js.Module} {env : Js.JsEnv} {ctorName : String}
+    {names : List String} {jes : List Js.Expr} {vs : List Js.JsValue}
+    (hlen : names.length = jes.length) (h : EventuallyList m env jes vs) :
+    Eventually m env (Compile.objOf ctorName (names.zip jes))
+      (.obj (("tag", .str ctorName) :: names.zip vs)) := by
+  have h1 : (("tag", Js.Expr.str ctorName) :: names.zip jes).map (·.2)
+      = Js.Expr.str ctorName :: jes := by
+    simp [List.map_snd_zip (by omega : jes.length ≤ names.length)]
+  have h2 : (("tag", Js.Expr.str ctorName) :: names.zip jes).map (·.1) = "tag" :: names := by
+    simp [List.map_fst_zip (by omega : names.length ≤ jes.length)]
+  have hev := eventually_objLit (m := m) (env := env)
+    (fields := ("tag", Js.Expr.str ctorName) :: names.zip jes)
+    (vs := Js.JsValue.str ctorName :: vs)
+    (by rw [h1]; exact eventuallyList_cons (eventually_str m env ctorName) h)
+  rw [h2] at hev
+  simpa [Compile.objOf] using hev
+
+theorem eventually_dictLitZip {m : Js.Module} {env : Js.JsEnv} {keys : List String}
+    {jes : List Js.Expr} {vs : List Js.JsValue} (hlen : keys.length = jes.length)
+    (h : EventuallyList m env jes vs) :
+    Eventually m env (.dictLit (keys.zip jes)) (.dict (keys.zip vs)) := by
+  have h1 : (keys.zip jes).map (·.2) = jes := List.map_snd_zip (by omega)
+  have h2 : (keys.zip jes).map (·.1) = keys := List.map_fst_zip (by omega)
+  have hev := eventually_dictLit (m := m) (env := env) (entries := keys.zip jes) (vs := vs)
+    (by rw [h1]; exact h)
+  rwa [h2] at hev
+
+def EventuallyListErr (m : Js.Module) (env : Js.JsEnv) (jes : List Js.Expr) (code : String) :
+    Prop :=
+  ∃ g, ∀ g', g ≤ g' → Js.evalList m g' env jes = .error code
+
+theorem eventuallyListErr_head {m : Js.Module} {env : Js.JsEnv} {je : Js.Expr}
+    {jes : List Js.Expr} {code : String} (h : EventuallyErr m env je code) :
+    EventuallyListErr m env (je :: jes) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1, fun g' hgle => ?_⟩
+  rw [Js.evalList]
+  simp only [bind, Except.bind, hg1 g' hgle]
+
+theorem eventuallyListErr_tail {m : Js.Module} {env : Js.JsEnv} {je : Js.Expr}
+    {jes : List Js.Expr} {v : Js.JsValue} {code : String} (h : Eventually m env je v)
+    (ht : EventuallyListErr m env jes code) : EventuallyListErr m env (je :: jes) code := by
+  obtain ⟨g1, hg1⟩ := h
+  obtain ⟨g2, hg2⟩ := ht
+  refine ⟨max g1 g2, fun g' hgle => ?_⟩
+  rw [Js.evalList]
+  simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+
+theorem eventuallyErr_arrayLit {m : Js.Module} {env : Js.JsEnv} {jes : List Js.Expr}
+    {code : String} (h : EventuallyListErr m env jes code) :
+    EventuallyErr m env (.arrayLit jes) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_objLit {m : Js.Module} {env : Js.JsEnv} {fields : List (String × Js.Expr)}
+    {code : String} (h : EventuallyListErr m env (fields.map (·.2)) code) :
+    EventuallyErr m env (.objLit fields) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_dictLit {m : Js.Module} {env : Js.JsEnv} {entries : List (String × Js.Expr)}
+    {code : String} (h : EventuallyListErr m env (entries.map (·.2)) code) :
+    EventuallyErr m env (.dictLit entries) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_ctorObj {m : Js.Module} {env : Js.JsEnv} {ctorName : String}
+    {names : List String} {jes : List Js.Expr} {code : String} (hlen : names.length = jes.length)
+    (h : EventuallyListErr m env jes code) :
+    EventuallyErr m env (Compile.objOf ctorName (names.zip jes)) code := by
+  have h1 : (("tag", Js.Expr.str ctorName) :: names.zip jes).map (·.2)
+      = Js.Expr.str ctorName :: jes := by
+    simp [List.map_snd_zip (by omega : jes.length ≤ names.length)]
+  refine eventuallyErr_objLit (fields := ("tag", Js.Expr.str ctorName) :: names.zip jes) ?_
+  rw [h1]
+  exact eventuallyListErr_tail (eventually_str m env ctorName) h
+
+theorem eventuallyErr_dictLitZip {m : Js.Module} {env : Js.JsEnv} {keys : List String}
+    {jes : List Js.Expr} {code : String} (hlen : keys.length = jes.length)
+    (h : EventuallyListErr m env jes code) :
+    EventuallyErr m env (.dictLit (keys.zip jes)) code := by
+  refine eventuallyErr_dictLit (entries := keys.zip jes) ?_
+  rwa [List.map_snd_zip (by omega : jes.length ≤ keys.length)]
+
 theorem eventuallyErr_call1 {m : Js.Module} {env : Js.JsEnv} {name : String} {jx : Js.Expr}
     {code : String} (h : EventuallyErr m env jx code) :
     EventuallyErr m env (.call name [jx]) code := by
@@ -1676,6 +1895,205 @@ private theorem compileExpr_length_parts {p : Program} {ctx : Compile.Ctx} {arr 
 
 /-- The dictionary operations: the operand the compiler read as a `Dict`, the expression it emitted, and
 the type it gave back. -/
+theorem compileArgs_length {p : Program} {ctx : Compile.Ctx} :
+    ∀ {items : List Expr} {js : List (Js.Expr × Ty)},
+      Compile.compileArgs p ctx items = .ok js → js.length = items.length
+  | [], js, h => by rw [Compile.compileArgs] at h; simp only [Except.ok.injEq] at h; simp [← h]
+  | item :: rest, js, h => by
+    rw [Compile.compileArgs] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at h
+    simp [← h, compileArgs_length hctail]
+
+theorem compileValues_length {p : Program} {ctx : Compile.Ctx} :
+    ∀ {entries : List (String × Expr)} {js : List (Js.Expr × Ty)},
+      Compile.compileValues p ctx entries = .ok js → js.length = entries.length
+  | [], js, h => by rw [Compile.compileValues] at h; simp only [Except.ok.injEq] at h; simp [← h]
+  | (_, _) :: rest, js, h => by
+    rw [Compile.compileValues] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at h
+    simp [← h, compileValues_length hctail]
+
+theorem evalArgs_length {p : Program} {f : Nat} {env : Env} :
+    ∀ {items : List Expr} {vs : List Value},
+      evalArgs p f env items = .ok vs → vs.length = items.length
+  | [], vs, h => by rw [evalArgs_nil] at h; simp only [Except.ok.injEq] at h; simp [← h]
+  | item :: rest, vs, h => by
+    rw [evalArgs_cons] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · simp at h
+    split at h
+    · simp at h
+    rename_i tail hetail
+    simp only [Except.ok.injEq] at h
+    simp [← h, evalArgs_length hetail]
+
+private theorem compileExpr_ctor_parts {p : Program} {ctx : Compile.Ctx}
+    {typeName ctorName : String} {tyArgs : List Ty} {args : List Expr} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.ctor typeName tyArgs ctorName args) = .ok (je, ty)) :
+    ∃ t c js, p.findType? typeName = some t ∧ t.findAt? tyArgs ctorName = some c
+      ∧ Compile.compileArgs p ctx args = .ok js ∧ c.fields.length = js.length
+      ∧ je = Compile.objOf ctorName ((c.fields.map (·.name)).zip (js.map (·.1))) := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i t ht
+  split at hc
+  · simp at hc
+  rename_i c hcc
+  split at hc
+  · simp at hc
+  rename_i js hcs
+  split at hc
+  · simp at hc
+  rename_i hlen
+  split at hc
+  · simp at hc
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+  exact ⟨t, c, js, ht, hcc, hcs, by simpa using hlen, hc.1.symm⟩
+
+private theorem compileExpr_arrayLit_parts {p : Program} {ctx : Compile.Ctx} {elem : Ty}
+    {items : List Expr} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.arrayLit elem items) = .ok (je, ty)) :
+    ∃ js, Compile.compileArgs p ctx items = .ok js ∧ je = .arrayLit (js.map (·.1)) := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i js hcs
+  split at hc
+  · simp at hc
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+  exact ⟨js, hcs, hc.1.symm⟩
+
+private theorem compileExpr_dictLit_parts {p : Program} {ctx : Compile.Ctx} {value : Ty}
+    {entries : List (String × Expr)} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.dictLit value entries) = .ok (je, ty)) :
+    ∃ js, Compile.compileValues p ctx entries = .ok js
+      ∧ je = .dictLit ((entries.map (·.1)).zip (js.map (·.1))) := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i js hcs
+  split at hc
+  · simp at hc
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+  exact ⟨js, hcs, hc.1.symm⟩
+
+/-- The arguments of a constructor or the items of an array literal, carrying the induction hypothesis
+of `fragment_correct_in` along the list. -/
+private theorem eventuallyList_of_args (p : Program) (m : Js.Module) {ctx : Compile.Ctx} {env : Env}
+    {jenv : Js.JsEnv} {f : Nat} :
+    ∀ (items : List Expr) (js : List (Js.Expr × Ty)) (vs : List Value),
+      (∀ e ∈ items, ∀ {je : Js.Expr} {ty : Ty} {v : Value},
+        Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .ok v →
+        Eventually m jenv je (encodeValue v)) →
+      Compile.compileArgs p ctx items = .ok js →
+      evalArgs p f env items = .ok vs →
+      EventuallyList m jenv (js.map (·.1)) (encodeList vs) := by
+  intro items
+  induction items with
+  | nil =>
+    intro js vs _ hcs hes
+    rw [Compile.compileArgs] at hcs
+    rw [evalArgs_nil] at hes
+    simp only [Except.ok.injEq] at hcs hes
+    subst hcs; subst hes
+    simpa [encodeList] using eventuallyList_nil m jenv
+  | cons item rest ihr =>
+    intro js vs ih hcs hes
+    rw [Compile.compileArgs] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i v hv
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    simp only [List.map_cons, encodeList]
+    exact eventuallyList_cons (ih item (by simp) hchead hv)
+      (ihr tail vs' (fun e he => ih e (by simp [he])) hctail hvs)
+
+private theorem eventuallyList_of_values (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} :
+    ∀ (entries : List (String × Expr)) (js : List (Js.Expr × Ty)) (vs : List Value),
+      (∀ e ∈ entries, ∀ {je : Js.Expr} {ty : Ty} {v : Value},
+        Compile.compileExpr p ctx e.2 = .ok (je, ty) → evalExpr p f env e.2 = .ok v →
+        Eventually m jenv je (encodeValue v)) →
+      Compile.compileValues p ctx entries = .ok js →
+      evalArgs p f env (entries.map (·.2)) = .ok vs →
+      EventuallyList m jenv (js.map (·.1)) (encodeList vs) := by
+  intro entries
+  induction entries with
+  | nil =>
+    intro js vs _ hcs hes
+    rw [Compile.compileValues] at hcs
+    simp only [List.map_nil] at hes
+    rw [evalArgs_nil] at hes
+    simp only [Except.ok.injEq] at hcs hes
+    subst hcs; subst hes
+    simpa [encodeList] using eventuallyList_nil m jenv
+  | cons entry rest ihr =>
+    intro js vs ih hcs hes
+    obtain ⟨k, item⟩ := entry
+    rw [Compile.compileValues] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    simp only [List.map_cons] at hes
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i v hv
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    simp only [List.map_cons, encodeList]
+    exact eventuallyList_cons (ih (k, item) (by simp) hchead hv)
+      (ihr tail vs' (fun e he => ih e (by simp [he])) hctail hvs)
+
 private theorem compileExpr_proj_parts {p : Program} {ctx : Compile.Ctx} {e : Expr} {field : String}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.proj e field) = .ok (je, ty)) :
     ∃ jx n targs t c f, Compile.compileExpr p ctx e = .ok (jx, .named n targs)
@@ -3842,6 +4260,77 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
       · rename_i hno
         exact (hno ctor fields rfl).elim
 
+  | ctor typeName tyArgs ctorName hargs ihargs =>
+    rename_i args
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨t, c', js, ht, hc', hcs, hlen, rfl⟩ := compileExpr_ctor_parts hc
+      rw [evalExpr_ctor] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vs hvs
+      split at he
+      · simp at he
+      rename_i t2 ht2
+      rw [ht] at ht2
+      injection ht2 with ht2
+      subst ht2
+      split at he
+      · simp at he
+      rename_i c hcf
+      split at he
+      · simp at he
+      simp only [Except.ok.injEq] at he
+      subst he
+      rw [findAt?_eq, hcf] at hc'
+      simp only [Option.map_some, Option.some.injEq] at hc'
+      have hnames : c.fields.map (·.name) = c'.fields.map (·.name) := by
+        rw [← hc']; simp
+      have hlen' : (c'.fields.map (·.name)).length = (js.map (·.1)).length := by simp [hlen]
+      have hev := eventually_ctorObj (ctorName := ctorName) hlen'
+        (eventuallyList_of_args p m args js vs (fun e he => ihargs e he henv hjenv) hcs hvs)
+      rw [encodeValue, encodeFields_zip, hnames]
+      exact hev
+  | arrayLit elem hitems ihitems =>
+    rename_i items
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨js, hcs, rfl⟩ := compileExpr_arrayLit_parts hc
+      rw [evalExpr_arrayLit] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vs hvs
+      simp only [Except.ok.injEq] at he
+      subst he
+      rw [encodeValue]
+      exact eventually_arrayLit
+        (eventuallyList_of_args p m items js vs (fun e he => ihitems e he henv hjenv) hcs hvs)
+  | dictLit value hentries ihentries =>
+    rename_i entries
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨js, hcs, rfl⟩ := compileExpr_dictLit_parts hc
+      rw [evalExpr_dictLit] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vs hvs
+      simp only [Except.ok.injEq] at he
+      subst he
+      have hlen' : (entries.map (·.1)).length = (js.map (·.1)).length := by
+        simp [compileValues_length hcs]
+      rw [encodeValue, encodeFields_zip]
+      exact eventually_dictLitZip hlen'
+        (eventuallyList_of_values p m entries js vs (fun e he => ihentries e he henv hjenv) hcs hvs)
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -4093,6 +4582,105 @@ theorem compileExpr_bin_trap {p : Program} {ctx : Compile.Ctx} {op : BinOp} {lhs
       obtain ⟨ys, rfl⟩ := hasTy_array_inv hb
       simp [applyBin] at herr
     all_goals simp at hc
+
+private theorem eventuallyListErr_of_args (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {err : Err}
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv) :
+    ∀ (items : List Expr) (js : List (Js.Expr × Ty)),
+      (∀ e ∈ items, InFragment e) →
+      (∀ e ∈ items, ∀ {je : Js.Expr} {ty : Ty},
+        Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .error err →
+        err ≠ .outOfFuel → EventuallyErr m jenv je err.code) →
+      Compile.compileArgs p ctx items = .ok js →
+      evalArgs p f env items = .error err → err ≠ .outOfFuel →
+      EventuallyListErr m jenv (js.map (·.1)) err.code := by
+  intro items
+  induction items with
+  | nil =>
+    intro js _ _ hcs hes _
+    rw [evalArgs_nil] at hes
+    simp at hes
+  | cons item rest ihr =>
+    intro js hfrag ih hcs hes hne
+    rw [Compile.compileArgs] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    simp only [List.map_cons]
+    split at hes
+    · rename_i e0 hie
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      exact eventuallyListErr_head (ih item (by simp) hchead hie hne)
+    rename_i v hv
+    split at hes
+    · rename_i e0 hte
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      exact eventuallyListErr_tail
+        (fragment_correct_in p m (hfrag item (by simp)) henv hjenv hchead hv)
+        (ihr tail (fun e he => hfrag e (by simp [he])) (fun e he => ih e (by simp [he])) hctail
+          hte hne)
+    · simp at hes
+
+
+private theorem eventuallyListErr_of_values (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {err : Err}
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv) :
+    ∀ (entries : List (String × Expr)) (js : List (Js.Expr × Ty)),
+      (∀ e ∈ entries, InFragment e.2) →
+      (∀ e ∈ entries, ∀ {je : Js.Expr} {ty : Ty},
+        Compile.compileExpr p ctx e.2 = .ok (je, ty) → evalExpr p f env e.2 = .error err →
+        err ≠ .outOfFuel → EventuallyErr m jenv je err.code) →
+      Compile.compileValues p ctx entries = .ok js →
+      evalArgs p f env (entries.map (·.2)) = .error err → err ≠ .outOfFuel →
+      EventuallyListErr m jenv (js.map (·.1)) err.code := by
+  intro entries
+  induction entries with
+  | nil =>
+    intro js _ _ hcs hes _
+    simp only [List.map_nil] at hes
+    rw [evalArgs_nil] at hes
+    simp at hes
+  | cons entry rest ihr =>
+    intro js hfrag ih hcs hes hne
+    obtain ⟨k, item⟩ := entry
+    rw [Compile.compileValues] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    simp only [List.map_cons] at hes
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    simp only [List.map_cons]
+    split at hes
+    · rename_i e0 hie
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      exact eventuallyListErr_head (ih (k, item) (by simp) hchead hie hne)
+    rename_i v hv
+    split at hes
+    · rename_i e0 hte
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      exact eventuallyListErr_tail
+        (fragment_correct_in p m (hfrag (k, item) (by simp)) henv hjenv hchead hv)
+        (ihr tail (fun e he => hfrag e (by simp [he])) (fun e he => ih e (by simp [he])) hctail
+          hte hne)
+    · simp at hes
+
 
 /-- If the reference semantics refuses, the generated code refuses with the same thrown code.
 
@@ -5016,5 +5604,77 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
         · rename_i hno
           exact (hno ctor fields rfl).elim
       · simp at hc''
+
+  | ctor typeName tyArgs ctorName hargs ihargs =>
+    rename_i args
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨t, c', js, ht, hc', hcs, hlen, rfl⟩ := compileExpr_ctor_parts hc
+      have hlen' : (c'.fields.map (·.name)).length = (js.map (·.1)).length := by simp [hlen]
+      rw [evalExpr_ctor] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_ctorObj hlen' (eventuallyListErr_of_args p m henv hjenv args js hargs
+          (fun e he => ihargs e he henv hcov hjenv) hcs hae hne)
+      rename_i vs hvs
+      split at he
+      · rename_i hnone
+        rw [ht] at hnone
+        simp at hnone
+      rename_i t2 ht2
+      rw [ht] at ht2
+      injection ht2 with ht2
+      subst ht2
+      split at he
+      · rename_i hnone
+        rw [findAt?_eq, hnone] at hc'
+        simp at hc'
+      rename_i c hcf
+      rw [findAt?_eq, hcf] at hc'
+      simp only [Option.map_some, Option.some.injEq] at hc'
+      have hfl : c.fields.length = vs.length := by
+        rw [evalArgs_length hvs, ← compileArgs_length hcs, ← hlen, ← hc']
+        simp
+      split at he
+      · rename_i hbad
+        exact absurd hfl (by simpa using hbad)
+      · simp at he
+  | arrayLit elem hitems ihitems =>
+    rename_i items
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨js, hcs, rfl⟩ := compileExpr_arrayLit_parts hc
+      rw [evalExpr_arrayLit] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hie
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_arrayLit (eventuallyListErr_of_args p m henv hjenv items js hitems
+          (fun e he => ihitems e he henv hcov hjenv) hcs hie hne)
+      · simp at he
+  | dictLit value hentries ihentries =>
+    rename_i entries
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨js, hcs, rfl⟩ := compileExpr_dictLit_parts hc
+      have hlen' : (entries.map (·.1)).length = (js.map (·.1)).length := by
+        simp [compileValues_length hcs]
+      rw [evalExpr_dictLit] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hie
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_dictLitZip hlen'
+          (eventuallyListErr_of_values p m henv hjenv entries js hentries
+            (fun e he => ihentries e he henv hcov hjenv) hcs hie hne)
+      · simp at he
 
 end LeanTs.Correct
