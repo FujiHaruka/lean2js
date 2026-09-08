@@ -6,8 +6,8 @@ import LeanTs.Decl
 # Axioms
 
 Pins down that the theorems the artifact is sold on do not depend on `sorry`: the claims carried by the
-manifest, plus the four the guarantee itself rests on: `typeSound`, `fragment_correct`, `decl_correct`
-and `decl_refuses`.
+manifest, plus the six the guarantee itself rests on: `typeSound`, `fragment_correct`,
+`fragment_traps_in`, `decl_correct`, `decl_refuses` and `decl_traps`.
 
 `Claim` demands a proof term, so a missing theorem is caught by a failing `lake build`; a proof plugged
 with `sorry`, however, still goes through as a term. Pinning the axiom set makes this fail the moment
@@ -50,6 +50,14 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 #guard_msgs in
 #print axioms LeanTs.Example.add_refuses_string
 
+/-- info: 'LeanTs.Example.add_traps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.add_traps
+
+/-- info: 'LeanTs.Example.add_overflow_throws' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.add_overflow_throws
+
 /-- info: 'LeanTs.typeSound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.typeSound
@@ -58,6 +66,10 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 #guard_msgs in
 #print axioms LeanTs.Correct.fragment_correct
 
+/-- info: 'LeanTs.Correct.fragment_traps_in' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Correct.fragment_traps_in
+
 /-- info: 'LeanTs.Decl.decl_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Decl.decl_correct
@@ -65,3 +77,7 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 /-- info: 'LeanTs.Decl.decl_refuses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Decl.decl_refuses
+
+/-- info: 'LeanTs.Decl.decl_traps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Decl.decl_traps

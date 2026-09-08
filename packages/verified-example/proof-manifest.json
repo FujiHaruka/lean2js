@@ -301,6 +301,10 @@
     {
       "name": "add_refuses",
       "statement": "for any arguments eval would not accept, the generated add throws instead of computing"
+    },
+    {
+      "name": "add_traps",
+      "statement": "for any arguments eval accepts, if eval throws then the generated add throws the same code"
     }
   ]
 }

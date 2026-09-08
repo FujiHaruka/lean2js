@@ -53,7 +53,10 @@ fragment_traps_in :
 
 1. **部分式が落ちた** → 帰納法の仮定で JS 側の部分式が同じコードで落ち、生成した形がそれを伝える。
    伝わることは形ごとの補題にする（`eventuallyErr_binaryL` / `binaryR` / `call2L` / `call2R` /
-   `andR` / `orR` / `condC` / `arrowCall`）。陽性方向の `eventually_*` と対になる
+   `andR` / `orR` / `condC` / `condT` / `condE` / `arrowArg` / `arrowBody`）。陽性方向の
+   `eventually_*` と対になる。そのうえで、二項演算の 16 形については**コンパイラの表から一度だけ
+   読み取る**（`numericHelper_errL` / `errR`、`compileExpr_bin_errL` / `errR`）—— そうしないと
+   同じ議論を演算子ごとに 16 回書くことになる
 2. **部分式は値を返し、演算が落ちた** → `typeSound` で被演算子の型を確定させ、`applyUn` / `applyBin`
    の落ちる枝を数え上げる。残るのは `mkInt53` の溢れと `b == 0` だけで、そこで JS 側のヘルパが
    同じコードを投げることを示す

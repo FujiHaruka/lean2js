@@ -496,6 +496,38 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
   Decl.decl_correct program m "rebindTwice" rebindTwice args v hm find_rebindTwice
     (Correct.InFragment.of_inFragmentB rfl) he
 
+/-! ### Throwing what the reference semantics throws
+
+`Decl.decl_traps` is the other half of `decl_correct`: for arguments the entry accepts, a body that
+throws is matched by a generated function that throws the same code. -/
+
+/-- Whenever `eval` refuses to return a value for `add`, the generated function throws the code `eval`
+threw. Its body can reach `int53Overflow`. -/
+theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (err : Err)
+    (hlen : add.params.length = args.length)
+    (htyped : Decl.ParamsTyped program add.params args)
+    (he : evalCall program "add" args = .error err) (hne : err ≠ .outOfFuel) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "add" (args.map encodeValue) = .error err.code :=
+  Decl.decl_traps program m "add" add args err hm find_add
+    (Correct.InFragment.of_inFragmentB rfl) hlen htyped he hne
+
+/-- The trap is reachable, and reached the same way on both sides: one past the top of `Int53` throws
+`int53Overflow` out of the generated function. -/
+theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program = .ok m) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "add" [.num int53Max, .num 1] = .error "int53Overflow" := by
+  have hcall : evalCall program "add" [.int53 int53Max, .int53 1] = .error .int53Overflow := by
+    simp [evalCall, find_add, add, Env.lookup?, bindParams, Value.hasTy, evalExpr.eq_def,
+      defaultFuel, applyBin, applyArith, mkInt53, bind, Except.bind, int53Min, int53Max]
+  have hty : Value.hasTy program (.int53 int53Max) .int53 = true ∧
+      Value.hasTy program (.int53 1) .int53 = true := by
+    constructor <;> (rw [hasTy_int53]; simp [int53Min, int53Max])
+  have h := add_traps m hm [.int53 int53Max, .int53 1] .int53Overflow rfl
+    ⟨hty.1, hty.2, trivial⟩ hcall (by simp)
+  simpa [encodeValue, Err.code] using h
+
 /-! ### Refusing what the reference semantics refuses
 
 `Decl.decl_refuses` needs no `InFragment`: the entry check does not look at the body, so this direction
@@ -547,7 +579,11 @@ def manifest : Manifest := {
     { name := "add_refuses"
       statement :=
         "for any arguments eval would not accept, the generated add throws instead of computing"
-      proof := add_refuses }
+      proof := add_refuses },
+    { name := "add_traps"
+      statement :=
+        "for any arguments eval accepts, if eval throws then the generated add throws the same code"
+      proof := add_traps }
   ]
 }
 
