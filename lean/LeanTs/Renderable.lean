@@ -246,3 +246,202 @@ theorem noStar_declSig {p : Program} (hn : TypeNamesOk p) :
         (noStar_append (noStar_of_okName (okName_of_validateIdent hv1)) (by decide))
         (noStar_render_of_wfParamTy hn _ hw1))
       (noStar_declSigRest hn rest hv2 hw2)
+
+/-! ## Names the compiler writes
+
+`Renderable` asks a name to be an identifier, and a name in callee position to be none of the ten the
+reader gives a meaning of its own. A user's name went through `validateIdent`, which rejects both the
+`__` prefix and the JavaScript keywords, and those two rejections between them cover all ten. -/
+
+private theorem notJsReserved_of_validateIdent {kind name : String} {u : Unit}
+    (h : validateIdent kind name = .ok u) : jsReserved.contains name = false := by
+  rw [validateIdent] at h
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  rename_i hj
+  simpa using hj
+
+theorem okCallee_of_validateIdent {kind name : String} {u : Unit}
+    (h : validateIdent kind name = .ok u) : okCallee name = true := by
+  have hok := okName_of_validateIdent h
+  have hres := unreserved_of_validateIdent h
+  have hjs := notJsReserved_of_validateIdent h
+  have hd : name ∉ dispatchNames := by
+    intro hmem
+    simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
+    rcases hmem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · exact absurd hjs (by decide)
+    · exact absurd hjs (by decide)
+    · exact absurd hjs (by decide)
+    all_goals exact absurd hres (by decide)
+  simp [okCallee, hok, hd]
+
+/-! ## What the compiler is holding while it builds an expression
+
+The names in scope and the names of the declarations are the only two places a compiled expression can
+pick a name up from that is not one the compiler spells itself. Both went through `validateIdent`. -/
+
+def CtxOk (ctx : Ctx) : Prop := ∀ x ∈ ctx, okCallee x.1 = true
+
+def DeclNamesOk (p : Program) : Prop := ∀ d ∈ p.decls, okCallee d.name = true
+
+/-- Field names reach the generated code through `.field` and through the paths a pattern reads, so a
+`match` and a projection both need them to be identifiers. -/
+def FieldNamesOk (p : Program) : Prop :=
+  ∀ t ∈ p.types, ∀ c ∈ t.ctors, ∀ f ∈ c.fields, okName f.name = true
+
+/-- One lowered `match` arm the reader can take back: the tests it runs, the names it binds, the paths it
+reads them from and the body under them. -/
+def ArmOk (a : Arm) : Bool :=
+  RenderableList a.tests && a.names.all okName && RenderableList a.paths && RenderableExpr a.body
+
+theorem renderableList_append :
+    ∀ xs ys : List Js.Expr, RenderableList xs = true → RenderableList ys = true →
+      RenderableList (xs ++ ys) = true
+  | [], _, _, hy => hy
+  | x :: xs, ys, hx, hy => by
+    rw [RenderableList] at hx
+    simp only [Bool.and_eq_true] at hx
+    rw [List.cons_append, RenderableList]
+    simp [hx.1, renderableList_append xs ys hx.2 hy]
+
+theorem renderableList_nil : RenderableList [] = true := by rw [RenderableList]
+
+theorem renderablePairs_nil : RenderablePairs [] = true := by rw [RenderablePairs]
+
+theorem renderableList_of_all :
+    ∀ es : List Js.Expr, es.all RenderableExpr = true → RenderableList es = true
+  | [], _ => renderableList_nil
+  | e :: rest, h => by
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    rw [RenderableList]
+    simp [h.1, renderableList_of_all rest h.2]
+
+theorem renderablePairs_zip :
+    ∀ (ns : List String) (es : List Js.Expr), RenderableList es = true →
+      RenderablePairs (ns.zip es) = true
+  | [], es, _ => by rw [List.zip_nil_left]; exact renderablePairs_nil
+  | n :: ns, [], _ => by rw [List.zip_nil_right]; exact renderablePairs_nil
+  | n :: ns, e :: es, h => by
+    rw [RenderableList] at h
+    simp only [Bool.and_eq_true] at h
+    rw [List.zip_cons_cons, RenderablePairs]
+    simp [h.1, renderablePairs_zip ns es h.2]
+
+theorem renderable_objOf (ctor : String) (fields : List (String × Js.Expr))
+    (h : RenderablePairs fields = true) : RenderableExpr (objOf ctor fields) = true := by
+  rw [objOf, RenderableExpr, RenderablePairs]
+  simp only [Bool.and_eq_true]
+  exact ⟨by rw [RenderableExpr], h⟩
+
+/-! ## The lowered `match`
+
+`chain` conjoins an arm's tests with `&&` and nests the arms into conditionals, and `apply` wraps an
+arm's body in an arrow when it binds anything. Both build only shapes the reader has. -/
+
+theorem renderable_foldl_and :
+    ∀ (ts : List Js.Expr) (t : Js.Expr), RenderableExpr t = true → RenderableList ts = true →
+      RenderableExpr (ts.foldl (Js.Expr.binary "&&") t) = true
+  | [], t, ht, _ => ht
+  | u :: us, t, ht, hs => by
+    rw [RenderableList] at hs
+    simp only [Bool.and_eq_true] at hs
+    rw [List.foldl_cons]
+    refine renderable_foldl_and us _ ?_ hs.2
+    rw [RenderableExpr]
+    simp [ht, hs.1, show okOp "&&" = true by decide]
+
+theorem renderable_apply {a : Arm} (h : ArmOk a = true) :
+    RenderableExpr (compileExpr.apply a) = true := by
+  simp only [ArmOk, Bool.and_eq_true] at h
+  obtain ⟨⟨⟨_, hn⟩, hp⟩, hb⟩ := h
+  rw [compileExpr.apply]
+  split
+  · exact hb
+  · rw [RenderableExpr]; simp [hn, hb, hp]
+
+theorem renderable_chain :
+    ∀ arms : List Arm, arms.all ArmOk = true → RenderableExpr (compileExpr.chain arms) = true
+  | [], _ => by rw [compileExpr.chain, RenderableExpr]
+  | [a], h => by
+    rw [compileExpr.chain]
+    simp only [List.all_cons, List.all_nil, Bool.and_true] at h
+    exact renderable_apply h
+  | a :: b :: rest, h => by
+    rw [compileExpr.chain] <;> try simp
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    cases hts : a.tests with
+    | nil => exact renderable_apply h.1
+    | cons u us =>
+      have htests : RenderableList a.tests = true := by
+        simp only [ArmOk, Bool.and_eq_true] at h; exact h.1.1.1.1
+      rw [hts, RenderableList] at htests
+      simp only [Bool.and_eq_true] at htests
+      rw [RenderableExpr]
+      simp only [Bool.and_eq_true]
+      exact ⟨⟨renderable_foldl_and us u htests.1 htests.2, renderable_apply h.1⟩,
+        renderable_chain (b :: rest) (by simpa using h.2)⟩
+
+/-! ## Patterns
+
+A pattern lowers to tests over paths into the scrutinee. The paths are built by reading fields, so the
+field names a `signature` reports have to be identifiers; the declared ones went through `validateType`
+and the built-in ones are `value` and `error`. -/
+
+theorem okName_of_signature {p : Program} (hf : FieldNamesOk p) :
+    ∀ (ty : Ty) (heads : List (Head × List (String × Ty))),
+      signature p.types ty = some heads → ∀ hd ∈ heads, ∀ f ∈ hd.2, okName f.1 = true := by
+  intro ty heads h hd hhd f hf'
+  cases ty with
+  | named n args =>
+    rw [signature] at h
+    cases ht : List.find? (fun d => d.name == n) p.types with
+    | none => rw [ht] at h; exact absurd h (by simp)
+    | some t =>
+      rw [ht] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      subst h
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hhd
+      obtain ⟨g, hg, rfl⟩ := List.mem_map.1 hf'
+      obtain ⟨c₀, hc₀, rfl⟩ := List.mem_map.1 hc
+      obtain ⟨g₀, hg₀, rfl⟩ := List.mem_map.1 hg
+      exact hf t (List.mem_of_find?_eq_some ht) c₀ hc₀ g₀ hg₀
+  | option _ =>
+    rw [signature] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hhd
+    rcases hhd with rfl | rfl
+    · simp at hf'
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hf'
+      subst hf'
+      exact (by decide : okName "value" = true)
+  | result _ _ =>
+    rw [signature] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hhd
+    rcases hhd with rfl | rfl <;>
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hf' <;> subst hf'
+    · exact (by decide : okName "value" = true)
+    · exact (by decide : okName "error" = true)
+  | bool =>
+    rw [signature] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hhd
+    rcases hhd with rfl | rfl <;> simp at hf'
+  | int53 => simp [signature] at h
+  | uint32 => simp [signature] at h
+  | string => simp [signature] at h
+  | bigint => simp [signature] at h
+  | var _ => simp [signature] at h
+  | array _ => simp [signature] at h
+  | dict _ => simp [signature] at h
+  | fn _ _ => simp [signature] at h
