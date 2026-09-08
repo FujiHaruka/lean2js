@@ -293,6 +293,10 @@
     {
       "name": "same_currency_adds",
       "statement": "∀ a b sharing a currency whose amounts sum within Int53, addMoney(a, b) = ok(a.amount + b.amount)"
+    },
+    {
+      "name": "add_calls_agree",
+      "statement": "for any arguments, the generated add returns what eval returns, entry check included"
     }
   ]
 }

@@ -813,6 +813,11 @@ private def validateType (p : Program) (t : TypeDef) : Except String Unit := do
       if mentions p t.name [] f.ty then
         .error s!"{t.name} refers to itself; a recursive type cannot cross the boundary"
 
+def compileDecls (p : Program) : Nat → List Decl → Except String (List Js.Func)
+  | _, [] => .ok []
+  | i, d :: rest => do
+    .ok ((← compileDecl { p with decls := p.decls.take i } d) :: (← compileDecls p (i + 1) rest))
+
 /-- Each declaration is compiled against the ones before it only, so a function can call neither itself
 nor a later one. That is what keeps nontermination out of the subset: `eval`'s fuel bounds the proof, not
 the language. Traversal is `map` / `filter` / `reduce`, which are syntax and cannot recur. -/
@@ -820,7 +825,7 @@ def compileProgram (p : Program) : Except String Js.Module := do
   validateDistinct "type" (p.types.map (·.name))
   p.types.forM (validateType p)
   validateDistinct "function" (p.decls.map (·.name))
-  let funcs ← p.decls.zipIdx.mapM fun (d, i) => compileDecl { p with decls := p.decls.take i } d
+  let funcs ← compileDecls p 0 p.decls
   .ok { funcs }
 
 end LeanTs.Compile

@@ -1,11 +1,13 @@
 import LeanTs.Example
 import LeanTs.Correct
+import LeanTs.Decl
 
 /-!
 # Axioms
 
 Pins down that the theorems the artifact is sold on do not depend on `sorry`: the claims carried by the
-manifest, plus the two the guarantee itself rests on, `typeSound` and `fragment_correct`.
+manifest, plus the three the guarantee itself rests on: `typeSound`, `fragment_correct` and
+`decl_correct`.
 
 `Claim` demands a proof term, so a missing theorem is caught by a failing `lake build`; a proof plugged
 with `sorry`, however, still goes through as a term. Pinning the axiom set makes this fail the moment
@@ -28,6 +30,18 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 #guard_msgs in
 #print axioms LeanTs.Example.same_currency_adds
 
+/-- info: 'LeanTs.Example.add_calls_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.add_calls_agree
+
+/-- info: 'LeanTs.Example.discounted_calls_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.discounted_calls_agree
+
+/-- info: 'LeanTs.Example.rebindTwice_calls_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.rebindTwice_calls_agree
+
 /-- info: 'LeanTs.typeSound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.typeSound
@@ -35,3 +49,7 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 /-- info: 'LeanTs.Correct.fragment_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Correct.fragment_correct
+
+/-- info: 'LeanTs.Decl.decl_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Decl.decl_correct

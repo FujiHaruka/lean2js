@@ -1,3 +1,4 @@
+import LeanTs.Decl
 import LeanTs.Eval
 import LeanTs.Manifest
 import LeanTs.Syntax
@@ -459,6 +460,42 @@ theorem same_currency_adds (x y : Int) (currency : String)
     evalExpr_okE, evalExpr_ctor, evalArgs_nil, evalArgs_cons, Env.lookup?, applyBin, applyArith,
     mkInt53, hne, findType_Money, ctor_Money, hno, bind, Except.bind]
 
+/-! ### The generated function, not just the expression
+
+`Correct.fragment_correct` is about a compiled expression. `Decl.decl_correct` carries it up to a call of
+the generated function, entry check and all. Instantiating it on a declaration needs only that the body
+is in the fragment, which `inFragmentB` decides. -/
+
+private theorem find_discounted : program.find? "discounted" = some discounted := rfl
+
+private theorem find_rebindTwice : program.find? "rebindTwice" = some rebindTwice := rfl
+
+/-- Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
+is a single binary operation. -/
+theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (v : Value) (he : evalCall program "add" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "add" (args.map encodeValue) = .ok (encodeValue v) :=
+  Decl.decl_correct program m "add" add args v hm find_add
+    (Correct.InFragment.of_inFragmentB rfl) he
+
+/-- The same for a body that opens with a `let`, which the compiler emits as a `const` statement. -/
+theorem discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (v : Value) (he : evalCall program "discounted" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "discounted" (args.map encodeValue) = .ok (encodeValue v) :=
+  Decl.decl_correct program m "discounted" discounted args v hm find_discounted
+    (Correct.InFragment.of_inFragmentB rfl) he
+
+/-- And for a body whose second `let` rebinds a name already in scope, which the compiler leaves as an
+expression rather than a statement. -/
+theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (v : Value) (he : evalCall program "rebindTwice" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "rebindTwice" (args.map encodeValue) = .ok (encodeValue v) :=
+  Decl.decl_correct program m "rebindTwice" rebindTwice args v hm find_rebindTwice
+    (Correct.InFragment.of_inFragmentB rfl) he
+
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
@@ -477,7 +514,11 @@ def manifest : Manifest := {
     { name := "same_currency_adds"
       statement :=
         "∀ a b sharing a currency whose amounts sum within Int53, addMoney(a, b) = ok(a.amount + b.amount)"
-      proof := same_currency_adds }
+      proof := same_currency_adds },
+    { name := "add_calls_agree"
+      statement :=
+        "for any arguments, the generated add returns what eval returns, entry check included"
+      proof := add_calls_agree }
   ]
 }
 

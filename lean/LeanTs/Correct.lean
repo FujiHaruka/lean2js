@@ -32,6 +32,63 @@ inductive InFragment : Expr → Prop where
   | bin {op : BinOp} {lhs rhs : Expr} :
       InFragment lhs → InFragment rhs → InFragment (.bin op lhs rhs)
 
+/-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
+their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
+def inFragmentB : Expr → Bool
+  | .lit _ => true
+  | .var _ => true
+  | .cond c t e => inFragmentB c && inFragmentB t && inFragmentB e
+  | .letE _ _ val body => inFragmentB val && inFragmentB body
+  | .un _ x => inFragmentB x
+  | .bin _ lhs rhs => inFragmentB lhs && inFragmentB rhs
+  | _ => false
+
+theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
+  | .lit l, _ => .lit l
+  | .var n, _ => .var n
+  | .cond _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .cond (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
+  | .letE _ _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .letE (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .un _ _, h => by rw [inFragmentB] at h; exact .un (of_inFragmentB h)
+  | .bin _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .bin (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .fnRef _, h => by simp [inFragmentB] at h
+  | .call _ _, h => by simp [inFragmentB] at h
+  | .ctor _ _ _ _, h => by simp [inFragmentB] at h
+  | .proj _ _, h => by simp [inFragmentB] at h
+  | .matchE _ _, h => by simp [inFragmentB] at h
+  | .noneE _, h => by simp [inFragmentB] at h
+  | .someE _, h => by simp [inFragmentB] at h
+  | .okE _ _, h => by simp [inFragmentB] at h
+  | .errorE _ _, h => by simp [inFragmentB] at h
+  | .arrayLit _ _, h => by simp [inFragmentB] at h
+  | .index _ _, h => by simp [inFragmentB] at h
+  | .length _, h => by simp [inFragmentB] at h
+  | .arraySlice _ _ _, h => by simp [inFragmentB] at h
+  | .arrayReverse _, h => by simp [inFragmentB] at h
+  | .mapE _ _ _, h => by simp [inFragmentB] at h
+  | .filterE _ _ _, h => by simp [inFragmentB] at h
+  | .findE _ _ _, h => by simp [inFragmentB] at h
+  | .quantE _ _ _ _, h => by simp [inFragmentB] at h
+  | .reduceE _ _ _ _ _, h => by simp [inFragmentB] at h
+  | .dictLit _ _, h => by simp [inFragmentB] at h
+  | .dictGet _ _, h => by simp [inFragmentB] at h
+  | .dictHas _ _, h => by simp [inFragmentB] at h
+  | .dictSet _ _ _, h => by simp [inFragmentB] at h
+  | .dictKeys _, h => by simp [inFragmentB] at h
+  | .dictValues _, h => by simp [inFragmentB] at h
+  | .dictDelete _ _, h => by simp [inFragmentB] at h
+  | .strUn _ _, h => by simp [inFragmentB] at h
+  | .strBin _ _ _, h => by simp [inFragmentB] at h
+  | .substring _ _ _, h => by simp [inFragmentB] at h
+
 /-- Everything the correctness proof reaches is also reached by type soundness, which the arithmetic
 cases need to know that the values in the environment match the types the compiler read. -/
 theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
