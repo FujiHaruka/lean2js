@@ -635,7 +635,7 @@ def compileArgs (p : Program) (ctx : Ctx) (es : List Expr) :
     .ok (head :: tail)
 termination_by sizeOf es
 
-private def compileValues (p : Program) (ctx : Ctx) :
+def compileValues (p : Program) (ctx : Ctx) :
     List (String × Expr) → Except String (List (Js.Expr × Ty))
   | [] => .ok []
   | (_, e) :: rest => do

@@ -60,6 +60,15 @@ inductive TypeChecked : Expr → Prop where
   | ctor (typeName : String) (tyArgs : List Ty) (ctorName : String) {args : List Expr} :
       (∀ e ∈ args, TypeChecked e) → TypeChecked (.ctor typeName tyArgs ctorName args)
   | proj {e : Expr} (field : String) : TypeChecked e → TypeChecked (.proj e field)
+  | dictLit (value : Ty) {entries : List (String × Expr)} :
+      (∀ e ∈ entries, TypeChecked e.2) → TypeChecked (.dictLit value entries)
+  | dictGet {d key : Expr} : TypeChecked d → TypeChecked key → TypeChecked (.dictGet d key)
+  | dictHas {d key : Expr} : TypeChecked d → TypeChecked key → TypeChecked (.dictHas d key)
+  | dictSet {d key val : Expr} :
+      TypeChecked d → TypeChecked key → TypeChecked val → TypeChecked (.dictSet d key val)
+  | dictKeys {d : Expr} : TypeChecked d → TypeChecked (.dictKeys d)
+  | dictValues {d : Expr} : TypeChecked d → TypeChecked (.dictValues d)
+  | dictDelete {d key : Expr} : TypeChecked d → TypeChecked key → TypeChecked (.dictDelete d key)
 
 mutual
 
@@ -517,6 +526,101 @@ private theorem compileExpr_bin_inv {p : Program} {ctx : Compile.Ctx} {op : BinO
       | (exfalso; simp at hc; done)
       | (simp only [Except.ok.injEq, Prod.mk.injEq] at hc; simp_all [binResultTy])
 
+theorem keysDistinct_iff : ∀ (ks : List String), keysDistinct ks = true ↔ ks.Nodup
+  | [] => by simp [keysDistinct]
+  | k :: rest => by simp [keysDistinct, Bool.and_eq_true, keysDistinct_iff rest]
+
+theorem keysDistinct_of_validateDistinct {kind : String} :
+    ∀ {names : List String}, validateDistinct kind names = .ok () → keysDistinct names = true
+  | [], _ => by simp [keysDistinct]
+  | n :: rest, h => by
+    rw [validateDistinct] at h
+    split at h
+    · simp at h
+    rename_i hmem
+    simp only [keysDistinct, Bool.and_eq_true, Bool.not_eq_true']
+    exact ⟨by simpa using hmem, keysDistinct_of_validateDistinct h⟩
+
+theorem keysDistinct_of_sublist {ks ls : List String} (h : keysDistinct ls = true)
+    (hs : ks.Sublist ls) : keysDistinct ks = true :=
+  (keysDistinct_iff ks).mpr (((keysDistinct_iff ls).mp h).sublist hs)
+
+theorem hasEntryTys_iff (p : Program) (entries : List (String × Value)) (elem : Ty) :
+    Value.hasEntryTys p entries elem = true ↔ ∀ e ∈ entries, Value.hasTy p e.2 elem = true := by
+  induction entries with
+  | nil => simp [hasEntryTys_nil]
+  | cons entry rest ih =>
+    obtain ⟨k, v⟩ := entry
+    simp [hasEntryTys_cons, Bool.and_eq_true, ih]
+
+theorem hasTy_dict_filter {p : Program} {entries : List (String × Value)} {elem : Ty}
+    {q : String × Value → Bool} (h : Value.hasTy p (.dict entries) (.dict elem) = true) :
+    Value.hasTy p (.dict (entries.filter q)) (.dict elem) = true := by
+  rw [hasTy_dict, Bool.and_eq_true] at h ⊢
+  exact ⟨keysDistinct_of_sublist h.1 (List.filter_sublist.map _),
+    (hasEntryTys_iff p _ elem).mpr fun e he =>
+      (hasEntryTys_iff p entries elem).mp h.2 e (List.mem_filter.mp he).1⟩
+
+/-- Writing a key already present leaves the key list alone, and writing a new one appends a key the
+list did not have. Either way a `Map` still holds every key once. -/
+theorem hasTy_dict_with {p : Program} {entries : List (String × Value)} {elem : Ty} {k : String}
+    {v : Value} (h : Value.hasTy p (.dict entries) (.dict elem) = true)
+    (hv : Value.hasTy p v elem = true) :
+    Value.hasTy p (.dict (dictWith entries k v)) (.dict elem) = true := by
+  rw [hasTy_dict, Bool.and_eq_true] at h ⊢
+  rw [dictWith]
+  split
+  · have hkeys : (entries.map fun e => if e.1 == k then (k, v) else e).map (·.1)
+        = entries.map (·.1) := by
+      rw [List.map_map]
+      refine List.map_congr_left fun e _ => ?_
+      by_cases hk : e.1 = k
+      · simp [Function.comp_def, hk]
+      · simp [Function.comp_def, hk]
+    refine ⟨hkeys ▸ h.1, (hasEntryTys_iff p _ elem).mpr fun e he => ?_⟩
+    obtain ⟨e', he', rfl⟩ := List.mem_map.mp he
+    by_cases hk : e'.1 == k
+    · simpa [hk] using hv
+    · simpa [hk] using (hasEntryTys_iff p entries elem).mp h.2 e' he'
+  · rename_i hno
+    refine ⟨?_, (hasEntryTys_iff p _ elem).mpr fun e he => ?_⟩
+    · rw [List.map_append]
+      refine (keysDistinct_iff _).mpr
+        (List.nodup_append.mpr ⟨(keysDistinct_iff _).mp h.1, by simp, fun a ha b hb => ?_⟩)
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hb
+      subst hb
+      obtain ⟨e, he, rfl⟩ := List.mem_map.mp ha
+      exact fun hEq => hno (List.any_eq_true.mpr ⟨e, he, by simp [hEq]⟩)
+    · rcases List.mem_append.mp he with h1 | h1
+      · exact (hasEntryTys_iff p entries elem).mp h.2 e h1
+      · simp only [List.mem_cons, List.not_mem_nil, or_false] at h1
+        exact h1 ▸ hv
+
+theorem dictLookup_hasTy {p : Program} {entries : List (String × Value)} {elem : Ty} {k : String}
+    (h : Value.hasEntryTys p entries elem = true) :
+    Value.hasTy p (dictLookup entries k) (.option elem) = true := by
+  rw [dictLookup]
+  split
+  · rename_i v hv
+    obtain ⟨e, hfind, hsnd⟩ := Option.map_eq_some_iff.mp hv
+    have hve : Value.hasTy p v elem = true :=
+      hsnd ▸ (hasEntryTys_iff p entries elem).mp h e (List.mem_of_find?_eq_some hfind)
+    simp [hasTy_some, hasFieldTys_cons, hasFieldTys_nil, hve]
+  · exact hasTy_none p elem
+
+theorem hasElemTy_dict_keys (p : Program) (entries : List (String × Value)) :
+    Value.hasElemTy p (entries.map fun e => Value.str e.1) .string = true :=
+  (hasElemTy_iff p _ .string).mpr fun x hx => by
+    obtain ⟨e, -, rfl⟩ := List.mem_map.mp hx
+    exact hasTy_str p e.1
+
+theorem hasElemTy_dict_values {p : Program} {entries : List (String × Value)} {elem : Ty}
+    (h : Value.hasEntryTys p entries elem = true) :
+    Value.hasElemTy p (entries.map (·.2)) elem = true :=
+  (hasElemTy_iff p _ elem).mpr fun x hx => by
+    obtain ⟨e, he, rfl⟩ := List.mem_map.mp hx
+    exact (hasEntryTys_iff p entries elem).mp h e he
+
 /-- The constructors a use of the type at `args` sees are the declared ones with their field types
 substituted, so a lookup by name lands on the same constructor either way. -/
 theorem findAt?_eq (t : TypeDef) (args : List Ty) (ctor : String) :
@@ -620,6 +724,62 @@ private theorem compileExpr_arrayReverse_inv {p : Program} {ctx : Compile.Ctx} {
     exact ⟨jarr, elem, hta ▸ hca, hc.2.symm⟩
   · simp at hc
 
+/-- The entries of a dictionary literal: their types, and the fact that zipping the keys back on keeps
+the key list intact, which is what the distinctness the compiler checked is about. -/
+private theorem hasEntryTys_of_values {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+    (ih : ∀ (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value), TypeChecked e →
+      Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .ok v →
+      Value.hasTy p v ty = true) :
+    ∀ (entries : List (String × Expr)) (js : List (Js.Expr × Ty)) (vs : List Value) (value : Ty),
+      (∀ e ∈ entries, TypeChecked e.2) →
+      Compile.compileValues p ctx entries = .ok js →
+      evalArgs p f env (entries.map (·.2)) = .ok vs →
+      (js.all fun x => x.2 == value) = true →
+      Value.hasEntryTys p ((entries.map (·.1)).zip vs) value = true
+        ∧ ((entries.map (·.1)).zip vs).map (·.1) = entries.map (·.1) := by
+  intro entries
+  induction entries with
+  | nil =>
+    intro js vs value _ hcs hes _
+    rw [Compile.compileValues] at hcs
+    simp only [List.map_nil] at hes
+    rw [evalArgs_nil] at hes
+    simp only [Except.ok.injEq] at hcs hes
+    subst hcs; subst hes
+    exact ⟨hasEntryTys_nil p value, rfl⟩
+  | cons entry rest ihr =>
+    intro js vs value hchk hcs hes hall
+    obtain ⟨k, e⟩ := entry
+    rw [Compile.compileValues] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    simp only [List.map_cons] at hes
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i v hv
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    simp only [List.all_cons, Bool.and_eq_true] at hall
+    obtain ⟨htys, hkeys⟩ := ihr tail vs' value (fun x hx => hchk x (by simp [hx])) hctail hvs hall.2
+    refine ⟨?_, ?_⟩
+    · simp only [List.map_cons, List.zip_cons_cons, hasEntryTys_cons, Bool.and_eq_true]
+      exact ⟨Ty.eq_of_beq hall.1 ▸ ih e jh th v (hchk (k, e) (by simp)) hchead hv, htys⟩
+    · simp only [List.map_cons, List.zip_cons_cons]
+      exact congrArg (k :: ·) hkeys
+
 /-- The fields of a constructor, carrying the induction hypothesis of `typeSound` along the arguments. -/
 private theorem hasFieldTys_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
     (ih : ∀ (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value), TypeChecked e →
@@ -674,6 +834,130 @@ private theorem hasFieldTys_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} 
       simp only [List.map_cons, List.zip_cons_cons, hasFieldTys_cons, Bool.and_eq_true]
       refine ⟨⟨beq_self_eq_true _, Ty.eq_of_beq hall.1 ▸ ih arg jh th v (hchk arg (by simp)) hchead hv⟩,
         ihr tail vs' gs (fun e he => hchk e (by simp [he])) hctail hvs hall.2 (by simpa using hlen)⟩
+
+private theorem compileExpr_dictLit_inv {p : Program} {ctx : Compile.Ctx} {value : Ty}
+    {entries : List (String × Expr)} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.dictLit value entries) = .ok (je, ty)) :
+    ∃ js, keysDistinct (entries.map (·.1)) = true
+      ∧ Compile.compileValues p ctx entries = .ok js
+      ∧ (js.all fun x => x.2 == value) = true ∧ ty = .dict value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i hvd
+  split at hc
+  · simp at hc
+  rename_i js hcs
+  split at hc
+  · simp at hc
+  rename_i hall
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+  exact ⟨js, keysDistinct_of_validateDistinct hvd, hcs, by simpa using hall, hc.2.symm⟩
+
+/-- The dictionary operations: the operand the compiler read as a `Dict`, and the type it gave back. -/
+private theorem compileExpr_dictGet_inv {p : Program} {ctx : Compile.Ctx} {d key : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictGet d key) = .ok (je, ty)) :
+    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value) ∧ ty = .option value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · simp at hc
+  split at hc
+  · rename_i value htd
+    split at hc
+    · simp at hc
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, value, htd ▸ hcd, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictSet_inv {p : Program} {ctx : Compile.Ctx} {d key val : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictSet d key val) = .ok (je, ty)) :
+    ∃ jd jv value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+      ∧ Compile.compileExpr p ctx val = .ok (jv, value) ∧ ty = .dict value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i vPair hcv
+  obtain ⟨jv, tv⟩ := vPair
+  split at hc
+  · rename_i value htd
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    rename_i htv
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, jv, value, htd ▸ hcd, Ty.eq_of_not_bne htv ▸ hcv, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictValues_inv {p : Program} {ctx : Compile.Ctx} {d : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictValues d) = .ok (je, ty)) :
+    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value) ∧ ty = .array value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · rename_i value htd
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, value, htd ▸ hcd, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictDelete_inv {p : Program} {ctx : Compile.Ctx} {d key : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictDelete d key) = .ok (je, ty)) :
+    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value) ∧ ty = .dict value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · simp at hc
+  split at hc
+  · rename_i value htd
+    split at hc
+    · simp at hc
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, value, htd ▸ hcd, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictHas_inv {p : Program} {ctx : Compile.Ctx} {d key : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictHas d key) = .ok (je, ty)) :
+    ty = .bool := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · split at hc
+    · simp at hc
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact hc.2.symm
+  · simp at hc
+
+private theorem compileExpr_dictKeys_inv {p : Program} {ctx : Compile.Ctx} {d : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictKeys d) = .ok (je, ty)) :
+    ty = .array .string := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact hc.2.symm
+  · simp at hc
 
 private theorem compileExpr_ctor_inv {p : Program} {ctx : Compile.Ctx}
     {typeName ctorName : String} {tyArgs : List Ty} {args : List Expr} {je : Js.Expr} {ty : Ty}
@@ -1242,6 +1526,128 @@ theorem typeSound (p : Program) :
         · rename_i hne
           exact (hne ctor fields rfl).elim
       · simp at hc''
+    | dictLit value hentries =>
+      rename_i entries
+      obtain ⟨js, hkd, hcs, hall, hty⟩ := compileExpr_dictLit_inv hc
+      subst hty
+      rw [evalExpr_dictLit] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vs hvs
+      simp only [Except.ok.injEq] at he
+      subst he
+      obtain ⟨htys, hkeys⟩ := hasEntryTys_of_values
+        (fun e je t w hchk' => ih ctx env e je t w hchk' henv) entries js vs value hentries hcs hvs
+        hall
+      rw [hasTy_dict, Bool.and_eq_true]
+      exact ⟨by rw [hkeys]; exact hkd, htys⟩
+    | dictGet hd hkey =>
+      rename_i dE keyE
+      obtain ⟨jd, value, hcd, hty⟩ := compileExpr_dictGet_inv hc
+      subst hty
+      rw [evalExpr_dictGet] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      split at he
+      · simp at he
+      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
+      rw [hasTy_dict, Bool.and_eq_true] at hdt
+      split at he
+      · rename_i entries' _ hdict _
+        injection hdict with hdict
+        subst hdict
+        simp only [Except.ok.injEq] at he
+        exact he ▸ dictLookup_hasTy hdt.2
+      · simp at he
+    | dictHas _ _ =>
+      rw [compileExpr_dictHas_inv hc, evalExpr_dictHas] at *
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      split at he
+      · simp at he
+      split at he
+      · simp only [Except.ok.injEq] at he
+        exact he ▸ hasTy_bool p _
+      · simp at he
+    | dictSet hd hkey hval =>
+      rename_i dE keyE valE
+      obtain ⟨jd, jv, value, hcd, hcv, hty⟩ := compileExpr_dictSet_inv hc
+      subst hty
+      rw [evalExpr_dictSet] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      split at he
+      · simp at he
+      split at he
+      · simp at he
+      rename_i vv hvv
+      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
+      split at he
+      · rename_i entries' _ hdict _
+        injection hdict with hdict
+        subst hdict
+        simp only [Except.ok.injEq] at he
+        exact he ▸ hasTy_dict_with hdt (ih ctx env valE jv value vv hval henv hcv hvv)
+      · simp at he
+    | dictKeys _ =>
+      rw [compileExpr_dictKeys_inv hc, evalExpr_dictKeys] at *
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      split at he
+      · simp only [Except.ok.injEq] at he
+        rw [← he, hasTy_array]
+        exact hasElemTy_dict_keys p _
+      · simp at he
+    | dictValues hd =>
+      rename_i dE
+      obtain ⟨jd, value, hcd, hty⟩ := compileExpr_dictValues_inv hc
+      subst hty
+      rw [evalExpr_dictValues] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
+      rw [hasTy_dict, Bool.and_eq_true] at hdt
+      split at he
+      · rename_i entries' hdict
+        injection hdict with hdict
+        subst hdict
+        simp only [Except.ok.injEq] at he
+        rw [← he, hasTy_array]
+        exact hasElemTy_dict_values hdt.2
+      · rename_i hne
+        exact (hne entries rfl).elim
+    | dictDelete hd hkey =>
+      rename_i dE keyE
+      obtain ⟨jd, value, hcd, hty⟩ := compileExpr_dictDelete_inv hc
+      subst hty
+      rw [evalExpr_dictDelete] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      split at he
+      · simp at he
+      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
+      split at he
+      · rename_i entries' _ hdict _
+        injection hdict with hdict
+        subst hdict
+        simp only [Except.ok.injEq] at he
+        exact he ▸ hasTy_dict_filter hdt
+      · simp at he
     | arrayReverse harr =>
       rename_i arrE
       obtain ⟨jarr, elem, hca, hty⟩ := compileExpr_arrayReverse_inv hc
