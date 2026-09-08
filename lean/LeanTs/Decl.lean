@@ -1487,6 +1487,26 @@ theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Exp
     rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
     simp only [wfTy_types_irrel h [] value,
       compileValues_types_irrel _ (fun e he => ihentries e he) ctx]
+  | @mapE _ _ binder _ _ iharr ihbody =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [iharr ctx, ihbody]
+  | @filterE _ _ binder _ _ iharr ihbody =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [iharr ctx, ihbody]
+  | @findE _ _ binder _ _ iharr ihbody =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [iharr ctx, ihbody]
+  | @quantE op _ _ binder _ _ iharr ihbody =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [iharr ctx, ihbody]
+  | @reduceE _ _ _ accName elemName _ _ _ iharr ihinit ihbody =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [iharr ctx, ihinit ctx, ihbody]
 
 theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
     (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :

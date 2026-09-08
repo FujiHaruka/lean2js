@@ -60,6 +60,17 @@ inductive InFragment : Expr → Prop where
       (∀ e ∈ items, InFragment e) → InFragment (.arrayLit elem items)
   | dictLit (value : Ty) {entries : List (String × Expr)} :
       (∀ e ∈ entries, InFragment e.2) → InFragment (.dictLit value entries)
+  | mapE {arr body : Expr} {binder : String} :
+      InFragment arr → InFragment body → InFragment (.mapE arr binder body)
+  | filterE {arr body : Expr} {binder : String} :
+      InFragment arr → InFragment body → InFragment (.filterE arr binder body)
+  | findE {arr body : Expr} {binder : String} :
+      InFragment arr → InFragment body → InFragment (.findE arr binder body)
+  | quantE {op : QuantOp} {arr body : Expr} {binder : String} :
+      InFragment arr → InFragment body → InFragment (.quantE op arr binder body)
+  | reduceE {arr init body : Expr} {accName elemName : String} :
+      InFragment arr → InFragment init → InFragment body →
+        InFragment (.reduceE arr init accName elemName body)
 
 mutual
 
@@ -93,6 +104,11 @@ def inFragmentB : Expr → Bool
   | .ctor _ _ _ args => inFragmentBList args
   | .arrayLit _ items => inFragmentBList items
   | .dictLit _ entries => inFragmentBValues entries
+  | .mapE arr _ body => inFragmentB arr && inFragmentB body
+  | .filterE arr _ body => inFragmentB arr && inFragmentB body
+  | .findE arr _ body => inFragmentB arr && inFragmentB body
+  | .quantE _ arr _ body => inFragmentB arr && inFragmentB body
+  | .reduceE arr init _ _ body => inFragmentB arr && inFragmentB init && inFragmentB body
   | _ => false
 
 def inFragmentBList : List Expr → Bool
@@ -180,11 +196,26 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
   | .matchE _ _, h => by simp [inFragmentB] at h
-  | .mapE _ _ _, h => by simp [inFragmentB] at h
-  | .filterE _ _ _, h => by simp [inFragmentB] at h
-  | .findE _ _ _, h => by simp [inFragmentB] at h
-  | .quantE _ _ _ _, h => by simp [inFragmentB] at h
-  | .reduceE _ _ _ _ _, h => by simp [inFragmentB] at h
+  | .mapE _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .mapE (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .filterE _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .filterE (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .findE _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .findE (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .quantE _ _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .quantE (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .reduceE _ _ _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .reduceE (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
 termination_by e => sizeOf e
 
 theorem InFragment.of_inFragmentBList :
@@ -243,6 +274,12 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .ctor tn ta cn hargs => .ctor tn ta cn fun e he => (hargs e he).typeChecked
   | .arrayLit elem hitems => .arrayLit elem fun e he => (hitems e he).typeChecked
   | .dictLit value hentries => .dictLit value fun e he => (hentries e he).typeChecked
+  | .mapE harr hbody => .mapE harr.typeChecked hbody.typeChecked
+  | .filterE harr hbody => .filterE harr.typeChecked hbody.typeChecked
+  | .findE harr hbody => .findE harr.typeChecked hbody.typeChecked
+  | .quantE harr hbody => .quantE harr.typeChecked hbody.typeChecked
+  | .reduceE harr hinit hbody =>
+      .reduceE harr.typeChecked hinit.typeChecked hbody.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -2346,6 +2383,323 @@ theorem JsEnvAgrees.cons {env : Env} {jenv : Js.JsEnv} {name : String} {v : Valu
 theorem jsEnvAgrees_encodeEnv (env : Env) : JsEnvAgrees env (encodeEnv env) :=
   fun _ _ h => lookup_encodeEnv h
 
+/-! ## Traversals
+
+The reference semantics and the model walk an array with one auxiliary function each, written to the
+same shape, so a traversal needs a lemma that walks the two together. The body's induction hypothesis is
+taken over every environment, which is what lets it apply one element at a time. -/
+
+theorem eventually_mapJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs vs : List Js.JsValue}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalMapJs m g' jenv binder jbody xs = .ok vs) :
+    Eventually m jenv (.mapJs jarr binder jbody) (.arr vs) := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+private theorem eventuallyMap_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
+    {elem tbody : Ty}
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {v : Value}, EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+      Compile.compileExpr p ctx' bodyE = .ok (je, ty) → evalExpr p f' env' bodyE = .ok v →
+      Eventually m jenv' je (encodeValue v))
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody)) :
+    ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
+      evalMapItems p f env binder bodyE xs = .ok vs →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalMapJs m g' jenv binder jbody (encodeList xs) = .ok (encodeList vs) := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro vs _ hes
+    rw [evalMapItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    exact ⟨0, fun g' _ => by rw [encodeList, Js.evalMapJs]⟩
+  | cons x rest ihr =>
+    intro vs hxs hes
+    rw [evalMapItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i w hw
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hjenv.cons hcb hw
+    obtain ⟨g2, hg2⟩ := ihr vs' hxs.2 hvs
+    refine ⟨max g1 g2, fun g' hgle => ?_⟩
+    rw [encodeList, encodeList, Js.evalMapJs]
+    simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+
+theorem eventually_filterJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs vs : List Js.JsValue}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalFilterJs m g' jenv binder jbody xs = .ok vs) :
+    Eventually m jenv (.filterJs jarr binder jbody) (.arr vs) := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventually_findJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs : List Js.JsValue} {v : Js.JsValue}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalFindJs m g' jenv binder jbody xs = .ok v) :
+    Eventually m jenv (.findJs jarr binder jbody) v := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventually_quantJs {m : Js.Module} {jenv : Js.JsEnv} {op : QuantOp} {jarr jbody : Js.Expr}
+    {binder : String} {xs : List Js.JsValue} {v : Js.JsValue}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalQuantJs m g' jenv op binder jbody xs = .ok v) :
+    Eventually m jenv (.quantJs op jarr binder jbody) v := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventually_reduceJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jinit jbody : Js.Expr}
+    {accName elemName : String} {xs : List Js.JsValue} {acc v : Js.JsValue}
+    (ha : Eventually m jenv jarr (.arr xs)) (hi : Eventually m jenv jinit acc)
+    (hb : ∃ g, ∀ g', g ≤ g' →
+      Js.evalReduceJs m g' jenv accName elemName jbody acc xs = .ok v) :
+    Eventually m jenv (.reduceJs jarr jinit accName elemName jbody) v := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hi
+  obtain ⟨g3, hg3⟩ := hb
+  refine ⟨max (max g1 g2) g3 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega), hg3 g (by omega)]
+
+private theorem eventuallyFilter_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
+    {elem : Ty} (hbodyTC : TypeChecked bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {v : Value}, EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+      Compile.compileExpr p ctx' bodyE = .ok (je, ty) → evalExpr p f' env' bodyE = .ok v →
+      Eventually m jenv' je (encodeValue v))
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool)) :
+    ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
+      evalFilterItems p f env binder bodyE xs = .ok vs →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalFilterJs m g' jenv binder jbody (encodeList xs) = .ok (encodeList vs) := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro vs _ hes
+    rw [evalFilterItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    exact ⟨0, fun g' _ => by rw [encodeList, Js.evalFilterJs]⟩
+  | cons x rest ihr =>
+    intro vs hxs hes
+    rw [evalFilterItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · simp at hes
+    rename_i w hw
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+      bodyE jbody .bool w hbodyTC (henv.cons hxs.1) hcb hw)
+    obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hjenv.cons hcb hw
+    cases b with
+    | true =>
+      simp only at hes
+      split at hes
+      · simp at hes
+      rename_i vs' hvs
+      simp only [Except.ok.injEq] at hes
+      subst hes
+      obtain ⟨g2, hg2⟩ := ihr vs' hxs.2 hvs
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, encodeList, Js.evalFilterJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
+    | false =>
+      simp only at hes
+      obtain ⟨g2, hg2⟩ := ihr vs hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalFilterJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
+
+private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
+    {elem : Ty} (hbodyTC : TypeChecked bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {v : Value}, EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+      Compile.compileExpr p ctx' bodyE = .ok (je, ty) → evalExpr p f' env' bodyE = .ok v →
+      Eventually m jenv' je (encodeValue v))
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool)) :
+    ∀ (xs : List Value) (v : Value), Value.hasElemTy p xs elem = true →
+      evalFindItems p f env binder bodyE xs = .ok v →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalFindJs m g' jenv binder jbody (encodeList xs) = .ok (encodeValue v) := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro v _ hes
+    rw [evalFindItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    exact ⟨0, fun g' _ => by rw [encodeList, Js.evalFindJs]; simp [encodeValue, encodeFields]⟩
+  | cons x rest ihr =>
+    intro v hxs hes
+    rw [evalFindItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · simp at hes
+    rename_i w hw
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+      bodyE jbody .bool w hbodyTC (henv.cons hxs.1) hcb hw)
+    obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hjenv.cons hcb hw
+    cases b with
+    | true =>
+      simp only [Except.ok.injEq] at hes
+      subst hes
+      refine ⟨g1 + 1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalFindJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, encodeFields]
+    | false =>
+      simp only at hes
+      obtain ⟨g2, hg2⟩ := ihr v hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalFindJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
+
+private theorem eventuallyQuant_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {op : QuantOp} {binder : String} {bodyE : Expr}
+    {jbody : Js.Expr} {elem : Ty} (hbodyTC : TypeChecked bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {v : Value}, EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+      Compile.compileExpr p ctx' bodyE = .ok (je, ty) → evalExpr p f' env' bodyE = .ok v →
+      Eventually m jenv' je (encodeValue v))
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool)) :
+    ∀ (xs : List Value) (v : Value), Value.hasElemTy p xs elem = true →
+      evalQuantItems p f env op binder bodyE xs = .ok v →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalQuantJs m g' jenv op binder jbody (encodeList xs) = .ok (encodeValue v) := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro v _ hes
+    rw [evalQuantItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    exact ⟨0, fun g' _ => by rw [encodeList, Js.evalQuantJs]; simp [encodeValue]⟩
+  | cons x rest ihr =>
+    intro v hxs hes
+    rw [evalQuantItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · simp at hes
+    rename_i w hw
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+      bodyE jbody .bool w hbodyTC (henv.cons hxs.1) hcb hw)
+    obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hjenv.cons hcb hw
+    cases op <;> simp only at hes <;> split at hes
+    · rename_i hb
+      obtain ⟨g2, hg2⟩ := ihr v hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalQuantJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb, if_true,
+        hg2 g' (by omega)]
+    · rename_i hb
+      simp only [Bool.not_eq_true] at hb
+      simp only [Except.ok.injEq] at hes
+      subst hes
+      refine ⟨g1 + 1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalQuantJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb]
+      simp
+    · rename_i hb
+      simp only [Except.ok.injEq] at hes
+      subst hes
+      refine ⟨g1 + 1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalQuantJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb, if_true]
+    · rename_i hb
+      simp only [Bool.not_eq_true] at hb
+      obtain ⟨g2, hg2⟩ := ihr v hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalQuantJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb]
+      simpa using hg2 g' (by omega)
+
+private theorem eventuallyReduce_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {accName elemName : String} {bodyE : Expr}
+    {jbody : Js.Expr} {elem tinit : Ty} (hbodyTC : TypeChecked bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {v : Value}, EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+      Compile.compileExpr p ctx' bodyE = .ok (je, ty) → evalExpr p f' env' bodyE = .ok v →
+      Eventually m jenv' je (encodeValue v))
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
+      = .ok (jbody, tinit)) :
+    ∀ (xs : List Value) (acc v : Value), Value.hasElemTy p xs elem = true →
+      Value.hasTy p acc tinit = true →
+      evalReduceItems p f env accName elemName bodyE acc xs = .ok v →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalReduceJs m g' jenv accName elemName jbody (encodeValue acc) (encodeList xs)
+          = .ok (encodeValue v) := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro acc v _ _ hes
+    rw [evalReduceItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    exact ⟨0, fun g' _ => by rw [encodeList, Js.evalReduceJs]⟩
+  | cons x rest ihr =>
+    intro acc v hxs hacc hes
+    rw [evalReduceItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · simp at hes
+    rename_i w hw
+    have hwt := typeSound p f ((elemName, elem) :: (accName, tinit) :: ctx)
+      ((elemName, x) :: (accName, acc) :: env) bodyE jbody tinit w hbodyTC
+      ((henv.cons hacc).cons hxs.1) hcb hw
+    obtain ⟨g1, hg1⟩ := ihb ((henv.cons hacc).cons hxs.1) hjenv.cons.cons hcb hw
+    obtain ⟨g2, hg2⟩ := ihr w v hxs.2 hwt hes
+    refine ⟨max g1 g2, fun g' hgle => ?_⟩
+    rw [encodeList, Js.evalReduceJs]
+    simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+
 /-- If the reference semantics returns a value, the generated code returns the same value.
 
 Stated over any generated environment that agrees with the reference one, rather than over
@@ -4331,6 +4685,141 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
       exact eventually_dictLitZip hlen'
         (eventuallyList_of_values p m entries js vs (fun e he => ihentries e he henv hjenv) hcs hvs)
 
+  | mapE harr hbody iharr ihbody =>
+    rename_i arrE bodyE binder
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, tbody, hca, hcb, -, rfl⟩ := compileExpr_mapE_inv hc
+      rw [evalExpr_mapE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        rename_i vs hvs
+        simp only [Except.ok.injEq] at he
+        subst he
+        rw [encodeValue]
+        exact eventually_mapJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
+          (eventuallyMap_of_items p m ihbody henv hjenv hcb xs vs hat hvs)
+      · rename_i hne
+        exact (hne xs rfl).elim
+
+  | filterE harr hbody iharr ihbody =>
+    rename_i arrE bodyE binder
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl⟩ := compileExpr_filterE_inv hc
+      rw [evalExpr_filterE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        rename_i vs hvs
+        simp only [Except.ok.injEq] at he
+        subst he
+        rw [encodeValue]
+        exact eventually_filterJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
+          (eventuallyFilter_of_items p m hbody.typeChecked ihbody henv hjenv hcb xs vs hat hvs)
+      · rename_i hne
+        exact (hne xs rfl).elim
+  | findE harr hbody iharr ihbody =>
+    rename_i arrE bodyE binder
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl⟩ := compileExpr_findE_inv hc
+      rw [evalExpr_findE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        exact eventually_findJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
+          (eventuallyFind_of_items p m hbody.typeChecked ihbody henv hjenv hcb xs v hat he)
+      · rename_i hne
+        exact (hne xs rfl).elim
+  | quantE harr hbody iharr ihbody =>
+    rename_i op arrE bodyE binder
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl⟩ := compileExpr_quantE_inv hc
+      rw [evalExpr_quantE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        exact eventually_quantJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
+          (eventuallyQuant_of_items p m hbody.typeChecked ihbody henv hjenv hcb xs v hat he)
+      · rename_i hne
+        exact (hne xs rfl).elim
+  | reduceE harr hinit hbody iharr ihinit ihbody =>
+    rename_i arrE initE bodyE accName elemName
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, jinit, jbody, elem, hca, hci, hcb, rfl⟩ := compileExpr_reduceE_inv hc
+      rw [evalExpr_reduceE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        rename_i acc hacc
+        have hacct := typeSound p f ctx env initE jinit ty acc hinit.typeChecked henv hci hacc
+        exact eventually_reduceJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
+          (ihinit henv hjenv hci hacc)
+          (eventuallyReduce_of_items p m hbody.typeChecked ihbody henv hjenv hcb xs acc v hat
+            hacct he)
+      · rename_i hne
+        exact (hne xs rfl).elim
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -4582,6 +5071,395 @@ theorem compileExpr_bin_trap {p : Program} {ctx : Compile.Ctx} {op : BinOp} {lhs
       obtain ⟨ys, rfl⟩ := hasTy_array_inv hb
       simp [applyBin] at herr
     all_goals simp at hc
+
+theorem eventuallyErr_mapJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {code : String} (ha : EventuallyErr m jenv jarr code) :
+    EventuallyErr m jenv (.mapJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_mapJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs : List Js.JsValue} {code : String}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalMapJs m g' jenv binder jbody xs = .error code) :
+    EventuallyErr m jenv (.mapJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+private theorem eventuallyMapErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
+    {elem tbody : Ty} {err : Err} (hfrag : InFragment bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
+      JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
+      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      EventuallyErr m jenv' je err'.code)
+    (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody))
+    (hne : err ≠ .outOfFuel) :
+    ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
+      evalMapItems p f env binder bodyE xs = .error err →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalMapJs m g' jenv binder jbody (encodeList xs) = .error err.code := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro _ hes
+    rw [evalMapItems_nil] at hes
+    simp at hes
+  | cons x rest ihr =>
+    intro hxs hes
+    rw [evalMapItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · rename_i e0 hbe
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hcov.cons hjenv.cons hcb hbe hne
+      refine ⟨g1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalMapJs]
+      simp only [bind, Except.bind, hg1 g' hgle]
+    rename_i w hw
+    split at hes
+    · rename_i e0 hte
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      obtain ⟨g1, hg1⟩ :=
+        fragment_correct_in p m hfrag (henv.cons hxs.1) hjenv.cons hcb hw
+      obtain ⟨g2, hg2⟩ := ihr hxs.2 hte
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalMapJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+    · simp at hes
+
+theorem eventuallyErr_filterJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {code : String} (ha : EventuallyErr m jenv jarr code) :
+    EventuallyErr m jenv (.filterJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_filterJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs : List Js.JsValue} {code : String}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalFilterJs m g' jenv binder jbody xs = .error code) :
+    EventuallyErr m jenv (.filterJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventuallyErr_findJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {code : String} (ha : EventuallyErr m jenv jarr code) :
+    EventuallyErr m jenv (.findJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_findJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs : List Js.JsValue} {code : String}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalFindJs m g' jenv binder jbody xs = .error code) :
+    EventuallyErr m jenv (.findJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventuallyErr_quantJs {m : Js.Module} {jenv : Js.JsEnv} {op : QuantOp}
+    {jarr jbody : Js.Expr} {binder : String} {code : String}
+    (ha : EventuallyErr m jenv jarr code) :
+    EventuallyErr m jenv (.quantJs op jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_quantJs_items {m : Js.Module} {jenv : Js.JsEnv} {op : QuantOp}
+    {jarr jbody : Js.Expr} {binder : String} {xs : List Js.JsValue} {code : String}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalQuantJs m g' jenv op binder jbody xs = .error code) :
+    EventuallyErr m jenv (.quantJs op jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventuallyErr_reduceJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jinit jbody : Js.Expr}
+    {accName elemName : String} {code : String} (ha : EventuallyErr m jenv jarr code) :
+    EventuallyErr m jenv (.reduceJs jarr jinit accName elemName jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_reduceJs_init {m : Js.Module} {jenv : Js.JsEnv} {jarr jinit jbody : Js.Expr}
+    {accName elemName : String} {xs : List Js.JsValue} {code : String}
+    (ha : Eventually m jenv jarr (.arr xs)) (hi : EventuallyErr m jenv jinit code) :
+    EventuallyErr m jenv (.reduceJs jarr jinit accName elemName jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hi
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventuallyErr_reduceJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jinit jbody : Js.Expr}
+    {accName elemName : String} {xs : List Js.JsValue} {acc : Js.JsValue} {code : String}
+    (ha : Eventually m jenv jarr (.arr xs)) (hi : Eventually m jenv jinit acc)
+    (hb : ∃ g, ∀ g', g ≤ g' →
+      Js.evalReduceJs m g' jenv accName elemName jbody acc xs = .error code) :
+    EventuallyErr m jenv (.reduceJs jarr jinit accName elemName jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hi
+  obtain ⟨g3, hg3⟩ := hb
+  refine ⟨max (max g1 g2) g3 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega), hg3 g (by omega)]
+
+private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
+    {elem : Ty} {err : Err} (hfrag : InFragment bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
+      JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
+      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      EventuallyErr m jenv' je err'.code)
+    (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
+    (hne : err ≠ .outOfFuel) :
+    ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
+      evalFilterItems p f env binder bodyE xs = .error err →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalFilterJs m g' jenv binder jbody (encodeList xs) = .error err.code := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro _ hes
+    rw [evalFilterItems_nil] at hes
+    simp at hes
+  | cons x rest ihr =>
+    intro hxs hes
+    rw [evalFilterItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · rename_i e0 hbe
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hcov.cons hjenv.cons hcb hbe hne
+      refine ⟨g1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalFilterJs]
+      simp only [bind, Except.bind, hg1 g' hgle]
+    rename_i w hw
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+      bodyE jbody .bool w hfrag.typeChecked (henv.cons hxs.1) hcb hw)
+    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hfrag (henv.cons hxs.1) hjenv.cons hcb hw
+    cases b with
+    | true =>
+      simp only at hes
+      split at hes
+      · rename_i e0 hte
+        obtain rfl : err = e0 := (Except.error.inj hes).symm
+        obtain ⟨g2, hg2⟩ := ihr hxs.2 hte
+        refine ⟨max g1 g2, fun g' hgle => ?_⟩
+        rw [encodeList, Js.evalFilterJs]
+        simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
+      · simp at hes
+    | false =>
+      simp only at hes
+      obtain ⟨g2, hg2⟩ := ihr hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalFilterJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
+
+private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
+    {elem : Ty} {err : Err} (hfrag : InFragment bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
+      JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
+      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      EventuallyErr m jenv' je err'.code)
+    (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
+    (hne : err ≠ .outOfFuel) :
+    ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
+      evalFindItems p f env binder bodyE xs = .error err →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalFindJs m g' jenv binder jbody (encodeList xs) = .error err.code := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro _ hes
+    rw [evalFindItems_nil] at hes
+    simp at hes
+  | cons x rest ihr =>
+    intro hxs hes
+    rw [evalFindItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · rename_i e0 hbe
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hcov.cons hjenv.cons hcb hbe hne
+      refine ⟨g1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalFindJs]
+      simp only [bind, Except.bind, hg1 g' hgle]
+    rename_i w hw
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+      bodyE jbody .bool w hfrag.typeChecked (henv.cons hxs.1) hcb hw)
+    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hfrag (henv.cons hxs.1) hjenv.cons hcb hw
+    cases b with
+    | true => simp at hes
+    | false =>
+      simp only at hes
+      obtain ⟨g2, hg2⟩ := ihr hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalFindJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
+
+private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {op : QuantOp} {binder : String} {bodyE : Expr}
+    {jbody : Js.Expr} {elem : Ty} {err : Err} (hfrag : InFragment bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
+      JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
+      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      EventuallyErr m jenv' je err'.code)
+    (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
+    (hne : err ≠ .outOfFuel) :
+    ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
+      evalQuantItems p f env op binder bodyE xs = .error err →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalQuantJs m g' jenv op binder jbody (encodeList xs) = .error err.code := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro _ hes
+    rw [evalQuantItems_nil] at hes
+    simp at hes
+  | cons x rest ihr =>
+    intro hxs hes
+    rw [evalQuantItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · rename_i e0 hbe
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) hcov.cons hjenv.cons hcb hbe hne
+      refine ⟨g1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalQuantJs]
+      simp only [bind, Except.bind, hg1 g' hgle]
+    rename_i w hw
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+      bodyE jbody .bool w hfrag.typeChecked (henv.cons hxs.1) hcb hw)
+    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hfrag (henv.cons hxs.1) hjenv.cons hcb hw
+    cases op <;> simp only at hes <;> split at hes
+    · rename_i hb
+      obtain ⟨g2, hg2⟩ := ihr hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalQuantJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb, if_true,
+        hg2 g' (by omega)]
+    · simp at hes
+    · simp at hes
+    · rename_i hb
+      simp only [Bool.not_eq_true] at hb
+      obtain ⟨g2, hg2⟩ := ihr hxs.2 hes
+      refine ⟨max g1 g2, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalQuantJs]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb]
+      simpa using hg2 g' (by omega)
+
+private theorem eventuallyReduceErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+    {env : Env} {jenv : Js.JsEnv} {f : Nat} {accName elemName : String} {bodyE : Expr}
+    {jbody : Js.Expr} {elem tinit : Ty} {err : Err} (hfrag : InFragment bodyE)
+    (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
+      {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
+      JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
+      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      EventuallyErr m jenv' je err'.code)
+    (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
+      = .ok (jbody, tinit))
+    (hne : err ≠ .outOfFuel) :
+    ∀ (xs : List Value) (acc : Value), Value.hasElemTy p xs elem = true →
+      Value.hasTy p acc tinit = true →
+      evalReduceItems p f env accName elemName bodyE acc xs = .error err →
+      ∃ g, ∀ g', g ≤ g' →
+        Js.evalReduceJs m g' jenv accName elemName jbody (encodeValue acc) (encodeList xs)
+          = .error err.code := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro acc _ _ hes
+    rw [evalReduceItems_nil] at hes
+    simp at hes
+  | cons x rest ihr =>
+    intro acc hxs hacc hes
+    rw [evalReduceItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · rename_i e0 hbe
+      obtain rfl : err = e0 := (Except.error.inj hes).symm
+      obtain ⟨g1, hg1⟩ := ihb ((henv.cons hacc).cons hxs.1) hcov.cons.cons hjenv.cons.cons hcb
+        hbe hne
+      refine ⟨g1, fun g' hgle => ?_⟩
+      rw [encodeList, Js.evalReduceJs]
+      simp only [bind, Except.bind, hg1 g' hgle]
+    rename_i w hw
+    have hwt := typeSound p f ((elemName, elem) :: (accName, tinit) :: ctx)
+      ((elemName, x) :: (accName, acc) :: env) bodyE jbody tinit w hfrag.typeChecked
+      ((henv.cons hacc).cons hxs.1) hcb hw
+    obtain ⟨g1, hg1⟩ :=
+      fragment_correct_in p m hfrag ((henv.cons hacc).cons hxs.1) hjenv.cons.cons hcb hw
+    obtain ⟨g2, hg2⟩ := ihr w hxs.2 hwt hes
+    refine ⟨max g1 g2, fun g' hgle => ?_⟩
+    rw [encodeList, Js.evalReduceJs]
+    simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
 
 private theorem eventuallyListErr_of_args (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {err : Err}
@@ -5676,5 +6554,158 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
           (eventuallyListErr_of_values p m henv hjenv entries js hentries
             (fun e he => ihentries e he henv hcov hjenv) hcs hie hne)
       · simp at he
+  | mapE harr hbody iharr ihbody =>
+    rename_i arrE bodyE binder
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, tbody, hca, hcb, -, rfl⟩ := compileExpr_mapE_inv hc
+      rw [evalExpr_mapE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_mapJs (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+        simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · rename_i e0 hie
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_mapJs_items harrv
+            (eventuallyMapErr_of_items p m hbody ihbody henv hcov hjenv hcb hne xs hat hie)
+        · simp at he
+      · rename_i hne'
+        exact (hne' xs rfl).elim
+
+  | filterE harr hbody iharr ihbody =>
+    rename_i arrE bodyE binder
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl⟩ := compileExpr_filterE_inv hc
+      rw [evalExpr_filterE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_filterJs (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+        simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · rename_i e0 hie
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_filterJs_items harrv
+            (eventuallyFilterErr_of_items p m hbody ihbody henv hcov hjenv hcb hne xs hat hie)
+        · simp at he
+      · rename_i hne'
+        exact (hne' xs rfl).elim
+  | findE harr hbody iharr ihbody =>
+    rename_i arrE bodyE binder
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl⟩ := compileExpr_findE_inv hc
+      rw [evalExpr_findE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_findJs (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+        simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        exact eventuallyErr_findJs_items harrv
+          (eventuallyFindErr_of_items p m hbody ihbody henv hcov hjenv hcb hne xs hat he)
+      · rename_i hne'
+        exact (hne' xs rfl).elim
+  | quantE harr hbody iharr ihbody =>
+    rename_i op arrE bodyE binder
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl⟩ := compileExpr_quantE_inv hc
+      rw [evalExpr_quantE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_quantJs (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+        simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        exact eventuallyErr_quantJs_items harrv
+          (eventuallyQuantErr_of_items p m hbody ihbody henv hcov hjenv hcb hne xs hat he)
+      · rename_i hne'
+        exact (hne' xs rfl).elim
+  | reduceE harr hinit hbody iharr ihinit ihbody =>
+    rename_i arrE initE bodyE accName elemName
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, jinit, jbody, elem, hca, hci, hcb, rfl⟩ := compileExpr_reduceE_inv hc
+      rw [evalExpr_reduceE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_reduceJs (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+        simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · rename_i e0 hie
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_reduceJs_init harrv (ihinit henv hcov hjenv hci hie hne)
+        rename_i acc hacc
+        have hacct := typeSound p f ctx env initE jinit ty acc hinit.typeChecked henv hci hacc
+        exact eventuallyErr_reduceJs_items harrv
+          (fragment_correct_in p m hinit henv hjenv hci hacc)
+          (eventuallyReduceErr_of_items p m hbody ihbody henv hcov hjenv hcb hne xs acc hat
+            hacct he)
+      · rename_i hne'
+        exact (hne' xs rfl).elim
+
 
 end LeanTs.Correct
