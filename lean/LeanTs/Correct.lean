@@ -987,6 +987,155 @@ theorem eventuallyErr_call2_helper {m : Js.Module} {env : Js.JsEnv} {name : Stri
     rw [hg1 g (by omega), hg2 g (by omega)]
     simp [hh]
 
+/-! ### One shape, whichever operand failed
+
+Every shape `compileExpr` emits for a binary node evaluates the left operand and then the right, so a
+thrown code from either travels out. Reading it off the compiler's tables once keeps the induction from
+repeating the argument sixteen times. -/
+
+theorem numericHelper_errL {ty : Ty} {op : BinOp} {jl jr je : Js.Expr} {code : String}
+    (h : Compile.numericHelper ty op jl jr = some je)
+    (hl : EventuallyErr m jenv jl code) : EventuallyErr m jenv je code := by
+  cases ty <;> cases op <;> simp only [Compile.numericHelper] at h <;>
+    first
+      | (injection h with hje
+         subst hje
+         first
+           | exact eventuallyErr_call1 (eventuallyErr_binaryL hl)
+           | exact eventuallyErr_binaryL (eventuallyErr_binaryL hl)
+           | exact eventuallyErr_binaryL hl
+           | exact eventuallyErr_call2L hl)
+      | simp at h
+
+theorem numericHelper_errR {ty : Ty} {op : BinOp} {jl jr je : Js.Expr} {a : Js.JsValue}
+    {code : String} (h : Compile.numericHelper ty op jl jr = some je)
+    (ha : Eventually m jenv jl a) (hr : EventuallyErr m jenv jr code) :
+    EventuallyErr m jenv je code := by
+  cases ty <;> cases op <;> simp only [Compile.numericHelper] at h <;>
+    first
+      | (injection h with hje
+         subst hje
+         first
+           | exact eventuallyErr_call1 (eventuallyErr_binaryR (by simp) (by simp) ha hr)
+           | exact eventuallyErr_binaryL (eventuallyErr_binaryR (by simp) (by simp) ha hr)
+           | exact eventuallyErr_binaryR (by simp) (by simp) ha hr
+           | exact eventuallyErr_call2R ha hr)
+      | simp at h
+
+theorem compileExpr_bin_errL {p : Program} {ctx : Compile.Ctx} {op : BinOp} {lhsE rhsE : Expr}
+    {je jl jr : Js.Expr} {ty tl : Ty} {code : String}
+    (hcl : Compile.compileExpr p ctx lhsE = .ok (jl, tl))
+    (hcr : Compile.compileExpr p ctx rhsE = .ok (jr, tl))
+    (hc : Compile.compileExpr p ctx (.bin op lhsE rhsE) = .ok (je, ty))
+    (hl : EventuallyErr m jenv jl code) : EventuallyErr m jenv je code := by
+  simp only [Compile.compileExpr, bind, Except.bind, hcl, hcr] at hc
+  split at hc
+  · simp at hc
+  cases op <;> simp only at hc
+  case add | sub | mul | div | mod | min | max =>
+    split at hc
+    · rename_i j hnh
+      have hje : j = je := congrArg Prod.fst (Except.ok.inj hc)
+      subst hje
+      exact numericHelper_errL hnh hl
+    · simp at hc
+  case lt | le | gt | ge =>
+    simp only [Compile.orderSymbol] at hc
+    split at hc
+    · simp at hc
+    · split at hc
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        exact eventuallyErr_binaryL (eventuallyErr_call2L hl)
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        exact eventuallyErr_binaryL hl
+  case eq =>
+    split at hc <;>
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        first
+          | exact eventuallyErr_binaryL hl
+          | exact eventuallyErr_call2L hl
+  case ne =>
+    split at hc <;>
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        first
+          | exact eventuallyErr_binaryL hl
+          | exact eventuallyErr_not (eventuallyErr_call2L hl)
+  case and | or =>
+    split at hc
+    · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+      subst hje
+      exact eventuallyErr_binaryL hl
+    · simp at hc
+  case concat =>
+    cases tl <;> simp only at hc <;>
+      first
+        | (have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+           subst hje
+           first
+             | exact eventuallyErr_binaryL hl
+             | exact eventuallyErr_call2L hl)
+        | simp at hc
+
+theorem compileExpr_bin_errR {p : Program} {ctx : Compile.Ctx} {op : BinOp} {lhsE rhsE : Expr}
+    {je jl jr : Js.Expr} {ty tl : Ty} {a : Js.JsValue} {code : String}
+    (hand : op ≠ .and) (hor : op ≠ .or)
+    (hcl : Compile.compileExpr p ctx lhsE = .ok (jl, tl))
+    (hcr : Compile.compileExpr p ctx rhsE = .ok (jr, tl))
+    (hc : Compile.compileExpr p ctx (.bin op lhsE rhsE) = .ok (je, ty))
+    (ha : Eventually m jenv jl a) (hr : EventuallyErr m jenv jr code) :
+    EventuallyErr m jenv je code := by
+  simp only [Compile.compileExpr, bind, Except.bind, hcl, hcr] at hc
+  split at hc
+  · simp at hc
+  cases op <;> simp only at hc
+  case add | sub | mul | div | mod | min | max =>
+    split at hc
+    · rename_i j hnh
+      have hje : j = je := congrArg Prod.fst (Except.ok.inj hc)
+      subst hje
+      exact numericHelper_errR hnh ha hr
+    · simp at hc
+  case lt | le | gt | ge =>
+    simp only [Compile.orderSymbol] at hc
+    split at hc
+    · simp at hc
+    · split at hc
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        exact eventuallyErr_binaryL (eventuallyErr_call2R ha hr)
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        exact eventuallyErr_binaryR (by simp) (by simp) ha hr
+  case eq =>
+    split at hc <;>
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        first
+          | exact eventuallyErr_binaryR (by simp) (by simp) ha hr
+          | exact eventuallyErr_call2R ha hr
+  case ne =>
+    split at hc <;>
+      · have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+        subst hje
+        first
+          | exact eventuallyErr_binaryR (by simp) (by simp) ha hr
+          | exact eventuallyErr_not (eventuallyErr_call2R ha hr)
+  case and => exact absurd rfl hand
+  case or => exact absurd rfl hor
+  case concat =>
+    cases tl <;> simp only at hc <;>
+      first
+        | (have hje : _ = je := congrArg Prod.fst (Except.ok.inj hc)
+           subst hje
+           first
+             | exact eventuallyErr_binaryR (by simp) (by simp) ha hr
+             | exact eventuallyErr_call2R ha hr)
+        | simp at hc
+
 /-- The generated environment binds everything the reference one does, to the encoding of the same
 value. It may bind more: a public function's entry check leaves the raw parameters in scope, and the
 compiled body never names them. -/
