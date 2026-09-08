@@ -41,6 +41,10 @@ inductive TypeChecked : Expr → Prop where
   | un {op : UnOp} {e : Expr} : TypeChecked e → TypeChecked (.un op e)
   | bin {op : BinOp} {lhs rhs : Expr} :
       TypeChecked lhs → TypeChecked rhs → TypeChecked (.bin op lhs rhs)
+  | noneE (elem : Ty) : TypeChecked (.noneE elem)
+  | someE {e : Expr} : TypeChecked e → TypeChecked (.someE e)
+  | okE {err : Ty} {e : Expr} : TypeChecked e → TypeChecked (.okE err e)
+  | errorE {ok : Ty} {e : Expr} : TypeChecked e → TypeChecked (.errorE ok e)
 
 mutual
 
@@ -621,5 +625,65 @@ theorem typeSound (p : Program) :
         Ty.eq_of_not_bne hsame ▸ ih ctx env valE jv tv vv hval henv hcv hvv
       exact hc.2 ▸ ih ((name, tyL) :: ctx) ((name, vv) :: env) bodyE jb tb v hbody
         (henv.cons hvty) hcb he
+    | noneE elem =>
+      rw [evalExpr_noneE] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [Except.ok.injEq] at he
+      rw [← hc.2, ← he, hasTy_none]
+    | someE hx =>
+      rename_i xE
+      rw [evalExpr_someE] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      simp only [Except.ok.injEq] at he
+      rw [← hc.2, ← he, hasTy_some, hasFieldTys_cons, hasFieldTys_nil]
+      simp [ih ctx env xE jx tx w hx henv hcx hw]
+    | okE hx =>
+      rename_i err xE
+      rw [evalExpr_okE] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      simp only [Except.ok.injEq] at he
+      rw [← hc.2, ← he, hasTy_ok, hasFieldTys_cons, hasFieldTys_nil]
+      simp [ih ctx env xE jx tx w hx henv hcx hw]
+    | errorE hx =>
+      rename_i ok xE
+      rw [evalExpr_errorE] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      simp only [Except.ok.injEq] at he
+      rw [← hc.2, ← he, hasTy_error, hasFieldTys_cons, hasFieldTys_nil]
+      simp [ih ctx env xE jx tx w hx henv hcx hw]
 
 end LeanTs
