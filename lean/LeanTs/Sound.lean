@@ -50,6 +50,13 @@ inductive TypeChecked : Expr → Prop where
       TypeChecked lhs → TypeChecked rhs → TypeChecked (.strBin op lhs rhs)
   | substring {s lo hi : Expr} :
       TypeChecked s → TypeChecked lo → TypeChecked hi → TypeChecked (.substring s lo hi)
+  | arrayLit (elem : Ty) {items : List Expr} :
+      (∀ e ∈ items, TypeChecked e) → TypeChecked (.arrayLit elem items)
+  | index {arr idx : Expr} : TypeChecked arr → TypeChecked idx → TypeChecked (.index arr idx)
+  | length {arr : Expr} : TypeChecked arr → TypeChecked (.length arr)
+  | arraySlice {arr lo hi : Expr} :
+      TypeChecked arr → TypeChecked lo → TypeChecked hi → TypeChecked (.arraySlice arr lo hi)
+  | arrayReverse {arr : Expr} : TypeChecked arr → TypeChecked (.arrayReverse arr)
 
 mutual
 
@@ -266,6 +273,51 @@ theorem hasElemTy_append {p : Program} {xs ys : List Value} {elem : Ty}
     simp only [List.cons_append, Value.hasElemTy, Bool.and_eq_true] at hx ⊢
     exact ⟨hx.1, ihx hx.2⟩
 
+/-- Reading the check element by element, so that every list operation that only ever keeps elements it
+was given inherits it from a membership lemma about that operation. -/
+theorem hasElemTy_iff (p : Program) (xs : List Value) (elem : Ty) :
+    Value.hasElemTy p xs elem = true ↔ ∀ x ∈ xs, Value.hasTy p x elem = true := by
+  induction xs with
+  | nil => simp [hasElemTy_nil]
+  | cons x rest ih => simp [hasElemTy_cons, Bool.and_eq_true, ih]
+
+theorem hasElemTy_of_subset {p : Program} {xs ys : List Value} {elem : Ty}
+    (h : Value.hasElemTy p xs elem = true) (hsub : ∀ y ∈ ys, y ∈ xs) :
+    Value.hasElemTy p ys elem = true :=
+  (hasElemTy_iff p ys elem).mpr fun y hy => (hasElemTy_iff p xs elem).mp h y (hsub y hy)
+
+theorem hasElemTy_getElem? {p : Program} {xs : List Value} {elem : Ty} {n : Nat} {v : Value}
+    (h : Value.hasElemTy p xs elem = true) (hg : xs[n]? = some v) :
+    Value.hasTy p v elem = true :=
+  (hasElemTy_iff p xs elem).mp h v (List.mem_of_getElem? hg)
+
+theorem hasElemTy_map_str (p : Program) (ss : List String) :
+    Value.hasElemTy p (ss.map Value.str) .string = true :=
+  (hasElemTy_iff p _ .string).mpr fun x hx => by
+    obtain ⟨s, -, rfl⟩ := List.mem_map.mp hx
+    exact hasTy_str p s
+
+theorem sliceArr_hasTy {p : Program} {a lo hi v : Value} {elem : Ty}
+    (ha : Value.hasTy p a (.array elem) = true) (h : sliceArr a lo hi = .ok v) :
+    Value.hasTy p v (.array elem) = true := by
+  obtain ⟨xs, rfl⟩ := hasTy_array_inv ha
+  rw [hasTy_array] at ha
+  cases lo <;> cases hi <;> simp only [sliceArr] at h <;>
+    first
+      | (exfalso; simp at h; done)
+      | (split at h
+         · exact absurd h (by simp)
+         · simp only [Except.ok.injEq] at h; subst h
+           rw [hasTy_array]
+           exact hasElemTy_of_subset ha fun y hy =>
+             List.mem_of_mem_drop (List.mem_of_mem_take hy))
+
+theorem reverse_hasTy {p : Program} {xs : List Value} {elem : Ty}
+    (h : Value.hasTy p (.arr xs) (.array elem) = true) :
+    Value.hasTy p (.arr xs.reverse) (.array elem) = true := by
+  rw [hasTy_array] at h ⊢
+  exact hasElemTy_of_subset h fun y hy => List.mem_reverse.mp hy
+
 theorem applyArith_hasTy {p : Program} {op : BinOp} {t : Ty} {a b v : Value}
     (ha : Value.hasTy p a t = true) (h : applyArith op a b = .ok v) :
     Value.hasTy p v t = true := by
@@ -357,12 +409,6 @@ theorem applyBin_hasTy {p : Program} {op : BinOp} {t : Ty} {a b v : Value}
       | exact applyBin_concat_hasTy ha hb h
       | (simp only [applyBin, Except.ok.injEq] at h; subst h; exact hasTy_bool p _)
       | (exfalso; simp [applyBin] at h; done)
-
-theorem hasElemTy_map_str (p : Program) (ss : List String) :
-    Value.hasElemTy p (ss.map Value.str) .string = true := by
-  induction ss with
-  | nil => simp [hasElemTy_nil]
-  | cons s rest ih => simp [hasElemTy_cons, hasTy_str, ih]
 
 theorem applyStrUn_hasTy {p : Program} {op : StrUnOp} {w v : Value}
     (h : applyStrUn op w = .ok v) : Value.hasTy p v .string = true := by
@@ -467,6 +513,113 @@ private theorem compileExpr_bin_inv {p : Program} {ctx : Compile.Ctx} {op : BinO
     first
       | (exfalso; simp at hc; done)
       | (simp only [Except.ok.injEq, Prod.mk.injEq] at hc; simp_all [binResultTy])
+
+/-- The array reads: what the compiler must have concluded about the operand for it to have emitted
+anything at all. -/
+private theorem compileExpr_index_inv {p : Program} {ctx : Compile.Ctx} {arr idx : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.index arr idx) = .ok (je, ty)) :
+    ∃ jarr jidx, Compile.compileExpr p ctx arr = .ok (jarr, .array ty)
+      ∧ Compile.compileExpr p ctx idx = .ok (jidx, .int53) := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · simp at hc
+  rename_i idxPair hci
+  obtain ⟨jidx, tidx⟩ := idxPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    rename_i hidx
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jidx, hc.2 ▸ hta ▸ hca, Ty.eq_of_not_bne hidx ▸ hci⟩
+  · simp at hc
+
+private theorem compileExpr_arraySlice_inv {p : Program} {ctx : Compile.Ctx} {arr lo hi : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.arraySlice arr lo hi) = .ok (je, ty)) :
+    ∃ jarr elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem) ∧ ty = .array elem := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, elem, hta ▸ hca, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_arrayReverse_inv {p : Program} {ctx : Compile.Ctx} {arr : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.arrayReverse arr) = .ok (je, ty)) :
+    ∃ jarr elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem) ∧ ty = .array elem := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, elem, hta ▸ hca, hc.2.symm⟩
+  · simp at hc
+
+/-- The list of an array literal, carrying the induction hypothesis of `typeSound` along the items. -/
+private theorem hasElemTy_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+    (ih : ∀ (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value), TypeChecked e →
+      Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .ok v →
+      Value.hasTy p v ty = true) :
+    ∀ (items : List Expr) (js : List (Js.Expr × Ty)) (vs : List Value) (elem : Ty),
+      (∀ e ∈ items, TypeChecked e) →
+      Compile.compileArgs p ctx items = .ok js →
+      (js.all fun x => x.2 == elem) = true →
+      evalArgs p f env items = .ok vs →
+      Value.hasElemTy p vs elem = true := by
+  intro items
+  induction items with
+  | nil =>
+    intro js vs elem _ hcs _ hes
+    rw [Compile.compileArgs] at hcs
+    rw [evalArgs_nil] at hes
+    simp only [Except.ok.injEq] at hcs hes
+    subst hcs; subst hes
+    exact hasElemTy_nil p elem
+  | cons item rest ihr =>
+    intro js vs elem hchk hcs hall hes
+    rw [Compile.compileArgs] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i v hv
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    simp only [List.all_cons, Bool.and_eq_true] at hall
+    rw [hasElemTy_cons]
+    simp only [Bool.and_eq_true]
+    exact ⟨Ty.eq_of_beq hall.1 ▸ ih item jh th v (hchk item (by simp)) hchead hv,
+      ihr tail vs' elem (fun e he => hchk e (by simp [he])) hctail hall.2 hvs⟩
 
 /-- If the compiler judged an expression to have type `T` and `eval` returns a value, the value satisfies
 `T`. -/
@@ -787,5 +940,104 @@ theorem typeSound (p : Program) :
       split at he
       · simp at he
       exact hc.2 ▸ sliceStr_hasTy he
+    | arrayLit elem hitems =>
+      rename_i items
+      rw [evalExpr_arrayLit] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      rename_i js hcs
+      split at hc
+      · simp at hc
+      rename_i hall
+      simp only [Bool.not_eq_true', Bool.not_eq_false] at hall
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vs hvs
+      simp only [Except.ok.injEq] at he
+      rw [← hc.2, ← he, hasTy_array]
+      exact hasElemTy_of_args (fun e je t w hchk' => ih ctx env e je t w hchk' henv)
+        items js vs elem hitems hcs hall hvs
+    | index harr hidx =>
+      rename_i arrE idxE
+      obtain ⟨jarr, jidx, hca, -⟩ := compileExpr_index_inv hc
+      rw [evalExpr_index] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      split at he
+      · simp at he
+      have hat := ih ctx env arrE jarr (.array ty) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' _ hxs _
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        split at he
+        · rename_i w hw
+          simp only [Except.ok.injEq] at he
+          exact he ▸ hasElemTy_getElem? hat hw
+        · simp at he
+      · simp at he
+    | length harr =>
+      rename_i arrE
+      have hty : ty = .int53 := by
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        split at hc <;>
+          first
+            | (exfalso; simp at hc; done)
+            | (simp only [Except.ok.injEq, Prod.mk.injEq] at hc; exact hc.2.symm)
+      subst hty
+      rw [evalExpr_length] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      split at he <;>
+        first
+          | (exfalso; simp at he; done)
+          | exact mkInt53_hasTy he
+    | arraySlice harr hlo hhi =>
+      rename_i arrE loE hiE
+      obtain ⟨jarr, elem, hca, hty⟩ := compileExpr_arraySlice_inv hc
+      subst hty
+      rw [evalExpr_arraySlice] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      split at he
+      · simp at he
+      split at he
+      · simp at he
+      exact sliceArr_hasTy (ih ctx env arrE jarr (.array elem) av harr henv hca hav) he
+    | arrayReverse harr =>
+      rename_i arrE
+      obtain ⟨jarr, elem, hca, hty⟩ := compileExpr_arrayReverse_inv hc
+      subst hty
+      rw [evalExpr_arrayReverse] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env arrE jarr (.array elem) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        simp only [Except.ok.injEq] at he
+        exact he ▸ reverse_hasTy hat
+      · rename_i hne
+        exact (hne xs rfl).elim
 
 end LeanTs
