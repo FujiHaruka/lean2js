@@ -146,13 +146,33 @@ Float）に加えて、このマイルストーンで新たに外すもの。
 
 - **D-1 レンダラを全域に — 完了。** `Js.Expr.render` / `TyDesc.render` / `tsType` は
   リストごとの相互再帰に書き直してあり、`partial` は付いていない。出力は 1 バイトも動いていない
-- **D-2 パーサ。** 出力する部分集合の文法だけを受けるパーサを Lean に書く。字句は識別子・数値・
-  文字列リテラル・記号に限る
-- **D-3 往復。** `parse (render m) = some m`。エスケープ（文字列リテラルの引用符・改行・非 ASCII）と
-  演算子の優先順位が中身
-- **D-4 `runtime` を AST にする。** 手書きの 200 行あまりの JS 文字列を `Js` の AST として持ち直し、
+- **D-2 字句 — 完了。** 数値とエスケープは `toString` と `String.foldl` を捨て、`LeanTs/Text.lean` の
+  `List Char` 再帰にした。どちらも proof が展開できない壁で、読み返す側の証明が書けない。出力は
+  1 バイトも動いていない。読む側は `LeanTs/Parse.lean` の `parseInt` / `parseStr` / `parseIdent` で、
+  それぞれ「書いたものの後ろに何が続いていても、書いたものと残りを返す」形の往復補題を持つ
+- **D-3 型記述子 — 完了。** `parseDesc (render d ++ rest) = some (d, rest)`。ついでに
+  `TyDesc.ctors` が持っていた型名を落とした —— `render` は書かず `checkTy` は読まないのに、
+  `render` を単射でなくしていた
+- **D-4 式・文・モジュール。** 残りの文法。`render` が単射でない場所が 3 つあり、往復はそこを
+  除いた `Renderable` を前提に述べる。**利用者から見える主張に但し書きは増えない** ——
+  `compileProgram` が成功したことから `Renderable` を取り出す（`ProgramTyped` と同じ形）
+
+  | 重なるテキスト | 除き方 |
+  | --- | --- |
+  | `.call "__ck" [e, d]` は `.check d e` と同じ。`__map` ほかヘルパ名も同じ | `.call` の呼び先が予約接頭辞を持たないこと |
+  | `.ident "true"` は `.bool true` と、`.ident "new"` は `dictLit` の頭と同じ | 名前が `validateIdent` を通っていること |
+  | `.unary op` の `op` が任意の文字列 | `op` が `!` か `-` であること |
+
+  `(` の後は arrowCall とそれ以外を `( 識別子並び ) => (` の先読みで分ける。**先読みが arrowCall
+  以外の括弧形では必ず失敗すること**が証明の要で、`).` で閉じる `member` と ` ` が続く
+  `binary` / `cond` がそれぞれ別の位置で落ちる
+
+  パーサの再帰は燃料で回す。上限は入力テキストの長さから取るので、**主張に燃料の但し書きは
+  出ない**（Step C が消そうとしている意味論の燃料とは別物）
+- **D-5 `runtime` を AST にする。** 手書きの 200 行あまりの JS 文字列を `Js` の AST として持ち直し、
   `JsSem.helper` が仮定している等式をその AST の意味論から出す。ここが TCB のいちばん厚い層
-- **D-5** README の保証の組み立てに「ファイル」を入れ、TCB の記述を直す
+- **D-6 往復を出荷する。** `parse (render m) = some m` を manifest の `Claim` にし、
+  `Axioms.lean` に行を足す。README の保証の組み立てに「ファイル」を入れ、TCB の記述を直す
 
 ## Step E. `.d.ts` の健全性
 
@@ -174,7 +194,7 @@ A（呼び出しを断片に入れる・完了）   断片が構文そのもの�
   ↓
 B（網羅性・完了）                  Mirrorable に残るのは outOfFuel だけになった
   ↓
-D（テキスト）→ E（.d.ts）          TCB を削る。D-1（printer の全域化）は完了
+D（テキスト）→ E（.d.ts）          TCB を削る。D-1〜D-3（printer・字句・型記述子）は完了
   ↓
 C（燃料）                          いちばん重く、得るものはいちばん小さいので最後
 ```
