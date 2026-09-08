@@ -44,6 +44,7 @@ inductive InFragment : Expr → Prop where
   | arraySlice {arr lo hi : Expr} :
       InFragment arr → InFragment lo → InFragment hi → InFragment (.arraySlice arr lo hi)
   | arrayReverse {arr : Expr} : InFragment arr → InFragment (.arrayReverse arr)
+  | length {arr : Expr} : InFragment arr → InFragment (.length arr)
 
 /-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
 their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
@@ -64,6 +65,7 @@ def inFragmentB : Expr → Bool
   | .index arr idx => inFragmentB arr && inFragmentB idx
   | .arraySlice arr lo hi => inFragmentB arr && inFragmentB lo && inFragmentB hi
   | .arrayReverse arr => inFragmentB arr
+  | .length arr => inFragmentB arr
   | _ => false
 
 theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
@@ -104,13 +106,13 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
     simp only [Bool.and_eq_true] at h
     exact .arraySlice (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
   | .arrayReverse _, h => by rw [inFragmentB] at h; exact .arrayReverse (of_inFragmentB h)
+  | .length _, h => by rw [inFragmentB] at h; exact .length (of_inFragmentB h)
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
   | .ctor _ _ _ _, h => by simp [inFragmentB] at h
   | .proj _ _, h => by simp [inFragmentB] at h
   | .matchE _ _, h => by simp [inFragmentB] at h
   | .arrayLit _ _, h => by simp [inFragmentB] at h
-  | .length _, h => by simp [inFragmentB] at h
   | .mapE _ _ _, h => by simp [inFragmentB] at h
   | .filterE _ _ _, h => by simp [inFragmentB] at h
   | .findE _ _ _, h => by simp [inFragmentB] at h
@@ -143,6 +145,7 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .index harr hidx => .index harr.typeChecked hidx.typeChecked
   | .arraySlice harr hlo hhi => .arraySlice harr.typeChecked hlo.typeChecked hhi.typeChecked
   | .arrayReverse harr => .arrayReverse harr.typeChecked
+  | .length harr => .length harr.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -382,6 +385,56 @@ theorem strSlice_trap {s : String} {a b : Int} {err : Err}
     rcases hguard with (hbad | hbad) | hbad <;>
       simp [Js.Runtime.strSlice, Js.Runtime.fail, Err.code, Int.ofNat_eq_natCast] <;> omega
   · simp at h
+
+theorem eventually_member {m : Js.Module} {env : Js.JsEnv} {jobj : Js.Expr}
+    {fields : List (String × Js.JsValue)} {field : String} {w : Js.JsValue}
+    (h : Eventually m env jobj (.obj fields))
+    (hf : (fields.find? (·.1 == field)).map (·.2) = some w) :
+    Eventually m env (.member jobj field) w := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+    simp [hf]
+
+theorem eventually_length_arr {m : Js.Module} {env : Js.JsEnv} {jarr : Js.Expr}
+    {xs : List Js.JsValue} (h : Eventually m env jarr (.arr xs)) :
+    Eventually m env (.member jarr "length") (.num xs.length) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+    simp
+
+theorem eventually_size_dict {m : Js.Module} {env : Js.JsEnv} {jd : Js.Expr}
+    {entries : List (String × Js.JsValue)} (h : Eventually m env jd (.dict entries)) :
+    Eventually m env (.member jd "size") (.num entries.length) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+    simp
+
+theorem helper_strlen (t : String) :
+    Js.helper "__strlen" [.str t] = some (.ok (.num t.toList.length)) := rfl
+
+theorem encodeFields_eq (fields : List (String × Value)) :
+    encodeFields fields = fields.map fun e => (e.1, encodeValue e.2) := by
+  induction fields with
+  | nil => simp [encodeFields]
+  | cons e rest ih => obtain ⟨k, v⟩ := e; simp [encodeFields, ih]
 
 theorem encodeList_eq (xs : List Value) : encodeList xs = xs.map encodeValue := by
   induction xs with
@@ -1182,6 +1235,16 @@ theorem eventuallyErr_objLit1 {m : Js.Module} {env : Js.JsEnv} {ctor field : Str
     simp only [List.map_cons, List.map_nil, Js.evalList, bind, Except.bind]
     rw [eval_str_of_pos (m := m) (env := env) (s := ctor) (by omega), hg1 g (by omega)]
 
+theorem eventuallyErr_member {m : Js.Module} {env : Js.JsEnv} {jobj : Js.Expr} {field code : String}
+    (h : EventuallyErr m env jobj code) : EventuallyErr m env (.member jobj field) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
 theorem eventuallyErr_call1 {m : Js.Module} {env : Js.JsEnv} {name : String} {jx : Js.Expr}
     {code : String} (h : EventuallyErr m env jx code) :
     EventuallyErr m env (.call name [jx]) code := by
@@ -1449,6 +1512,34 @@ theorem compileExpr_bin_errR {p : Program} {ctx : Compile.Ctx} {op : BinOp} {lhs
              | exact eventuallyErr_binaryR (by simp) (by simp) ha hr
              | exact eventuallyErr_call2R ha hr)
         | simp at hc
+
+/-- Where a length comes from: the three operand types the compiler accepts, each with the expression it
+emitted. All three go through `__i53`, which is what makes the model trap where `eval` does. -/
+private theorem compileExpr_length_parts {p : Program} {ctx : Compile.Ctx} {arr : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.length arr) = .ok (je, ty)) :
+    ty = .int53 ∧ ∃ jarr,
+      ((∃ elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+          ∧ je = .call "__i53" [.member jarr "length"])
+        ∨ (Compile.compileExpr p ctx arr = .ok (jarr, .string)
+          ∧ je = .call "__i53" [.call "__strlen" [jarr]])
+        ∨ (∃ value, Compile.compileExpr p ctx arr = .ok (jarr, .dict value)
+          ∧ je = .call "__i53" [.member jarr "size"])) := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨hc.2.symm, jarr, Or.inl ⟨elem, hta ▸ hca, hc.1.symm⟩⟩
+  · rename_i hta
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨hc.2.symm, jarr, Or.inr (Or.inl ⟨hta ▸ hca, hc.1.symm⟩)⟩
+  · rename_i value hta
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨hc.2.symm, jarr, Or.inr (Or.inr ⟨value, hta ▸ hca, hc.1.symm⟩)⟩
+  · simp at hc
 
 private theorem compileExpr_index_parts {p : Program} {ctx : Compile.Ctx} {arr idx : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.index arr idx) = .ok (je, ty)) :
@@ -3195,6 +3286,55 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
       · rename_i hne
         exact (hne xs rfl).elim
 
+  | length harr iharr =>
+    rename_i arrE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨rfl, jarr, hshape⟩ := compileExpr_length_parts hc
+      rw [evalExpr_length] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      rcases hshape with ⟨elem, hca, rfl⟩ | ⟨hca, rfl⟩ | ⟨value, hca, rfl⟩
+      · obtain ⟨xs, rfl⟩ := hasTy_array_inv
+          (typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav)
+        split at he
+        · rename_i xs' hxs
+          injection hxs with hxs
+          subst hxs
+          refine eventually_call1 (eventually_length_arr
+            (by simpa [encodeValue, encodeList_eq] using iharr henv hjenv hca hav)) ?_
+          simp only [List.length_map]
+          exact (helper_i53 _).trans (congrArg some (i53_of_mkInt53 he))
+        all_goals simp_all
+      · obtain ⟨t, rfl⟩ := hasTy_string_inv
+          (typeSound p f ctx env arrE jarr .string av harr.typeChecked henv hca hav)
+        split at he
+        · simp_all
+        · rename_i t' hstr
+          injection hstr with hstr
+          subst hstr
+          refine eventually_call1 (eventually_call1
+            (by simpa [encodeValue] using iharr henv hjenv hca hav) (helper_strlen t)) ?_
+          exact (helper_i53 _).trans (congrArg some (i53_of_mkInt53 he))
+        all_goals simp_all
+      · obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+          (typeSound p f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
+        split at he
+        · simp_all
+        · simp_all
+        · rename_i entries' hdict
+          injection hdict with hdict
+          subst hdict
+          refine eventually_call1 (eventually_size_dict
+            (by simpa [encodeValue, encodeFields_eq] using iharr henv hjenv hca hav)) ?_
+          simp only [List.length_map]
+          exact (helper_i53 _).trans (congrArg some (i53_of_mkInt53 he))
+        all_goals simp_all
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -4100,5 +4240,72 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
       · simp at he
       · rename_i hne'
         exact (hne' xs rfl).elim
+
+  | length harr iharr =>
+    rename_i arrE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨rfl, jarr, hshape⟩ := compileExpr_length_parts hc
+      rw [evalExpr_length] at he
+      simp only [bind, Except.bind] at he
+      rcases hshape with ⟨elem, hca, rfl⟩ | ⟨hca, rfl⟩ | ⟨value, hca, rfl⟩
+      · split at he
+        · rename_i e0 hae
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_call1 (eventuallyErr_member (iharr henv hcov hjenv hca hae hne))
+        rename_i av hav
+        obtain ⟨xs, rfl⟩ := hasTy_array_inv
+          (typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav)
+        split at he
+        · rename_i xs' hxs
+          injection hxs with hxs
+          subst hxs
+          obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
+          refine eventuallyErr_call1_helper (eventually_length_arr
+            (by simpa [encodeValue, encodeList_eq] using
+              fragment_correct_in p m harr henv hjenv hca hav)) ?_
+          simp only [List.length_map]
+          exact (helper_i53 _).trans (congrArg some hi)
+        all_goals simp_all
+      · split at he
+        · rename_i e0 hae
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_call1 (eventuallyErr_call1 (iharr henv hcov hjenv hca hae hne))
+        rename_i av hav
+        obtain ⟨t, rfl⟩ := hasTy_string_inv
+          (typeSound p f ctx env arrE jarr .string av harr.typeChecked henv hca hav)
+        split at he
+        · simp_all
+        · rename_i t' hstr
+          injection hstr with hstr
+          subst hstr
+          obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
+          refine eventuallyErr_call1_helper (eventually_call1
+            (by simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav)
+            (helper_strlen t)) ?_
+          exact (helper_i53 _).trans (congrArg some hi)
+        all_goals simp_all
+      · split at he
+        · rename_i e0 hae
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_call1 (eventuallyErr_member (iharr henv hcov hjenv hca hae hne))
+        rename_i av hav
+        obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+          (typeSound p f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
+        split at he
+        · simp_all
+        · simp_all
+        · rename_i entries' hdict
+          injection hdict with hdict
+          subst hdict
+          obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
+          refine eventuallyErr_call1_helper (eventually_size_dict
+            (by simpa [encodeValue, encodeFields_eq] using
+              fragment_correct_in p m harr henv hjenv hca hav)) ?_
+          simp only [List.length_map]
+          exact (helper_i53 _).trans (congrArg some hi)
+        all_goals simp_all
 
 end LeanTs.Correct
