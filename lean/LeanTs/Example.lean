@@ -534,7 +534,7 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
       Value.hasTy program (.int53 1) .int53 = true := by
     constructor <;> (rw [hasTy_int53]; simp [int53Min, int53Max])
   have h := add_traps m hm [.int53 int53Max, .int53 1] .int53Overflow rfl
-    ⟨hty.1, hty.2, trivial⟩ hcall ⟨by simp, by simp⟩
+    ⟨hty.1, hty.2, trivial⟩ hcall (by intro h; exact Err.noConfusion h)
   simpa [encodeValue, Err.code] using h
 
 /-- The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
@@ -636,7 +636,7 @@ def manifest : Manifest := {
       proof := add_refuses },
     { name := "add_traps"
       statement :=
-        "for any arguments eval accepts, if eval throws — out of fuel and no matching arm aside — the generated add throws the same code"
+        "for any arguments eval accepts, if eval throws — out of fuel aside — the generated add throws the same code"
       proof := add_traps },
     { name := "addMoney_calls_agree"
       statement :=
@@ -644,7 +644,7 @@ def manifest : Manifest := {
       proof := addMoney_calls_agree },
     { name := "addMoney_traps"
       statement :=
-        "for any arguments eval accepts, if eval throws — out of fuel and no matching arm aside — the generated addMoney throws the same code"
+        "for any arguments eval accepts, if eval throws — out of fuel aside — the generated addMoney throws the same code"
       proof := addMoney_traps },
     { name := "ship_calls_agree"
       statement :=
@@ -660,7 +660,7 @@ def manifest : Manifest := {
       proof := memberPrice_calls_agree },
     { name := "cartTotal_traps"
       statement :=
-        "for any arguments eval accepts, if the fold throws — out of fuel and no matching arm aside — the generated cartTotal throws the same code"
+        "for any arguments eval accepts, if the fold throws — out of fuel aside — the generated cartTotal throws the same code"
       proof := cartTotal_traps }
   ]
 }

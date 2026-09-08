@@ -5822,14 +5822,13 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         (fun alt ha => ihalts alt ha) hca hfm he
     · simp at he
 
-/-- The failures the trap direction carries across.
+/-- The failures the trap direction carries across: every one but the reference side's own.
 
-`outOfFuel` is the reference side's own: fuel is what makes `eval` total, and the claim about the
-generated code is stated at every large enough amount of the model's, so a run only `eval` ran out of has
-nothing to match. `noMatchingAlternative` is the generated side's: exhaustiveness is checked at compile
-time, so the chain takes its last arm without a test, and mirroring the refusal would need the usefulness
-checker proved correct — and that checker is `partial`, which puts it out of reach of a proof entirely. -/
-def Mirrorable (err : Err) : Prop := err ≠ .outOfFuel ∧ err ≠ .noMatchingAlternative
+`outOfFuel` is what makes `eval` total, and the claim about the generated code is stated at every large
+enough amount of the model's, so a run only `eval` ran out of has nothing to match. Every other failure
+is carried, `noMatchingAlternative` included — the generated chain takes its last arm without a test,
+and `Exhaustive.firstMatch_isSome` is what says the reference semantics takes an arm too. -/
+def Mirrorable (err : Err) : Prop := err ≠ .outOfFuel
 
 /-! ## Refusing what the reference semantics refuses
 
@@ -7961,7 +7960,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_chain p m hsig henv hcov (hjenv.consScrut _) hst
         (eventually_ident (by simp)) hne alts (arm0 :: arms) binds body
         (fun alt ha => ihalts alt ha) hca hfm he
-    · simp only [Except.error.injEq] at he
-      exact absurd he.symm hne.2
+    · rename_i hnone
+      exact absurd (Exhaustive.firstMatch_isSome hc hcs hst) (by rw [hnone]; simp)
 
 end LeanTs.Correct

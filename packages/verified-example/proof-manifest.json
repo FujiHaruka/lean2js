@@ -304,7 +304,7 @@
     },
     {
       "name": "add_traps",
-      "statement": "for any arguments eval accepts, if eval throws — out of fuel and no matching arm aside — the generated add throws the same code"
+      "statement": "for any arguments eval accepts, if eval throws — out of fuel aside — the generated add throws the same code"
     },
     {
       "name": "addMoney_calls_agree",
@@ -312,7 +312,7 @@
     },
     {
       "name": "addMoney_traps",
-      "statement": "for any arguments eval accepts, if eval throws — out of fuel and no matching arm aside — the generated addMoney throws the same code"
+      "statement": "for any arguments eval accepts, if eval throws — out of fuel aside — the generated addMoney throws the same code"
     },
     {
       "name": "ship_calls_agree",
@@ -328,7 +328,7 @@
     },
     {
       "name": "cartTotal_traps",
-      "statement": "for any arguments eval accepts, if the fold throws — out of fuel and no matching arm aside — the generated cartTotal throws the same code"
+      "statement": "for any arguments eval accepts, if the fold throws — out of fuel aside — the generated cartTotal throws the same code"
     }
   ]
 }

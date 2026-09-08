@@ -1399,7 +1399,7 @@ theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p)
     rename_i hsame
     obtain rfl : tv = t := Ty.eq_of_not_bne hsame
     cases f' with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
     | succ f'' =>
       rw [evalExpr_letE] at he
       simp only [bind, Except.bind] at he
@@ -1860,7 +1860,7 @@ theorem levels (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) :
       simp [evalExpr] at he
     · intro e _ ctx env jenv je ty err _ _ _ _ he hne
       rw [evalExpr_zero] at he
-      exact absurd (Except.error.inj he).symm hne.1
+      exact absurd (Except.error.inj he).symm hne
   | succ f ih =>
     intro g hg
     rcases Nat.lt_or_ge g (f + 1) with hlt | hge
@@ -1937,8 +1937,8 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
 /-- The companion to `decl_correct` on the other side of the reference semantics. For arguments the
 entry accepts, if `eval` throws then the generated module's function throws the same code.
 
-The failures this carries are the ones `Correct.Mirrorable` names: `outOfFuel` is the reference side's
-alone, and `noMatchingAlternative` is the one the generated arm chain cannot report. -/
+The failures this carries are the ones `Correct.Mirrorable` names: every one but `outOfFuel`, which is
+the reference side's alone. -/
 theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
     (err : Err)
     (hm : compileProgram p = .ok m)
