@@ -713,4 +713,274 @@ theorem parseArrowHead_render (e : Js.Expr) (he : RenderableExpr e = true) (f : 
     exact arrowHead_stuck f _ fun _ _ h =>
       parseIdentList_render obj he.1 f _ (AfterHead.close _) h
 
+/-! ## Reaching the reader's branches
+
+The reader picks its branch on one character, so each case first has to say which character the
+rendering opens with. -/
+
+theorem identStart_not_digit {c : Char} (h : isIdentStart c = true) : c.isDigit = false := by
+  simp only [isIdentStart, Bool.or_eq_true, beq_iff_eq, Char.isAlpha, Char.isUpper, Char.isLower,
+    Char.isDigit, Bool.and_eq_true, decide_eq_true_eq, Bool.and_eq_false_iff,
+    decide_eq_false_iff_not] at h ⊢
+  rcases h with ((⟨h1, -⟩ | ⟨h1, -⟩) | rfl) | rfl
+  · right
+    intro h2
+    rw [ge_iff_le, UInt32.le_iff_toNat_le] at h1
+    rw [UInt32.le_iff_toNat_le] at h2
+    exact absurd (Nat.le_trans h1 h2) (by decide)
+  · right
+    intro h2
+    rw [ge_iff_le, UInt32.le_iff_toNat_le] at h1
+    rw [UInt32.le_iff_toNat_le] at h2
+    exact absurd (Nat.le_trans h1 h2) (by decide)
+  · right; decide
+  · left; decide
+
+theorem head_digit_of_natDigits {n : Nat} {d : Char} {ds : List Char} (hn : natDigits n = d :: ds) :
+    d.isDigit = true := by
+  have h2 := natDigits_all_digit n
+  rw [hn] at h2
+  simp only [List.all_cons, Bool.and_eq_true] at h2
+  exact h2.1
+
+theorem render_head (e : Js.Expr) (he : RenderableExpr e = true) :
+    ∃ c cs, e.render.toList = c :: cs ∧
+      (isIdentStart c = true ∨ c.isDigit = true ∨ c = '-' ∨ c = '"' ∨ c = '(' ∨ c = '[' ∨ c = '{') := by
+  match e with
+  | .num i =>
+    match i with
+    | .ofNat n =>
+      match hn : natDigits n with
+      | [] => exact absurd hn (natDigits_ne_nil n)
+      | d :: ds =>
+        exact ⟨d, ds, by rw [render_num_toList, renderInt_ofNat_toList, hn],
+          Or.inr (Or.inl (head_digit_of_natDigits hn))⟩
+    | .negSucc n =>
+      exact ⟨'-', _, by rw [render_num_toList, renderInt_negSucc_toList], by simp⟩
+  | .bigLit i =>
+    match i with
+    | .ofNat n =>
+      match hn : natDigits n with
+      | [] => exact absurd hn (natDigits_ne_nil n)
+      | d :: ds =>
+        exact ⟨d, ds ++ ['n'], by rw [render_bigLit_toList, renderInt_ofNat_toList, hn]; rfl,
+          Or.inr (Or.inl (head_digit_of_natDigits hn))⟩
+    | .negSucc n =>
+      exact ⟨'-', _, by rw [render_bigLit_toList, renderInt_negSucc_toList]; rfl, by simp⟩
+  | .str s => exact ⟨'"', _, render_str_toList s, by simp⟩
+  | .bool b =>
+    match b with
+    | true => exact ⟨'t', _, render_bool_true_toList, by decide⟩
+    | false => exact ⟨'f', _, render_bool_false_toList, by decide⟩
+  | .ident name =>
+    rw [RenderableExpr] at he
+    have hn := okCallee_name he
+    match hm : name.toList with
+    | [] => exact absurd hm (okName_ne_nil hn)
+    | c :: cs => exact ⟨c, cs, by rw [render_ident_toList, hm], Or.inl (okName_start hn hm)⟩
+  | .call callee args =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    have hn := okCallee_name he.1
+    match hm : callee.toList with
+    | [] => exact absurd hm (okName_ne_nil hn)
+    | c :: cs =>
+      exact ⟨c, cs ++ ('(' :: ((Js.Expr.renderList args).toList ++ [')'])),
+        by rw [render_call_toList, hm]; rfl, Or.inl (okName_start hn hm)⟩
+  | .unary op e => exact ⟨'(', _, render_unary_toList op e, by simp⟩
+  | .binary op l r => exact ⟨'(', _, render_binary_toList op l r, by simp⟩
+  | .cond c t e => exact ⟨'(', _, render_cond_toList c t e, by simp⟩
+  | .member obj field => exact ⟨'(', _, render_member_toList obj field, by simp⟩
+  | .arrowCall ps body args => exact ⟨'(', _, render_arrowCall_toList ps body args, by simp⟩
+  | .objLit fields => exact ⟨'{', _, render_objLit_toList fields, by simp⟩
+  | .arrayLit items => exact ⟨'[', _, render_arrayLit_toList items, by simp⟩
+  | .dictLit entries => exact ⟨'n', _, render_dictLit_toList entries, by decide⟩
+  | .check d e => exact ⟨'_', _, render_check_toList d e, by decide⟩
+  | .mapJs arr b body => exact ⟨'_', _, render_mapJs_toList arr b body, by decide⟩
+  | .filterJs arr b body => exact ⟨'_', _, render_filterJs_toList arr b body, by decide⟩
+  | .findJs arr b body => exact ⟨'_', _, render_findJs_toList arr b body, by decide⟩
+  | .quantJs op arr b body =>
+    match op with
+    | .all => exact ⟨'_', _, render_allJs_toList arr b body, by decide⟩
+    | .any => exact ⟨'_', _, render_anyJs_toList arr b body, by decide⟩
+  | .reduceJs arr init a e body =>
+    exact ⟨'_', _, render_reduceJs_toList arr init a e body, by decide⟩
+
+/-- No rendering opens with a character that closes a list, so a reader looking for the end of one never
+mistakes an element for it. -/
+theorem render_head_ne (e : Js.Expr) (he : RenderableExpr e = true) {c : Char} {cs : List Char}
+    (h : e.render.toList = c :: cs) : c ≠ ')' ∧ c ≠ ']' ∧ c ≠ ' ' ∧ c ≠ '!' := by
+  obtain ⟨c', cs', h', hk⟩ := render_head e he
+  rw [h] at h'
+  cases h'
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intro hx <;> subst hx <;>
+    rcases hk with hk | hk | hk | hk | hk | hk | hk <;> exact absurd hk (by decide)
+
+theorem parseExpr_numHead (f : Nat) {c : Char} (hc : (c == '-' || c.isDigit) = true)
+    (cs : List Char) : parseExpr (f + 1) (c :: cs) = parseNumeral (c :: cs) := by
+  rw [parseExpr]
+  · rw [if_pos hc]
+  · intro h; rw [h] at hc; exact absurd hc (by decide)
+  · intro h; rw [h] at hc; exact absurd hc (by decide)
+  · intro r h _; rw [h] at hc; exact absurd hc (by decide)
+  · intro h; rw [h] at hc; exact absurd hc (by decide)
+
+theorem parseExpr_int (f : Nat) (i : Int) (cs : List Char) :
+    parseExpr (f + 1) ((renderInt i).toList ++ cs) = parseNumeral ((renderInt i).toList ++ cs) := by
+  match i with
+  | .ofNat n =>
+    rw [renderInt_ofNat_toList]
+    match hn : natDigits n with
+    | [] => exact absurd hn (natDigits_ne_nil n)
+    | d :: ds =>
+      rw [List.cons_append, parseExpr_numHead f (by simp [head_digit_of_natDigits hn])]
+  | .negSucc n =>
+    rw [renderInt_negSucc_toList, List.cons_append, parseExpr_numHead f (by decide)]
+
+theorem parseExpr_start (f : Nat) {c : Char} (hs : isIdentStart c = true) (cs : List Char) :
+    parseExpr (f + 1) (c :: cs) =
+      (match parseIdent (c :: cs) with
+       | none => none
+       | some (name, r) => parseNamed f name r) := by
+  have hd : c.isDigit = false := identStart_not_digit hs
+  have hm : c ≠ '-' := by intro h; rw [h] at hs; exact absurd hs (by decide)
+  rw [parseExpr]
+  · rw [if_neg (by simp [hd, hm]), if_pos hs]
+    rfl
+  · intro h; rw [h] at hs; exact absurd hs (by decide)
+  · intro h; rw [h] at hs; exact absurd hs (by decide)
+  · intro r h _; rw [h] at hs; exact absurd hs (by decide)
+  · intro h; rw [h] at hs; exact absurd hs (by decide)
+
+theorem parseNumeral_num (i : Int) (rest : List Char) (hrest : Sep rest) :
+    parseNumeral ((renderInt i).toList ++ rest) = some (Js.Expr.num i, rest) := by
+  have hcn : ∀ c cs, rest = c :: cs → c ≠ 'n' := by
+    intro c cs hc hx
+    have h1 := (hrest c cs hc).1
+    rw [hx] at h1
+    exact absurd h1 (by decide)
+  rw [parseNumeral, parseInt_append i rest hrest.toDigit]
+  cases rest with
+  | nil => rfl
+  | cons c cs => simp [hcn c cs rfl]
+
+theorem parseNumeral_bigLit (i : Int) (rest : List Char) :
+    parseNumeral ((renderInt i).toList ++ ('n' :: rest)) = some (Js.Expr.bigLit i, rest) := by
+  rw [parseNumeral, parseInt_append i ('n' :: rest) (by intro c r h; cases h; decide)]
+  rfl
+
+theorem parseNamed_other (f : Nat) (name : String) (h : dispatchNames.contains name = false)
+    (cs : List Char) :
+    parseNamed (f + 1) name cs =
+      (match expect ['('] cs with
+       | none => some (Js.Expr.ident name, cs)
+       | some cs => do
+         let (args, cs) ← parseExprList f ')' cs
+         let cs ← expect [')'] cs
+         pure (Js.Expr.call name args, cs)) := by
+  simp [dispatchNames] at h
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := h
+  rw [parseNamed]
+  simp only [beq_iff_eq, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, if_false, ite_false,
+    decide_false, Bool.false_eq_true]
+  rfl
+
+/-- Only a numeral is written starting with a digit or a minus sign, which is what lets `parseParen`
+decide by the character after `(` whether a numeral reader should take the sign. -/
+theorem render_head_num (e : Js.Expr) (he : RenderableExpr e = true) {c : Char} {cs : List Char}
+    (h : e.render.toList = c :: cs) (hc : c.isDigit = true ∨ c = '-') :
+    (∃ i, e = .num i) ∨ (∃ i, e = .bigLit i) := by
+  have hlit : ∀ (d : Char) (ds : List Char), e.render.toList = d :: ds →
+      d.isDigit = false → d ≠ '-' → False := by
+    intro d ds hd hnd hnm
+    rw [h] at hd
+    cases hd
+    rcases hc with hc | hc
+    · rw [hc] at hnd; exact absurd hnd (by simp)
+    · exact hnm hc
+  have hstart : ∀ (d : Char) (ds : List Char), e.render.toList = d :: ds →
+      isIdentStart d = true → False := by
+    intro d ds hd hs
+    refine hlit d ds hd (identStart_not_digit hs) ?_
+    intro hx; rw [hx] at hs; exact absurd hs (by decide)
+  match e with
+  | .num i => exact Or.inl ⟨i, rfl⟩
+  | .bigLit i => exact Or.inr ⟨i, rfl⟩
+  | .str s => exact absurd (hlit '"' _ (render_str_toList s) (by decide) (by decide)) (by simp)
+  | .bool b =>
+    match b with
+    | true => exact absurd (hstart 't' _ render_bool_true_toList (by decide)) (by simp)
+    | false => exact absurd (hstart 'f' _ render_bool_false_toList (by decide)) (by simp)
+  | .ident name =>
+    rw [RenderableExpr] at he
+    have hn := okCallee_name he
+    match hm : name.toList with
+    | [] => exact absurd hm (okName_ne_nil hn)
+    | d :: ds =>
+      exact absurd (hstart d ds (by rw [render_ident_toList, hm]) (okName_start hn hm)) (by simp)
+  | .call callee args =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    have hn := okCallee_name he.1
+    match hm : callee.toList with
+    | [] => exact absurd hm (okName_ne_nil hn)
+    | d :: ds =>
+      exact absurd (hstart d _ (by rw [render_call_toList, hm]; rfl) (okName_start hn hm)) (by simp)
+  | .unary op e' =>
+    exact absurd (hlit '(' _ (render_unary_toList op e') (by decide) (by decide)) (by simp)
+  | .binary op l r =>
+    exact absurd (hlit '(' _ (render_binary_toList op l r) (by decide) (by decide)) (by simp)
+  | .cond c' t e' =>
+    exact absurd (hlit '(' _ (render_cond_toList c' t e') (by decide) (by decide)) (by simp)
+  | .member obj field =>
+    exact absurd (hlit '(' _ (render_member_toList obj field) (by decide) (by decide)) (by simp)
+  | .arrowCall ps body args =>
+    exact absurd (hlit '(' _ (render_arrowCall_toList ps body args) (by decide) (by decide)) (by simp)
+  | .objLit fields =>
+    exact absurd (hlit '{' _ (render_objLit_toList fields) (by decide) (by decide)) (by simp)
+  | .arrayLit items =>
+    exact absurd (hlit '[' _ (render_arrayLit_toList items) (by decide) (by decide)) (by simp)
+  | .dictLit entries =>
+    exact absurd (hstart 'n' _ (render_dictLit_toList entries) (by decide)) (by simp)
+  | .check d e' => exact absurd (hstart '_' _ (render_check_toList d e') (by decide)) (by simp)
+  | .mapJs arr b body =>
+    exact absurd (hstart '_' _ (render_mapJs_toList arr b body) (by decide)) (by simp)
+  | .filterJs arr b body =>
+    exact absurd (hstart '_' _ (render_filterJs_toList arr b body) (by decide)) (by simp)
+  | .findJs arr b body =>
+    exact absurd (hstart '_' _ (render_findJs_toList arr b body) (by decide)) (by simp)
+  | .quantJs op arr b body =>
+    match op with
+    | .all => exact absurd (hstart '_' _ (render_allJs_toList arr b body) (by decide)) (by simp)
+    | .any => exact absurd (hstart '_' _ (render_anyJs_toList arr b body) (by decide)) (by simp)
+  | .reduceJs arr init a e' body =>
+    exact absurd (hstart '_' _ (render_reduceJs_toList arr init a e' body) (by decide)) (by simp)
+
+/-- The descriptor reader's budget, read off the text it is handed rather than off the descriptor. -/
+theorem descSize_le (d : Js.TyDesc) : descSize d ≤ (Js.TyDesc.render d).toList.length := by
+  induction d using Js.TyDesc.render.induct
+    (motive2 := fun alts => altsSize alts ≤ (Js.TyDesc.renderAlts alts).toList.length + 1)
+    (motive3 := fun fs => fieldsSize fs ≤ (Js.TyDesc.renderFields fs).toList.length + 1) <;>
+  simp_all [descSize, altsSize, fieldsSize, Js.TyDesc.render, Js.TyDesc.renderAlts,
+    Js.TyDesc.renderFields, String.toList_append, List.length_append] <;> omega
+
+theorem parseInt_neg_ofNat (n : Nat) (rest : List Char) (hrest : notDigitFirst rest) :
+    parseInt ('-' :: (natDigits n ++ rest)) = some (-(n : Int), rest) := by
+  have hp := parseNat_append n rest hrest
+  rw [toList_renderNat] at hp
+  rw [parseInt, if_pos (by simp), List.tail_cons, hp]
+  rfl
+
+theorem parseExprList_step (f : Nat) (close : Char) {c : Char} (hne : (c == close) = false)
+    (cs : List Char) :
+    parseExprList (f + 1) close (c :: cs) = (do
+      let (e, r) ← parseExpr f (c :: cs)
+      match expect [',', ' '] r with
+      | none => pure ([e], r)
+      | some r => do
+        let (es, r) ← parseExprList f close r
+        pure (e :: es, r)) := by
+  rw [parseExprList, if_neg (by simp [hne])]
+  rfl
+
 end LeanTs.Parse
