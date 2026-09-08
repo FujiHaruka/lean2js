@@ -508,7 +508,7 @@ threw. Its body can reach `int53Overflow`. -/
 theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
     (hlen : add.params.length = args.length)
-    (htyped : Decl.ParamsTyped program add.params args)
+    (htyped : ParamsTyped program add.params args)
     (he : evalCall program "add" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" (args.map encodeValue) = .error err.code :=
@@ -561,7 +561,7 @@ the element that overflowed rather than at the end. -/
 theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
     (hlen : cartTotal.params.length = args.length)
-    (htyped : Decl.ParamsTyped program cartTotal.params args)
+    (htyped : ParamsTyped program cartTotal.params args)
     (he : evalCall program "cartTotal" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .error err.code :=
@@ -598,7 +598,7 @@ generated function throws that code. -/
 theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
     (hlen : addMoney.params.length = args.length)
-    (htyped : Decl.ParamsTyped program addMoney.params args)
+    (htyped : ParamsTyped program addMoney.params args)
     (he : evalCall program "addMoney" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=

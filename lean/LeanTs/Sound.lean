@@ -1943,6 +1943,12 @@ private theorem hasTy_of_reduceItems {p : Program} {f : Nat} {ctx : Compile.Ctx}
     exact ihr w v hxs.2
       (ih _ _ bodyE jbody tinit w hbody ((henv.cons hacc).cons hxs.1) hcb hw) hes
 
+/-- Every argument has the type its parameter declared. -/
+def ParamsTyped (p : Program) : List Param → List Value → Prop
+  | [], [] => True
+  | param :: ps, a :: as => Value.hasTy p a param.ty = true ∧ ParamsTyped p ps as
+  | _, _ => False
+
 /-- What the compiler establishes about every declaration of a program it accepted: each body compiles,
 under the context its parameters give, at the type the declaration is declared to return.
 

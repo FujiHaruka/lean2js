@@ -837,12 +837,6 @@ theorem rawBound_bindAll : ∀ (params : List Param) (jargs : List Js.JsValue) (
     refine ⟨by simp [rawParams, Js.bindAll], ?_⟩
     exact RawBound.cons_raw (by omega) (rawBound_bindAll ps jas (i + 1) hlen)
 
-/-- Every argument has the type its parameter declared. -/
-def ParamsTyped (p : Program) : List Param → List Value → Prop
-  | [], [] => True
-  | param :: ps, a :: as => Value.hasTy p a param.ty = true ∧ ParamsTyped p ps as
-  | _, _ => False
-
 def Unreserved : List Param → Prop
   | [] => True
   | param :: ps => param.name.startsWith reservedPrefix = false ∧ Unreserved ps
