@@ -100,12 +100,12 @@ def numericHelper (ty : Ty) (op : BinOp) (a b : Js.Expr) : Option Js.Expr :=
   | .bigint, .max => some (.call "__max" [a, b])
   | _, _ => none
 
-private def strUnHelper : StrUnOp → String
+def strUnHelper : StrUnOp → String
   | .trim => "__trim"
   | .upper => "__upper"
   | .lower => "__lower"
 
-private def strBinHelper : StrBinOp → String
+def strBinHelper : StrBinOp → String
   | .startsWith => "__startsWith"
   | .endsWith => "__endsWith"
   | .includes => "__includes"

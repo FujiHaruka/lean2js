@@ -35,6 +35,11 @@ inductive InFragment : Expr → Prop where
   | someE {e : Expr} : InFragment e → InFragment (.someE e)
   | okE {err : Ty} {e : Expr} : InFragment e → InFragment (.okE err e)
   | errorE {ok : Ty} {e : Expr} : InFragment e → InFragment (.errorE ok e)
+  | strUn {op : StrUnOp} {e : Expr} : InFragment e → InFragment (.strUn op e)
+  | strBin {op : StrBinOp} {lhs rhs : Expr} :
+      InFragment lhs → InFragment rhs → InFragment (.strBin op lhs rhs)
+  | substring {s lo hi : Expr} :
+      InFragment s → InFragment lo → InFragment hi → InFragment (.substring s lo hi)
 
 /-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
 their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
@@ -49,6 +54,9 @@ def inFragmentB : Expr → Bool
   | .someE x => inFragmentB x
   | .okE _ x => inFragmentB x
   | .errorE _ x => inFragmentB x
+  | .strUn _ x => inFragmentB x
+  | .strBin _ lhs rhs => inFragmentB lhs && inFragmentB rhs
+  | .substring x lo hi => inFragmentB x && inFragmentB lo && inFragmentB hi
   | _ => false
 
 theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
@@ -71,6 +79,15 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
   | .someE _, h => by rw [inFragmentB] at h; exact .someE (of_inFragmentB h)
   | .okE _ _, h => by rw [inFragmentB] at h; exact .okE (of_inFragmentB h)
   | .errorE _ _, h => by rw [inFragmentB] at h; exact .errorE (of_inFragmentB h)
+  | .strUn _ _, h => by rw [inFragmentB] at h; exact .strUn (of_inFragmentB h)
+  | .strBin _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .strBin (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .substring _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .substring (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
   | .ctor _ _ _ _, h => by simp [inFragmentB] at h
@@ -93,9 +110,6 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
   | .dictKeys _, h => by simp [inFragmentB] at h
   | .dictValues _, h => by simp [inFragmentB] at h
   | .dictDelete _ _, h => by simp [inFragmentB] at h
-  | .strUn _ _, h => by simp [inFragmentB] at h
-  | .strBin _ _ _, h => by simp [inFragmentB] at h
-  | .substring _ _ _, h => by simp [inFragmentB] at h
 
 /-- Everything the correctness proof reaches is also reached by type soundness, which the arithmetic
 cases need to know that the values in the environment match the types the compiler read. -/
@@ -110,6 +124,9 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .someE hx => .someE hx.typeChecked
   | .okE hx => .okE hx.typeChecked
   | .errorE hx => .errorE hx.typeChecked
+  | .strUn hx => .strUn hx.typeChecked
+  | .strBin hl hr => .strBin hl.typeChecked hr.typeChecked
+  | .substring hs hlo hhi => .substring hs.typeChecked hlo.typeChecked hhi.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -255,6 +272,100 @@ theorem eventually_objLit1 {m : Js.Module} {env : Js.JsEnv} {ctor field : String
     simp only [List.map_cons, List.map_nil, Js.evalList, bind, Except.bind]
     rw [eval_str_of_pos (m := m) (env := env) (s := ctor) (by omega), hg1 g (by omega)]
     rfl
+
+theorem eventually_call3 {m : Js.Module} {env : Js.JsEnv} {name : String} {j1 j2 j3 : Js.Expr}
+    {a b c r : Js.JsValue} (h1 : Eventually m env j1 a) (h2 : Eventually m env j2 b)
+    (h3 : Eventually m env j3 c) (hh : Js.helper name [a, b, c] = some (.ok r)) :
+    Eventually m env (.call name [j1, j2, j3]) r := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  obtain ⟨g3, hg3⟩ := h3
+  refine ⟨max g1 (max g2 g3) + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList]
+    rw [hg1 g (by omega), hg2 g (by omega), hg3 g (by omega)]
+    simp [hh]
+
+theorem encodeList_map_str (l : List String) :
+    encodeList (l.map Value.str) = l.map Js.JsValue.str := by
+  induction l with
+  | nil => simp [encodeList]
+  | cons x rest ih => simp [encodeList, encodeValue, ih]
+
+theorem hasInfix_eq (needle : List Char) :
+    ∀ hay, hasInfix needle hay = Js.Runtime.strIncludes needle hay
+  | [] => rfl
+  | _ :: rest => by rw [hasInfix, Js.Runtime.strIncludes, hasInfix_eq needle rest]
+
+theorem int53_range {p : Program} {i : Int} (h : Value.hasTy p (.int53 i) .int53 = true) :
+    int53Min ≤ i ∧ i ≤ int53Max := by
+  rw [hasTy_int53] at h
+  simpa using h
+
+/-- The string helpers the compiler emits compute what `applyStrUn` and `applyStrBin` compute; the two
+sides are written as the same functions on the code points. -/
+theorem helper_strUn {op : StrUnOp} {s : String} {v : Value}
+    (h : applyStrUn op (.str s) = .ok v) :
+    Js.helper (Compile.strUnHelper op) [.str s] = some (.ok (encodeValue v)) := by
+  cases op <;> simp only [applyStrUn, Except.ok.injEq] at h <;> subst h <;>
+    simp only [encodeValue] <;> exact rfl
+
+theorem helper_strBin {op : StrBinOp} {a b : String} {v : Value}
+    (h : applyStrBin op (.str a) (.str b) = .ok v) :
+    Js.helper (Compile.strBinHelper op) [.str a, .str b] = some (.ok (encodeValue v)) := by
+  cases op <;> simp only [applyStrBin, Except.ok.injEq] at h <;> subst h
+  · simp only [encodeValue]; exact rfl
+  · simp only [encodeValue]; exact rfl
+  · simp only [encodeValue, hasInfix_eq]; exact rfl
+  · simp only [encodeValue, encodeList_map_str]; exact rfl
+
+theorem applyStrUn_str (op : StrUnOp) (s : String) : ∃ t, applyStrUn op (.str s) = .ok (.str t) := by
+  cases op <;> exact ⟨_, rfl⟩
+
+theorem applyStrBin_str (op : StrBinOp) (a b : String) :
+    ∃ v, applyStrBin op (.str a) (.str b) = .ok v := by
+  cases op <;> exact ⟨_, rfl⟩
+
+/-- `substring` counts code points on both sides. The model's extra guard against a bound outside the
+safe integers is the one the reference semantics gets from the argument being an `Int53` at all. -/
+theorem strSlice_of_sliceStr {s : String} {a b : Int} {v : Value}
+    (ha : int53Min ≤ a ∧ a ≤ int53Max) (hb : int53Min ≤ b ∧ b ≤ int53Max)
+    (h : sliceStr (.str s) (.int53 a) (.int53 b) = .ok v) :
+    Js.Runtime.strSlice s a b = .ok (encodeValue v) := by
+  simp only [sliceStr] at h
+  split at h
+  · simp at h
+  rename_i hguard
+  simp only [Except.ok.injEq] at h
+  subst h
+  simp only [int53Min, int53Max] at ha hb
+  simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, decide_eq_false_iff_not,
+    Int.ofNat_eq_natCast] at hguard
+  have h1 : decide (a < Js.Runtime.safeMin) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMin]; omega)
+  have h2 : decide (Js.Runtime.safeMax < a) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMax]; omega)
+  have h3 : decide (b < Js.Runtime.safeMin) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMin]; omega)
+  have h4 : decide (Js.Runtime.safeMax < b) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMax]; omega)
+  simp [Js.Runtime.strSlice, h1, h2, h3, h4, encodeValue, Int.ofNat_eq_natCast] <;> omega
+
+theorem strSlice_trap {s : String} {a b : Int} {err : Err}
+    (h : sliceStr (.str s) (.int53 a) (.int53 b) = .error err) :
+    Js.Runtime.strSlice s a b = .error err.code := by
+  simp only [sliceStr] at h
+  split at h
+  · rename_i hguard
+    simp only [Except.error.injEq] at h
+    subst h
+    simp only [Bool.or_eq_true, decide_eq_true_eq, Int.ofNat_eq_natCast] at hguard
+    rcases hguard with (hbad | hbad) | hbad <;>
+      simp [Js.Runtime.strSlice, Js.Runtime.fail, Err.code, Int.ofNat_eq_natCast] <;> omega
+  · simp at h
 
 theorem helper_i53 (a : Int) : Js.helper "__i53" [.num a] = some (Js.Runtime.i53 a) := rfl
 
@@ -1002,6 +1113,61 @@ theorem eventuallyErr_call1_helper {m : Js.Module} {env : Js.JsEnv} {name : Stri
     rw [Js.eval.eq_def]
     simp only [bind, Except.bind, Js.evalList]
     rw [hg1 g (by omega)]
+    simp [hh]
+
+theorem eventuallyErr_call3_1 {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {j1 j2 j3 : Js.Expr} {code : String} (h : EventuallyErr m env j1 code) :
+    EventuallyErr m env (.call name [j1, j2, j3]) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList, hg1 g (by omega)]
+
+theorem eventuallyErr_call3_2 {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {j1 j2 j3 : Js.Expr} {a : Js.JsValue} {code : String} (h1 : Eventually m env j1 a)
+    (h : EventuallyErr m env j2 code) : EventuallyErr m env (.call name [j1, j2, j3]) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventuallyErr_call3_3 {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {j1 j2 j3 : Js.Expr} {a b : Js.JsValue} {code : String} (h1 : Eventually m env j1 a)
+    (h2 : Eventually m env j2 b) (h : EventuallyErr m env j3 code) :
+    EventuallyErr m env (.call name [j1, j2, j3]) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  obtain ⟨g3, hg3⟩ := h
+  refine ⟨max g1 (max g2 g3) + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList, hg1 g (by omega), hg2 g (by omega),
+      hg3 g (by omega)]
+
+theorem eventuallyErr_call3_helper {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {j1 j2 j3 : Js.Expr} {a b c : Js.JsValue} {code : String} (h1 : Eventually m env j1 a)
+    (h2 : Eventually m env j2 b) (h3 : Eventually m env j3 c)
+    (hh : Js.helper name [a, b, c] = some (.error code)) :
+    EventuallyErr m env (.call name [j1, j2, j3]) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  obtain ⟨g3, hg3⟩ := h3
+  refine ⟨max g1 (max g2 g3) + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList]
+    rw [hg1 g (by omega), hg2 g (by omega), hg3 g (by omega)]
     simp [hh]
 
 theorem eventuallyErr_call2L {m : Js.Module} {env : Js.JsEnv} {name : String} {jl jr : Js.Expr}
@@ -2650,6 +2816,128 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
       subst he
       simpa [encodeValue, encodeFields, Compile.objOf] using eventually_objLit1 (ihx henv hjenv hcx hw)
 
+  | strUn hx ihx =>
+    rename_i op xE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      split at hc
+      · simp at hc
+      rename_i htx
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_strUn] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i w hw
+      obtain rfl : tx = Ty.string := Ty.eq_of_not_bne htx
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env xE jx .string w hx.typeChecked henv hcx hw)
+      exact eventually_call1 (by simpa [encodeValue] using ihx henv hjenv hcx hw) (helper_strUn he)
+  | strBin hl hr ihl ihr =>
+    rename_i op lhsE rhsE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i lPair hcl
+      obtain ⟨jl, tl⟩ := lPair
+      split at hc
+      · simp at hc
+      rename_i rPair hcr
+      obtain ⟨jr, tr⟩ := rPair
+      split at hc
+      · simp at hc
+      rename_i htl
+      split at hc
+      · simp at hc
+      rename_i htr
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_strBin] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      split at he
+      · simp at he
+      rename_i bv hbv
+      obtain rfl : tl = Ty.string := Ty.eq_of_not_bne htl
+      obtain rfl : tr = Ty.string := Ty.eq_of_not_bne htr
+      obtain ⟨sa, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
+      obtain ⟨sb, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
+      exact eventually_call2 (by simpa [encodeValue] using ihl henv hjenv hcl hav)
+        (by simpa [encodeValue] using ihr henv hjenv hcr hbv) (helper_strBin he)
+  | substring hs hlo hhi ihs ihlo ihhi =>
+    rename_i strE loE hiE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i sPair hcs
+      obtain ⟨jstr, ts⟩ := sPair
+      split at hc
+      · simp at hc
+      rename_i loPair hclo
+      obtain ⟨jlo, tlo⟩ := loPair
+      split at hc
+      · simp at hc
+      rename_i hiPair hchi
+      obtain ⟨jhi, thi⟩ := hiPair
+      split at hc
+      · simp at hc
+      rename_i hts
+      split at hc
+      · simp at hc
+      rename_i hbounds
+      simp only [Bool.or_eq_true, not_or] at hbounds
+      obtain rfl : tlo = Ty.int53 := Ty.eq_of_not_bne hbounds.1
+      obtain rfl : thi = Ty.int53 := Ty.eq_of_not_bne hbounds.2
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_substring] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i sv hsv
+      split at he
+      · simp at he
+      rename_i lov hlov
+      split at he
+      · simp at he
+      rename_i hiv hhiv
+      obtain rfl : ts = Ty.string := Ty.eq_of_not_bne hts
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env strE jstr .string sv hs.typeChecked henv hcs hsv)
+      have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+      have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+      obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
+      obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
+      refine eventually_call3 (by simpa [encodeValue] using ihs henv hjenv hcs hsv)
+        (by simpa [encodeValue] using ihlo henv hjenv hclo hlov)
+        (by simpa [encodeValue] using ihhi henv hjenv hchi hhiv) ?_
+      rw [show Js.helper "__substring" [Js.JsValue.str t, Js.JsValue.num a, Js.JsValue.num b]
+        = some (Js.Runtime.strSlice t a b) from rfl,
+        strSlice_of_sliceStr (int53_range hlot) (int53_range hhit) he]
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -3302,5 +3590,146 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
         obtain rfl : err = e0 := (Except.error.inj he).symm
         exact eventuallyErr_objLit1 (ihx henv hcov hjenv hcx hxe hne)
       · simp at he
+
+  | strUn hx ihx =>
+    rename_i op xE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      split at hc
+      · simp at hc
+      rename_i htx
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_strUn] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hxe
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call1 (ihx henv hcov hjenv hcx hxe hne)
+      rename_i w hw
+      obtain rfl : tx = Ty.string := Ty.eq_of_not_bne htx
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env xE jx .string w hx.typeChecked henv hcx hw)
+      obtain ⟨u, hok⟩ := applyStrUn_str op t
+      rw [hok] at he
+      simp at he
+  | strBin hl hr ihl ihr =>
+    rename_i op lhsE rhsE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i lPair hcl
+      obtain ⟨jl, tl⟩ := lPair
+      split at hc
+      · simp at hc
+      rename_i rPair hcr
+      obtain ⟨jr, tr⟩ := rPair
+      split at hc
+      · simp at hc
+      rename_i htl
+      split at hc
+      · simp at hc
+      rename_i htr
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_strBin] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hle
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2L (ihl henv hcov hjenv hcl hle hne)
+      rename_i av hav
+      obtain rfl : tl = Ty.string := Ty.eq_of_not_bne htl
+      obtain rfl : tr = Ty.string := Ty.eq_of_not_bne htr
+      obtain ⟨sa, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
+      have hlv : Eventually m jenv jl (.str sa) := by
+        simpa [encodeValue] using fragment_correct_in p m hl henv hjenv hcl hav
+      split at he
+      · rename_i e0 hre
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2R hlv (ihr henv hcov hjenv hcr hre hne)
+      rename_i bv hbv
+      obtain ⟨sb, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
+      obtain ⟨u, hok⟩ := applyStrBin_str op sa sb
+      rw [hok] at he
+      simp at he
+  | substring hs hlo hhi ihs ihlo ihhi =>
+    rename_i strE loE hiE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i sPair hcs
+      obtain ⟨jstr, ts⟩ := sPair
+      split at hc
+      · simp at hc
+      rename_i loPair hclo
+      obtain ⟨jlo, tlo⟩ := loPair
+      split at hc
+      · simp at hc
+      rename_i hiPair hchi
+      obtain ⟨jhi, thi⟩ := hiPair
+      split at hc
+      · simp at hc
+      rename_i hts
+      split at hc
+      · simp at hc
+      rename_i hbounds
+      simp only [Bool.or_eq_true, not_or] at hbounds
+      obtain rfl : tlo = Ty.int53 := Ty.eq_of_not_bne hbounds.1
+      obtain rfl : thi = Ty.int53 := Ty.eq_of_not_bne hbounds.2
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      rw [evalExpr_substring] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hse
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_1 (ihs henv hcov hjenv hcs hse hne)
+      rename_i sv hsv
+      obtain rfl : ts = Ty.string := Ty.eq_of_not_bne hts
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env strE jstr .string sv hs.typeChecked henv hcs hsv)
+      have hstr : Eventually m jenv jstr (.str t) := by
+        simpa [encodeValue] using fragment_correct_in p m hs henv hjenv hcs hsv
+      split at he
+      · rename_i e0 hloe
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_2 hstr (ihlo henv hcov hjenv hclo hloe hne)
+      rename_i lov hlov
+      have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+      obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
+      have hnuma : Eventually m jenv jlo (.num a) := by
+        simpa [encodeValue] using fragment_correct_in p m hlo henv hjenv hclo hlov
+      split at he
+      · rename_i e0 hhie
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_3 hstr hnuma (ihhi henv hcov hjenv hchi hhie hne)
+      rename_i hiv hhiv
+      have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+      obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
+      refine eventuallyErr_call3_helper hstr hnuma
+        (by simpa [encodeValue] using fragment_correct_in p m hhi henv hjenv hchi hhiv) ?_
+      rw [show Js.helper "__substring" [Js.JsValue.str t, Js.JsValue.num a, Js.JsValue.num b]
+        = some (Js.Runtime.strSlice t a b) from rfl, strSlice_trap he]
 
 end LeanTs.Correct

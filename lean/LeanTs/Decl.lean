@@ -1395,6 +1395,20 @@ theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Exp
     intro ctx
     rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
     simp only [wfTy_types_irrel h [] ok, ihx ctx]
+  | @strUn op _ _ ihx =>
+    intro ctx
+    cases op <;>
+      · rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+        simp only [ihx ctx]
+  | @strBin op _ _ _ _ ihl ihr =>
+    intro ctx
+    cases op <;>
+      · rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+        simp only [ihl ctx, ihr ctx]
+  | substring _ _ _ ihs ihlo ihhi =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihs ctx, ihlo ctx, ihhi ctx]
 
 theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
     (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :
