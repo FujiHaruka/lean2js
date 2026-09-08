@@ -164,23 +164,37 @@ Float）に加えて、このマイルストーンで新たに外すもの。
 
   パーサの再帰は燃料で回す。上限は入力テキストの長さから取るので、**主張に燃料の但し書きは
   出ない**（Step C が消そうとしている意味論の燃料とは別物）
-- **D-5 往復の証明。** `parseModule (render m) = some m`。`render` が単射でない場所が 3 つあり、
-  往復はそこを除いた `Renderable` を前提に述べる。**利用者から見える主張に但し書きは増えない** ——
-  `compileProgram` が成功したことから `Renderable` を取り出す（`ProgramTyped` と同じ形）
+- **D-5 往復の証明 — 完了。** `LeanTs/Roundtrip.lean` の `parseModule_render` ——
+  `RenderableModule m` なら `parseModule (Js.Module.render m).toList = some m`。
+
+  **`Renderable` が除くのは、`render` が同じテキストに写す 3 か所と、自分を閉じる doc。**
 
   | 重なるテキスト | 除き方 |
   | --- | --- |
-  | `.call "__ck" [e, d]` は `.check d e` と同じ。`__map` ほかヘルパ名も同じ | `.call` の呼び先が予約接頭辞を持たないこと |
-  | `.ident "true"` は `.bool true` と、`.ident "new"` は `dictLit` の頭と同じ | 名前が `validateIdent` を通っていること |
+  | `.call "__ck" [e, d]` は `.check d e` と同じ。`__map` ほか 6 つの構成子も同じ | 呼び先と `.ident` の名前が、読み手が構成子に振り分ける 10 語（`true` / `false` / `new` と `__ck` ほか 7 つ）でないこと。`__i53` のような**構成子を持たないヘルパ名は素通り**する |
+  | `.ident "true"` は `.bool true` と、`.ident "new"` は `dictLit` の頭と同じ | 同上 |
   | `.unary op` の `op` が任意の文字列 | `op` が `!` か `-` であること |
 
-  加えて `Func.doc` は `/** */` の中に素で入るので、`*/` を含まないことが要る。
+  加えて `Func.doc` は `/** */` の中に素で入るので、`" */\n"` を含まないことが要る
+  （`noCommentClose`）。名前はすべて識別子であること。
 
-  燃料の仮定は `(render e).length ≤ f` の形で置く。測度を別に定義して「測度 ≤ 長さ」を証明するより
-  短く、最上位で `f` にテキストの長さを渡せばそのまま消える。
+  **燃料の仮定はテキストの長さ**（`(render e).toList.length < f`）。最上位はテキスト自身の長さを
+  渡すので、主張に燃料の但し書きは残らない。型記述子の読み手だけは測度を取るので、
+  `descSize d ≤ (render d).length` の橋を 1 本渡している。
 
-  証明の要は、`(` の後の先読み `( 識別子並び ) => (` が **arrowCall 以外の括弧形では必ず失敗する**
-  こと。`member` は `).` で閉じ、`binary` と `cond` は空白が来るので、それぞれ別の位置で落ちる
+  **証明の要は、`(` の後の先読み `( 識別子並び ) => (` が arrowCall 以外の括弧形では必ず失敗する**
+  こと（`parseArrowHead_render`）。識別子並びは名前に使えない最初の文字で止まり、その文字は
+  どの `render` でも `)` にならない —— `member` は `).` で閉じ、`binary` と `cond` は空白が来る。
+  ここは部分式への帰納ではなく、構成子ごとの場合分けだけで閉じる。
+
+  **印字器から `String.intercalate` が消えた。** 累算器を回すので proof が展開できない。
+  引数名の並びは `Js.renderNames`、文の並びは `Js.Stmt.renderAll` という素の再帰にした。
+  前置きと末尾の source-map 行も `Js.preamble` / `Js.sourceMapLink` という名前を持つ ——
+  `runtime` の 4000 字を展開させないため。出力は 1 バイトも動いていない
+- **D-5b `Renderable` を成果物から取り出す。** `compileProgram p = .ok m → RenderableModule m`。
+  これが付くまで、往復の主張には `Renderable` の但し書きが残る。いま出荷を守っているのは
+  D-4 で入れた `emit` の実行時検査のほう。doc は `Ty.render`（`partial`）から組み立てられるので、
+  そこを全域にするか、コンパイラ側の検査から取り出すかを決める必要がある
 - **D-6 `runtime` を AST にする。** 手書きの 200 行あまりの JS 文字列を `Js` の AST として持ち直し、
   `JsSem.helper` が仮定している等式をその AST の意味論から出す。ここが TCB のいちばん厚い層
 - **D-7 往復を出荷する。** `parse (render m) = some m` を manifest の `Claim` にし、
@@ -206,7 +220,7 @@ A（呼び出しを断片に入れる・完了）   断片が構文そのもの�
   ↓
 B（網羅性・完了）                  Mirrorable に残るのは outOfFuel だけになった
   ↓
-D（テキスト）→ E（.d.ts）          TCB を削る。D-1〜D-4（印字器・字句・型記述子・読む側）は完了
+D（テキスト）→ E（.d.ts）          TCB を削る。D-1〜D-5（印字器・字句・型記述子・読む側・往復）は完了
   ↓
 C（燃料）                          いちばん重く、得るものはいちばん小さいので最後
 ```
