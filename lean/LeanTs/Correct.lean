@@ -773,6 +773,220 @@ theorem cond_false {m : Js.Module} {env : Js.JsEnv} {jc jt jel : Js.Expr} {v : J
     rw [hg1 g (by omega)]
     exact hg2 g (by omega)
 
+/-! ### Failing, at every large enough amount of fuel
+
+The mirror of `Eventually`. Where that carries a value across the boundary, this carries a thrown code,
+and each shape the compiler emits has to be shown to pass one along. -/
+
+def EventuallyErr (m : Js.Module) (env : Js.JsEnv) (je : Js.Expr) (code : String) : Prop :=
+  ∃ g, ∀ g', g ≤ g' → Js.eval m g' env je = .error code
+
+theorem eventuallyErr_not {m : Js.Module} {env : Js.JsEnv} {jx : Js.Expr} {code : String}
+    (h : EventuallyErr m env jx code) : EventuallyErr m env (.unary "!" jx) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+
+theorem eventuallyErr_neg {m : Js.Module} {env : Js.JsEnv} {jx : Js.Expr} {code : String}
+    (h : EventuallyErr m env jx code) : EventuallyErr m env (.unary "-" jx) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind]
+    rw [hg1 g (by omega)]
+
+theorem eventuallyErr_binaryL {m : Js.Module} {env : Js.JsEnv} {op : String} {jl jr : Js.Expr}
+    {code : String} (h : EventuallyErr m env jl code) :
+    EventuallyErr m env (.binary op jl jr) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    by_cases hand : op = "&&"
+    · subst hand
+      rw [Js.eval.eq_def]
+      simp only [bind, Except.bind, hg1 g (by omega)]
+    · by_cases hor : op = "||"
+      · subst hor
+        rw [Js.eval.eq_def]
+        simp only [bind, Except.bind, hg1 g (by omega)]
+      · rw [Js.eval.eq_def]
+        simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_binaryR {m : Js.Module} {env : Js.JsEnv} {op : String} {jl jr : Js.Expr}
+    {a : Js.JsValue} {code : String} (hand : op ≠ "&&") (hor : op ≠ "||")
+    (h1 : Eventually m env jl a) (h2 : EventuallyErr m env jr code) :
+    EventuallyErr m env (.binary op jl jr) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventuallyErr_andR {m : Js.Module} {env : Js.JsEnv} {jl jr : Js.Expr} {code : String}
+    (h1 : Eventually m env jl (.bool true)) (h2 : EventuallyErr m env jr code) :
+    EventuallyErr m env (.binary "&&" jl jr) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+    exact hg2 g (by omega)
+
+theorem eventuallyErr_orR {m : Js.Module} {env : Js.JsEnv} {jl jr : Js.Expr} {code : String}
+    (h1 : Eventually m env jl (.bool false)) (h2 : EventuallyErr m env jr code) :
+    EventuallyErr m env (.binary "||" jl jr) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+    exact hg2 g (by omega)
+
+theorem eventuallyErr_condC {m : Js.Module} {env : Js.JsEnv} {jc jt je : Js.Expr} {code : String}
+    (h : EventuallyErr m env jc code) : EventuallyErr m env (.cond jc jt je) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_condT {m : Js.Module} {env : Js.JsEnv} {jc jt je : Js.Expr} {code : String}
+    (h1 : Eventually m env jc (.bool true)) (h2 : EventuallyErr m env jt code) :
+    EventuallyErr m env (.cond jc jt je) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+    exact hg2 g (by omega)
+
+theorem eventuallyErr_condE {m : Js.Module} {env : Js.JsEnv} {jc jt je : Js.Expr} {code : String}
+    (h1 : Eventually m env jc (.bool false)) (h2 : EventuallyErr m env je code) :
+    EventuallyErr m env (.cond jc jt je) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+    exact hg2 g (by omega)
+
+theorem eventuallyErr_arrowArg {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {jv jb : Js.Expr} {code : String} (h : EventuallyErr m env jv code) :
+    EventuallyErr m env (.arrowCall [name] jb [jv]) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList, hg1 g (by omega)]
+
+theorem eventuallyErr_arrowBody {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {jv jb : Js.Expr} {w : Js.JsValue} {code : String}
+    (h1 : Eventually m env jv w) (h2 : EventuallyErr m ((name, w) :: env) jb code) :
+    EventuallyErr m env (.arrowCall [name] jb [jv]) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList]
+    rw [hg1 g (by omega)]
+    simpa [Js.bindAll] using hg2 g (by omega)
+
+theorem eventuallyErr_call1 {m : Js.Module} {env : Js.JsEnv} {name : String} {jx : Js.Expr}
+    {code : String} (h : EventuallyErr m env jx code) :
+    EventuallyErr m env (.call name [jx]) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList, hg1 g (by omega)]
+
+theorem eventuallyErr_call1_helper {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {jx : Js.Expr} {w : Js.JsValue} {code : String} (h : Eventually m env jx w)
+    (hh : Js.helper name [w] = some (.error code)) :
+    EventuallyErr m env (.call name [jx]) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList]
+    rw [hg1 g (by omega)]
+    simp [hh]
+
+theorem eventuallyErr_call2L {m : Js.Module} {env : Js.JsEnv} {name : String} {jl jr : Js.Expr}
+    {code : String} (h : EventuallyErr m env jl code) :
+    EventuallyErr m env (.call name [jl, jr]) code := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList, hg1 g (by omega)]
+
+theorem eventuallyErr_call2R {m : Js.Module} {env : Js.JsEnv} {name : String} {jl jr : Js.Expr}
+    {a : Js.JsValue} {code : String} (h1 : Eventually m env jl a)
+    (h2 : EventuallyErr m env jr code) : EventuallyErr m env (.call name [jl, jr]) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventuallyErr_call2_helper {m : Js.Module} {env : Js.JsEnv} {name : String}
+    {jl jr : Js.Expr} {a b : Js.JsValue} {code : String}
+    (h1 : Eventually m env jl a) (h2 : Eventually m env jr b)
+    (hh : Js.helper name [a, b] = some (.error code)) :
+    EventuallyErr m env (.call name [jl, jr]) code := by
+  obtain ⟨g1, hg1⟩ := h1
+  obtain ⟨g2, hg2⟩ := h2
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, Js.evalList]
+    rw [hg1 g (by omega), hg2 g (by omega)]
+    simp [hh]
+
 /-- The generated environment binds everything the reference one does, to the encoding of the same
 value. It may bind more: a public function's entry check leaves the raw parameters in scope, and the
 compiled body never names them. -/
