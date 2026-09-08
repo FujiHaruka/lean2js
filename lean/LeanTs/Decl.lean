@@ -1052,10 +1052,12 @@ theorem checkedBindings_find_none :
 
 /-- The entry check stacks the parameters newest-first, the opposite of `bindParams`. Distinct parameter
 names are what make the two agree anyway: only one binding can answer a lookup. -/
-theorem jsEnvAgrees_checkedBindings :
+theorem jsEnvBinds_checkedBindings :
     ∀ (params : List Param) (args : List Value) (jenv : Js.JsEnv),
       params.length = args.length → DistinctNames params →
-      JsEnvAgrees (bindParams params args) (checkedBindings params args ++ jenv)
+      ∀ name v, Env.lookup? (bindParams params args) name = some v →
+        (((checkedBindings params args ++ jenv).find? (·.1 == name)).map (·.2))
+          = some (encodeValue v)
   | [], [], _, _, _ => by intro name v hv; simp [Env.lookup?, bindParams] at hv
   | [], _ :: _, _, hlen, _ => by simp at hlen
   | _ :: _, [], _, hlen, _ => by simp at hlen
@@ -1074,9 +1076,25 @@ theorem jsEnvAgrees_checkedBindings :
       simp
     | false =>
       rw [hname] at hv
-      have := jsEnvAgrees_checkedBindings ps as ((param.name, encodeValue a) :: jenv) hlen hdist.2
+      have := jsEnvBinds_checkedBindings ps as ((param.name, encodeValue a) :: jenv) hlen hdist.2
         name v hv
       simpa [List.find?_append] using this
+
+theorem bindParams_scrutFree :
+    ∀ (params : List Param) (args : List Value), Unreserved params →
+      Env.lookup? (bindParams params args) Compile.scrutName = none
+  | [], _, _ => by simp [bindParams, Env.lookup?]
+  | _ :: _, [], _ => by simp [bindParams, Env.lookup?]
+  | param :: ps, a :: as, hres => by
+    simp only [bindParams, Env.lookup?, List.find?_cons]
+    rw [beq_eq_false_iff_ne.mpr (ne_scrutName_of_unreserved hres.1)]
+    exact bindParams_scrutFree ps as hres.2
+
+theorem jsEnvAgrees_checkedBindings (params : List Param) (args : List Value) (jenv : Js.JsEnv)
+    (hlen : params.length = args.length) (hdist : DistinctNames params)
+    (hres : Unreserved params) :
+    JsEnvAgrees (bindParams params args) (checkedBindings params args ++ jenv) :=
+  ⟨jsEnvBinds_checkedBindings params args jenv hlen hdist, bindParams_scrutFree params args hres⟩
 
 /-! ## The body as statements
 
@@ -1124,6 +1142,7 @@ theorem compileBody_correct (m : Js.Module) (p : Program) {e : Expr} (hfrag : In
     · exact compileBody_finish m p (.letE hval hbody) hc henv hjenv he
     split at hc
     · exact (errNeOk hc).elim
+    rename_i _uv hvi
     split at hc
     · exact (errNeOk hc).elim
     rename_i valPair hcv
@@ -1142,7 +1161,8 @@ theorem compileBody_correct (m : Js.Module) (p : Program) {e : Expr} (hfrag : In
       rename_i vv hvv
       have hvt : Value.hasTy p vv tv = true :=
         typeSound p f ctx env val jv tv vv hval.typeChecked henv hcv hvv
-      obtain ⟨innerB, hshape, gB, hgB⟩ := ihb hc (henv.cons hvt) hjenv.cons he
+      obtain ⟨innerB, hshape, gB, hgB⟩ :=
+        ihb hc (henv.cons hvt) (hjenv.cons (ne_scrutName_of_validateIdent hvi)) he
       obtain ⟨gV, hgV⟩ := fragment_correct_in p m hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
@@ -1232,6 +1252,7 @@ theorem compileBody_traps (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFr
     · exact compileBody_finish_traps m p (.letE hval hbody) hc henv hcov hjenv he hne
     split at hc
     · exact (errNeOk hc).elim
+    rename_i _uv hvi
     split at hc
     · exact (errNeOk hc).elim
     rename_i valPair hcv
@@ -1257,7 +1278,7 @@ theorem compileBody_traps (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFr
       have hvt : Value.hasTy p vv tv = true :=
         typeSound p f ctx env val jv tv vv hval.typeChecked henv hcv hvv
       obtain ⟨innerB, hshape, gB, hgB⟩ :=
-        ihb hc (henv.cons hvt) hcov.cons hjenv.cons he hne
+        ihb hc (henv.cons hvt) hcov.cons (hjenv.cons (ne_scrutName_of_validateIdent hvi)) he hne
       obtain ⟨gV, hgV⟩ := fragment_correct_in p m hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
@@ -1705,7 +1726,7 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
   rw [paramChecks_types_irrel htypes] at hchecks
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_correct m p hfrag hcb (envTyped_bindParams p d.params args htyped)
-      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist) hbody
+      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres) hbody
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
   refine ⟨gB + 2, fun g' hge => ?_⟩
@@ -1745,7 +1766,7 @@ theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args 
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_traps m p hfrag hcb (envTyped_bindParams p d.params args htyped)
       (envCovers_bindParams d.params args hlen)
-      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist) he hne
+      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres) he hne
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
   refine ⟨gB + 2, fun g' hge => ?_⟩

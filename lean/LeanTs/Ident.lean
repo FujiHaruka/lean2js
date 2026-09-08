@@ -39,6 +39,22 @@ def validateIdent (kind name : String) : Except String Unit :=
     .error s!"{kind} name is reserved in JavaScript: {name}"
   else .ok ()
 
+/-- Nothing that passed the check carries the helper prefix, which is what keeps a compiled name from
+colliding with one the compiler introduces itself. -/
+theorem startsWith_false_of_validateIdent {kind name : String} {u : Unit}
+    (h : validateIdent kind name = .ok u) : name.startsWith reservedPrefix = false := by
+  rw [validateIdent] at h
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  rename_i hpre
+  simpa using hpre
+
 def validateDistinct (kind : String) (names : List String) : Except String Unit :=
   match names with
   | [] => .ok ()
