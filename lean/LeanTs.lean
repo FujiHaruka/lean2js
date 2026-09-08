@@ -12,6 +12,7 @@ import LeanTs.Builder
 import LeanTs.Syntax
 import LeanTs.Ident
 import LeanTs.Parse
+import LeanTs.Roundtrip
 import LeanTs.JsSem
 import LeanTs.Agree
 import LeanTs.Exhaustive
