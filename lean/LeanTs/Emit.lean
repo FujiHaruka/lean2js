@@ -1,6 +1,7 @@
 import LeanTs.Agree
 import LeanTs.Compile
 import LeanTs.Manifest
+import LeanTs.Parse
 import LeanTs.SourceMap
 import LeanTs.Vectors
 
@@ -33,7 +34,8 @@ private def packageJson (m : Manifest) : Json :=
   ]
 
 /-- Checks before it writes. Every shipped vector has to agree between `eval`, the model of the generated
-JS and the small-step machine, so a disagreement fails the build rather than reaching the package. -/
+JS and the small-step machine, and the text of the module has to read back as the module it was compiled
+from, so a disagreement fails the build rather than reaching the package. -/
 def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
   match checkAgreement m.program 400 200 with
   | .error e => throw (IO.userError s!"the compiled module disagrees with eval: {e}")
@@ -42,6 +44,8 @@ def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
   | .error e => throw (IO.userError s!"compile failed: {e}")
   | .ok jsModule =>
     let emitted := emitModule jsModule
+    if Parse.parseModule emitted.text.toList != some jsModule then
+      throw (IO.userError "the emitted text does not read back as the module it was compiled from")
     IO.FS.createDirAll outDir
     IO.FS.writeFile (outDir / "index.js") emitted.text
     IO.FS.writeFile (outDir / "example.leants") m.program.source.text
