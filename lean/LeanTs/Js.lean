@@ -25,7 +25,7 @@ inductive TyDesc where
   | result (ok err : TyDesc)
   | array (t : TyDesc)
   | dict (value : TyDesc)
-  | ctors (name : String) (alts : List (String × List (String × TyDesc)))
+  | ctors (alts : List (String × List (String × TyDesc)))
   deriving Inhabited
 
 mutual
@@ -42,7 +42,7 @@ def TyDesc.render : TyDesc → String
   | .result ok err => "[\"result\", " ++ ok.render ++ ", " ++ err.render ++ "]"
   | .array t => "[\"array\", " ++ t.render ++ "]"
   | .dict v => "[\"dict\", " ++ v.render ++ "]"
-  | .ctors _ alts => "[\"ctors\", [" ++ TyDesc.renderAlts alts ++ "]]"
+  | .ctors alts => "[\"ctors\", [" ++ TyDesc.renderAlts alts ++ "]]"
 termination_by d => sizeOf d
 
 def TyDesc.renderFields : List (String × TyDesc) → String

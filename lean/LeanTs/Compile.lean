@@ -740,7 +740,7 @@ def tyDesc (p : Program) : Nat → Ty → Except String Js.TyDesc
   | budget + 1, .named n args =>
     match p.findType? n with
     | none => .error s!"unknown type: {n}"
-    | some t => do .ok (.ctors n (← tyDescAlts p budget (t.ctorsAt args)))
+    | some t => do .ok (.ctors (← tyDescAlts p budget (t.ctorsAt args)))
 termination_by budget ty => (budget, 0, sizeOf ty)
 
 def tyDescAlts (p : Program) (budget : Nat) :

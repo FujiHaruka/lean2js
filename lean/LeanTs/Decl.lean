@@ -88,7 +88,7 @@ theorem tyDesc_result_inv {p : Program} {b : Nat} {ok err : Ty} {d : Js.TyDesc}
 theorem tyDesc_named_inv {p : Program} {b : Nat} {n : String} {args : List Ty} {d : Js.TyDesc}
     (h : tyDesc p b (.named n args) = .ok d) :
     ∃ b' t alts, b = b' + 1 ∧ p.findType? n = some t ∧
-      tyDescAlts p b' (t.ctorsAt args) = .ok alts ∧ d = .ctors n alts := by
+      tyDescAlts p b' (t.ctorsAt args) = .ok alts ∧ d = .ctors alts := by
   cases b with
   | zero => rw [tyDesc.eq_def] at h; simp at h
   | succ b' =>
@@ -156,10 +156,10 @@ theorem checkTy_error (rest : List (String × Js.JsValue)) (dok derr : Js.TyDesc
   rw [Js.checkTy.eq_def]
   simp
 
-theorem checkTy_ctors (ctor n : String) (rest : List (String × Js.JsValue))
+theorem checkTy_ctors (ctor : String) (rest : List (String × Js.JsValue))
     (alts : List (String × List (String × Js.TyDesc)))
     (fields : List (String × Js.TyDesc)) (hf : alts.find? (·.1 == ctor) = some (ctor, fields)) :
-    Js.checkTy (.obj (("tag", .str ctor) :: rest)) (.ctors n alts)
+    Js.checkTy (.obj (("tag", .str ctor) :: rest)) (.ctors alts)
       = Js.checkFields rest fields := by
   rw [Js.checkTy.eq_def]
   simp [hf]
@@ -327,7 +327,7 @@ theorem checkTy_encodeValue (p : Program) :
       simpa using this
     rw [show encodeValue (.obj ctor fields)
           = .obj (("tag", .str ctor) :: encodeFields fields) by rw [encodeValue.eq_def],
-      checkTy_ctors ctor n (encodeFields fields) alts ds (hcname ▸ hfind)]
+      checkTy_ctors ctor (encodeFields fields) alts ds (hcname ▸ hfind)]
     exact checkFields_encodeFields p c.fields b' ds fields hds hfs
 termination_by _ _ _ v => sizeOf v
 
@@ -453,9 +453,9 @@ theorem checkTy_result_shape {jv : Js.JsValue} {dok derr : Js.TyDesc}
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
 
-theorem checkTy_ctors_shape {jv : Js.JsValue} {n : String}
+theorem checkTy_ctors_shape {jv : Js.JsValue}
     {alts : List (String × List (String × Js.TyDesc))}
-    (h : Js.checkTy jv (.ctors n alts) = true) :
+    (h : Js.checkTy jv (.ctors alts) = true) :
     ∃ ctor rest, jv = .obj (("tag", .str ctor) :: rest) := by
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
@@ -482,9 +482,9 @@ theorem checkTy_result_fields {ctor : String} {rest : List (String × Js.JsValue
   · exact Or.inr ⟨rfl, h⟩
   · simp at h
 
-theorem checkTy_ctors_fields {ctor n : String} {rest : List (String × Js.JsValue)}
+theorem checkTy_ctors_fields {ctor : String} {rest : List (String × Js.JsValue)}
     {alts : List (String × List (String × Js.TyDesc))}
-    (h : Js.checkTy (.obj (("tag", .str ctor) :: rest)) (.ctors n alts) = true) :
+    (h : Js.checkTy (.obj (("tag", .str ctor) :: rest)) (.ctors alts) = true) :
     ∃ ds, alts.find? (·.1 == ctor) = some (ctor, ds) ∧ Js.checkFields rest ds = true := by
   rw [Js.checkTy.eq_def] at h
   simp only at h

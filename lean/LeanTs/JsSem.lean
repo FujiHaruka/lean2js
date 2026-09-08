@@ -267,7 +267,7 @@ def checkTy : JsValue → TyDesc → Bool
     | "ok" => checkFields rest [("value", ok)]
     | "error" => checkFields rest [("error", err)]
     | _ => false
-  | .obj (("tag", .str ctor) :: rest), .ctors _ alts =>
+  | .obj (("tag", .str ctor) :: rest), .ctors alts =>
     match alts.find? (·.1 == ctor) with
     | some (_, fields) => checkFields rest fields
     | none => false
