@@ -40,6 +40,10 @@ inductive InFragment : Expr → Prop where
       InFragment lhs → InFragment rhs → InFragment (.strBin op lhs rhs)
   | substring {s lo hi : Expr} :
       InFragment s → InFragment lo → InFragment hi → InFragment (.substring s lo hi)
+  | index {arr idx : Expr} : InFragment arr → InFragment idx → InFragment (.index arr idx)
+  | arraySlice {arr lo hi : Expr} :
+      InFragment arr → InFragment lo → InFragment hi → InFragment (.arraySlice arr lo hi)
+  | arrayReverse {arr : Expr} : InFragment arr → InFragment (.arrayReverse arr)
 
 /-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
 their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
@@ -57,6 +61,9 @@ def inFragmentB : Expr → Bool
   | .strUn _ x => inFragmentB x
   | .strBin _ lhs rhs => inFragmentB lhs && inFragmentB rhs
   | .substring x lo hi => inFragmentB x && inFragmentB lo && inFragmentB hi
+  | .index arr idx => inFragmentB arr && inFragmentB idx
+  | .arraySlice arr lo hi => inFragmentB arr && inFragmentB lo && inFragmentB hi
+  | .arrayReverse arr => inFragmentB arr
   | _ => false
 
 theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
@@ -88,16 +95,22 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
     rw [inFragmentB] at h
     simp only [Bool.and_eq_true] at h
     exact .substring (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
+  | .index _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .index (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .arraySlice _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .arraySlice (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
+  | .arrayReverse _, h => by rw [inFragmentB] at h; exact .arrayReverse (of_inFragmentB h)
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
   | .ctor _ _ _ _, h => by simp [inFragmentB] at h
   | .proj _ _, h => by simp [inFragmentB] at h
   | .matchE _ _, h => by simp [inFragmentB] at h
   | .arrayLit _ _, h => by simp [inFragmentB] at h
-  | .index _ _, h => by simp [inFragmentB] at h
   | .length _, h => by simp [inFragmentB] at h
-  | .arraySlice _ _ _, h => by simp [inFragmentB] at h
-  | .arrayReverse _, h => by simp [inFragmentB] at h
   | .mapE _ _ _, h => by simp [inFragmentB] at h
   | .filterE _ _ _, h => by simp [inFragmentB] at h
   | .findE _ _ _, h => by simp [inFragmentB] at h
@@ -127,6 +140,9 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .strUn hx => .strUn hx.typeChecked
   | .strBin hl hr => .strBin hl.typeChecked hr.typeChecked
   | .substring hs hlo hhi => .substring hs.typeChecked hlo.typeChecked hhi.typeChecked
+  | .index harr hidx => .index harr.typeChecked hidx.typeChecked
+  | .arraySlice harr hlo hhi => .arraySlice harr.typeChecked hlo.typeChecked hhi.typeChecked
+  | .arrayReverse harr => .arrayReverse harr.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -366,6 +382,82 @@ theorem strSlice_trap {s : String} {a b : Int} {err : Err}
     rcases hguard with (hbad | hbad) | hbad <;>
       simp [Js.Runtime.strSlice, Js.Runtime.fail, Err.code, Int.ofNat_eq_natCast] <;> omega
   · simp at h
+
+theorem encodeList_eq (xs : List Value) : encodeList xs = xs.map encodeValue := by
+  induction xs with
+  | nil => simp [encodeList]
+  | cons x rest ih => simp [encodeList, ih]
+
+/-- The array reads count elements on both sides. The model's extra guard against an index outside the
+safe integers is the one the reference semantics gets from the index being an `Int53` at all. -/
+theorem at?_ok {xs : List Value} {n : Int} {v : Value}
+    (hn : int53Min ≤ n ∧ n ≤ int53Max) (hlo : ¬(n < 0)) (hg : xs[n.toNat]? = some v) :
+    Js.Runtime.at? (encodeList xs) n = .ok (encodeValue v) := by
+  simp only [int53Min, int53Max] at hn
+  have hlt : n.toNat < xs.length := by
+    rcases Nat.lt_or_ge n.toNat xs.length with hlt | hge
+    · exact hlt
+    · rw [List.getElem?_eq_none hge] at hg
+      simp at hg
+  have h1 : decide (n < Js.Runtime.safeMin) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMin]; omega)
+  have h2 : decide (Js.Runtime.safeMax < n) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMax]; omega)
+  simp [Js.Runtime.at?, encodeList_eq, h1, h2, List.getElem?_map, hg, List.length_map,
+    Int.ofNat_eq_natCast] <;> omega
+
+theorem at?_err {xs : List Value} {n : Int} (hbad : n < 0 ∨ (xs.length : Int) ≤ n) :
+    Js.Runtime.at? (encodeList xs) n = .error "indexOutOfBounds" := by
+  rcases hbad with h | h <;>
+    simp [Js.Runtime.at?, encodeList_eq, Js.Runtime.fail, List.length_map,
+      Js.Runtime.safeMin, Js.Runtime.safeMax] <;> omega
+
+theorem arrSlice_of_sliceArr {xs : List Value} {a b : Int} {v : Value}
+    (ha : int53Min ≤ a ∧ a ≤ int53Max) (hb : int53Min ≤ b ∧ b ≤ int53Max)
+    (h : sliceArr (.arr xs) (.int53 a) (.int53 b) = .ok v) :
+    Js.Runtime.arrSlice (encodeList xs) a b = .ok (encodeValue v) := by
+  simp only [sliceArr] at h
+  split at h
+  · simp at h
+  rename_i hguard
+  simp only [Except.ok.injEq] at h
+  subst h
+  simp only [int53Min, int53Max] at ha hb
+  simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, decide_eq_false_iff_not,
+    Int.ofNat_eq_natCast] at hguard
+  have h1 : decide (a < Js.Runtime.safeMin) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMin]; omega)
+  have h2 : decide (Js.Runtime.safeMax < a) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMax]; omega)
+  have h3 : decide (b < Js.Runtime.safeMin) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMin]; omega)
+  have h4 : decide (Js.Runtime.safeMax < b) = false :=
+    decide_eq_false (by simp only [Js.Runtime.safeMax]; omega)
+  simp [Js.Runtime.arrSlice, h1, h2, h3, h4, encodeValue, encodeList_eq, Int.ofNat_eq_natCast,
+    List.map_take, List.map_drop] <;> omega
+
+theorem arrSlice_trap {xs : List Value} {a b : Int} {err : Err}
+    (h : sliceArr (.arr xs) (.int53 a) (.int53 b) = .error err) :
+    Js.Runtime.arrSlice (encodeList xs) a b = .error err.code := by
+  simp only [sliceArr] at h
+  split at h
+  · rename_i hguard
+    simp only [Except.error.injEq] at h
+    subst h
+    simp only [Bool.or_eq_true, decide_eq_true_eq, Int.ofNat_eq_natCast] at hguard
+    rcases hguard with (hbad | hbad) | hbad <;>
+      simp [Js.Runtime.arrSlice, Js.Runtime.fail, Err.code, encodeList_eq,
+        Int.ofNat_eq_natCast] <;> omega
+  · simp at h
+
+theorem helper_at (xs : List Js.JsValue) (i : Int) :
+    Js.helper "__at" [.arr xs, .num i] = some (Js.Runtime.at? xs i) := rfl
+
+theorem helper_aslice (xs : List Js.JsValue) (a b : Int) :
+    Js.helper "__aslice" [.arr xs, .num a, .num b] = some (Js.Runtime.arrSlice xs a b) := rfl
+
+theorem helper_areverse (xs : List Js.JsValue) :
+    Js.helper "__areverse" [.arr xs] = some (.ok (.arr xs.reverse)) := rfl
 
 theorem helper_i53 (a : Int) : Js.helper "__i53" [.num a] = some (Js.Runtime.i53 a) := rfl
 
@@ -1357,6 +1449,75 @@ theorem compileExpr_bin_errR {p : Program} {ctx : Compile.Ctx} {op : BinOp} {lhs
              | exact eventuallyErr_binaryR (by simp) (by simp) ha hr
              | exact eventuallyErr_call2R ha hr)
         | simp at hc
+
+private theorem compileExpr_index_parts {p : Program} {ctx : Compile.Ctx} {arr idx : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.index arr idx) = .ok (je, ty)) :
+    ∃ jarr jidx, Compile.compileExpr p ctx arr = .ok (jarr, .array ty)
+      ∧ Compile.compileExpr p ctx idx = .ok (jidx, .int53)
+      ∧ je = .call "__at" [jarr, jidx] := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · simp at hc
+  rename_i idxPair hci
+  obtain ⟨jidx, tidx⟩ := idxPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    rename_i hidx
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jidx, hc.2 ▸ hta ▸ hca, Ty.eq_of_not_bne hidx ▸ hci, hc.1.symm⟩
+  · simp at hc
+
+private theorem compileExpr_arraySlice_parts {p : Program} {ctx : Compile.Ctx} {arr lo hi : Expr}
+    {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.arraySlice arr lo hi) = .ok (je, ty)) :
+    ∃ jarr jlo jhi elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ Compile.compileExpr p ctx lo = .ok (jlo, .int53)
+      ∧ Compile.compileExpr p ctx hi = .ok (jhi, .int53)
+      ∧ je = .call "__aslice" [jarr, jlo, jhi] ∧ ty = .array elem := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · simp at hc
+  rename_i loPair hclo
+  obtain ⟨jlo, tlo⟩ := loPair
+  split at hc
+  · simp at hc
+  rename_i hiPair hchi
+  obtain ⟨jhi, thi⟩ := hiPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    rename_i hbounds
+    simp only [Bool.or_eq_true, not_or] at hbounds
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jlo, jhi, elem, hta ▸ hca, Ty.eq_of_not_bne hbounds.1 ▸ hclo,
+      Ty.eq_of_not_bne hbounds.2 ▸ hchi, hc.1.symm, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_arrayReverse_parts {p : Program} {ctx : Compile.Ctx} {arr : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.arrayReverse arr) = .ok (je, ty)) :
+    ∃ jarr elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ je = .call "__areverse" [jarr] ∧ ty = .array elem := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, elem, hta ▸ hca, hc.1.symm, hc.2.symm⟩
+  · simp at hc
 
 /-- The generated environment binds everything the reference one does, to the encoding of the same
 value. It may bind more: a public function's entry check leaves the raw parameters in scope, and the
@@ -2938,6 +3099,102 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
         = some (Js.Runtime.strSlice t a b) from rfl,
         strSlice_of_sliceStr (int53_range hlot) (int53_range hhit) he]
 
+  | index harr hidx iharr ihidx =>
+    rename_i arrE idxE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, jidx, hca, hci, hje⟩ := compileExpr_index_parts hc
+      subst hje
+      rw [evalExpr_index] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      split at he
+      · simp at he
+      rename_i iv hiv
+      have hat := typeSound p f ctx env arrE jarr (.array ty) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      have hit := typeSound p f ctx env idxE jidx .int53 iv hidx.typeChecked henv hci hiv
+      obtain ⟨n, rfl⟩ := hasTy_int53_inv hit
+      split at he
+      · rename_i xs' n' hxs hn'
+        injection hxs with hxs
+        subst hxs
+        injection hn' with hn'
+        subst hn'
+        split at he
+        · simp at he
+        rename_i hin
+        simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, decide_eq_false_iff_not] at hin
+        split at he
+        · rename_i w hw
+          simp only [Except.ok.injEq] at he
+          subst he
+          refine eventually_call2 (by simpa [encodeValue] using iharr henv hjenv hca hav)
+            (by simpa [encodeValue] using ihidx henv hjenv hci hiv) ?_
+          rw [helper_at, at?_ok (int53_range hit) hin.1 hw]
+        · simp at he
+      · rename_i hno
+        exact (hno xs n rfl rfl).elim
+  | arraySlice harr hlo hhi iharr ihlo ihhi =>
+    rename_i arrE loE hiE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, jlo, jhi, elem, hca, hclo, hchi, hje, -⟩ := compileExpr_arraySlice_parts hc
+      subst hje
+      rw [evalExpr_arraySlice] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      split at he
+      · simp at he
+      rename_i lov hlov
+      split at he
+      · simp at he
+      rename_i hiv hhiv
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+      have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+      obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
+      obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
+      refine eventually_call3 (by simpa [encodeValue] using iharr henv hjenv hca hav)
+        (by simpa [encodeValue] using ihlo henv hjenv hclo hlov)
+        (by simpa [encodeValue] using ihhi henv hjenv hchi hhiv) ?_
+      rw [helper_aslice, arrSlice_of_sliceArr (int53_range hlot) (int53_range hhit) he]
+  | arrayReverse harr iharr =>
+    rename_i arrE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jarr, elem, hca, hje, -⟩ := compileExpr_arrayReverse_parts hc
+      subst hje
+      rw [evalExpr_arrayReverse] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        simp only [Except.ok.injEq] at he
+        subst he
+        refine eventually_call1 (by simpa [encodeValue] using iharr henv hjenv hca hav) ?_
+        rw [helper_areverse]
+        simp [encodeValue, encodeList_eq]
+      · rename_i hne
+        exact (hne xs rfl).elim
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -3731,5 +3988,117 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
         (by simpa [encodeValue] using fragment_correct_in p m hhi henv hjenv hchi hhiv) ?_
       rw [show Js.helper "__substring" [Js.JsValue.str t, Js.JsValue.num a, Js.JsValue.num b]
         = some (Js.Runtime.strSlice t a b) from rfl, strSlice_trap he]
+
+  | index harr hidx iharr ihidx =>
+    rename_i arrE idxE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, jidx, hca, hci, hje⟩ := compileExpr_index_parts hc
+      subst hje
+      rw [evalExpr_index] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2L (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array ty) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+        simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav
+      split at he
+      · rename_i e0 hie
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2R harrv (ihidx henv hcov hjenv hci hie hne)
+      rename_i iv hiv
+      have hit := typeSound p f ctx env idxE jidx .int53 iv hidx.typeChecked henv hci hiv
+      obtain ⟨n, rfl⟩ := hasTy_int53_inv hit
+      have hnv : Eventually m jenv jidx (.num n) := by
+        simpa [encodeValue] using fragment_correct_in p m hidx henv hjenv hci hiv
+      split at he
+      · rename_i xs' n' hxs hn'
+        injection hxs with hxs
+        subst hxs
+        injection hn' with hn'
+        subst hn'
+        refine eventuallyErr_call2_helper harrv hnv ?_
+        rw [helper_at]
+        split at he
+        · rename_i hbad
+          obtain rfl : err = Err.indexOutOfBounds := (Except.error.inj he).symm
+          simp only [Bool.or_eq_true, decide_eq_true_eq] at hbad
+          rw [at?_err hbad]
+          rfl
+        · rename_i hin
+          simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, decide_eq_false_iff_not] at hin
+          split at he
+          · simp at he
+          · rename_i hnone
+            rcases Nat.lt_or_ge n.toNat xs.length with hlt | hge
+            · rw [List.getElem?_eq_getElem hlt] at hnone; simp at hnone
+            · exact absurd (by omega : (xs.length : Int) ≤ n) hin.2
+      · rename_i hno
+        exact (hno xs n rfl rfl).elim
+  | arraySlice harr hlo hhi iharr ihlo ihhi =>
+    rename_i arrE loE hiE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, jlo, jhi, elem, hca, hclo, hchi, hje, -⟩ := compileExpr_arraySlice_parts hc
+      subst hje
+      rw [evalExpr_arraySlice] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_1 (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+        simpa [encodeValue] using fragment_correct_in p m harr henv hjenv hca hav
+      split at he
+      · rename_i e0 hloe
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_2 harrv (ihlo henv hcov hjenv hclo hloe hne)
+      rename_i lov hlov
+      have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+      obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
+      have hav' : Eventually m jenv jlo (.num a) := by
+        simpa [encodeValue] using fragment_correct_in p m hlo henv hjenv hclo hlov
+      split at he
+      · rename_i e0 hhie
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_3 harrv hav' (ihhi henv hcov hjenv hchi hhie hne)
+      rename_i hiv hhiv
+      have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+      obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
+      refine eventuallyErr_call3_helper harrv hav'
+        (by simpa [encodeValue] using fragment_correct_in p m hhi henv hjenv hchi hhiv) ?_
+      rw [helper_aslice, arrSlice_trap he]
+  | arrayReverse harr iharr =>
+    rename_i arrE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jarr, elem, hca, hje, -⟩ := compileExpr_arrayReverse_parts hc
+      subst hje
+      rw [evalExpr_arrayReverse] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call1 (iharr henv hcov hjenv hca hae hne)
+      rename_i av hav
+      have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      split at he
+      · simp at he
+      · rename_i hne'
+        exact (hne' xs rfl).elim
 
 end LeanTs.Correct
