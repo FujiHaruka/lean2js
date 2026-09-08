@@ -467,13 +467,13 @@ export function total(__p0) {
 export function headOr(__p0, __p1) {
   const xs = __ck(__p0, ["array", ["int53"]]);
   const fallback = __ck(__p1, ["int53"]);
-  return (((xs).length === 0) ? fallback : __at(xs, 0));
+  return ((__i53((xs).length) === 0) ? fallback : __at(xs, 0));
 }
 
 /** firstTracking : (states : Array OrderState) → Option String */
 export function firstTracking(__p0) {
   const states = __ck(__p0, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
-  return (((states).length === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
+  return ((__i53((states).length) === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
 }
 
 /** pageOf : (xs : Array Int53, lo : Int53, hi : Int53) → Array Int53 */
@@ -577,13 +577,13 @@ export function settleMessage(__p0) {
 /** remainingItems : (page : Paginated Money) → Int53 */
 export function remainingItems(__p0) {
   const page = __ck(__p0, ["ctors", [["Paginated", [["items", ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]], ["total", ["int53"]]]]]]);
-  return __i53(((page).total - ((page).items).length));
+  return __i53(((page).total - __i53(((page).items).length)));
 }
 
 /** firstPage : (amounts : Array Int53) → Paginated Int53 */
 export function firstPage(__p0) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
-  return { "tag": "Paginated", "items": amounts, "total": (amounts).length };
+  return { "tag": "Paginated", "items": amounts, "total": __i53((amounts).length) };
 }
 
 /** validateQuantity : (quantity : Int53) → Validated String Int53 */
@@ -595,7 +595,7 @@ export function validateQuantity(__p0) {
 /** validationMessage : (outcome : Validated String Int53) → String */
 export function validationMessage(__p0) {
   const outcome = __ck(__p0, ["ctors", [["valid", [["value", ["int53"]]]], ["invalid", [["errors", ["array", ["string"]]]]]]]);
-  return ((__s) => ((((__s).tag === "valid") ? ((value) => (quantityLabel(value)))((__s).value) : ((errors) => ((((errors).length === 0) ? "refused" : __at(errors, 0))))((__s).errors))))(outcome);
+  return ((__s) => ((((__s).tag === "valid") ? ((value) => (quantityLabel(value)))((__s).value) : ((errors) => (((__i53((errors).length) === 0) ? "refused" : __at(errors, 0))))((__s).errors))))(outcome);
 }
 
 /** storedCoupon : (campaign : String, entered : String) → String */
@@ -623,14 +623,14 @@ export function mentionsTerm(__p0, __p1) {
 export function fieldCount(__p0, __p1) {
   const row = __ck(__p0, ["string"]);
   const separator = __ck(__p1, ["string"]);
-  return (__split(row, separator)).length;
+  return __i53((__split(row, separator)).length);
 }
 
 /** truncateLabel : (label : String, limit : Int53) → String */
 export function truncateLabel(__p0, __p1) {
   const label = __ck(__p0, ["string"]);
   const limit = __ck(__p1, ["int53"]);
-  return ((__strlen(label) <= limit) ? label : (__substring(label, 0, limit) + "..."));
+  return ((__i53(__strlen(label)) <= limit) ? label : (__substring(label, 0, limit) + "..."));
 }
 
 /** isSpreadsheet : (fileName : String) → Bool */
@@ -695,7 +695,7 @@ export function withdrawn(__p0, __p1) {
 /** catalogueSize : (prices : Dict Int53) → Int53 */
 export function catalogueSize(__p0) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
-  return (prices).size;
+  return __i53((prices).size);
 }
 
 //# sourceMappingURL=index.js.map

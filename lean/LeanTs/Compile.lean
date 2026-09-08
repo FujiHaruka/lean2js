@@ -473,12 +473,14 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       if tidx != .int53 then .error "an array index must be an Int53"
       else .ok (.call "__at" [jarr, jidx], elem)
     | ty => .error s!"index expects an Array, not {ty.render}"
+  -- `__i53` is dead on any length a real JS engine can produce. It is what makes the model agree with
+  -- `eval`, which traps on a length outside Int53 and has no bound on how long a list may be.
   | .length arr => do
     let (jarr, tarr) ← compileExpr p ctx arr
     match tarr with
-    | .array _ => .ok (.member jarr "length", .int53)
-    | .string => .ok (.call "__strlen" [jarr], .int53)
-    | .dict _ => .ok (.member jarr "size", .int53)
+    | .array _ => .ok (.call "__i53" [.member jarr "length"], .int53)
+    | .string => .ok (.call "__i53" [.call "__strlen" [jarr]], .int53)
+    | .dict _ => .ok (.call "__i53" [.member jarr "size"], .int53)
     | ty => .error s!"length expects an Array, a String or a Dict, not {ty.render}"
   | .arraySlice arr lo hi => do
     let (jarr, tarr) ← compileExpr p ctx arr
