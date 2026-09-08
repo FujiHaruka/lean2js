@@ -851,6 +851,12 @@ def DistinctNames : List Param → Prop
   | [] => True
   | param :: ps => (ps.map (·.name)).contains param.name = false ∧ DistinctNames ps
 
+/-- No parameter is function-typed, which is what `Decl.isPublic` decides. The entry emits no check for
+one, so it is the line the refusing direction stops at. -/
+def NoFnParams : List Param → Prop
+  | [] => True
+  | param :: ps => param.ty.isFn = false ∧ NoFnParams ps
+
 /-- What the entry check leaves on top of the environment, newest first: the last parameter is checked
 last, so it ends up in front. -/
 def checkedBindings : List Param → List Value → Js.JsEnv
@@ -870,10 +876,26 @@ theorem eval_check (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (
   show (if Js.checkTy v d = true then Except.ok v else Except.error "typeError") = .ok v
   rw [if_pos hc]
 
+theorem eval_check_fail (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
+    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy v d = false) :
+    Js.eval m (f + 1) jenv (.check d x) = .error "typeError" := by
+  rw [Js.eval.eq_def]
+  simp only [hx]
+  show (if Js.checkTy v d = true then Except.ok v else Except.error "typeError")
+    = .error "typeError"
+  rw [if_neg (by simp [hc])]
+
 theorem evalStmts_const (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name : String)
     (val : Js.Expr) (v : Js.JsValue) (rest : List Js.Stmt) (h : Js.eval m f jenv val = .ok v) :
     Js.evalStmts m f jenv (.const name val :: rest)
       = Js.evalStmts m f ((name, v) :: jenv) rest := by
+  rw [Js.evalStmts.eq_def]
+  simp only [h]
+  rfl
+
+theorem evalStmts_const_fail (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name : String)
+    (val : Js.Expr) (e : String) (rest : List Js.Stmt) (h : Js.eval m f jenv val = .error e) :
+    Js.evalStmts m f jenv (.const name val :: rest) = .error e := by
   rw [Js.evalStmts.eq_def]
   simp only [h]
   rfl
@@ -926,6 +948,59 @@ theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat) :
             (eval_ident m g jenv _ _ hraw.1)
             (checkTy_encodeValue p param.ty _ desc a hdesc htyped.1)) (Except.ok.inj hchecks).symm
             hrest
+termination_by params => params.length
+
+/-- Walking the same entry, the other way. At each parameter the check either throws or hands back a
+`Value` the argument is the encoding of, so reaching the body at all means every argument decoded. -/
+theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (g : Nat) :
+    ∀ (params : List Param) (jargs : List Js.JsValue) (i : Nat) (checks rest : List Js.Stmt)
+      (jenv : Js.JsEnv),
+      paramChecks p i params = .ok checks →
+      NoFnParams params →
+      Unreserved params →
+      params.length = jargs.length →
+      RawBound jenv i jargs →
+      Js.dictKeysDistinctList jargs = true →
+      Js.evalStmts m (g + 2) jenv (checks ++ rest) = .error "typeError" ∨
+        ∃ args, jargs = args.map encodeValue ∧ ParamsTyped p params args
+  | [], [], _, _, _, _, _, _, _, _, _, _ => Or.inr ⟨[], by simp, trivial⟩
+  | [], _ :: _, _, _, _, _, _, _, _, hlen, _, _ => by simp at hlen
+  | _ :: _, [], _, _, _, _, _, _, _, hlen, _, _ => by simp at hlen
+  | param :: ps, ja :: jas, i, checks, rest, jenv, hchecks, hfn, hres, hlen, hraw, hk => by
+    rw [paramChecks.eq_def] at hchecks
+    simp only at hchecks
+    split at hchecks
+    · rename_i hif; rw [hfn.1] at hif; simp at hif
+    · cases hdesc : tyDesc p (tyDescBudget p param.ty) param.ty with
+      | error e => rw [hdesc] at hchecks; exact (errNeOk hchecks).elim
+      | ok desc =>
+        cases hrest : paramChecks p (i + 1) ps with
+        | error e => rw [hdesc, hrest] at hchecks; exact (errNeOk hchecks).elim
+        | ok cs =>
+          rw [hdesc, hrest] at hchecks
+          obtain rfl :
+              checks = Js.Stmt.const param.name (.check desc (.ident (rawParam i))) :: cs :=
+            (Except.ok.inj hchecks).symm
+          rw [dictKeysDistinctList_cons, Bool.and_eq_true] at hk
+          simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+          have hident : Js.eval m (g + 1) jenv (.ident (rawParam i)) = .ok ja :=
+            eval_ident m g jenv _ _ hraw.1
+          cases hcheck : Js.checkTy ja desc with
+          | false =>
+            refine Or.inl ?_
+            rw [List.cons_append]
+            exact evalStmts_const_fail m (g + 2) jenv param.name _ _ (cs ++ rest)
+              (eval_check_fail m (g + 1) jenv desc _ ja hident hcheck)
+          | true =>
+            rw [List.cons_append,
+              evalStmts_const m (g + 2) jenv param.name _ ja (cs ++ rest)
+                (eval_check m (g + 1) jenv desc _ ja hident hcheck)]
+            rcases evalStmts_paramChecks_sound m p g ps jas (i + 1) cs rest _ hrest hfn.2 hres.2
+              hlen (RawBound.cons_unreserved hres.1 hraw.2) hk.2 with hfail | ⟨args, rfl, htyped⟩
+            · exact Or.inl hfail
+            · refine Or.inr ?_
+              obtain ⟨v, rfl, hv⟩ := checkTy_sound p ja param.ty _ desc hdesc hcheck hk.1
+              exact ⟨v :: args, by simp, hv, htyped⟩
 termination_by params => params.length
 
 /-- The compiler's context and the reference environment are built from the same parameter list in the
@@ -1397,5 +1472,71 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
     evalStmts_paramChecks m p g d.params args 0 checks stmts _ hchecks htyped hres
       (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
   exact hgB (g + 2) (by omega)
+
+/-! ## One public function refuses
+
+The mirror of `decl_correct`. The entry check never looks at the body, so this direction does not ask
+for `InFragment`: it holds of every public declaration. What it does ask for is `isPublic` itself — a
+function-typed parameter is handed straight through, because JS offers no way to check a function's
+signature at run time. -/
+
+/-- The arguments the reference semantics lets into the body: a decoding of the JS arguments whose
+length and types are the ones the declaration asked for. -/
+def EvalAccepts (p : Program) (d : Decl) (jargs : List Js.JsValue) : Prop :=
+  ∃ args, jargs = args.map encodeValue ∧ d.params.length = args.length ∧
+    ParamsTyped p d.params args
+
+theorem noFnParams_of_isPublic :
+    ∀ (params : List Param), (params.all fun param => !param.ty.isFn) = true → NoFnParams params
+  | [], _ => trivial
+  | param :: ps, h => by
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    exact ⟨by simpa using h.1, noFnParams_of_isPublic ps h.2⟩
+
+/-- What a caller of an exported function cannot get past. If no decoding of the JS arguments is one the
+reference semantics would accept — the wrong number of them, or one whose shape breaks the declared type
+— the generated module's function throws instead of running the body.
+
+`dictKeysDistinctList` is the assumption the model needs and the runtime supplies: the check is handed a
+`Map`, which cannot hold one key twice, where this model holds a dictionary as an association list.
+
+The fuel is not existential the way `decl_correct`'s is. The check is one call of `checkTy`, a `Bool`
+function whose recursion the model does not pay for, so two is enough however deep the type. -/
+theorem decl_refuses (p : Program) (m : Js.Module) (fn : String) (d : Decl)
+    (jargs : List Js.JsValue)
+    (hm : compileProgram p = .ok m)
+    (hd : p.find? fn = some d)
+    (hpub : d.isPublic = true)
+    (hk : Js.dictKeysDistinctList jargs = true)
+    (hno : ¬ EvalAccepts p d jargs) :
+    ∀ g, 2 ≤ g → Js.callFunctionAt m g fn jargs = .error "typeError" := by
+  intro g hg
+  obtain ⟨g', rfl⟩ : ∃ g', g = g' + 2 := ⟨g - 2, by omega⟩
+  obtain ⟨j, f, hf, hfindf⟩ := compileProgram_find hm hd
+  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody⟩ :=
+    compileDecl_shape hf
+  have htypes : ({ p with decls := p.decls.take j } : Program).types = p.types := rfl
+  rw [paramChecks_types_irrel htypes] at hchecks
+  rw [Js.callFunctionAt, hfindf]
+  simp only [hparams, hfbody]
+  by_cases hlen : d.params.length = jargs.length
+  · rw [if_neg (by simp [rawParams_length, hlen])]
+    rcases evalStmts_paramChecks_sound m p g' d.params jargs 0 checks stmts _ hchecks
+      (noFnParams_of_isPublic d.params (by simpa [Decl.isPublic] using hpub)) hres hlen
+      (rawBound_bindAll d.params jargs 0 hlen) hk with hfail | ⟨args, rfl, htyped⟩
+    · exact hfail
+    · exact absurd ⟨args, rfl, by simpa using hlen, htyped⟩ hno
+  · rw [if_pos (by simp [rawParams_length]; exact hlen)]
+
+/-- The same at the fuel the shipped artifact runs at. -/
+theorem decl_refuses_call (p : Program) (m : Js.Module) (fn : String) (d : Decl)
+    (jargs : List Js.JsValue)
+    (hm : compileProgram p = .ok m)
+    (hd : p.find? fn = some d)
+    (hpub : d.isPublic = true)
+    (hk : Js.dictKeysDistinctList jargs = true)
+    (hno : ¬ EvalAccepts p d jargs) :
+    Js.callFunction m fn jargs = .error "typeError" :=
+  decl_refuses p m fn d jargs hm hd hpub hk hno 10000 (by omega)
 
 end LeanTs.Decl
