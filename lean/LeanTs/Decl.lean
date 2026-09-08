@@ -10,7 +10,7 @@ arguments, the environment that check hands the body, and the fuel the model spe
 
 namespace LeanTs.Decl
 
-open Core LeanTs LeanTs.Compile
+open Core LeanTs LeanTs.Compile LeanTs.Correct
 
 /-! ## The entry check
 
@@ -400,5 +400,238 @@ theorem checkEntries_encodeFields (p : Program) :
 termination_by _ _ _ es => sizeOf es
 
 end
+
+/-! ## The entry environment
+
+A public function's body runs under two layers: the checked parameters the entry left on top, and the raw
+`__p0`, `__p1`, … the check read them from. `Value.hasTy` knows nothing about either, so the two have to
+be lined up by hand. The reserved prefix is what keeps the layers apart. -/
+
+theorem repr_inj {a b : Nat} (h : a.repr = b.repr) : a = b := by
+  have hd : Nat.toDigits 10 a = Nat.toDigits 10 b := by
+    rw [← Nat.toList_repr, ← Nat.toList_repr, h]
+  have ha := Nat.ofDigitChars_toDigits (b := 10) (n := a) (by omega) (by omega)
+  have hb := Nat.ofDigitChars_toDigits (b := 10) (n := b) (by omega) (by omega)
+  rw [hd] at ha
+  omega
+
+theorem rawParam_reserved (i : Nat) : (rawParam i).startsWith reservedPrefix = true := by
+  show ("__p" ++ toString i).startsWith "__" = true
+  simp [String.toList_append]
+
+theorem rawParam_inj {i j : Nat} (h : rawParam i = rawParam j) : i = j := by
+  have h' : ("__p" ++ toString i).toList = ("__p" ++ toString j).toList := by
+    simpa [rawParam] using congrArg String.toList h
+  rw [String.toList_append, String.toList_append] at h'
+  exact repr_inj (by simpa using String.toList_inj.mp (List.append_cancel_left h'))
+
+theorem validateIdent_unreserved {kind name : String} (h : validateIdent kind name = .ok ()) :
+    name.startsWith reservedPrefix = false := by
+  cases hc : name.startsWith reservedPrefix with
+  | false => rfl
+  | true =>
+    unfold validateIdent at h
+    split at h; · exact (errNeOk h).elim
+    split at h; · exact (errNeOk h).elim
+    split at h; · exact (errNeOk h).elim
+    exact (errNeOk h).elim
+
+theorem ne_rawParam {name : String} {i : Nat} (h : name.startsWith reservedPrefix = false) :
+    (name == rawParam i) = false := by
+  refine beq_eq_false_iff_ne.mpr fun hne => ?_
+  rw [hne, rawParam_reserved] at h
+  exact Bool.noConfusion h
+
+/-- Which raw name each argument is reachable under. Stated as a lookup rather than as a shape so that
+the checked parameters the entry keeps stacking on top do not disturb it. -/
+def RawBound (jenv : Js.JsEnv) : Nat → List Value → Prop
+  | _, [] => True
+  | i, a :: as =>
+    ((jenv.find? (·.1 == rawParam i)).map (·.2)) = some (encodeValue a) ∧ RawBound jenv (i + 1) as
+
+theorem RawBound.cons_unreserved {jenv : Js.JsEnv} {name : String} {v : Js.JsValue} {i : Nat}
+    (hname : name.startsWith reservedPrefix = false) :
+    ∀ {as : List Value}, RawBound jenv i as → RawBound ((name, v) :: jenv) i as
+  | [], _ => trivial
+  | _ :: as, h => by
+    refine ⟨?_, RawBound.cons_unreserved hname h.2⟩
+    rw [List.find?_cons, ne_rawParam hname]
+    exact h.1
+
+theorem RawBound.cons_raw {jenv : Js.JsEnv} {v : Js.JsValue} {i : Nat} :
+    ∀ {j : Nat} {as : List Value}, i < j → RawBound jenv j as →
+      RawBound ((rawParam i, v) :: jenv) j as
+  | _, [], _, _ => trivial
+  | j, _ :: as, hlt, h => by
+    refine ⟨?_, RawBound.cons_raw (by omega) h.2⟩
+    rw [List.find?_cons,
+      beq_eq_false_iff_ne.mpr (fun he => by have := rawParam_inj he; omega : rawParam i ≠ rawParam j)]
+    exact h.1
+
+theorem rawBound_bindAll : ∀ (params : List Param) (args : List Value) (i : Nat),
+    params.length = args.length →
+    RawBound (Js.bindAll (rawParams i params) (args.map encodeValue)) i args
+  | [], [], _, _ => trivial
+  | [], _ :: _, _, hlen => by simp at hlen
+  | _ :: _, [], _, hlen => by simp at hlen
+  | _ :: ps, a :: as, i, hlen => by
+    simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+    refine ⟨by simp [rawParams, List.map_cons, Js.bindAll], ?_⟩
+    exact RawBound.cons_raw (by omega) (rawBound_bindAll ps as (i + 1) hlen)
+
+/-- Every argument has the type its parameter declared. -/
+def ParamsTyped (p : Program) : List Param → List Value → Prop
+  | [], [] => True
+  | param :: ps, a :: as => Value.hasTy p a param.ty = true ∧ ParamsTyped p ps as
+  | _, _ => False
+
+def Unreserved : List Param → Prop
+  | [] => True
+  | param :: ps => param.name.startsWith reservedPrefix = false ∧ Unreserved ps
+
+def DistinctNames : List Param → Prop
+  | [] => True
+  | param :: ps => (ps.map (·.name)).contains param.name = false ∧ DistinctNames ps
+
+/-- What the entry check leaves on top of the environment, newest first: the last parameter is checked
+last, so it ends up in front. -/
+def checkedBindings : List Param → List Value → Js.JsEnv
+  | param :: ps, a :: as => checkedBindings ps as ++ [(param.name, encodeValue a)]
+  | _, _ => []
+
+theorem eval_ident (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name : String) (v : Js.JsValue)
+    (h : (jenv.find? (·.1 == name)).map (·.2) = some v) :
+    Js.eval m (f + 1) jenv (.ident name) = .ok v := by
+  rw [Js.eval.eq_def]; simp [h]
+
+theorem eval_check (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
+    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy v d = true) :
+    Js.eval m (f + 1) jenv (.check d x) = .ok v := by
+  rw [Js.eval.eq_def]
+  simp only [hx]
+  show (if Js.checkTy v d = true then Except.ok v else Except.error "typeError") = .ok v
+  rw [if_pos hc]
+
+theorem evalStmts_const (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name : String)
+    (val : Js.Expr) (v : Js.JsValue) (rest : List Js.Stmt) (h : Js.eval m f jenv val = .ok v) :
+    Js.evalStmts m f jenv (.const name val :: rest)
+      = Js.evalStmts m f ((name, v) :: jenv) rest := by
+  rw [Js.evalStmts.eq_def]
+  simp only [h]
+  rfl
+
+theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat) :
+    ∀ (params : List Param) (args : List Value) (i : Nat) (checks rest : List Js.Stmt)
+      (jenv : Js.JsEnv),
+      paramChecks p i params = .ok checks →
+      ParamsTyped p params args →
+      Unreserved params →
+      RawBound jenv i args →
+      Js.evalStmts m (g + 2) jenv (checks ++ rest)
+        = Js.evalStmts m (g + 2) (checkedBindings params args ++ jenv) rest
+  | [], [], _, checks, rest, jenv, hchecks, _, _, _ => by
+    rw [paramChecks.eq_def] at hchecks
+    simp only at hchecks
+    obtain rfl : checks = [] := (Except.ok.inj hchecks).symm
+    simp [checkedBindings]
+  | [], _ :: _, _, _, _, _, _, htyped, _, _ => by simp [ParamsTyped] at htyped
+  | _ :: _, [], _, _, _, _, _, htyped, _, _ => by simp [ParamsTyped] at htyped
+  | param :: ps, a :: as, i, checks, rest, jenv, hchecks, htyped, hres, hraw => by
+    rw [paramChecks.eq_def] at hchecks
+    simp only at hchecks
+    have hstep : ∀ (val : Js.Expr) (cs : List Js.Stmt),
+        Js.eval m (g + 2) jenv val = .ok (encodeValue a) →
+        checks = Js.Stmt.const param.name val :: cs →
+        paramChecks p (i + 1) ps = .ok cs →
+        Js.evalStmts m (g + 2) jenv (checks ++ rest)
+          = Js.evalStmts m (g + 2) (checkedBindings (param :: ps) (a :: as) ++ jenv) rest := by
+      intro val cs hval hcs hrest
+      subst hcs
+      rw [List.cons_append, evalStmts_const m (g + 2) jenv param.name val _ (cs ++ rest) hval,
+        evalStmts_paramChecks m p g ps as (i + 1) cs rest _ hrest htyped.2 hres.2
+          (RawBound.cons_unreserved hres.1 hraw.2)]
+      simp [checkedBindings]
+    split at hchecks
+    · cases hrest : paramChecks p (i + 1) ps with
+      | error e => rw [hrest] at hchecks; exact (errNeOk hchecks).elim
+      | ok cs =>
+        rw [hrest] at hchecks
+        exact hstep _ cs (eval_ident m (g + 1) jenv _ _ hraw.1) (Except.ok.inj hchecks).symm hrest
+    · cases hdesc : tyDesc p (tyDescBudget p param.ty) param.ty with
+      | error e => rw [hdesc] at hchecks; exact (errNeOk hchecks).elim
+      | ok desc =>
+        cases hrest : paramChecks p (i + 1) ps with
+        | error e => rw [hdesc, hrest] at hchecks; exact (errNeOk hchecks).elim
+        | ok cs =>
+          rw [hdesc, hrest] at hchecks
+          refine hstep _ cs (eval_check m (g + 1) jenv desc _ _
+            (eval_ident m g jenv _ _ hraw.1)
+            (checkTy_encodeValue p param.ty _ desc a hdesc htyped.1)) (Except.ok.inj hchecks).symm
+            hrest
+termination_by params => params.length
+
+/-- The compiler's context and the reference environment are built from the same parameter list in the
+same order, so the name each lookup lands on is the same one. -/
+theorem envTyped_bindParams (p : Program) :
+    ∀ (params : List Param) (args : List Value), ParamsTyped p params args →
+      EnvTyped p (bindParams params args) (params.map fun param => (param.name, param.ty))
+  | [], [], _ => by intro name ty v hctx _; simp at hctx
+  | [], _ :: _, htyped => by simp [ParamsTyped] at htyped
+  | _ :: _, [], htyped => by simp [ParamsTyped] at htyped
+  | param :: ps, a :: as, htyped => by
+    intro name ty v hctx henv
+    simp only [List.map_cons, List.find?_cons, Env.lookup?, bindParams] at hctx henv
+    cases hname : param.name == name with
+    | true =>
+      rw [hname] at hctx henv
+      simp only [Option.map_some] at hctx henv
+      obtain rfl : ty = param.ty := (Option.some.inj hctx).symm
+      obtain rfl : v = a := (Option.some.inj henv).symm
+      exact htyped.1
+    | false =>
+      rw [hname] at hctx henv
+      exact envTyped_bindParams p ps as htyped.2 name ty v hctx henv
+
+theorem checkedBindings_find_none :
+    ∀ (ps : List Param) (as : List Value) (nm : String),
+      (ps.map (·.name)).contains nm = false →
+      (checkedBindings ps as).find? (·.1 == nm) = none
+  | [], _, _, _ => by simp [checkedBindings]
+  | _ :: _, [], _, _ => by simp [checkedBindings]
+  | param :: ps, a :: as, nm, hc => by
+    simp only [List.map_cons, List.contains_cons, Bool.or_eq_false_iff] at hc
+    have hne : (param.name == nm) = false :=
+      beq_eq_false_iff_ne.mpr fun he => (beq_eq_false_iff_ne.mp hc.1) he.symm
+    simp only [checkedBindings, List.find?_append, checkedBindings_find_none ps as nm hc.2,
+      List.find?_cons, hne, List.find?_nil]
+    rfl
+
+/-- The entry check stacks the parameters newest-first, the opposite of `bindParams`. Distinct parameter
+names are what make the two agree anyway: only one binding can answer a lookup. -/
+theorem jsEnvAgrees_checkedBindings :
+    ∀ (params : List Param) (args : List Value) (jenv : Js.JsEnv),
+      params.length = args.length → DistinctNames params →
+      JsEnvAgrees (bindParams params args) (checkedBindings params args ++ jenv)
+  | [], [], _, _, _ => by intro name v hv; simp [Env.lookup?, bindParams] at hv
+  | [], _ :: _, _, hlen, _ => by simp at hlen
+  | _ :: _, [], _, hlen, _ => by simp at hlen
+  | param :: ps, a :: as, jenv, hlen, hdist => by
+    simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+    intro name v hv
+    simp only [Env.lookup?, bindParams, List.find?_cons] at hv
+    simp only [checkedBindings, List.append_assoc, List.find?_append]
+    cases hname : param.name == name with
+    | true =>
+      rw [hname] at hv
+      simp only [Option.map_some] at hv
+      obtain rfl : v = a := (Option.some.inj hv).symm
+      obtain rfl : param.name = name := eq_of_beq hname
+      rw [checkedBindings_find_none ps as param.name hdist.1]
+      simp
+    | false =>
+      rw [hname] at hv
+      have := jsEnvAgrees_checkedBindings ps as ((param.name, encodeValue a) :: jenv) hlen hdist.2
+        name v hv
+      simpa [List.find?_append] using this
 
 end LeanTs.Decl

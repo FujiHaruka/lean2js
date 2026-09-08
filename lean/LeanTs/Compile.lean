@@ -724,8 +724,27 @@ most `sizeOf ty`. -/
 def tyDescBudget (p : Program) (ty : Ty) : Nat := (ty.size + 1) * (p.types.length + 1)
 
 /-- The name an exported function takes its argument under, before the entry check hands it to the body
-under the declared name. -/
-private def rawParam (i : Nat) : String := s!"__p{i}"
+under the declared name. The reserved prefix is what keeps it out of reach of a declared name. -/
+def rawParam (i : Nat) : String := s!"__p{i}"
+
+def rawParams : Nat → List Param → List String
+  | _, [] => []
+  | i, _ :: rest => rawParam i :: rawParams (i + 1) rest
+
+/-- The `const` per parameter that an exported function opens with: the declared name bound to the raw
+argument, checked against the declared type unless the type is a function, which has no shape to check.
+
+Recursing rather than `zipIdx.mapM` for the reason `tyDesc` does: a proof about the entry has to unfold
+this to see what the body runs under. -/
+def paramChecks (p : Program) : Nat → List Param → Except String (List Js.Stmt)
+  | _, [] => .ok []
+  | i, param :: rest =>
+    if param.ty.isFn then do
+      .ok (Js.Stmt.const param.name (.ident (rawParam i)) :: (← paramChecks p (i + 1) rest))
+    else do
+      let desc ← tyDesc p (tyDescBudget p param.ty) param.ty
+      .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i)))
+        :: (← paramChecks p (i + 1) rest))
 
 def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
   validateIdent "function" d.name
@@ -738,15 +757,11 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
   if ty != d.ret then
     .error s!"{d.name} is declared to return {d.ret.render} but its body is {ty.render}"
   else do
-    let checks ← d.params.zipIdx.mapM fun (param, i) => do
-      if param.ty.isFn then .ok (Js.Stmt.const param.name (.ident (rawParam i)))
-      else do
-        let desc ← tyDesc p (tyDescBudget p param.ty) param.ty
-        .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i))))
+    let checks ← paramChecks p 0 d.params
     let sig := d.params.map fun param => s!"{param.name} : {param.ty.render}"
     .ok {
       name := d.name
-      params := d.params.zipIdx.map fun (_, i) => rawParam i
+      params := rawParams 0 d.params
       body := checks ++ stmts
       doc := s!"{d.name} : ({String.intercalate ", " sig}) → {d.ret.render}"
       exported := d.isPublic
