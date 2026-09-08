@@ -192,33 +192,44 @@ Exhaustiveness is this asked of an all-wildcard `q`, and an unreachable arm is t
 against the arms before it, so one function answers both.
 
 Patterns are type-checked before this runs, so a head that does not belong to its column's type cannot
-reach here. -/
-private partial def useful (types : List TypeDef) (rows : List (List Pat)) (q : List Pat)
-    (tys : List Ty) : Bool :=
-  match q, tys with
-  | [], _ => rows.isEmpty
-  | pat :: qs, ty :: tys =>
-    let sig := signature types ty
-    match pat with
-    | .lit l => useful types (specialize (.lit l) 0 rows) qs tys
-    | .ctor name args =>
-      let ftys := fieldTysOf sig (.ctor name)
-      useful types (specialize (.ctor name) ftys.length rows) (args ++ qs) (ftys ++ tys)
-    | _ =>
-      let seen := rows.filterMap fun row =>
-        match row with
-        | pat :: _ => headOf pat
-        | [] => none
-      match sig with
-      | some heads =>
-        if heads.all fun (h, _) => seen.contains h then
-          heads.any fun (h, fields) =>
-            let ftys := fields.map (·.2)
-            useful types (specialize h ftys.length rows)
-              (List.replicate ftys.length .wild ++ qs) (ftys ++ tys)
-        else useful types (defaultRows rows) qs tys
-      | none => useful types (defaultRows rows) qs tys
-  | _ :: _, [] => false
+reach here.
+
+`budget` is what makes this a total function, and a total function is what lets a proof unfold it. Each
+step either drops a column or expands a type into one constructor's fields; running out answers `true`,
+which fails an exhaustiveness check rather than passing one. -/
+def useful (types : List TypeDef) : Nat → List (List Pat) → List Pat → List Ty → Bool
+  | 0, _, _, _ => true
+  | budget + 1, rows, q, tys =>
+    match q, tys with
+    | [], _ => rows.isEmpty
+    | pat :: qs, ty :: tys =>
+      let sig := signature types ty
+      match pat with
+      | .lit l => useful types budget (specialize (.lit l) 0 rows) qs tys
+      | .ctor name args =>
+        let ftys := fieldTysOf sig (.ctor name)
+        useful types budget (specialize (.ctor name) ftys.length rows) (args ++ qs) (ftys ++ tys)
+      | _ =>
+        let seen := rows.filterMap fun row =>
+          match row with
+          | pat :: _ => headOf pat
+          | [] => none
+        match sig with
+        | some heads =>
+          if heads.all fun (h, _) => seen.contains h then
+            heads.any fun (h, fields) =>
+              let ftys := fields.map (·.2)
+              useful types budget (specialize h ftys.length rows)
+                (List.replicate ftys.length .wild ++ qs) (ftys ++ tys)
+          else useful types budget (defaultRows rows) qs tys
+        | none => useful types budget (defaultRows rows) qs tys
+    | _ :: _, [] => false
+
+/-- How far `useful` may descend on the columns it starts with. Each expansion either descends one edge
+of the declaration graph, which `validateType` keeps acyclic, or lands in a type argument the column
+carries; `tyDescBudget` counts the same thing for the entry check. -/
+def usefulBudget (types : List TypeDef) (tys : List Ty) : Nat :=
+  tys.foldr (fun t acc => (t.size + 1) * (types.length + 1) + acc) 1
 
 /-- The index of the first arm no value can reach, which is what replaces the old "every constructor
 exactly once" rule now that a wildcard may stand for several. -/
@@ -226,7 +237,8 @@ private def firstUnreachable (types : List TypeDef) (ty : Ty) (seen : List (List
     List Pat → Option Nat
   | [] => none
   | pat :: rest =>
-    if useful types seen [pat] [ty] then firstUnreachable types ty (seen ++ [[pat]]) (i + 1) rest
+    if useful types (usefulBudget types [ty]) seen [pat] [ty] then
+      firstUnreachable types ty (seen ++ [[pat]]) (i + 1) rest
     else some i
 
 /-- One lowered `match` arm: what the generated code tests before taking it, the names it binds and where
@@ -444,7 +456,7 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     let (jscrut, tscrut) ← compileExpr p ctx scrut
     let arms ← compileAlts p ctx tscrut alts
     let pats := alts.map Alt.pat
-    if useful p.types (pats.map ([·])) [.wild] [tscrut] then
+    if useful p.types (usefulBudget p.types [tscrut]) (pats.map ([·])) [.wild] [tscrut] then
       .error s!"match on {tscrut.render} is not exhaustive"
     else
       match firstUnreachable p.types tscrut [] 0 pats with
