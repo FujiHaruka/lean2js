@@ -1425,6 +1425,30 @@ theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Exp
     intro ctx
     rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
     simp only [iharr ctx]
+  | dictGet _ _ ihd ihk =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihd ctx, ihk ctx]
+  | dictHas _ _ ihd ihk =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihd ctx, ihk ctx]
+  | dictSet _ _ _ ihd ihk ihv =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihd ctx, ihk ctx, ihv ctx]
+  | dictKeys _ ihd =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihd ctx]
+  | dictValues _ ihd =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihd ctx]
+  | dictDelete _ _ ihd ihk =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihd ctx, ihk ctx]
 
 theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
     (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :

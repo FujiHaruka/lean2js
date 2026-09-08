@@ -45,6 +45,13 @@ inductive InFragment : Expr → Prop where
       InFragment arr → InFragment lo → InFragment hi → InFragment (.arraySlice arr lo hi)
   | arrayReverse {arr : Expr} : InFragment arr → InFragment (.arrayReverse arr)
   | length {arr : Expr} : InFragment arr → InFragment (.length arr)
+  | dictGet {d key : Expr} : InFragment d → InFragment key → InFragment (.dictGet d key)
+  | dictHas {d key : Expr} : InFragment d → InFragment key → InFragment (.dictHas d key)
+  | dictSet {d key val : Expr} :
+      InFragment d → InFragment key → InFragment val → InFragment (.dictSet d key val)
+  | dictKeys {d : Expr} : InFragment d → InFragment (.dictKeys d)
+  | dictValues {d : Expr} : InFragment d → InFragment (.dictValues d)
+  | dictDelete {d key : Expr} : InFragment d → InFragment key → InFragment (.dictDelete d key)
 
 /-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
 their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
@@ -66,6 +73,12 @@ def inFragmentB : Expr → Bool
   | .arraySlice arr lo hi => inFragmentB arr && inFragmentB lo && inFragmentB hi
   | .arrayReverse arr => inFragmentB arr
   | .length arr => inFragmentB arr
+  | .dictGet d key => inFragmentB d && inFragmentB key
+  | .dictHas d key => inFragmentB d && inFragmentB key
+  | .dictSet d key val => inFragmentB d && inFragmentB key && inFragmentB val
+  | .dictKeys d => inFragmentB d
+  | .dictValues d => inFragmentB d
+  | .dictDelete d key => inFragmentB d && inFragmentB key
   | _ => false
 
 theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
@@ -107,6 +120,24 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
     exact .arraySlice (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
   | .arrayReverse _, h => by rw [inFragmentB] at h; exact .arrayReverse (of_inFragmentB h)
   | .length _, h => by rw [inFragmentB] at h; exact .length (of_inFragmentB h)
+  | .dictGet _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .dictGet (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .dictHas _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .dictHas (of_inFragmentB h.1) (of_inFragmentB h.2)
+  | .dictSet _ _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .dictSet (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
+  | .dictKeys _, h => by rw [inFragmentB] at h; exact .dictKeys (of_inFragmentB h)
+  | .dictValues _, h => by rw [inFragmentB] at h; exact .dictValues (of_inFragmentB h)
+  | .dictDelete _ _, h => by
+    rw [inFragmentB] at h
+    simp only [Bool.and_eq_true] at h
+    exact .dictDelete (of_inFragmentB h.1) (of_inFragmentB h.2)
   | .fnRef _, h => by simp [inFragmentB] at h
   | .call _ _, h => by simp [inFragmentB] at h
   | .ctor _ _ _ _, h => by simp [inFragmentB] at h
@@ -119,12 +150,6 @@ theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InF
   | .quantE _ _ _ _, h => by simp [inFragmentB] at h
   | .reduceE _ _ _ _ _, h => by simp [inFragmentB] at h
   | .dictLit _ _, h => by simp [inFragmentB] at h
-  | .dictGet _ _, h => by simp [inFragmentB] at h
-  | .dictHas _ _, h => by simp [inFragmentB] at h
-  | .dictSet _ _ _, h => by simp [inFragmentB] at h
-  | .dictKeys _, h => by simp [inFragmentB] at h
-  | .dictValues _, h => by simp [inFragmentB] at h
-  | .dictDelete _ _, h => by simp [inFragmentB] at h
 
 /-- Everything the correctness proof reaches is also reached by type soundness, which the arithmetic
 cases need to know that the values in the environment match the types the compiler read. -/
@@ -146,6 +171,12 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .arraySlice harr hlo hhi => .arraySlice harr.typeChecked hlo.typeChecked hhi.typeChecked
   | .arrayReverse harr => .arrayReverse harr.typeChecked
   | .length harr => .length harr.typeChecked
+  | .dictGet hd hk => .dictGet hd.typeChecked hk.typeChecked
+  | .dictHas hd hk => .dictHas hd.typeChecked hk.typeChecked
+  | .dictSet hd hk hv => .dictSet hd.typeChecked hk.typeChecked hv.typeChecked
+  | .dictKeys hd => .dictKeys hd.typeChecked
+  | .dictValues hd => .dictValues hd.typeChecked
+  | .dictDelete hd hk => .dictDelete hd.typeChecked hk.typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -429,6 +460,89 @@ theorem eventually_size_dict {m : Js.Module} {env : Js.JsEnv} {jd : Js.Expr}
 
 theorem helper_strlen (t : String) :
     Js.helper "__strlen" [.str t] = some (.ok (.num t.toList.length)) := rfl
+
+/-- The dictionary helpers read and write the encoded entries the way the reference semantics reads and
+writes the entries themselves; the encoding only touches the values. -/
+theorem encodeFields_find (entries : List (String × Value)) (k : String) :
+    ((encodeFields entries).find? (·.1 == k)).map (·.2)
+      = ((entries.find? (·.1 == k)).map (·.2)).map encodeValue := by
+  induction entries with
+  | nil => simp [encodeFields]
+  | cons e rest ih =>
+    obtain ⟨key, v⟩ := e
+    simp only [encodeFields, List.find?_cons]
+    cases hk : key == k <;> simp [hk, ih]
+
+theorem encodeFields_any (entries : List (String × Value)) (k : String) :
+    (encodeFields entries).any (·.1 == k) = entries.any (·.1 == k) := by
+  induction entries with
+  | nil => simp [encodeFields]
+  | cons e rest ih => obtain ⟨key, v⟩ := e; simp [encodeFields, ih]
+
+theorem encodeFields_filter (entries : List (String × Value)) (k : String) :
+    encodeFields (entries.filter (·.1 != k)) = (encodeFields entries).filter (·.1 != k) := by
+  induction entries with
+  | nil => simp [encodeFields]
+  | cons e rest ih =>
+    obtain ⟨key, v⟩ := e
+    cases hk : key != k <;> simp [encodeFields, hk, ih]
+
+theorem encodeFields_map_set (entries : List (String × Value)) (k : String) (v : Value) :
+    encodeFields (entries.map fun e => if e.1 == k then (k, v) else e)
+      = (encodeFields entries).map fun e => if e.1 == k then (k, encodeValue v) else e := by
+  induction entries with
+  | nil => simp [encodeFields]
+  | cons e rest ih =>
+    obtain ⟨key, w⟩ := e
+    simp only [beq_iff_eq] at ih ⊢
+    by_cases hk : key = k <;> simp [encodeFields, hk, ih]
+
+theorem encodeFields_append (a b : List (String × Value)) :
+    encodeFields (a ++ b) = encodeFields a ++ encodeFields b := by
+  induction a with
+  | nil => simp [encodeFields]
+  | cons e rest ih => obtain ⟨key, w⟩ := e; simp [encodeFields, ih]
+
+theorem encodeFields_with (entries : List (String × Value)) (k : String) (v : Value) :
+    encodeFields (dictWith entries k v)
+      = Js.Runtime.mapSet (encodeFields entries) k (encodeValue v) := by
+  rw [dictWith, Js.Runtime.mapSet, encodeFields_any]
+  split
+  · exact encodeFields_map_set entries k v
+  · rw [encodeFields_append]
+    simp [encodeFields]
+
+theorem encodeValue_dictLookup (entries : List (String × Value)) (k : String) :
+    encodeValue (dictLookup entries k)
+      = (match ((encodeFields entries).find? (·.1 == k)).map (·.2) with
+         | some v => .obj [("tag", .str "some"), ("value", v)]
+         | none => .obj [("tag", .str "none")]) := by
+  rw [dictLookup, encodeFields_find]
+  cases h : ((entries.find? (·.1 == k)).map (·.2)) <;>
+    simp [h, encodeValue, encodeFields]
+
+theorem helper_dget (entries : List (String × Js.JsValue)) (k : String) :
+    Js.helper "__dget" [.dict entries, .str k]
+      = some (.ok (match ((entries.find? (·.1 == k)).map (·.2)) with
+          | some v => .obj [("tag", .str "some"), ("value", v)]
+          | none => .obj [("tag", .str "none")])) := rfl
+
+theorem helper_dhas (entries : List (String × Js.JsValue)) (k : String) :
+    Js.helper "__dhas" [.dict entries, .str k] = some (.ok (.bool (entries.any (·.1 == k)))) := rfl
+
+theorem helper_dset (entries : List (String × Js.JsValue)) (k : String) (v : Js.JsValue) :
+    Js.helper "__dset" [.dict entries, .str k, v]
+      = some (.ok (.dict (Js.Runtime.mapSet entries k v))) := rfl
+
+theorem helper_dkeys (entries : List (String × Js.JsValue)) :
+    Js.helper "__dkeys" [.dict entries] = some (.ok (.arr (entries.map fun e => .str e.1))) := rfl
+
+theorem helper_dvalues (entries : List (String × Js.JsValue)) :
+    Js.helper "__dvalues" [.dict entries] = some (.ok (.arr (entries.map (·.2)))) := rfl
+
+theorem helper_ddelete (entries : List (String × Js.JsValue)) (k : String) :
+    Js.helper "__ddelete" [.dict entries, .str k]
+      = some (.ok (.dict (entries.filter (·.1 != k)))) := rfl
 
 theorem encodeFields_eq (fields : List (String × Value)) :
     encodeFields fields = fields.map fun e => (e.1, encodeValue e.2) := by
@@ -1539,6 +1653,139 @@ private theorem compileExpr_length_parts {p : Program} {ctx : Compile.Ctx} {arr 
   · rename_i value hta
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨hc.2.symm, jarr, Or.inr (Or.inr ⟨value, hta ▸ hca, hc.1.symm⟩)⟩
+  · simp at hc
+
+/-- The dictionary operations: the operand the compiler read as a `Dict`, the expression it emitted, and
+the type it gave back. -/
+private theorem compileExpr_dictGet_parts {p : Program} {ctx : Compile.Ctx} {d key : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictGet d key) = .ok (je, ty)) :
+    ∃ jd jk value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+      ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
+      ∧ je = .call "__dget" [jd, jk] ∧ ty = .option value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · simp at hc
+  rename_i kPair hck
+  obtain ⟨jk, tk⟩ := kPair
+  split at hc
+  · rename_i value htd
+    split at hc
+    · simp at hc
+    rename_i htk
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, jk, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictHas_parts {p : Program} {ctx : Compile.Ctx} {d key : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictHas d key) = .ok (je, ty)) :
+    ∃ jd jk value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+      ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
+      ∧ je = .call "__dhas" [jd, jk] ∧ ty = .bool := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · simp at hc
+  rename_i kPair hck
+  obtain ⟨jk, tk⟩ := kPair
+  split at hc
+  · rename_i value htd
+    split at hc
+    · simp at hc
+    rename_i htk
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, jk, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictSet_parts {p : Program} {ctx : Compile.Ctx} {d key val : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictSet d key val) = .ok (je, ty)) :
+    ∃ jd jk jv value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+      ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
+      ∧ Compile.compileExpr p ctx val = .ok (jv, value)
+      ∧ je = .call "__dset" [jd, jk, jv] ∧ ty = .dict value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · simp at hc
+  rename_i kPair hck
+  obtain ⟨jk, tk⟩ := kPair
+  split at hc
+  · simp at hc
+  rename_i vPair hcv
+  obtain ⟨jv, tv⟩ := vPair
+  split at hc
+  · rename_i value htd
+    split at hc
+    · simp at hc
+    rename_i htk
+    split at hc
+    · simp at hc
+    rename_i htv
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, jk, jv, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck,
+      Ty.eq_of_not_bne htv ▸ hcv, hc.1.symm, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictKeys_parts {p : Program} {ctx : Compile.Ctx} {d : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictKeys d) = .ok (je, ty)) :
+    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+      ∧ je = .call "__dkeys" [jd] ∧ ty = .array .string := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · rename_i value htd
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, value, htd ▸ hcd, hc.1.symm, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictValues_parts {p : Program} {ctx : Compile.Ctx} {d : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictValues d) = .ok (je, ty)) :
+    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+      ∧ je = .call "__dvalues" [jd] ∧ ty = .array value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · rename_i value htd
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, value, htd ▸ hcd, hc.1.symm, hc.2.symm⟩
+  · simp at hc
+
+private theorem compileExpr_dictDelete_parts {p : Program} {ctx : Compile.Ctx} {d key : Expr}
+    {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictDelete d key) = .ok (je, ty)) :
+    ∃ jd jk value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+      ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
+      ∧ je = .call "__ddelete" [jd, jk] ∧ ty = .dict value := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i dPair hcd
+  obtain ⟨jd, td⟩ := dPair
+  split at hc
+  · simp at hc
+  rename_i kPair hck
+  obtain ⟨jk, tk⟩ := kPair
+  split at hc
+  · rename_i value htd
+    split at hc
+    · simp at hc
+    rename_i htk
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jd, jk, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_index_parts {p : Program} {ctx : Compile.Ctx} {arr idx : Expr}
@@ -3335,6 +3582,192 @@ theorem fragment_correct_in (p : Program) (m : Js.Module)
           exact (helper_i53 _).trans (congrArg some (i53_of_mkInt53 he))
         all_goals simp_all
 
+  | dictGet hd hk ihd ihk =>
+    rename_i dE keyE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictGet_parts hc
+      rw [evalExpr_dictGet] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      split at he
+      · simp at he
+      rename_i kv hkv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      split at he
+      · rename_i entries' t' hdict hstr
+        injection hdict with hdict
+        injection hstr with hstr
+        subst hdict
+        subst hstr
+        simp only [Except.ok.injEq] at he
+        subst he
+        refine eventually_call2 (by simpa [encodeValue] using ihd henv hjenv hcd hdv)
+          (by simpa [encodeValue] using ihk henv hjenv hck hkv) ?_
+        rw [helper_dget, encodeValue_dictLookup]
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+  | dictHas hd hk ihd ihk =>
+    rename_i dE keyE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictHas_parts hc
+      rw [evalExpr_dictHas] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      split at he
+      · simp at he
+      rename_i kv hkv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      split at he
+      · rename_i entries' t' hdict hstr
+        injection hdict with hdict
+        injection hstr with hstr
+        subst hdict
+        subst hstr
+        simp only [Except.ok.injEq] at he
+        subst he
+        refine eventually_call2 (by simpa [encodeValue] using ihd henv hjenv hcd hdv)
+          (by simpa [encodeValue] using ihk henv hjenv hck hkv) ?_
+        rw [helper_dhas, encodeFields_any]
+        simp [encodeValue]
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+  | dictSet hd hk hv ihd ihk ihv =>
+    rename_i dE keyE valE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jd, jk, jv, value, hcd, hck, hcv, rfl, -⟩ := compileExpr_dictSet_parts hc
+      rw [evalExpr_dictSet] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      split at he
+      · simp at he
+      rename_i kv hkv
+      split at he
+      · simp at he
+      rename_i vv hvv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      split at he
+      · rename_i entries' t' hdict hstr
+        injection hdict with hdict
+        injection hstr with hstr
+        subst hdict
+        subst hstr
+        simp only [Except.ok.injEq] at he
+        subst he
+        refine eventually_call3 (by simpa [encodeValue] using ihd henv hjenv hcd hdv)
+          (by simpa [encodeValue] using ihk henv hjenv hck hkv)
+          (ihv henv hjenv hcv hvv) ?_
+        rw [helper_dset]
+        simp [encodeValue, encodeFields_with]
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+  | dictKeys hd ihd =>
+    rename_i dE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictKeys_parts hc
+      rw [evalExpr_dictKeys] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      split at he
+      · rename_i entries' hdict
+        injection hdict with hdict
+        subst hdict
+        simp only [Except.ok.injEq] at he
+        subst he
+        refine eventually_call1 (by simpa [encodeValue] using ihd henv hjenv hcd hdv) ?_
+        rw [helper_dkeys]
+        simp [encodeValue, encodeList_eq, encodeFields_eq]
+      · rename_i hno
+        exact (hno entries rfl).elim
+  | dictValues hd ihd =>
+    rename_i dE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictValues_parts hc
+      rw [evalExpr_dictValues] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      split at he
+      · rename_i entries' hdict
+        injection hdict with hdict
+        subst hdict
+        simp only [Except.ok.injEq] at he
+        subst he
+        refine eventually_call1 (by simpa [encodeValue] using ihd henv hjenv hcd hdv) ?_
+        rw [helper_dvalues]
+        simp [encodeValue, encodeList_eq, encodeFields_eq]
+      · rename_i hno
+        exact (hno entries rfl).elim
+  | dictDelete hd hk ihd ihk =>
+    rename_i dE keyE
+    intro ctx env jenv je ty f v henv hjenv hc he
+    cases f with
+    | zero => simp [evalExpr] at he
+    | succ f =>
+      obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictDelete_parts hc
+      rw [evalExpr_dictDelete] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i dv hdv
+      split at he
+      · simp at he
+      rename_i kv hkv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      split at he
+      · rename_i entries' t' hdict hstr
+        injection hdict with hdict
+        injection hstr with hstr
+        subst hdict
+        subst hstr
+        simp only [Except.ok.injEq] at he
+        subst he
+        refine eventually_call2 (by simpa [encodeValue] using ihd henv hjenv hcd hdv)
+          (by simpa [encodeValue] using ihk henv hjenv hck hkv) ?_
+        rw [helper_ddelete]
+        simp [encodeValue, encodeFields_filter]
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
 theorem fragment_correct (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
@@ -4307,5 +4740,169 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
           simp only [List.length_map]
           exact (helper_i53 _).trans (congrArg some hi)
         all_goals simp_all
+
+  | dictGet hd hk ihd ihk =>
+    rename_i dE keyE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictGet_parts hc
+      rw [evalExpr_dictGet] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hde
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
+        simpa [encodeValue] using fragment_correct_in p m hd henv hjenv hcd hdv
+      split at he
+      · rename_i e0 hke
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2R hdvj (ihk henv hcov hjenv hck hke hne)
+      rename_i kv hkv
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      split at he
+      · simp at he
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+  | dictHas hd hk ihd ihk =>
+    rename_i dE keyE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictHas_parts hc
+      rw [evalExpr_dictHas] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hde
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
+        simpa [encodeValue] using fragment_correct_in p m hd henv hjenv hcd hdv
+      split at he
+      · rename_i e0 hke
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2R hdvj (ihk henv hcov hjenv hck hke hne)
+      rename_i kv hkv
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      split at he
+      · simp at he
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+  | dictDelete hd hk ihd ihk =>
+    rename_i dE keyE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictDelete_parts hc
+      rw [evalExpr_dictDelete] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hde
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
+        simpa [encodeValue] using fragment_correct_in p m hd henv hjenv hcd hdv
+      split at he
+      · rename_i e0 hke
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call2R hdvj (ihk henv hcov hjenv hck hke hne)
+      rename_i kv hkv
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      split at he
+      · simp at he
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+  | dictSet hd hk hv ihd ihk ihv =>
+    rename_i dE keyE valE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jd, jk, jv, value, hcd, hck, hcv, rfl, -⟩ := compileExpr_dictSet_parts hc
+      rw [evalExpr_dictSet] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hde
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_1 (ihd henv hcov hjenv hcd hde hne)
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
+        simpa [encodeValue] using fragment_correct_in p m hd henv hjenv hcd hdv
+      split at he
+      · rename_i e0 hke
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_2 hdvj (ihk henv hcov hjenv hck hke hne)
+      rename_i kv hkv
+      obtain ⟨t, rfl⟩ := hasTy_string_inv
+        (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      have hkvj : Eventually m jenv jk (.str t) := by
+        simpa [encodeValue] using fragment_correct_in p m hk henv hjenv hck hkv
+      split at he
+      · rename_i e0 hve
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call3_3 hdvj hkvj (ihv henv hcov hjenv hcv hve hne)
+      rename_i vv hvv
+      split at he
+      · simp at he
+      · rename_i hno
+        exact (hno entries t rfl rfl).elim
+  | dictKeys hd ihd =>
+    rename_i dE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictKeys_parts hc
+      rw [evalExpr_dictKeys] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hde
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call1 (ihd henv hcov hjenv hcd hde hne)
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      split at he
+      · simp at he
+      · rename_i hno
+        exact (hno entries rfl).elim
+  | dictValues hd ihd =>
+    rename_i dE
+    intro ctx env jenv je ty f err henv hcov hjenv hc he hne
+    cases f with
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | succ f =>
+      obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictValues_parts hc
+      rw [evalExpr_dictValues] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · rename_i e0 hde
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call1 (ihd henv hcov hjenv hcd hde hne)
+      rename_i dv hdv
+      obtain ⟨entries, rfl⟩ := hasTy_dict_inv
+        (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      split at he
+      · simp at he
+      · rename_i hno
+        exact (hno entries rfl).elim
 
 end LeanTs.Correct
