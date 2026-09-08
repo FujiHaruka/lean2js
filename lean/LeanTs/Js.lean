@@ -28,7 +28,11 @@ inductive TyDesc where
   | ctors (name : String) (alts : List (String × List (String × TyDesc)))
   deriving Inhabited
 
-partial def TyDesc.render : TyDesc → String
+mutual
+
+/-- The descriptor the entry check reads. Total for the reason `Expr.render` is: the text the artifact
+carries has to be something a proof can unfold. -/
+def TyDesc.render : TyDesc → String
   | .bool => "[\"bool\"]"
   | .int53 => "[\"int53\"]"
   | .uint32 => "[\"uint32\"]"
@@ -38,11 +42,25 @@ partial def TyDesc.render : TyDesc → String
   | .result ok err => "[\"result\", " ++ ok.render ++ ", " ++ err.render ++ "]"
   | .array t => "[\"array\", " ++ t.render ++ "]"
   | .dict v => "[\"dict\", " ++ v.render ++ "]"
-  | .ctors _ alts =>
-    let field := fun (n, d) => "[\"" ++ escapeString n ++ "\", " ++ TyDesc.render d ++ "]"
-    let alt := fun (c, fields) =>
-      "[\"" ++ escapeString c ++ "\", [" ++ String.intercalate ", " (fields.map field) ++ "]]"
-    "[\"ctors\", [" ++ String.intercalate ", " (alts.map alt) ++ "]]"
+  | .ctors _ alts => "[\"ctors\", [" ++ TyDesc.renderAlts alts ++ "]]"
+termination_by d => sizeOf d
+
+def TyDesc.renderFields : List (String × TyDesc) → String
+  | [] => ""
+  | [(n, d)] => "[\"" ++ escapeString n ++ "\", " ++ d.render ++ "]"
+  | (n, d) :: rest =>
+    "[\"" ++ escapeString n ++ "\", " ++ d.render ++ "], " ++ TyDesc.renderFields rest
+termination_by fields => sizeOf fields
+
+def TyDesc.renderAlts : List (String × List (String × TyDesc)) → String
+  | [] => ""
+  | [(c, fields)] => "[\"" ++ escapeString c ++ "\", [" ++ TyDesc.renderFields fields ++ "]]"
+  | (c, fields) :: rest =>
+    "[\"" ++ escapeString c ++ "\", [" ++ TyDesc.renderFields fields ++ "]], "
+      ++ TyDesc.renderAlts rest
+termination_by alts => sizeOf alts
+
+end
 
 inductive Expr where
   | num (i : Int)
@@ -84,7 +102,11 @@ structure Module where
   funcs : List Func
   deriving Inhabited
 
-partial def Expr.render : Expr → String
+mutual
+
+/-- The text the module carries. Written as a mutual recursion over the lists rather than `partial`, so
+a proof about the file the compiler writes can unfold it. -/
+def Expr.render : Expr → String
   | .num i => toString i
   | .bigLit i => toString i ++ "n"
   | .str s => "\"" ++ escapeString s ++ "\""
@@ -93,18 +115,14 @@ partial def Expr.render : Expr → String
   | .unary op e => "(" ++ op ++ e.render ++ ")"
   | .binary op lhs rhs => "(" ++ lhs.render ++ " " ++ op ++ " " ++ rhs.render ++ ")"
   | .cond c t e => "(" ++ c.render ++ " ? " ++ t.render ++ " : " ++ e.render ++ ")"
-  | .call callee args => callee ++ "(" ++ String.intercalate ", " (args.map Expr.render) ++ ")"
+  | .call callee args => callee ++ "(" ++ Expr.renderList args ++ ")"
   | .arrowCall params body args =>
     "((" ++ String.intercalate ", " params ++ ") => (" ++ body.render ++ "))("
-      ++ String.intercalate ", " (args.map Expr.render) ++ ")"
-  | .objLit fields =>
-    let field := fun (k, v) => "\"" ++ escapeString k ++ "\": " ++ Expr.render v
-    "{ " ++ String.intercalate ", " (fields.map field) ++ " }"
+      ++ Expr.renderList args ++ ")"
+  | .objLit fields => "{ " ++ Expr.renderFields fields ++ " }"
   | .member obj field => "(" ++ obj.render ++ ")." ++ field
-  | .arrayLit items => "[" ++ String.intercalate ", " (items.map Expr.render) ++ "]"
-  | .dictLit entries =>
-    let entry := fun (k, v) => "[\"" ++ escapeString k ++ "\", " ++ Expr.render v ++ "]"
-    "new Map([" ++ String.intercalate ", " (entries.map entry) ++ "])"
+  | .arrayLit items => "[" ++ Expr.renderList items ++ "]"
+  | .dictLit entries => "new Map([" ++ Expr.renderEntries entries ++ "])"
   | .check d e => "__ck(" ++ e.render ++ ", " ++ d.render ++ ")"
   | .mapJs arr binder body =>
     "__map(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
@@ -117,6 +135,28 @@ partial def Expr.render : Expr → String
   | .reduceJs arr init accName elemName body =>
     "__reduce(" ++ arr.render ++ ", " ++ init.render ++ ", (" ++ accName ++ ", " ++ elemName
       ++ ") => (" ++ body.render ++ "))"
+termination_by e => sizeOf e
+
+def Expr.renderList : List Expr → String
+  | [] => ""
+  | [e] => e.render
+  | e :: rest => e.render ++ ", " ++ Expr.renderList rest
+termination_by es => sizeOf es
+
+def Expr.renderFields : List (String × Expr) → String
+  | [] => ""
+  | [(k, v)] => "\"" ++ escapeString k ++ "\": " ++ v.render
+  | (k, v) :: rest => "\"" ++ escapeString k ++ "\": " ++ v.render ++ ", " ++ Expr.renderFields rest
+termination_by fields => sizeOf fields
+
+def Expr.renderEntries : List (String × Expr) → String
+  | [] => ""
+  | [(k, v)] => "[\"" ++ escapeString k ++ "\", " ++ v.render ++ "]"
+  | (k, v) :: rest =>
+    "[\"" ++ escapeString k ++ "\", " ++ v.render ++ "], " ++ Expr.renderEntries rest
+termination_by entries => sizeOf entries
+
+end
 
 def Stmt.render : Stmt → String
   | .const name val => "  const " ++ name ++ " = " ++ val.render ++ ";"
@@ -382,7 +422,11 @@ def Module.render (m : Module) : String :=
     ++ runtime ++ "\n\n"
     ++ String.intercalate "\n\n" (m.funcs.map Func.render) ++ "\n"
 
-partial def tsType : Core.Ty → String
+mutual
+
+/-- The type the `.d.ts` gives a value of this type. Total for the reason the renderers are: the file the
+compiler writes has to be something a proof can unfold. -/
+def tsType : Core.Ty → String
   | .bool => "boolean"
   | .int53 => "number"
   | .uint32 => "number"
@@ -390,14 +434,27 @@ partial def tsType : Core.Ty → String
   | .bigint => "bigint"
   | .var n => n
   | .named n [] => n
-  | .named n args => n ++ "<" ++ String.intercalate ", " (args.map tsType) ++ ">"
+  | .named n args => n ++ "<" ++ tsTypeList args ++ ">"
   | .option t => "Option<" ++ tsType t ++ ">"
   | .result ok err => "Result<" ++ tsType ok ++ ", " ++ tsType err ++ ">"
   | .array t => "readonly " ++ tsType t ++ "[]"
   | .dict v => "ReadonlyMap<string, " ++ tsType v ++ ">"
-  | .fn params ret =>
-    "(" ++ String.intercalate ", " (params.zipIdx.map fun (t, i) => s!"a{i}: {tsType t}")
-      ++ ") => " ++ tsType ret
+  | .fn params ret => "(" ++ tsParams 0 params ++ ") => " ++ tsType ret
+termination_by ty => sizeOf ty
+
+def tsTypeList : List Core.Ty → String
+  | [] => ""
+  | [t] => tsType t
+  | t :: rest => tsType t ++ ", " ++ tsTypeList rest
+termination_by ts => sizeOf ts
+
+def tsParams (i : Nat) : List Core.Ty → String
+  | [] => ""
+  | [t] => s!"a{i}: {tsType t}"
+  | t :: rest => s!"a{i}: {tsType t}, " ++ tsParams (i + 1) rest
+termination_by ts => sizeOf ts
+
+end
 
 private def renderCtor (c : Core.CtorDef) : String :=
   let fields := c.fields.map fun f => s!"; readonly {f.name}: {tsType f.ty}"
