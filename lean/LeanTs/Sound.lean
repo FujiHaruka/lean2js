@@ -80,6 +80,9 @@ inductive TypeChecked : Expr → Prop where
   | reduceE {arr init body : Expr} {accName elemName : String} :
       TypeChecked arr → TypeChecked init → TypeChecked body →
         TypeChecked (.reduceE arr init accName elemName body)
+  | matchE {scrut : Expr} {alts : List Alt} :
+      TypeChecked scrut → (∀ alt ∈ alts, TypeChecked (Alt.body alt)) →
+        TypeChecked (.matchE scrut alts)
 
 mutual
 
@@ -1248,6 +1251,308 @@ private theorem hasElemTy_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {e
     exact ⟨Ty.eq_of_beq hall.1 ▸ ih item jh th v (hchk item (by simp)) hchead hv,
       ihr tail vs' elem (fun e he => hchk e (by simp [he])) hctail hall.2 hvs⟩
 
+/-! ### Reading a match off the compiler
+
+An arm is compiled against the context its pattern binds, and `eval` runs it in the environment the same
+pattern bound, so type soundness for `match` is the statement that those two line up. -/
+
+/-- What a pattern bound, against what the arm was compiled against: the same names in the same order,
+each value satisfying the type the compiler read. -/
+def BindsAgree (p : Program) : Env → Compile.Ctx → Prop
+  | [], [] => True
+  | (n, v) :: bs, (m, t) :: cs => n = m ∧ Value.hasTy p v t = true ∧ BindsAgree p bs cs
+  | _, _ => False
+
+def ValuesTyped (p : Program) : List Value → List Ty → Prop
+  | [], [] => True
+  | v :: vs, t :: ts => Value.hasTy p v t = true ∧ ValuesTyped p vs ts
+  | _, _ => False
+
+theorem BindsAgree.append {p : Program} :
+    ∀ {b1 : Env} {c1 : Compile.Ctx} {b2 : Env} {c2 : Compile.Ctx},
+      BindsAgree p b1 c1 → BindsAgree p b2 c2 → BindsAgree p (b1 ++ b2) (c1 ++ c2)
+  | [], [], _, _, _, h2 => by simpa using h2
+  | [], _ :: _, _, _, h1, _ => absurd h1 (by simp [BindsAgree])
+  | _ :: _, [], _, _, h1, _ => absurd h1 (by simp [BindsAgree])
+  | (n, v) :: bs, (m, t) :: cs, _, _, h1, h2 => by
+    obtain ⟨hn, hv, hrest⟩ := h1
+    exact ⟨hn, hv, BindsAgree.append hrest h2⟩
+
+theorem EnvTyped.append {p : Program} {env : Env} {ctx : Compile.Ctx} (henv : EnvTyped p env ctx) :
+    ∀ {benv : Env} {bctx : Compile.Ctx}, BindsAgree p benv bctx →
+      EnvTyped p (benv ++ env) (bctx ++ ctx)
+  | [], [], _ => by simpa using henv
+  | [], _ :: _, h => absurd h (by simp [BindsAgree])
+  | _ :: _, [], h => absurd h (by simp [BindsAgree])
+  | (n, v) :: bs, (m, t) :: cs, h => by
+    obtain ⟨hn, hv, hrest⟩ := h
+    subst hn
+    exact (EnvTyped.append henv hrest).cons hv
+
+theorem valuesTyped_of_hasFieldTys {p : Program} :
+    ∀ {fields : List (String × Value)} {ftys : List (String × Ty)},
+      Value.hasFieldTys p fields ftys = true →
+      ValuesTyped p (fields.map (·.2)) (ftys.map (·.2))
+  | [], [], _ => by simp [ValuesTyped]
+  | [], _ :: _, h => by rw [Value.hasFieldTys.eq_def] at h; simp at h
+  | _ :: _, [], h => by rw [Value.hasFieldTys.eq_def] at h; simp at h
+  | (k, v) :: rest, (n, t) :: tys, h => by
+    rw [hasFieldTys_cons, Bool.and_eq_true, Bool.and_eq_true] at h
+    exact ⟨h.1.2, valuesTyped_of_hasFieldTys h.2⟩
+
+/-- The fields a constructor pattern reads, as the type checker sees them and as the value holds them.
+`signature` is the compiler's view of a type's constructors; `Value.hasTy` is the reference semantics'. -/
+theorem hasFieldTys_of_signature {p : Program} {ty : Ty}
+    {heads : List (Compile.Head × List (String × Ty))} {ctor : String}
+    {fields : List (String × Value)} {ftys : List (String × Ty)}
+    (hsig : Compile.signature p ty = some heads)
+    (hfind : ((heads.find? (·.1 == Compile.Head.ctor ctor)).map (·.2)) = some ftys)
+    (hv : Value.hasTy p (.obj ctor fields) ty = true) :
+    Value.hasFieldTys p fields ftys = true := by
+  cases ty with
+  | named n args =>
+    obtain ⟨t, c, ht, hc, hf⟩ := hasTy_named_fields hv
+    simp only [Compile.signature, ht, Option.map_some, Option.some.injEq] at hsig
+    subst hsig
+    have hbeq : ∀ x : CtorDef,
+        (Compile.Head.ctor x.name == Compile.Head.ctor ctor) = (x.name == ctor) := fun _ => rfl
+    rw [List.find?_map] at hfind
+    simp only [Function.comp_def, hbeq] at hfind
+    rw [show (t.ctorsAt args).find? (fun x => x.name == ctor) = t.findAt? args ctor from rfl, hc]
+      at hfind
+    simp only [Option.map_some, Option.some.injEq] at hfind
+    exact hfind ▸ hf
+  | option elem =>
+    simp only [Compile.signature, Option.some.injEq] at hsig
+    subst hsig
+    rcases hasTy_option_fields hv with ⟨rfl, rfl⟩ | ⟨rfl, hf⟩
+    · obtain rfl : ([] : List (String × Ty)) = ftys := Option.some.inj hfind
+      exact hasFieldTys_nil p
+    · obtain rfl : [("value", elem)] = ftys := Option.some.inj hfind
+      exact hf
+  | result ok err =>
+    simp only [Compile.signature, Option.some.injEq] at hsig
+    subst hsig
+    rcases hasTy_result_fields hv with ⟨rfl, hf⟩ | ⟨rfl, hf⟩
+    · obtain rfl : [("value", ok)] = ftys := Option.some.inj hfind
+      exact hf
+    · obtain rfl : [("error", err)] = ftys := Option.some.inj hfind
+      exact hf
+  | bool =>
+    simp only [Compile.signature, Option.some.injEq] at hsig
+    subst hsig
+    have hnone : (none : Option (List (String × Ty))) = some ftys := hfind
+    exact absurd hnone (by simp)
+  | _ => simp [Compile.signature] at hsig
+
+mutual
+
+/-- A pattern that matched bound exactly what the compiler compiled the arm against. -/
+theorem matchPat_binds {p : Program} : ∀ {ty : Ty} {path : Js.Expr} {pat : Pat} {v : Value}
+    {tests : List Js.Expr} {pbinds : List (String × Js.Expr × Ty)} {binds : Env},
+    Value.hasTy p v ty = true →
+    Compile.patParts p ty path pat = .ok (tests, pbinds) →
+    matchPat pat v = some binds →
+    BindsAgree p binds (pbinds.map fun b => (b.1, b.2.2))
+  | _, _, .wild, _, _, _, _, _, hpp, hm => by
+    rw [Compile.patParts] at hpp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    simp only [Option.some.injEq] at hm
+    subst hm
+    simp [← hpp.2, BindsAgree]
+  | _, _, .bind name, _, _, _, _, hv, hpp, hm => by
+    rw [Compile.patParts] at hpp
+    simp only [bind, Except.bind] at hpp
+    split at hpp
+    · simp at hpp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    simp only [Option.some.injEq] at hm
+    subst hm
+    simp only [← hpp.2, List.map_cons, List.map_nil]
+    exact ⟨rfl, hv, trivial⟩
+  | _, _, .lit l, _, _, _, _, _, hpp, hm => by
+    rw [Compile.patParts] at hpp
+    simp only [bind, Except.bind] at hpp
+    split at hpp
+    · simp at hpp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    split at hm
+    · simp only [Option.some.injEq] at hm
+      subst hm
+      simp [← hpp.2, BindsAgree]
+    · simp at hm
+  | ty, path, .ctor name args, v, _, _, _, hv, hpp, hm => by
+    cases v with
+    | obj ctor fields =>
+      rw [matchPat] at hm
+      split at hm
+      · rename_i hname
+        obtain rfl : name = ctor := by simpa using hname
+        rw [Compile.patParts] at hpp
+        split at hpp
+        · simp at hpp
+        rename_i heads hsig
+        split at hpp
+        · simp at hpp
+        rename_i ftys hfind
+        split at hpp
+        · simp at hpp
+        rename_i hlen
+        simp only [bind, Except.bind] at hpp
+        split at hpp
+        · simp at hpp
+        rename_i parts hpl
+        obtain ⟨tests', pbinds'⟩ := parts
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+        rw [← hpp.2]
+        exact matchPats_binds
+          (valuesTyped_of_hasFieldTys (hasFieldTys_of_signature hsig hfind hv)) hpl hm
+      · simp at hm
+    | _ => simp [matchPat] at hm
+
+theorem matchPats_binds {p : Program} : ∀ {tys : List Ty} {paths : List Js.Expr}
+    {pats : List Pat} {vs : List Value} {tests : List Js.Expr}
+    {pbinds : List (String × Js.Expr × Ty)} {binds : Env},
+    ValuesTyped p vs tys →
+    Compile.patPartsList p tys paths pats = .ok (tests, pbinds) →
+    matchPats pats vs = some binds →
+    BindsAgree p binds (pbinds.map fun b => (b.1, b.2.2))
+  | _, _, [], vs, _, _, _, _, hpl, hm => by
+    rw [Compile.patPartsList] at hpl
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpl
+    cases vs with
+    | nil =>
+      rw [matchPats] at hm
+      simp only [Option.some.injEq] at hm
+      subst hm
+      simp [← hpl.2, BindsAgree]
+    | cons _ _ => simp [matchPats] at hm
+  | tys, paths, pat :: pats, vs, _, _, _, hvs, hpl, hm => by
+    cases vs with
+    | nil => simp [matchPats] at hm
+    | cons v vs =>
+      cases tys with
+      | nil => exact absurd hvs (by simp [ValuesTyped])
+      | cons ty tys =>
+        cases paths with
+        | nil => simp [Compile.patPartsList] at hpl
+        | cons path paths =>
+          rw [Compile.patPartsList] at hpl
+          simp only [bind, Except.bind] at hpl
+          split at hpl
+          · simp at hpl
+          rename_i here hhere
+          obtain ⟨htests, hbinds⟩ := here
+          split at hpl
+          · simp at hpl
+          rename_i rest hrest
+          obtain ⟨rtests, rbinds⟩ := rest
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hpl
+          rw [matchPats] at hm
+          simp only [bind, Option.bind] at hm
+          split at hm
+          · simp at hm
+          rename_i bhere hbhere
+          simp only at hm
+          split at hm
+          · simp at hm
+          rename_i brest hbrest
+          simp only [Option.some.injEq] at hm
+          subst hm
+          rw [← hpl.2, List.map_append]
+          exact BindsAgree.append (matchPat_binds hvs.1 hhere hbhere)
+            (matchPats_binds hvs.2 hrest hbrest)
+
+end
+
+theorem firstMatch_mem {alts : List Alt} {sv : Value} {binds : Env} {body : Expr}
+    (h : firstMatch alts sv = some (binds, body)) : ∃ alt ∈ alts, body = Alt.body alt := by
+  induction alts with
+  | nil => rw [firstMatch] at h; simp at h
+  | cons alt rest ih =>
+    rw [firstMatch] at h
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      exact ⟨alt, by simp, h.2.symm⟩
+    · obtain ⟨a, ha, hb⟩ := ih h
+      exact ⟨a, by simp [ha], hb⟩
+
+theorem compileAlts_firstMatch {p : Program} {ctx : Compile.Ctx} {tscrut : Ty} {sv : Value}
+    (hsv : Value.hasTy p sv tscrut = true) :
+    ∀ (alts : List Alt) (arms : List Compile.Arm) (binds : Env) (body : Expr),
+      Compile.compileAlts p ctx tscrut alts = .ok arms →
+      firstMatch alts sv = some (binds, body) →
+      ∃ (arm : Compile.Arm) (bctx : Compile.Ctx), arm ∈ arms ∧ BindsAgree p binds bctx ∧
+        Compile.compileExpr p (bctx ++ ctx) body = .ok (arm.body, arm.ty) := by
+  intro alts
+  induction alts with
+  | nil => intro arms binds body _ hfm; rw [firstMatch] at hfm; simp at hfm
+  | cons alt rest ihr =>
+    intro arms binds body hca hfm
+    obtain ⟨pat, abody⟩ := alt
+    rw [Compile.compileAlts] at hca
+    simp only [bind, Except.bind] at hca
+    split at hca
+    · simp at hca
+    rename_i parts hpp
+    obtain ⟨tests, pbinds⟩ := parts
+    split at hca
+    · simp at hca
+    split at hca
+    · simp at hca
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    simp only at hcb
+    split at hca
+    · simp at hca
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hca
+    subst hca
+    rw [firstMatch] at hfm
+    split at hfm
+    · rename_i binds' hmp
+      simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+      obtain ⟨rfl, rfl⟩ := hfm
+      refine ⟨_, pbinds.map fun b => (b.1, b.2.2), List.Mem.head _,
+        matchPat_binds hsv hpp hmp, ?_⟩
+      exact hcb
+    · obtain ⟨arm, bctx, hmem, hb, hcc⟩ := ihr tail binds body hctail hfm
+      exact ⟨arm, bctx, by simp [hmem], hb, hcc⟩
+
+theorem compileExpr_matchE_inv {p : Program} {ctx : Compile.Ctx} {scrut : Expr} {alts : List Alt}
+    {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.matchE scrut alts) = .ok (je, ty)) :
+    ∃ (jscrut : Js.Expr) (tscrut : Ty) (arm0 : Compile.Arm) (arms : List Compile.Arm),
+      Compile.compileExpr p ctx scrut = .ok (jscrut, tscrut)
+      ∧ Compile.compileAlts p ctx tscrut alts = .ok (arm0 :: arms)
+      ∧ ((arm0 :: arms).all fun a => a.ty == arm0.ty) = true
+      ∧ ty = arm0.ty
+      ∧ je = .arrowCall [Compile.scrutName] (Compile.compileExpr.chain (arm0 :: arms)) [jscrut] := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i scrutPair hcs
+  obtain ⟨jscrut, tscrut⟩ := scrutPair
+  split at hc
+  · simp at hc
+  rename_i arms hca
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i _arms arm0 rest
+  split at hc
+  · simp at hc
+  rename_i hsame
+  simp only [Bool.not_eq_true', Bool.not_eq_false] at hsame
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+  exact ⟨jscrut, tscrut, arm0, rest, hcs, hca, hsame, hc.2.symm, hc.1.symm⟩
+
 /-! ### Walking a traversal
 
 A traversal evaluates its body under an environment that changes from element to element, so these take
@@ -2087,6 +2392,26 @@ theorem typeSound (p : Program) :
         exact hasTy_of_quantItems xs v he
       · rename_i hne
         exact (hne xs rfl).elim
+    | matchE hscrut halts =>
+      rename_i scrutE alts
+      obtain ⟨jscrut, tscrut, arm0, arms, hcs, hca, hsame, hty, -⟩ := compileExpr_matchE_inv hc
+      subst hty
+      rw [evalExpr_matchE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i sv hsv
+      have hst := ih ctx env scrutE jscrut tscrut sv hscrut henv hcs hsv
+      split at he
+      · rename_i binds body hfm
+        obtain ⟨alt, halt, rfl⟩ := firstMatch_mem hfm
+        obtain ⟨arm, bctx, hmem, hb, hcc⟩ :=
+          compileAlts_firstMatch hst alts (arm0 :: arms) binds _ hca hfm
+        have harmty : arm.ty = arm0.ty :=
+          Ty.eq_of_beq (List.all_eq_true.mp hsame arm hmem)
+        exact harmty ▸ ih (bctx ++ ctx) (binds ++ env) (Alt.body alt) arm.body arm.ty v
+          (halts alt halt) (henv.append hb) hcc he
+      · simp at he
     | reduceE harr hinit hbody =>
       rename_i arrE initE bodyE accName elemName
       obtain ⟨jarr, jinit, jbody, elem, hca, hci, hcb, -⟩ := compileExpr_reduceE_inv hc

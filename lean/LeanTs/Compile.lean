@@ -18,7 +18,7 @@ open Core
 abbrev Ctx := List (String × Ty)
 
 /-- The scrutinee that `match` binds. It starts with `__`, so it never collides with a user's name. -/
-private def scrutName : String := "__s"
+def scrutName : String := "__s"
 
 mutual
 
@@ -134,14 +134,14 @@ def isScalar : Ty → Bool
 
 /-- What a value's shape can be tested against at one position: a constructor's tag, or a literal it may
 equal. -/
-private inductive Head where
+inductive Head where
   | ctor (name : String)
   | lit (l : Lit)
   deriving BEq
 
 /-- Every head a value of this type can take, each with the fields it carries. `none` where the values
 cannot be enumerated, so nothing short of a wildcard covers them. -/
-private def signature (p : Program) : Ty → Option (List (Head × List (String × Ty)))
+def signature (p : Program) : Ty → Option (List (Head × List (String × Ty)))
   | .named n args =>
     (p.findType? n).map fun t =>
       (t.ctorsAt args).map fun c => (.ctor c.name, c.fields.map fun f => (f.name, f.ty))
@@ -226,7 +226,7 @@ private def firstUnreachable (p : Program) (ty : Ty) (seen : List (List Pat)) (i
 
 /-- One lowered `match` arm: what the generated code tests before taking it, the names it binds and where
 it reads each from, and the body under those bindings. -/
-private structure Arm where
+structure Arm where
   tests : List Js.Expr
   names : List String
   paths : List Js.Expr
@@ -258,7 +258,7 @@ code runs and the names it binds, each paired with the path it is read from.
 
 The tests are conjoined left to right by the caller, so an inner test is only reached once the tag it
 sits under has been confirmed and the path it reads is known to exist. -/
-private def patParts (p : Program) (ty : Ty) (path : Js.Expr) :
+def patParts (p : Program) (ty : Ty) (path : Js.Expr) :
     Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
   | .wild => .ok ([], [])
   | .bind name => do
@@ -280,7 +280,7 @@ private def patParts (p : Program) (ty : Ty) (path : Js.Expr) :
           .ok (.binary "===" (.member path "tag") (.str name) :: tests, binds)
 termination_by pat => sizeOf pat
 
-private def patPartsList (p : Program) (tys : List Ty) (paths : List Js.Expr) :
+def patPartsList (p : Program) (tys : List Ty) (paths : List Js.Expr) :
     List Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
   | [] => .ok ([], [])
   | pat :: pats =>
@@ -646,7 +646,7 @@ def compileValues (p : Program) (ctx : Ctx) :
     .ok (head :: tail)
 termination_by es => sizeOf es
 
-private def compileAlts (p : Program) (ctx : Ctx) (ty : Ty) (alts : List Alt) :
+def compileAlts (p : Program) (ctx : Ctx) (ty : Ty) (alts : List Alt) :
     Except String (List Arm) :=
   match alts with
   | [] => .ok []
