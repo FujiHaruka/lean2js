@@ -634,7 +634,7 @@ def manifest : Manifest := {
       proof := add_refuses },
     { name := "add_traps"
       statement :=
-        "for any arguments eval accepts, if eval throws then the generated add throws the same code"
+        "for any arguments eval accepts, if eval throws — out of fuel and no matching arm aside — the generated add throws the same code"
       proof := add_traps },
     { name := "addMoney_calls_agree"
       statement :=
@@ -642,7 +642,7 @@ def manifest : Manifest := {
       proof := addMoney_calls_agree },
     { name := "addMoney_traps"
       statement :=
-        "for any arguments eval accepts, if eval throws then the generated addMoney throws the same code"
+        "for any arguments eval accepts, if eval throws — out of fuel and no matching arm aside — the generated addMoney throws the same code"
       proof := addMoney_traps },
     { name := "ship_calls_agree"
       statement :=
@@ -654,7 +654,7 @@ def manifest : Manifest := {
       proof := cartTotal_calls_agree },
     { name := "cartTotal_traps"
       statement :=
-        "for any arguments eval accepts, if the fold throws then the generated cartTotal throws the same code"
+        "for any arguments eval accepts, if the fold throws — out of fuel and no matching arm aside — the generated cartTotal throws the same code"
       proof := cartTotal_traps }
   ]
 }
