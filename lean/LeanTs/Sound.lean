@@ -69,6 +69,17 @@ inductive TypeChecked : Expr → Prop where
   | dictKeys {d : Expr} : TypeChecked d → TypeChecked (.dictKeys d)
   | dictValues {d : Expr} : TypeChecked d → TypeChecked (.dictValues d)
   | dictDelete {d key : Expr} : TypeChecked d → TypeChecked key → TypeChecked (.dictDelete d key)
+  | mapE {arr body : Expr} {binder : String} :
+      TypeChecked arr → TypeChecked body → TypeChecked (.mapE arr binder body)
+  | filterE {arr body : Expr} {binder : String} :
+      TypeChecked arr → TypeChecked body → TypeChecked (.filterE arr binder body)
+  | findE {arr body : Expr} {binder : String} :
+      TypeChecked arr → TypeChecked body → TypeChecked (.findE arr binder body)
+  | quantE {op : QuantOp} {arr body : Expr} {binder : String} :
+      TypeChecked arr → TypeChecked body → TypeChecked (.quantE op arr binder body)
+  | reduceE {arr init body : Expr} {accName elemName : String} :
+      TypeChecked arr → TypeChecked init → TypeChecked body →
+        TypeChecked (.reduceE arr init accName elemName body)
 
 mutual
 
@@ -754,6 +765,151 @@ private theorem compileExpr_arrayReverse_inv {p : Program} {ctx : Compile.Ctx} {
     exact ⟨jarr, elem, hta ▸ hca, hc.2.symm⟩
   · simp at hc
 
+/-! ### Reading a traversal off the compiler
+
+Not private, unlike the inversions above: the correctness proof reads the same three parts out of a
+traversal — the array, the body under the binder, and the shape the compiler emitted. -/
+
+theorem compileExpr_mapE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
+    {binder : String} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.mapE arr binder body) = .ok (je, ty)) :
+    ∃ jarr jbody elem tbody, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, tbody)
+      ∧ ty = .array tbody ∧ je = .mapJs jarr binder jbody := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jbody, elem, tbody, hta ▸ hca, hcb, hc.2.symm, hc.1.symm⟩
+  · simp at hc
+
+theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
+    {binder : String} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.filterE arr binder body) = .ok (je, ty)) :
+    ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
+      ∧ ty = .array elem ∧ je = .filterJs jarr binder jbody := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    split at hc
+    · simp at hc
+    rename_i hbool
+    obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm⟩
+  · simp at hc
+
+theorem compileExpr_findE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
+    {binder : String} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.findE arr binder body) = .ok (je, ty)) :
+    ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
+      ∧ ty = .option elem ∧ je = .findJs jarr binder jbody := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    split at hc
+    · simp at hc
+    rename_i hbool
+    obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm⟩
+  · simp at hc
+
+theorem compileExpr_quantE_inv {p : Program} {ctx : Compile.Ctx} {op : QuantOp} {arr body : Expr}
+    {binder : String} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.quantE op arr binder body) = .ok (je, ty)) :
+    ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
+      ∧ ty = .bool ∧ je = .quantJs op jarr binder jbody := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    split at hc
+    · simp at hc
+    rename_i hbool
+    obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm⟩
+  · simp at hc
+
+theorem compileExpr_reduceE_inv {p : Program} {ctx : Compile.Ctx} {arr init body : Expr}
+    {accName elemName : String} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.reduceE arr init accName elemName body) = .ok (je, ty)) :
+    ∃ jarr jinit jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ Compile.compileExpr p ctx init = .ok (jinit, ty)
+      ∧ Compile.compileExpr p ((elemName, elem) :: (accName, ty) :: ctx) body = .ok (jbody, ty)
+      ∧ je = .reduceJs jarr jinit accName elemName jbody := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · simp at hc
+  rename_i initPair hci
+  obtain ⟨jinit, tinit⟩ := initPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    split at hc
+    · simp at hc
+    rename_i hsame
+    obtain rfl : tbody = tinit := Ty.eq_of_not_bne hsame
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨jarr, jinit, jbody, elem, hta ▸ hca, hc.2 ▸ hci, hc.2 ▸ hcb, hc.1.symm⟩
+  · simp at hc
+
 /-- The entries of a dictionary literal: their types, and the fact that zipping the keys back on keeps
 the key list intact, which is what the distinctness the compiler checked is about. -/
 private theorem hasEntryTys_of_values {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
@@ -1091,6 +1247,155 @@ private theorem hasElemTy_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {e
     simp only [Bool.and_eq_true]
     exact ⟨Ty.eq_of_beq hall.1 ▸ ih item jh th v (hchk item (by simp)) hchead hv,
       ihr tail vs' elem (fun e he => hchk e (by simp [he])) hctail hall.2 hvs⟩
+
+/-! ### Walking a traversal
+
+A traversal evaluates its body under an environment that changes from element to element, so these take
+the induction hypothesis of `typeSound` over every environment rather than the one at the traversal.
+`filter`, `find` and `all` / `any` need no hypothesis at all: what they return is an element they were
+given, or a `Bool` they decided. -/
+
+private theorem hasElemTy_of_mapItems {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+    {binder : String} {bodyE : Expr} {jbody : Js.Expr} {elem tbody : Ty}
+    (ih : ∀ (ctx : Compile.Ctx) (env : Env) (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value),
+      TypeChecked e → EnvTyped p env ctx → Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .ok v → Value.hasTy p v ty = true)
+    (hbody : TypeChecked bodyE) (henv : EnvTyped p env ctx)
+    (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody)) :
+    ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
+      evalMapItems p f env binder bodyE xs = .ok vs → Value.hasElemTy p vs tbody = true := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro vs _ hes
+    rw [evalMapItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    exact hes ▸ hasElemTy_nil p tbody
+  | cons x rest ihr =>
+    intro vs hxs hes
+    rw [evalMapItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i w hw
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    rw [← hes, hasElemTy_cons, Bool.and_eq_true]
+    exact ⟨ih _ _ bodyE jbody tbody w hbody (henv.cons hxs.1) hcb hw, ihr vs' hxs.2 hvs⟩
+
+private theorem hasElemTy_of_filterItems {p : Program} {f : Nat} {env : Env} {binder : String}
+    {bodyE : Expr} {elem : Ty} :
+    ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
+      evalFilterItems p f env binder bodyE xs = .ok vs → Value.hasElemTy p vs elem = true := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro vs _ hes
+    rw [evalFilterItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    exact hes ▸ hasElemTy_nil p elem
+  | cons x rest ihr =>
+    intro vs hxs hes
+    rw [evalFilterItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · simp at hes
+    split at hes
+    · split at hes
+      · simp at hes
+      rename_i vs' hvs
+      simp only [Except.ok.injEq] at hes
+      rw [← hes, hasElemTy_cons, Bool.and_eq_true]
+      exact ⟨hxs.1, ihr vs' hxs.2 hvs⟩
+    · exact ihr vs hxs.2 hes
+    · simp at hes
+
+private theorem hasTy_of_findItems {p : Program} {f : Nat} {env : Env} {binder : String}
+    {bodyE : Expr} {elem : Ty} :
+    ∀ (xs : List Value) (v : Value), Value.hasElemTy p xs elem = true →
+      evalFindItems p f env binder bodyE xs = .ok v → Value.hasTy p v (.option elem) = true := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro v _ hes
+    rw [evalFindItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    exact hes ▸ hasTy_none p elem
+  | cons x rest ihr =>
+    intro v hxs hes
+    rw [evalFindItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    split at hes
+    · simp at hes
+    split at hes
+    · simp only [Except.ok.injEq] at hes
+      rw [← hes, hasTy_some, hasFieldTys_cons, hasFieldTys_nil]
+      simp [hxs.1]
+    · exact ihr v hxs.2 hes
+    · simp at hes
+
+private theorem hasTy_of_quantItems {p : Program} {f : Nat} {env : Env} {op : QuantOp}
+    {binder : String} {bodyE : Expr} :
+    ∀ (xs : List Value) (v : Value),
+      evalQuantItems p f env op binder bodyE xs = .ok v → Value.hasTy p v .bool = true := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro v hes
+    rw [evalQuantItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    exact hes ▸ hasTy_bool p _
+  | cons x rest ihr =>
+    intro v hes
+    rw [evalQuantItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    split at hes
+    · rename_i b _
+      cases op <;> simp only at hes <;> split at hes
+      · exact ihr v hes
+      · simp only [Except.ok.injEq] at hes
+        exact hes ▸ hasTy_bool p _
+      · simp only [Except.ok.injEq] at hes
+        exact hes ▸ hasTy_bool p _
+      · exact ihr v hes
+    · simp at hes
+
+private theorem hasTy_of_reduceItems {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+    {accName elemName : String} {bodyE : Expr} {jbody : Js.Expr} {elem tinit : Ty}
+    (ih : ∀ (ctx : Compile.Ctx) (env : Env) (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value),
+      TypeChecked e → EnvTyped p env ctx → Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .ok v → Value.hasTy p v ty = true)
+    (hbody : TypeChecked bodyE) (henv : EnvTyped p env ctx)
+    (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
+      = .ok (jbody, tinit)) :
+    ∀ (xs : List Value) (acc v : Value), Value.hasElemTy p xs elem = true →
+      Value.hasTy p acc tinit = true →
+      evalReduceItems p f env accName elemName bodyE acc xs = .ok v →
+      Value.hasTy p v tinit = true := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro acc v _ hacc hes
+    rw [evalReduceItems_nil] at hes
+    simp only [Except.ok.injEq] at hes
+    exact hes ▸ hacc
+  | cons x rest ihr =>
+    intro acc v hxs hacc hes
+    rw [evalReduceItems_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i w hw
+    rw [hasElemTy_cons, Bool.and_eq_true] at hxs
+    exact ihr w v hxs.2
+      (ih _ _ bodyE jbody tinit w hbody ((henv.cons hacc).cons hxs.1) hcb hw) hes
 
 /-- If the compiler judged an expression to have type `T` and `eval` returns a value, the value satisfies
 `T`. -/
@@ -1695,6 +2000,113 @@ theorem typeSound (p : Program) :
         subst hxs
         simp only [Except.ok.injEq] at he
         exact he ▸ reverse_hasTy hat
+      · rename_i hne
+        exact (hne xs rfl).elim
+    | mapE harr hbody =>
+      rename_i arrE bodyE binder
+      obtain ⟨jarr, jbody, elem, tbody, hca, hcb, hty, -⟩ := compileExpr_mapE_inv hc
+      subst hty
+      rw [evalExpr_mapE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env arrE jarr (.array elem) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        rename_i vs hvs
+        simp only [Except.ok.injEq] at he
+        rw [← he, hasTy_array]
+        exact hasElemTy_of_mapItems ih hbody henv hcb xs vs hat hvs
+      · rename_i hne
+        exact (hne xs rfl).elim
+    | filterE harr hbody =>
+      rename_i arrE bodyE binder
+      obtain ⟨jarr, jbody, elem, hca, -, hty, -⟩ := compileExpr_filterE_inv hc
+      subst hty
+      rw [evalExpr_filterE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env arrE jarr (.array elem) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        rename_i vs hvs
+        simp only [Except.ok.injEq] at he
+        rw [← he, hasTy_array]
+        exact hasElemTy_of_filterItems xs vs hat hvs
+      · rename_i hne
+        exact (hne xs rfl).elim
+    | findE harr hbody =>
+      rename_i arrE bodyE binder
+      obtain ⟨jarr, jbody, elem, hca, -, hty, -⟩ := compileExpr_findE_inv hc
+      subst hty
+      rw [evalExpr_findE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env arrE jarr (.array elem) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        exact hasTy_of_findItems xs v hat he
+      · rename_i hne
+        exact (hne xs rfl).elim
+    | quantE harr hbody =>
+      rename_i op arrE bodyE binder
+      obtain ⟨jarr, jbody, elem, hca, -, hty, -⟩ := compileExpr_quantE_inv hc
+      subst hty
+      rw [evalExpr_quantE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env arrE jarr (.array elem) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        exact hasTy_of_quantItems xs v he
+      · rename_i hne
+        exact (hne xs rfl).elim
+    | reduceE harr hinit hbody =>
+      rename_i arrE initE bodyE accName elemName
+      obtain ⟨jarr, jinit, jbody, elem, hca, hci, hcb, -⟩ := compileExpr_reduceE_inv hc
+      rw [evalExpr_reduceE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env arrE jarr (.array elem) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      rw [hasTy_array] at hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        rename_i acc hacc
+        exact hasTy_of_reduceItems ih hbody henv hcb xs acc v hat
+          (ih ctx env initE jinit ty acc hinit henv hci hacc) he
       · rename_i hne
         exact (hne xs rfl).elim
 
