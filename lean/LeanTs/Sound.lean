@@ -45,6 +45,11 @@ inductive TypeChecked : Expr → Prop where
   | someE {e : Expr} : TypeChecked e → TypeChecked (.someE e)
   | okE {err : Ty} {e : Expr} : TypeChecked e → TypeChecked (.okE err e)
   | errorE {ok : Ty} {e : Expr} : TypeChecked e → TypeChecked (.errorE ok e)
+  | strUn {op : StrUnOp} {e : Expr} : TypeChecked e → TypeChecked (.strUn op e)
+  | strBin {op : StrBinOp} {lhs rhs : Expr} :
+      TypeChecked lhs → TypeChecked rhs → TypeChecked (.strBin op lhs rhs)
+  | substring {s lo hi : Expr} :
+      TypeChecked s → TypeChecked lo → TypeChecked hi → TypeChecked (.substring s lo hi)
 
 mutual
 
@@ -352,6 +357,39 @@ theorem applyBin_hasTy {p : Program} {op : BinOp} {t : Ty} {a b v : Value}
       | exact applyBin_concat_hasTy ha hb h
       | (simp only [applyBin, Except.ok.injEq] at h; subst h; exact hasTy_bool p _)
       | (exfalso; simp [applyBin] at h; done)
+
+theorem hasElemTy_map_str (p : Program) (ss : List String) :
+    Value.hasElemTy p (ss.map Value.str) .string = true := by
+  induction ss with
+  | nil => simp [hasElemTy_nil]
+  | cons s rest ih => simp [hasElemTy_cons, hasTy_str, ih]
+
+theorem applyStrUn_hasTy {p : Program} {op : StrUnOp} {w v : Value}
+    (h : applyStrUn op w = .ok v) : Value.hasTy p v .string = true := by
+  cases op <;> cases w <;>
+    first
+      | (exfalso; simp [applyStrUn] at h; done)
+      | (simp only [applyStrUn, Except.ok.injEq] at h; subst h; exact hasTy_str p _)
+
+theorem applyStrBin_hasTy {p : Program} {op : StrBinOp} {a b v : Value}
+    (h : applyStrBin op a b = .ok v) :
+    Value.hasTy p v (Compile.strBinResult op) = true := by
+  cases op <;> cases a <;> cases b <;>
+    first
+      | (exfalso; simp [applyStrBin] at h; done)
+      | (simp only [applyStrBin, Except.ok.injEq] at h; subst h
+         exact hasTy_bool p _)
+      | (simp only [applyStrBin, Except.ok.injEq] at h; subst h
+         simpa [Compile.strBinResult, hasTy_array] using hasElemTy_map_str p _)
+
+theorem sliceStr_hasTy {p : Program} {s lo hi v : Value} (h : sliceStr s lo hi = .ok v) :
+    Value.hasTy p v .string = true := by
+  cases s <;> cases lo <;> cases hi <;> simp only [sliceStr] at h <;>
+    first
+      | (exfalso; simp at h; done)
+      | (split at h
+         · exact absurd h (by simp)
+         · simp only [Except.ok.injEq] at h; subst h; exact hasTy_str p _)
 
 theorem asBool_hasTy {p : Program} {w v : Value} (h : asBool w = .ok v) :
     Value.hasTy p v .bool = true := by
@@ -685,5 +723,69 @@ theorem typeSound (p : Program) :
       simp only [Except.ok.injEq] at he
       rw [← hc.2, ← he, hasTy_error, hasFieldTys_cons, hasFieldTys_nil]
       simp [ih ctx env xE jx tx w hx henv hcx hw]
+    | strUn _ =>
+      rw [evalExpr_strUn] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      exact hc.2 ▸ applyStrUn_hasTy he
+    | strBin _ _ =>
+      rw [evalExpr_strBin] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i lPair hcl
+      obtain ⟨jl, tl⟩ := lPair
+      split at hc
+      · simp at hc
+      rename_i rPair hcr
+      obtain ⟨jr, tr⟩ := rPair
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      split at he
+      · simp at he
+      exact hc.2 ▸ applyStrBin_hasTy he
+    | substring _ _ _ =>
+      rw [evalExpr_substring] at he
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i sPair hcs
+      obtain ⟨js, ts⟩ := sPair
+      split at hc
+      · simp at hc
+      rename_i loPair hclo
+      obtain ⟨jlo, tlo⟩ := loPair
+      split at hc
+      · simp at hc
+      rename_i hiPair hchi
+      obtain ⟨jhi, thi⟩ := hiPair
+      split at hc
+      · simp at hc
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      split at he
+      · simp at he
+      split at he
+      · simp at he
+      exact hc.2 ▸ sliceStr_hasTy he
 
 end LeanTs

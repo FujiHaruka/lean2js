@@ -111,7 +111,7 @@ private def strBinHelper : StrBinOp → String
   | .includes => "__includes"
   | .split => "__split"
 
-private def strBinResult : StrBinOp → Ty
+def strBinResult : StrBinOp → Ty
   | .startsWith | .endsWith | .includes => .bool
   | .split => .array .string
 
