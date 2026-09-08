@@ -2863,7 +2863,7 @@ theorem eventually_arrowCallN {m : Js.Module} {jenv : Js.JsEnv} {names : List St
   | zero => omega
   | succ g =>
     rw [Js.eval.eq_def]
-    simp only [bind, Except.bind, hg1 g (by omega), hlen, bne_self_eq_false, if_neg]
+    simp only [bind, Except.bind, hg1 g (by omega), hlen, bne_self_eq_false]
     simpa using hg2 g (by omega)
 
 /-- Each declared field name reads back the value the reference semantics has at that position. The two
@@ -3504,7 +3504,6 @@ private theorem eventually_chain (p : Program) (m : Js.Module) (hsig : Signature
         cases htl : tests with
         | nil => simpa [htl] using hbody
         | cons t ts =>
-          simp only [htl]
           exact cond_true (eventually_andFold_true ts t (htests t (by rw [htl]; simp))
             (fun x hx => htests x (by rw [htl]; simp [hx]))) hbody
     · rename_i hmp
@@ -3520,7 +3519,6 @@ private theorem eventually_chain (p : Program) (m : Js.Module) (hsig : Signature
         cases htl : tests with
         | nil => exact absurd (htl ▸ hfail) (by simp [TestsFail])
         | cons t ts =>
-          simp only [htl]
           refine cond_false (eventually_andFold_of_fail ts t (htl ▸ hfail)) ?_
           exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
 
@@ -6449,7 +6447,7 @@ theorem eventuallyErr_arrowCallN {m : Js.Module} {jenv : Js.JsEnv} {names : List
   | zero => omega
   | succ g =>
     rw [Js.eval.eq_def]
-    simp only [bind, Except.bind, hg1 g (by omega), hlen, bne_self_eq_false, if_neg]
+    simp only [bind, Except.bind, hg1 g (by omega), hlen, bne_self_eq_false]
     simpa using hg2 g (by omega)
 
 /-- The mirror of `eventually_chain`: the arm the reference semantics took is the arm the chain takes,
@@ -6515,7 +6513,6 @@ private theorem eventuallyErr_chain (p : Program) (m : Js.Module) (hsig : Signat
         cases htl : tests with
         | nil => simpa [htl] using hbody
         | cons t ts =>
-          simp only [htl]
           exact eventuallyErr_condT (eventually_andFold_true ts t (htests t (by rw [htl]; simp))
             (fun x hx => htests x (by rw [htl]; simp [hx]))) hbody
     · rename_i hmp
@@ -6531,7 +6528,6 @@ private theorem eventuallyErr_chain (p : Program) (m : Js.Module) (hsig : Signat
         cases htl : tests with
         | nil => exact absurd (htl ▸ hfail) (by simp [TestsFail])
         | cons t ts =>
-          simp only [htl]
           refine eventuallyErr_condE (eventually_andFold_of_fail ts t (htl ▸ hfail)) ?_
           exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
 
