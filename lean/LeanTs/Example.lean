@@ -496,6 +496,31 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
   Decl.decl_correct program m "rebindTwice" rebindTwice args v hm find_rebindTwice
     (Correct.InFragment.of_inFragmentB rfl) he
 
+/-! ### Refusing what the reference semantics refuses
+
+`Decl.decl_refuses` needs no `InFragment`: the entry check does not look at the body, so this direction
+covers every public declaration rather than the six-form fragment. -/
+
+/-- Whatever `add` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
+function throws instead of computing. -/
+theorem add_refuses (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (jargs : List Js.JsValue) (hk : Js.dictKeysDistinctList jargs = true)
+    (hno : ¬ Decl.EvalAccepts program add jargs) :
+    Js.callFunction m "add" jargs = .error "typeError" :=
+  Decl.decl_refuses_call program m "add" add jargs hm find_add rfl hk hno
+
+/-- The hypothesis discharged on a concrete call: a string where an `Int53` was declared throws, because
+no `Int53` encodes to one. -/
+theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program = .ok m) :
+    Js.callFunction m "add" [.str "1", .num 2] = .error "typeError" := by
+  refine add_refuses m hm _ (by simp [Js.dictKeysDistinctList, Js.dictKeysDistinct]) ?_
+  rintro ⟨args, hargs, -, htyped⟩
+  match args with
+  | [] => simp at hargs
+  | v :: rest =>
+    obtain ⟨i, rfl⟩ := hasTy_int53_inv htyped.1
+    simp [encodeValue] at hargs
+
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
@@ -518,7 +543,11 @@ def manifest : Manifest := {
     { name := "add_calls_agree"
       statement :=
         "for any arguments, the generated add returns what eval returns, entry check included"
-      proof := add_calls_agree }
+      proof := add_calls_agree },
+    { name := "add_refuses"
+      statement :=
+        "for any arguments eval would not accept, the generated add throws instead of computing"
+      proof := add_refuses }
   ]
 }
 
