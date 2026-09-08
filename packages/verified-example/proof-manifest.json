@@ -329,6 +329,10 @@
     {
       "name": "cartTotal_traps",
       "statement": "for any arguments eval accepts, if the fold throws — out of fuel aside — the generated cartTotal throws the same code"
+    },
+    {
+      "name": "file_reads_back",
+      "statement": "the index.js shipped for this program reads back as the module the compiler built"
     }
   ]
 }

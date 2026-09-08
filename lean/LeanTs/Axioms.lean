@@ -110,6 +110,10 @@ between the trees the proofs are about and the text that ships.
 #guard_msgs in
 #print axioms LeanTs.Decl.decl_traps
 
+/-- info: 'LeanTs.Example.file_reads_back' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.file_reads_back
+
 /-- info: 'LeanTs.Compile.parseModule_render_of_compileProgram' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Compile.parseModule_render_of_compileProgram

@@ -1,6 +1,7 @@
 import LeanTs.Decl
 import LeanTs.Eval
 import LeanTs.Manifest
+import LeanTs.Renderable
 import LeanTs.Syntax
 
 /-!
@@ -607,6 +608,13 @@ theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .o
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=
   Decl.decl_traps program m "addMoney" addMoney args err hm find_addMoney hlen htyped he hne
 
+/-- The text `leants` writes for this program reads back as the module the compiler built. Nothing in
+between is assumed: the roundtrip holds of whatever `compileProgram` produces, so the claim carries no
+side condition about the shape of the module. -/
+theorem file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = .ok m) :
+    Parse.parseModule (Js.Module.render m).toList = some m :=
+  Compile.parseModule_render_of_compileProgram hm
+
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
@@ -661,7 +669,11 @@ def manifest : Manifest := {
     { name := "cartTotal_traps"
       statement :=
         "for any arguments eval accepts, if the fold throws — out of fuel aside — the generated cartTotal throws the same code"
-      proof := cartTotal_traps }
+      proof := cartTotal_traps },
+    { name := "file_reads_back"
+      statement :=
+        "the index.js shipped for this program reads back as the module the compiler built"
+      proof := file_reads_back }
   ]
 }
 
