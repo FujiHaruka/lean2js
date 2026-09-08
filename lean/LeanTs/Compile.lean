@@ -316,7 +316,7 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | none => .error s!"unbound variable: {name}"
   | .fnRef name =>
     match p.find? name with
-    | none => .error s!"{name} is not declared before this reference"
+    | none => .error s!"unknown function: {name}"
     | some d => .ok (.ident name, .fn (d.params.map (·.ty)) d.ret)
   | .un .not x => do
     let (jx, tx) ← compileExpr p ctx x
@@ -396,7 +396,7 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | some _ => .error s!"{fn} names both a function and a binding in scope here"
     | none =>
       match p.find? fn with
-      | none => .error s!"{fn} is not declared before this call"
+      | none => .error s!"unknown function: {fn}"
       | some d => do
         let js ← compileArgs p ctx args
         if d.params.length != js.length then .error s!"wrong number of arguments to {fn}"
@@ -820,14 +820,83 @@ def validateType (p : Program) (t : TypeDef) : Except String Unit := do
       if mentions p t.name [] f.ty then
         .error s!"{t.name} refers to itself; a recursive type cannot cross the boundary"
 
+/-- Whether a name a body reaches for is declared before the declaration that reaches for it. A name the
+program does not declare at all is a parameter holding a function; `compileExpr` refuses a parameter that
+shares its name with a declaration, so every call either goes backwards or does not name a declaration. -/
+private def declPrecedes (p : Program) (limit : Nat) (name : String) : Except String Unit :=
+  match p.decls.findIdx? (·.name == name) with
+  | some idx =>
+    if idx < limit then .ok ()
+    else .error s!"{name} is not declared before the declaration that calls it"
+  | none => .ok ()
+
+mutual
+
+/-- Every call and function reference a body makes lands on an earlier declaration. Nothing calls itself,
+a later declaration, or itself through a chain of either, so the call graph is acyclic and no program in
+the subset recurses. -/
+private def callsPrecede (p : Program) (limit : Nat) : Expr → Except String Unit
+  | .lit _ | .var _ | .noneE _ => .ok ()
+  | .fnRef name => declPrecedes p limit name
+  | .un _ x | .strUn _ x | .someE x | .okE _ x | .errorE _ x | .proj x _ | .length x
+  | .arrayReverse x | .dictKeys x | .dictValues x => callsPrecede p limit x
+  | .bin _ a b | .strBin _ a b | .index a b | .dictGet a b | .dictHas a b | .dictDelete a b => do
+    callsPrecede p limit a
+    callsPrecede p limit b
+  | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c => do
+    callsPrecede p limit a
+    callsPrecede p limit b
+    callsPrecede p limit c
+  | .letE _ _ val body => do
+    callsPrecede p limit val
+    callsPrecede p limit body
+  | .mapE arr _ body | .filterE arr _ body | .findE arr _ body | .quantE _ arr _ body => do
+    callsPrecede p limit arr
+    callsPrecede p limit body
+  | .reduceE arr init _ _ body => do
+    callsPrecede p limit arr
+    callsPrecede p limit init
+    callsPrecede p limit body
+  | .call fn args => do
+    declPrecedes p limit fn
+    callsPrecedeList p limit args
+  | .ctor _ _ _ args | .arrayLit _ args => callsPrecedeList p limit args
+  | .dictLit _ entries => callsPrecedeValues p limit entries
+  | .matchE scrut alts => do
+    callsPrecede p limit scrut
+    callsPrecedeAlts p limit alts
+
+private def callsPrecedeList (p : Program) (limit : Nat) : List Expr → Except String Unit
+  | [] => .ok ()
+  | e :: rest => do
+    callsPrecede p limit e
+    callsPrecedeList p limit rest
+
+private def callsPrecedeValues (p : Program) (limit : Nat) :
+    List (String × Expr) → Except String Unit
+  | [] => .ok ()
+  | (_, e) :: rest => do
+    callsPrecede p limit e
+    callsPrecedeValues p limit rest
+
+private def callsPrecedeAlts (p : Program) (limit : Nat) : List Alt → Except String Unit
+  | [] => .ok ()
+  | (_, body) :: rest => do
+    callsPrecede p limit body
+    callsPrecedeAlts p limit rest
+
+end
+
 def compileDecls (p : Program) : Nat → List Decl → Except String (List Js.Func)
   | _, [] => .ok []
   | i, d :: rest => do
-    .ok ((← compileDecl { p with decls := p.decls.take i } d) :: (← compileDecls p (i + 1) rest))
+    callsPrecede p i d.body
+    .ok ((← compileDecl p d) :: (← compileDecls p (i + 1) rest))
 
-/-- Each declaration is compiled against the ones before it only, so a function can call neither itself
-nor a later one. That is what keeps nontermination out of the subset: `eval`'s fuel bounds the proof, not
-the language. Traversal is `map` / `filter` / `reduce`, which are syntax and cannot recur. -/
+/-- A declaration is compiled against the whole program and `callsPrecede` is what keeps a function from
+calling itself or a later one. That is what keeps nontermination out of the subset: `eval`'s fuel bounds
+the proof, not the language. Traversal is `map` / `filter` / `reduce`, which are syntax and cannot
+recur. -/
 def compileProgram (p : Program) : Except String Js.Module := do
   validateDistinct "type" (p.types.map (·.name))
   p.types.forM (validateType p)

@@ -128,7 +128,7 @@ Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-ma
 2. そこから横に広げる: Bool / if → inductive / match → structure → Array → 高階コンビネータ →
    String / UInt32 / BigInt
 
-停止性はコンパイラが担保している。各宣言は自分より前の宣言だけを見てコンパイルされるので、自己再帰も
+停止性はコンパイラが担保している。宣言の本体が名指しできるのは自分より前の宣言だけなので、自己再帰も
 相互再帰も書けず、走査は `map` / `filter` / `reduce` が受け持つ。`eval` の fuel は証明を閉じるための
 装置であって、サブセットの意味論ではない。
 

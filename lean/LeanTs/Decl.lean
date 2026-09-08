@@ -1293,284 +1293,9 @@ theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) {
     exact compileBody_finish_traps m p hsig (by constructor <;> assumption)
       (by rwa [compileBody.eq_def] at hc) henv hcov hjenv he hne
 
-/-! ## Two programs, one declaration
-
-`compileProgram` compiles declaration *i* against `p.decls.take i`, so nothing can call itself or a later
-declaration, while `evalCall` runs on the whole program. The two agree on everything a fragment body
-touches, because that is only the type declarations, and taking a prefix of `decls` leaves `types`
-alone. -/
-
-mutual
-
-theorem wfTy_types_irrel {p q : Program} (h : q.types = p.types) :
-    ∀ (scope : List String) (ty : Ty), wfTy q scope ty = wfTy p scope ty
-  | _, .bool | _, .int53 | _, .uint32 | _, .string | _, .bigint => by rw [wfTy.eq_def, wfTy.eq_def]
-  | _, .var _ => by rw [wfTy.eq_def, wfTy.eq_def]
-  | _, .fn _ _ => by rw [wfTy.eq_def, wfTy.eq_def]
-  | scope, .option t => by rw [wfTy.eq_def, wfTy.eq_def]; exact wfTy_types_irrel h scope t
-  | scope, .array t => by rw [wfTy.eq_def, wfTy.eq_def]; exact wfTy_types_irrel h scope t
-  | scope, .dict t => by rw [wfTy.eq_def, wfTy.eq_def]; exact wfTy_types_irrel h scope t
-  | scope, .result a b => by
-    rw [wfTy.eq_def, wfTy.eq_def]
-    simp only [wfTy_types_irrel h scope a, wfTy_types_irrel h scope b]
-  | scope, .named n args => by
-    rw [wfTy.eq_def, wfTy.eq_def]
-    simp only [Program.findType?, h, wfTyArgs_types_irrel h scope args]
-termination_by _ ty => sizeOf ty
-
-theorem wfTyArgs_types_irrel {p q : Program} (h : q.types = p.types) :
-    ∀ (scope : List String) (args : List Ty), wfTyArgs q scope args = wfTyArgs p scope args
-  | _, [] => by rw [wfTyArgs.eq_def, wfTyArgs.eq_def]
-  | scope, t :: rest => by
-    rw [wfTyArgs.eq_def, wfTyArgs.eq_def]
-    simp only [wfTy_types_irrel h scope t, wfTyArgs_types_irrel h scope rest]
-termination_by _ args => sizeOf args
-
-end
-
-mutual
-
-theorem tyDesc_types_irrel {p q : Program} (h : q.types = p.types) :
-    ∀ (b : Nat) (ty : Ty), tyDesc q b ty = tyDesc p b ty
-  | _, .bool | _, .int53 | _, .uint32 | _, .string | _, .bigint => by
-    rw [tyDesc.eq_def, tyDesc.eq_def]
-  | _, .var _ => by rw [tyDesc.eq_def, tyDesc.eq_def]
-  | _, .fn _ _ => by rw [tyDesc.eq_def, tyDesc.eq_def]
-  | b, .option t => by rw [tyDesc.eq_def, tyDesc.eq_def]; simp only [tyDesc_types_irrel h b t]
-  | b, .array t => by rw [tyDesc.eq_def, tyDesc.eq_def]; simp only [tyDesc_types_irrel h b t]
-  | b, .dict t => by rw [tyDesc.eq_def, tyDesc.eq_def]; simp only [tyDesc_types_irrel h b t]
-  | b, .result a c => by
-    rw [tyDesc.eq_def, tyDesc.eq_def]
-    simp only [tyDesc_types_irrel h b a, tyDesc_types_irrel h b c]
-  | 0, .named _ _ => by rw [tyDesc.eq_def, tyDesc.eq_def]
-  | b + 1, .named n args => by
-    rw [tyDesc.eq_def, tyDesc.eq_def]
-    simp only [Program.findType?, h]
-    split
-    · rfl
-    · simp only [tyDescAlts_types_irrel h b _]
-termination_by b ty => (b, 0, sizeOf ty)
-
-theorem tyDescAlts_types_irrel {p q : Program} (h : q.types = p.types) :
-    ∀ (b : Nat) (cs : List CtorDef), tyDescAlts q b cs = tyDescAlts p b cs
-  | _, [] => by rw [tyDescAlts.eq_def, tyDescAlts.eq_def]
-  | b, c :: rest => by
-    rw [tyDescAlts.eq_def, tyDescAlts.eq_def]
-    simp only [tyDescFields_types_irrel h b c.fields, tyDescAlts_types_irrel h b rest]
-termination_by b cs => (b, 2, sizeOf cs)
-
-theorem tyDescFields_types_irrel {p q : Program} (h : q.types = p.types) :
-    ∀ (b : Nat) (fs : List Field), tyDescFields q b fs = tyDescFields p b fs
-  | _, [] => by rw [tyDescFields.eq_def, tyDescFields.eq_def]
-  | b, f :: rest => by
-    rw [tyDescFields.eq_def, tyDescFields.eq_def]
-    simp only [tyDesc_types_irrel h b f.ty, tyDescFields_types_irrel h b rest]
-termination_by b fs => (b, 1, sizeOf fs)
-
-end
-
-theorem tyDescBudget_types_irrel {p q : Program} (h : q.types = p.types) (ty : Ty) :
-    tyDescBudget q ty = tyDescBudget p ty := by
-  simp [tyDescBudget, h]
-
-theorem paramChecks_types_irrel {p q : Program} (h : q.types = p.types) :
-    ∀ (i : Nat) (params : List Param), paramChecks q i params = paramChecks p i params
-  | _, [] => by rw [paramChecks.eq_def, paramChecks.eq_def]
-  | i, param :: rest => by
-    rw [paramChecks.eq_def, paramChecks.eq_def]
-    simp only [tyDescBudget_types_irrel h param.ty, tyDesc_types_irrel h _ param.ty,
-      paramChecks_types_irrel h (i + 1) rest]
-
-theorem compileArgs_types_irrel {p q : Program} :
-    ∀ (items : List Expr),
-      (∀ e ∈ items, ∀ ctx, Compile.compileExpr q ctx e = Compile.compileExpr p ctx e) →
-      ∀ ctx, Compile.compileArgs q ctx items = Compile.compileArgs p ctx items
-  | [], _, _ => by rw [Compile.compileArgs, Compile.compileArgs]
-  | e :: rest, ih, ctx => by
-    rw [Compile.compileArgs, Compile.compileArgs]
-    simp only [ih e (by simp) ctx,
-      compileArgs_types_irrel rest (fun x hx => ih x (by simp [hx])) ctx]
-
-theorem compileValues_types_irrel {p q : Program} :
-    ∀ (entries : List (String × Expr)),
-      (∀ e ∈ entries, ∀ ctx, Compile.compileExpr q ctx e.2 = Compile.compileExpr p ctx e.2) →
-      ∀ ctx, Compile.compileValues q ctx entries = Compile.compileValues p ctx entries
-  | [], _, _ => by rw [Compile.compileValues, Compile.compileValues]
-  | (k, e) :: rest, ih, ctx => by
-    rw [Compile.compileValues, Compile.compileValues]
-    simp only [ih (k, e) (by simp) ctx,
-      compileValues_types_irrel rest (fun x hx => ih x (by simp [hx])) ctx]
-
-theorem compileAlts_types_irrel {p q : Program} (h : q.types = p.types) :
-    ∀ (alts : List Alt),
-      (∀ alt ∈ alts, ∀ ctx, Compile.compileExpr q ctx (Alt.body alt)
-        = Compile.compileExpr p ctx (Alt.body alt)) →
-      ∀ (ctx : Ctx) (ty : Ty), Compile.compileAlts q ctx ty alts = Compile.compileAlts p ctx ty alts
-  | [], _, _, _ => by rw [Compile.compileAlts, Compile.compileAlts]
-  | (pat, body) :: rest, ih, ctx, ty => by
-    have ihb : ∀ ctx, Compile.compileExpr q ctx body = Compile.compileExpr p ctx body :=
-      ih (pat, body) (by simp)
-    rw [Compile.compileAlts, Compile.compileAlts, h]
-    simp only [ihb, compileAlts_types_irrel h rest (fun a ha => ih a (by simp [ha])) ctx ty]
-
-theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
-    (hfrag : InFragment e) :
-    ∀ (ctx : Ctx), Compile.compileExpr q ctx e = Compile.compileExpr p ctx e := by
-  induction hfrag with
-  | lit l => intro ctx; cases l <;> rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-  | var n => intro ctx; rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-  | cond _ _ _ ihc iht ihe =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihc ctx, iht ctx, ihe ctx]
-  | @letE name ty _ _ _ _ ihv ihb =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [wfTy_types_irrel h [] ty, ihv ctx, ihb ((name, ty) :: ctx)]
-  | @un op _ _ ihx =>
-    intro ctx
-    cases op <;>
-      · rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-        simp only [ihx ctx]
-  | bin _ _ ihl ihr =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihl ctx, ihr ctx]
-  | noneE elem =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [wfTy_types_irrel h [] elem]
-  | someE _ ihx =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihx ctx]
-  | @okE err _ _ ihx =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [wfTy_types_irrel h [] err, ihx ctx]
-  | @errorE ok _ _ ihx =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [wfTy_types_irrel h [] ok, ihx ctx]
-  | @strUn op _ _ ihx =>
-    intro ctx
-    cases op <;>
-      · rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-        simp only [ihx ctx]
-  | @strBin op _ _ _ _ ihl ihr =>
-    intro ctx
-    cases op <;>
-      · rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-        simp only [ihl ctx, ihr ctx]
-  | substring _ _ _ ihs ihlo ihhi =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihs ctx, ihlo ctx, ihhi ctx]
-  | index _ _ iharr ihidx =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx, ihidx ctx]
-  | arraySlice _ _ _ iharr ihlo ihhi =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx, ihlo ctx, ihhi ctx]
-  | arrayReverse _ iharr =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx]
-  | length _ iharr =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx]
-  | dictGet _ _ ihd ihk =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihd ctx, ihk ctx]
-  | dictHas _ _ ihd ihk =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihd ctx, ihk ctx]
-  | dictSet _ _ _ ihd ihk ihv =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihd ctx, ihk ctx, ihv ctx]
-  | dictKeys _ ihd =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihd ctx]
-  | dictValues _ ihd =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihd ctx]
-  | dictDelete _ _ ihd ihk =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihd ctx, ihk ctx]
-  | proj _ _ ihx =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihx ctx, Program.findType?, h]
-  | ctor typeName tyArgs _ _ ihargs =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [wfTy_types_irrel h [] (.named typeName tyArgs), Program.findType?, h,
-      compileArgs_types_irrel _ (fun e he => ihargs e he) ctx]
-  | arrayLit elem _ ihitems =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [wfTy_types_irrel h [] elem, compileArgs_types_irrel _ (fun e he => ihitems e he) ctx]
-  | dictLit value _ ihentries =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [wfTy_types_irrel h [] value,
-      compileValues_types_irrel _ (fun e he => ihentries e he) ctx]
-  | @mapE _ _ binder _ _ iharr ihbody =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx, ihbody]
-  | @filterE _ _ binder _ _ iharr ihbody =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx, ihbody]
-  | @findE _ _ binder _ _ iharr ihbody =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx, ihbody]
-  | @quantE op _ _ binder _ _ iharr ihbody =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx, ihbody]
-  | @reduceE _ _ _ accName elemName _ _ _ iharr ihinit ihbody =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [iharr ctx, ihinit ctx, ihbody]
-  | @matchE _ alts _ _ ihscrut ihalts =>
-    intro ctx
-    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
-    simp only [ihscrut ctx, h, compileAlts_types_irrel h alts (fun alt ha => ihalts alt ha) ctx]
-
-theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
-    (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :
-    compileFinish q ctx e acc = compileFinish p ctx e acc := by
-  rw [compileFinish, compileFinish, compileExpr_types_irrel h hfrag ctx]
-
-theorem compileBody_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
-    (hfrag : InFragment e) :
-    ∀ (ctx : Ctx) (acc : List Js.Stmt), compileBody q ctx e acc = compileBody p ctx e acc := by
-  induction hfrag with
-  | @letE name ty val body hval hbody _ ihb =>
-    intro ctx acc
-    rw [compileBody.eq_def, compileBody.eq_def]
-    simp only [compileFinish_types_irrel h (.letE hval hbody) ctx acc,
-      compileExpr_types_irrel h hval ctx, ihb]
-  | _ =>
-    intro ctx acc
-    rw [compileBody.eq_def, compileBody.eq_def]
-    exact compileFinish_types_irrel h (by constructor <;> assumption) ctx acc
-
 /-! ## One public function
 
-The pieces meet here. `compileProgram` compiles a declaration against the prefix before it and
+The pieces meet here. `compileProgram` compiles a declaration against the whole program and
 `callFunction` runs the result; `evalCall` checks the arguments against the declaration and runs the
 body. What is left is to read both apart and line them up. -/
 
@@ -1808,12 +1533,12 @@ theorem compileDecls_find :
     ∀ (p : Program) (i : Nat) (decls : List Decl) (funcs : List Js.Func) (fn : String) (d : Decl),
       compileDecls p i decls = .ok funcs →
       decls.find? (·.name == fn) = some d →
-      ∃ j f, compileDecl { p with decls := p.decls.take j } d = .ok f ∧
-        funcs.find? (·.name == fn) = some f
+      ∃ f, compileDecl p d = .ok f ∧ funcs.find? (·.name == fn) = some f
   | _, _, [], _, _, _, _, hfind => by simp at hfind
   | p, i, d₀ :: rest, funcs, fn, d, hcs, hfind => by
     rw [compileDecls.eq_def] at hcs
     simp only [bind, Except.bind] at hcs
+    split at hcs; · exact (errNeOk hcs).elim
     split at hcs; · exact (errNeOk hcs).elim
     rename_i f₀ hf₀
     split at hcs; · exact (errNeOk hcs).elim
@@ -1828,17 +1553,16 @@ theorem compileDecls_find :
       rw [hb] at hfind
       simp only at hfind
       obtain rfl : d₀ = d := Option.some.inj hfind
-      exact ⟨i, f₀, hf₀, by simp [hname, hb]⟩
+      exact ⟨f₀, hf₀, by simp [hname, hb]⟩
     | false =>
       rw [hb] at hfind
       simp only at hfind
-      obtain ⟨j, f, hf, hfindf⟩ := compileDecls_find p (i + 1) rest funcsRest fn d hrest hfind
-      exact ⟨j, f, hf, by simp [hname, hb, hfindf]⟩
+      obtain ⟨f, hf, hfindf⟩ := compileDecls_find p (i + 1) rest funcsRest fn d hrest hfind
+      exact ⟨f, hf, by simp [hname, hb, hfindf]⟩
 
 theorem compileProgram_find {p : Program} {m : Js.Module} {fn : String} {d : Decl}
     (hm : compileProgram p = .ok m) (hd : p.find? fn = some d) :
-    ∃ j f, compileDecl { p with decls := p.decls.take j } d = .ok f ∧
-      m.funcs.find? (·.name == fn) = some f := by
+    ∃ f, compileDecl p d = .ok f ∧ m.funcs.find? (·.name == fn) = some f := by
   rw [compileProgram] at hm
   simp only [bind, Except.bind] at hm
   split at hm; · exact (errNeOk hm).elim
@@ -1866,12 +1590,9 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
       Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v) := by
   obtain ⟨hlen, htyped, hbody⟩ := evalCall_inv hd he
   have hsig := signatureOk_of_compileProgram hm
-  obtain ⟨j, f, hf, hfindf⟩ := compileProgram_find hm hd
+  obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
   obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody⟩ :=
     compileDecl_shape hf
-  have htypes : ({ p with decls := p.decls.take j } : Program).types = p.types := rfl
-  rw [compileBody_types_irrel htypes hfrag] at hcb
-  rw [paramChecks_types_irrel htypes] at hchecks
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_correct m p hsig hfrag hcb (envTyped_bindParams p d.params args htyped)
       (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres) hbody
@@ -1905,12 +1626,9 @@ theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args 
       Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code := by
   rw [evalCall_body hd hlen htyped] at he
   have hsig := signatureOk_of_compileProgram hm
-  obtain ⟨j, f, hf, hfindf⟩ := compileProgram_find hm hd
+  obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
   obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody⟩ :=
     compileDecl_shape hf
-  have htypes : ({ p with decls := p.decls.take j } : Program).types = p.types := rfl
-  rw [compileBody_types_irrel htypes hfrag] at hcb
-  rw [paramChecks_types_irrel htypes] at hchecks
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_traps m p hsig hfrag hcb (envTyped_bindParams p d.params args htyped)
       (envCovers_bindParams d.params args hlen)
@@ -1965,11 +1683,9 @@ theorem decl_refuses (p : Program) (m : Js.Module) (fn : String) (d : Decl)
     ∀ g, 2 ≤ g → Js.callFunctionAt m g fn jargs = .error "typeError" := by
   intro g hg
   obtain ⟨g', rfl⟩ : ∃ g', g = g' + 2 := ⟨g - 2, by omega⟩
-  obtain ⟨j, f, hf, hfindf⟩ := compileProgram_find hm hd
+  obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
   obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody⟩ :=
     compileDecl_shape hf
-  have htypes : ({ p with decls := p.decls.take j } : Program).types = p.types := rfl
-  rw [paramChecks_types_irrel htypes] at hchecks
   rw [Js.callFunctionAt, hfindf]
   simp only [hparams, hfbody]
   by_cases hlen : d.params.length = jargs.length

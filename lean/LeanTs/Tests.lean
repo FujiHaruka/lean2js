@@ -270,6 +270,22 @@ private def applyRule : Decl :=
   decl "wrongShape" [("f", .fn [.string] .int53), ("amount", .int53)] .int53
     (call "f" [v "amount"])]
 
+private def twice : Decl := decl "twice" [("n", .int53)] .int53 (v "n" *' int53 2)
+
+private def doubleAll : Decl :=
+  decl "doubleAll" [("xs", .array .int53)] (.array .int53)
+    (map' (v "xs") "x" (call "twice" [v "x"]))
+
+#guard compilesAll [twice, doubleAll]
+#guard !compilesAll [doubleAll, twice]
+#guard !compilesAll [decl "loop" [("n", .int53)] .int53 (call "loop" [v "n"])]
+#guard !compilesAll [decl "ping" [("n", .int53)] .int53 (call "pong" [v "n"]),
+  decl "pong" [("n", .int53)] .int53 (call "ping" [v "n"])]
+#guard !compilesAll [twice,
+  decl "sumTwice" [("xs", .array .int53)] .int53
+    (reduce' (v "xs") (int53 0) "acc" "x" (v "acc" +' call "later" [v "x"])),
+  decl "later" [("n", .int53)] .int53 (v "n")]
+
 #guard !compiles (decl "returnsFn" [("amount", .int53)] (.fn [.int53] .int53) (v "amount"))
 #guard !compiles
   (decl "arrayOfFn" [("fs", .array (.fn [.int53] .int53))] .int53 (len (v "fs")))
