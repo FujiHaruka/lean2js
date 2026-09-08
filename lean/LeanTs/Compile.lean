@@ -805,7 +805,7 @@ private partial def mentions (p : Program) (target : String) (seen : List String
 Recursive types are rejected at their declaration rather than where they cross the boundary, because the
 type expansions downstream — the entry check, the vector generator — all diverge on one and only the entry
 check is in a position to report an error. -/
-private def validateType (p : Program) (t : TypeDef) : Except String Unit := do
+def validateType (p : Program) (t : TypeDef) : Except String Unit := do
   validateIdent "type" t.name
   t.params.forM (validateIdent "type parameter")
   validateDistinct "type parameter" t.params
