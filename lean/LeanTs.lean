@@ -17,3 +17,4 @@ import LeanTs.Sound
 import LeanTs.Render
 import LeanTs.SourceMap
 import LeanTs.Step
+import LeanTs.Decl

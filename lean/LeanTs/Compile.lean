@@ -671,6 +671,8 @@ def compileBody (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
   | e => compileFinish p ctx e acc
 termination_by e
 
+mutual
+
 /-- Expands a declared type into the shape the generated code checks an argument against. Recursion is
 what would make this diverge, and `validateType` has already rejected it, so no occurs check is needed
 here — one by name would reject `Paginated (Paginated Int53)`, which is not recursive.
@@ -678,7 +680,10 @@ here — one by name would reject `Paginated (Paginated Int53)`, which is not re
 `budget` counts the name expansions still allowed. A name expansion substitutes the type arguments into
 the field types, so the result can be larger than what was expanded and the structure alone does not
 measure the recursion; `tyDescBudget` is what bounds it from above. Exhausting it is a compile error, so a
-budget that turns out to be too small loses the artifact rather than weakening the check it emits. -/
+budget that turns out to be too small loses the artifact rather than weakening the check it emits.
+
+The constructor and field lists recurse through helpers rather than `mapM` so that a proof about the
+entry check can unfold them. -/
 def tyDesc (p : Program) : Nat → Ty → Except String Js.TyDesc
   | _, .bool => .ok .bool
   | _, .int53 => .ok .int53
@@ -695,12 +700,23 @@ def tyDesc (p : Program) : Nat → Ty → Except String Js.TyDesc
   | budget + 1, .named n args =>
     match p.findType? n with
     | none => .error s!"unknown type: {n}"
-    | some t => do
-      let alts ← (t.ctorsAt args).mapM fun c => do
-        let fields ← c.fields.mapM fun f => do .ok (f.name, ← tyDesc p budget f.ty)
-        .ok (c.name, fields)
-      .ok (.ctors n alts)
-termination_by budget ty => (budget, sizeOf ty)
+    | some t => do .ok (.ctors n (← tyDescAlts p budget (t.ctorsAt args)))
+termination_by budget ty => (budget, 0, sizeOf ty)
+
+def tyDescAlts (p : Program) (budget : Nat) :
+    List CtorDef → Except String (List (String × List (String × Js.TyDesc)))
+  | [] => .ok []
+  | c :: rest => do
+    .ok ((c.name, ← tyDescFields p budget c.fields) :: (← tyDescAlts p budget rest))
+termination_by cs => (budget, 2, sizeOf cs)
+
+def tyDescFields (p : Program) (budget : Nat) :
+    List Field → Except String (List (String × Js.TyDesc))
+  | [] => .ok []
+  | f :: rest => do .ok ((f.name, ← tyDesc p budget f.ty) :: (← tyDescFields p budget rest))
+termination_by fs => (budget, 1, sizeOf fs)
+
+end
 
 /-- Every name expansion either descends one edge of the declaration graph, which `validateType` keeps
 acyclic and so is at most `p.types.length` long, or lands in a type argument, of which the type carries at
