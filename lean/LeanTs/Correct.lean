@@ -2544,7 +2544,7 @@ theorem eventually_reduceJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jinit jbody 
     rw [Js.eval.eq_def]
     simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega), hg3 g (by omega)]
 
-private theorem eventuallyFilter_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyFilter_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
     {elem : Ty} (hbodyTC : TypeChecked bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -2574,7 +2574,7 @@ private theorem eventuallyFilter_of_items (p : Program) (m : Js.Module) {ctx : C
     split at hes
     · simp at hes
     rename_i w hw
-    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p hprog f ((binder, elem) :: ctx) ((binder, x) :: env)
       bodyE jbody .bool w hbodyTC (henv.cons hxs.1) hcb hw)
     obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
     cases b with
@@ -2596,7 +2596,7 @@ private theorem eventuallyFilter_of_items (p : Program) (m : Js.Module) {ctx : C
       rw [encodeList, Js.evalFilterJs]
       simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
 
-private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
     {elem : Ty} (hbodyTC : TypeChecked bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -2626,7 +2626,7 @@ private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) {ctx : Com
     split at hes
     · simp at hes
     rename_i w hw
-    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p hprog f ((binder, elem) :: ctx) ((binder, x) :: env)
       bodyE jbody .bool w hbodyTC (henv.cons hxs.1) hcb hw)
     obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
     cases b with
@@ -2643,7 +2643,7 @@ private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) {ctx : Com
       rw [encodeList, Js.evalFindJs]
       simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
 
-private theorem eventuallyQuant_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyQuant_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {op : QuantOp} {binder : String} {bodyE : Expr}
     {jbody : Js.Expr} {elem : Ty} (hbodyTC : TypeChecked bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -2673,7 +2673,7 @@ private theorem eventuallyQuant_of_items (p : Program) (m : Js.Module) {ctx : Co
     split at hes
     · simp at hes
     rename_i w hw
-    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p hprog f ((binder, elem) :: ctx) ((binder, x) :: env)
       bodyE jbody .bool w hbodyTC (henv.cons hxs.1) hcb hw)
     obtain ⟨g1, hg1⟩ := ihb (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
     cases op <;> simp only at hes <;> split at hes
@@ -2705,7 +2705,7 @@ private theorem eventuallyQuant_of_items (p : Program) (m : Js.Module) {ctx : Co
       simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb]
       simpa using hg2 g' (by omega)
 
-private theorem eventuallyReduce_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyReduce_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {accName elemName : String} {bodyE : Expr}
     {jbody : Js.Expr} {elem tinit : Ty} (hbodyTC : TypeChecked bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -2738,7 +2738,7 @@ private theorem eventuallyReduce_of_items (p : Program) (m : Js.Module) {ctx : C
     split at hes
     · simp at hes
     rename_i w hw
-    have hwt := typeSound p f ((elemName, elem) :: (accName, tinit) :: ctx)
+    have hwt := typeSound p hprog f ((elemName, elem) :: (accName, tinit) :: ctx)
       ((elemName, x) :: (accName, acc) :: env) bodyE jbody tinit w hbodyTC
       ((henv.cons hacc).cons hxs.1) hcb hw
     obtain ⟨g1, hg1⟩ := ihb ((henv.cons hacc).cons hxs.1) ((hjenv.cons haccName).cons helemName) hcb hw
@@ -3527,7 +3527,8 @@ private theorem eventually_chain (p : Program) (m : Js.Module) (hsig : Signature
 The induction is on fuel rather than on the fragment derivation because a call runs the callee's body,
 which is not a subterm of the call. Every shape evaluates its subterms with one less fuel, so the
 hypothesis at `f` reaches subterms and callee bodies alike. -/
-theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p) (f : Nat)
+theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat)
     (ih : ∀ {e : Expr}, InFragment e →
       ∀ ⦃ctx : Compile.Ctx⦄ ⦃env : Env⦄ ⦃jenv : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄ ⦃v : Value⦄,
         EnvTyped p env ctx →
@@ -3665,7 +3666,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i vv hvv
     have hvt : Value.hasTy p vv tv = true :=
-      typeSound p f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
+      typeSound p hprog f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
     exact eventually_arrowCall (ihv henv hjenv hcv hvv)
       (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt))
         (hjenv.cons (ne_scrutName_of_validateIdent hvi)) hcb he)
@@ -3690,7 +3691,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         simp only [Except.ok.injEq, Prod.mk.injEq] at hc
         obtain ⟨hje, _⟩ := hc
         subst hje
-        have hwt := typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw
+        have hwt := typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw
         have htxb : tx = Ty.bool := Ty.eq_of_beq htx
         obtain ⟨b, hb⟩ := hasTy_bool_inv (htxb ▸ hwt)
         subst hb
@@ -3705,7 +3706,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       · simp at hc
       rename_i xPair hcx
       obtain ⟨jx, tx⟩ := xPair
-      have hwt := typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw
+      have hwt := typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw
       split at hc
       · rename_i htx
         have htx' : tx = Ty.int53 := htx
@@ -3736,7 +3737,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       · simp at hc
       rename_i xPair hcx
       obtain ⟨jx, tx⟩ := xPair
-      have hwt := typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw
+      have hwt := typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw
       split at hc
       · rename_i htx
         have htx' : tx = Ty.int53 := htx
@@ -3799,7 +3800,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         · simp at he
         rename_i av hav
         obtain ⟨ab, hab⟩ := hasTy_bool_inv
-          (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          (htlb ▸ typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
         subst hab
         have hle : Eventually m jenv jl (.bool ab) := by
           simpa [encodeValue] using ihl henv hjenv hcl hav
@@ -3814,7 +3815,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
           · simp at he
           rename_i bv hbv
           obtain ⟨bb, hbb⟩ := hasTy_bool_inv
-            (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            (htlb ▸ typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
           subst hbb
           simp only [asBool, Except.ok.injEq] at he
           subst he
@@ -3848,7 +3849,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         · simp at he
         rename_i av hav
         obtain ⟨ab, hab⟩ := hasTy_bool_inv
-          (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          (htlb ▸ typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
         subst hab
         have hle : Eventually m jenv jl (.bool ab) := by
           simpa [encodeValue] using ihl henv hjenv hcl hav
@@ -3863,7 +3864,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
           · simp at he
           rename_i bv hbv
           obtain ⟨bb, hbb⟩ := hasTy_bool_inv
-            (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            (htlb ▸ typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
           subst hbb
           simp only [asBool, Except.ok.injEq] at he
           subst he
@@ -3893,8 +3894,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       split at hc
       · rename_i htl
         have htl' : tl = Ty.string := htl
@@ -3947,8 +3948,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       cases tl <;> simp only [Compile.numericHelper] at hc <;>
@@ -4022,8 +4023,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       cases tl <;> simp only [Compile.numericHelper] at hc <;>
@@ -4096,8 +4097,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       cases tl <;> simp only [Compile.numericHelper] at hc <;>
@@ -4162,8 +4163,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       cases tl <;> simp only [Compile.numericHelper] at hc <;>
@@ -4227,8 +4228,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       cases tl <;> simp only [Compile.numericHelper] at hc <;>
@@ -4291,8 +4292,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       cases tl <;> simp only [Compile.numericHelper] at hc <;>
@@ -4374,8 +4375,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       cases tl <;> simp only [Compile.numericHelper] at hc <;>
@@ -4457,8 +4458,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       simp only [Compile.orderSymbol] at hc
@@ -4543,8 +4544,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       simp only [Compile.orderSymbol] at hc
@@ -4629,8 +4630,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       simp only [Compile.orderSymbol] at hc
@@ -4715,8 +4716,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       simp only [Compile.orderSymbol] at hc
@@ -4800,8 +4801,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       simp only [applyBin, Except.ok.injEq] at he
@@ -4845,8 +4846,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i bv hbv
-      have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
-      have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
+      have hat := typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
+      have hbt := typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
       have hle := ihl henv hjenv hcl hav
       have hre := ihr henv hjenv hcr hbv
       simp only [applyBin, Except.ok.injEq] at he
@@ -4965,7 +4966,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rename_i w hw
     obtain rfl : tx = Ty.string := Ty.eq_of_not_bne htx
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env xE jx .string w hx.typeChecked henv hcx hw)
+      (typeSound p hprog f ctx env xE jx .string w hx.typeChecked henv hcx hw)
     exact eventually_call1 (by simpa [encodeValue] using ihx henv hjenv hcx hw) (helper_strUn he)
   | strBin hl hr =>
     rename_i op lhsE rhsE
@@ -5001,9 +5002,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     obtain rfl : tl = Ty.string := Ty.eq_of_not_bne htl
     obtain rfl : tr = Ty.string := Ty.eq_of_not_bne htr
     obtain ⟨sa, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
+      (typeSound p hprog f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
     obtain ⟨sb, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
+      (typeSound p hprog f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
     exact eventually_call2 (by simpa [encodeValue] using ihl henv hjenv hcl hav)
       (by simpa [encodeValue] using ihr henv hjenv hcr hbv) (helper_strBin he)
   | substring hs hlo hhi =>
@@ -5050,9 +5051,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rename_i hiv hhiv
     obtain rfl : ts = Ty.string := Ty.eq_of_not_bne hts
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env strE jstr .string sv hs.typeChecked henv hcs hsv)
-    have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
-    have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+      (typeSound p hprog f ctx env strE jstr .string sv hs.typeChecked henv hcs hsv)
+    have hlot := typeSound p hprog f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+    have hhit := typeSound p hprog f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
     obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
     obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
     refine eventually_call3 (by simpa [encodeValue] using ihs henv hjenv hcs hsv)
@@ -5077,9 +5078,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i iv hiv
-    have hat := typeSound p f ctx env arrE jarr (.array ty) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array ty) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
-    have hit := typeSound p f ctx env idxE jidx .int53 iv hidx.typeChecked henv hci hiv
+    have hit := typeSound p hprog f ctx env idxE jidx .int53 iv hidx.typeChecked henv hci hiv
     obtain ⟨n, rfl⟩ := hasTy_int53_inv hit
     split at he
     · rename_i xs' n' hxs hn'
@@ -5120,10 +5121,10 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i hiv hhiv
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
-    have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
-    have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+    have hlot := typeSound p hprog f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+    have hhit := typeSound p hprog f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
     obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
     obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
     refine eventually_call3 (by simpa [encodeValue] using iharr henv hjenv hca hav)
@@ -5141,7 +5142,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     split at he
     · rename_i xs' hxs
@@ -5167,7 +5168,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rename_i av hav
     rcases hshape with ⟨elem, hca, rfl⟩ | ⟨hca, rfl⟩ | ⟨value, hca, rfl⟩
     · obtain ⟨xs, rfl⟩ := hasTy_array_inv
-        (typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav)
+        (typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav)
       split at he
       · rename_i xs' hxs
         injection hxs with hxs
@@ -5178,7 +5179,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         exact (helper_i53 _).trans (congrArg some (i53_of_mkInt53 he))
       all_goals simp_all
     · obtain ⟨t, rfl⟩ := hasTy_string_inv
-        (typeSound p f ctx env arrE jarr .string av harr.typeChecked henv hca hav)
+        (typeSound p hprog f ctx env arrE jarr .string av harr.typeChecked henv hca hav)
       split at he
       · simp_all
       · rename_i t' hstr
@@ -5189,7 +5190,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         exact (helper_i53 _).trans (congrArg some (i53_of_mkInt53 he))
       all_goals simp_all
     · obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-        (typeSound p f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
+        (typeSound p hprog f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
       split at he
       · simp_all
       · simp_all
@@ -5217,9 +5218,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i kv hkv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
     · rename_i entries' t' hdict hstr
       injection hdict with hdict
@@ -5248,9 +5249,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i kv hkv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
     · rename_i entries' t' hdict hstr
       injection hdict with hdict
@@ -5284,9 +5285,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i vv hvv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
     · rename_i entries' t' hdict hstr
       injection hdict with hdict
@@ -5313,7 +5314,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     split at he
     · rename_i entries' hdict
       injection hdict with hdict
@@ -5336,7 +5337,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     split at he
     · rename_i entries' hdict
       injection hdict with hdict
@@ -5363,9 +5364,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i kv hkv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
     · rename_i entries' t' hdict hstr
       injection hdict with hdict
@@ -5391,7 +5392,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    have hat := typeSound p f ctx env xE jx (.named n targs) av hx.typeChecked henv hcx hav
+    have hat := typeSound p hprog f ctx env xE jx (.named n targs) av hx.typeChecked henv hcx hav
     obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hat
     split at he
     · rename_i ctor' fields' hobj
@@ -5484,7 +5485,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     split at he
@@ -5513,7 +5514,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     split at he
@@ -5527,7 +5528,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       subst he
       rw [encodeValue]
       exact eventually_filterJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
-        (eventuallyFilter_of_items p m hbody.typeChecked ihbody henv hjenv hcb hbinder xs vs hat hvs)
+        (eventuallyFilter_of_items p m hprog hbody.typeChecked ihbody henv hjenv hcb hbinder xs vs hat hvs)
     · rename_i hne
       exact (hne xs rfl).elim
   | findE harr hbody =>
@@ -5541,7 +5542,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     split at he
@@ -5549,7 +5550,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       injection hxs with hxs
       subst hxs
       exact eventually_findJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
-        (eventuallyFind_of_items p m hbody.typeChecked ihbody henv hjenv hcb hbinder xs v hat he)
+        (eventuallyFind_of_items p m hprog hbody.typeChecked ihbody henv hjenv hcb hbinder xs v hat he)
     · rename_i hne
       exact (hne xs rfl).elim
   | quantE harr hbody =>
@@ -5563,7 +5564,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     split at he
@@ -5571,7 +5572,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       injection hxs with hxs
       subst hxs
       exact eventually_quantJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
-        (eventuallyQuant_of_items p m hbody.typeChecked ihbody henv hjenv hcb hbinder xs v hat he)
+        (eventuallyQuant_of_items p m hprog hbody.typeChecked ihbody henv hjenv hcb hbinder xs v hat he)
     · rename_i hne
       exact (hne xs rfl).elim
   | reduceE harr hinit hbody =>
@@ -5587,7 +5588,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     split at he
@@ -5597,10 +5598,10 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at he
       · simp at he
       rename_i acc hacc
-      have hacct := typeSound p f ctx env initE jinit ty acc hinit.typeChecked henv hci hacc
+      have hacct := typeSound p hprog f ctx env initE jinit ty acc hinit.typeChecked henv hci hacc
       exact eventually_reduceJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
         (ihinit henv hjenv hci hacc)
-        (eventuallyReduce_of_items p m hbody.typeChecked ihbody henv hjenv hcb haccName
+        (eventuallyReduce_of_items p m hprog hbody.typeChecked ihbody henv hjenv hcb haccName
           helemName xs acc v hat hacct he)
     · rename_i hne
       exact (hne xs rfl).elim
@@ -5616,7 +5617,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i sv hsv
-    have hst := typeSound p f ctx env scrutE jscrut tscrut sv hscrut.typeChecked henv hcs hsv
+    have hst := typeSound p hprog f ctx env scrutE jscrut tscrut sv hscrut.typeChecked henv hcs hsv
     split at he
     · rename_i binds body hfm
       refine eventually_arrowCall (ihscrut henv hjenv hcs hsv) ?_
@@ -5625,7 +5626,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         (fun alt ha => ihalts alt ha) hca hfm he
     · simp at he
 
-theorem fragment_correct_at (p : Program) (m : Js.Module) (hsig : SignatureOk p) (f : Nat) :
+theorem fragment_correct_at (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat) :
     ∀ {e : Expr}, InFragment e →
       ∀ ⦃ctx : Compile.Ctx⦄ ⦃env : Env⦄ ⦃jenv : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄ ⦃v : Value⦄,
         EnvTyped p env ctx →
@@ -5635,7 +5637,7 @@ theorem fragment_correct_at (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         Eventually m jenv je (encodeValue v) := by
   induction f with
   | zero => intro e _ ctx env jenv je ty v _ _ _ he; simp [evalExpr] at he
-  | succ f ih => exact fun hfrag => fragment_correct_succ p m hsig f (fun h => ih h) hfrag
+  | succ f ih => exact fun hfrag => fragment_correct_succ p m hsig hprog f (fun h => ih h) hfrag
 
 /-- If the reference semantics returns a value, the generated code returns the same value.
 
@@ -5643,6 +5645,7 @@ Stated over any generated environment that agrees with the reference one, rather
 `encodeEnv env` alone: a public function's body runs under the raw parameters as well, and those are not
 in the reference environment. -/
 theorem fragment_correct_in (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p)
     {e : Expr} (hfrag : InFragment e) :
     ∀ {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat}
       {v : Value},
@@ -5651,7 +5654,7 @@ theorem fragment_correct_in (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       Compile.compileExpr p ctx e = .ok (je, ty) →
       evalExpr p f env e = .ok v →
       Eventually m jenv je (encodeValue v) :=
-  fun henv hjenv hc he => fragment_correct_at p m hsig _ hfrag henv hjenv hc he
+  fun henv hjenv hc he => fragment_correct_at p m hsig hprog _ hfrag henv hjenv hc he
 
 /-- The shape the manifest quotes: the generated environment is exactly the encoded one.
 
@@ -5659,6 +5662,7 @@ The environment must not bind `scrutName`, which is what `match` calls its scrut
 program can bind went through `validateIdent`, so an environment a compiled declaration builds satisfies
 it; `Decl.decl_correct` discharges it there. -/
 theorem fragment_correct (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p)
     {e : Expr} (hfrag : InFragment e) :
     ∀ {ctx : Compile.Ctx} {env : Env} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},
       EnvTyped p env ctx →
@@ -5667,7 +5671,7 @@ theorem fragment_correct (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       evalExpr p f env e = .ok v →
       Eventually m (encodeEnv env) je (encodeValue v) :=
   fun henv hfree hc he =>
-    fragment_correct_in p m hsig hfrag henv (jsEnvAgrees_encodeEnv _ hfree) hc he
+    fragment_correct_in p m hsig hprog hfrag henv (jsEnvAgrees_encodeEnv _ hfree) hc he
 
 /-- The failures the trap direction carries across.
 
@@ -5945,7 +5949,7 @@ theorem eventuallyErr_mapJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody 
     rw [Js.eval.eq_def]
     simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
 
-private theorem eventuallyMapErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyMapErr_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
     {elem tbody : Ty} {err : Err} (hsig : SignatureOk p) (hfrag : InFragment bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -5983,7 +5987,7 @@ private theorem eventuallyMapErr_of_items (p : Program) (m : Js.Module) {ctx : C
     · rename_i e0 hte
       obtain rfl : err = e0 := (Except.error.inj hes).symm
       obtain ⟨g1, hg1⟩ :=
-        fragment_correct_in p m hsig hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
+        fragment_correct_in p m hsig hprog hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
       obtain ⟨g2, hg2⟩ := ihr hxs.2 hte
       refine ⟨max g1 g2, fun g' hgle => ?_⟩
       rw [encodeList, Js.evalMapJs]
@@ -6106,7 +6110,7 @@ theorem eventuallyErr_reduceJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jin
     rw [Js.eval.eq_def]
     simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega), hg3 g (by omega)]
 
-private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
     {elem : Ty} {err : Err} (hsig : SignatureOk p) (hfrag : InFragment bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -6140,9 +6144,9 @@ private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) {ctx 
       rw [encodeList, Js.evalFilterJs]
       simp only [bind, Except.bind, hg1 g' hgle]
     rename_i w hw
-    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p hprog f ((binder, elem) :: ctx) ((binder, x) :: env)
       bodyE jbody .bool w hfrag.typeChecked (henv.cons hxs.1) hcb hw)
-    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hsig hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
+    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hsig hprog hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
     cases b with
     | true =>
       simp only at hes
@@ -6161,7 +6165,7 @@ private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) {ctx 
       rw [encodeList, Js.evalFilterJs]
       simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
 
-private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {binder : String} {bodyE : Expr} {jbody : Js.Expr}
     {elem : Ty} {err : Err} (hsig : SignatureOk p) (hfrag : InFragment bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -6195,9 +6199,9 @@ private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) {ctx : 
       rw [encodeList, Js.evalFindJs]
       simp only [bind, Except.bind, hg1 g' hgle]
     rename_i w hw
-    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p hprog f ((binder, elem) :: ctx) ((binder, x) :: env)
       bodyE jbody .bool w hfrag.typeChecked (henv.cons hxs.1) hcb hw)
-    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hsig hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
+    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hsig hprog hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
     cases b with
     | true => simp at hes
     | false =>
@@ -6207,7 +6211,7 @@ private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) {ctx : 
       rw [encodeList, Js.evalFindJs]
       simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hg2 g' (by omega)]
 
-private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {op : QuantOp} {binder : String} {bodyE : Expr}
     {jbody : Js.Expr} {elem : Ty} {err : Err} (hsig : SignatureOk p) (hfrag : InFragment bodyE)
     (ihb : ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄
@@ -6241,9 +6245,9 @@ private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) {ctx :
       rw [encodeList, Js.evalQuantJs]
       simp only [bind, Except.bind, hg1 g' hgle]
     rename_i w hw
-    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p f ((binder, elem) :: ctx) ((binder, x) :: env)
+    obtain ⟨b, rfl⟩ := hasTy_bool_inv (typeSound p hprog f ((binder, elem) :: ctx) ((binder, x) :: env)
       bodyE jbody .bool w hfrag.typeChecked (henv.cons hxs.1) hcb hw)
-    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hsig hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
+    obtain ⟨g1, hg1⟩ := fragment_correct_in p m hsig hprog hfrag (henv.cons hxs.1) (hjenv.cons hbinder) hcb hw
     cases op <;> simp only at hes <;> split at hes
     · rename_i hb
       obtain ⟨g2, hg2⟩ := ihr hxs.2 hes
@@ -6261,7 +6265,7 @@ private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) {ctx :
       simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, hb]
       simpa using hg2 g' (by omega)
 
-private theorem eventuallyReduceErr_of_items (p : Program) (m : Js.Module) {ctx : Compile.Ctx}
+private theorem eventuallyReduceErr_of_items (p : Program) (m : Js.Module) (hprog : ProgramTyped p) {ctx : Compile.Ctx}
     {env : Env} {jenv : Js.JsEnv} {f : Nat} {accName elemName : String} {bodyE : Expr}
     {jbody : Js.Expr} {elem tinit : Ty} {err : Err} (hsig : SignatureOk p)
     (hfrag : InFragment bodyE)
@@ -6301,18 +6305,18 @@ private theorem eventuallyReduceErr_of_items (p : Program) (m : Js.Module) {ctx 
       rw [encodeList, Js.evalReduceJs]
       simp only [bind, Except.bind, hg1 g' hgle]
     rename_i w hw
-    have hwt := typeSound p f ((elemName, elem) :: (accName, tinit) :: ctx)
+    have hwt := typeSound p hprog f ((elemName, elem) :: (accName, tinit) :: ctx)
       ((elemName, x) :: (accName, acc) :: env) bodyE jbody tinit w hfrag.typeChecked
       ((henv.cons hacc).cons hxs.1) hcb hw
     obtain ⟨g1, hg1⟩ :=
-      fragment_correct_in p m hsig hfrag ((henv.cons hacc).cons hxs.1)
+      fragment_correct_in p m hsig hprog hfrag ((henv.cons hacc).cons hxs.1)
         ((hjenv.cons haccName).cons helemName) hcb hw
     obtain ⟨g2, hg2⟩ := ihr w hxs.2 hwt hes
     refine ⟨max g1 g2, fun g' hgle => ?_⟩
     rw [encodeList, Js.evalReduceJs]
     simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
 
-private theorem eventuallyListErr_of_args (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+private theorem eventuallyListErr_of_args (p : Program) (m : Js.Module) (hsig : SignatureOk p) (hprog : ProgramTyped p)
     {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {f : Nat} {err : Err}
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv) :
     ∀ (items : List Expr) (js : List (Js.Expr × Ty)),
@@ -6354,13 +6358,13 @@ private theorem eventuallyListErr_of_args (p : Program) (m : Js.Module) (hsig : 
     · rename_i e0 hte
       obtain rfl : err = e0 := (Except.error.inj hes).symm
       exact eventuallyListErr_tail
-        (fragment_correct_in p m hsig (hfrag item (by simp)) henv hjenv hchead hv)
+        (fragment_correct_in p m hsig hprog (hfrag item (by simp)) henv hjenv hchead hv)
         (ihr tail (fun e he => hfrag e (by simp [he])) (fun e he => ih e (by simp [he])) hctail
           hte hne)
     · simp at hes
 
 
-private theorem eventuallyListErr_of_values (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+private theorem eventuallyListErr_of_values (p : Program) (m : Js.Module) (hsig : SignatureOk p) (hprog : ProgramTyped p)
     {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {f : Nat} {err : Err}
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv) :
     ∀ (entries : List (String × Expr)) (js : List (Js.Expr × Ty)),
@@ -6405,7 +6409,7 @@ private theorem eventuallyListErr_of_values (p : Program) (m : Js.Module) (hsig 
     · rename_i e0 hte
       obtain rfl : err = e0 := (Except.error.inj hes).symm
       exact eventuallyListErr_tail
-        (fragment_correct_in p m hsig (hfrag (k, item) (by simp)) henv hjenv hchead hv)
+        (fragment_correct_in p m hsig hprog (hfrag (k, item) (by simp)) henv hjenv hchead hv)
         (ihr tail (fun e he => hfrag e (by simp [he])) (fun e he => ih e (by simp [he])) hctail
           hte hne)
     · simp at hes
@@ -6521,7 +6525,8 @@ private theorem eventuallyErr_chain (p : Program) (m : Js.Module) (hsig : Signat
 /-- One step of the induction behind `fragment_traps_in`, carrying the thrown code from `f` to `f + 1`.
 
 On fuel for the same reason as `fragment_correct_succ`: the callee's body is not a subterm of the call. -/
-theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p) (f : Nat)
+theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat)
     (ih : ∀ {e : Expr}, InFragment e →
       ∀ ⦃ctx : Compile.Ctx⦄ ⦃env : Env⦄ ⦃jenv : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄ ⦃err : Err⦄,
         EnvTyped p env ctx →
@@ -6589,9 +6594,9 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     rename_i cv hec
     have htc' : tc = Ty.bool := Ty.eq_of_not_bne htcb
     obtain ⟨cb, rfl⟩ := hasTy_bool_inv
-      (htc' ▸ typeSound p f ctx env cE jc tc cv hc'.typeChecked henv hcc hec)
+      (htc' ▸ typeSound p hprog f ctx env cE jc tc cv hc'.typeChecked henv hcc hec)
     have hcond : Eventually m jenv jc (.bool cb) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hc' henv hjenv hcc hec
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hc' henv hjenv hcc hec
     cases cb with
     | true =>
       simp only at he
@@ -6632,8 +6637,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_arrowArg (ihv henv hcov hjenv hcv hve hne)
     rename_i vv hvv
     have hvt : Value.hasTy p vv tv = true :=
-      typeSound p f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
-    exact eventuallyErr_arrowBody (fragment_correct_in p m hsig hval henv hjenv hcv hvv)
+      typeSound p hprog f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
+    exact eventuallyErr_arrowBody (fragment_correct_in p m hsig hprog hval henv hjenv hcv hvv)
       (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt)) hcov.cons
         (hjenv.cons (ne_scrutName_of_validateIdent hvi)) hcb he hne)
   | un hx =>
@@ -6660,7 +6665,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           exact eventuallyErr_not (ihx henv hcov hjenv hcx hxe hne)
         rename_i w hw
         have htxb : tx = Ty.bool := Ty.eq_of_beq htx
-        have hwt := typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw
+        have hwt := typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw
         obtain ⟨wb, rfl⟩ := hasTy_bool_inv (htxb ▸ hwt)
         simp [applyUn] at he
       · simp at hc
@@ -6682,11 +6687,11 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           exact eventuallyErr_call1 (eventuallyErr_neg (ihx henv hcov hjenv hcx hxe hne))
         rename_i w hw
         obtain ⟨i, rfl⟩ := hasTy_int53_inv
-          (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          (htx' ▸ typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw)
         simp only [applyUn] at he
         obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
         refine eventuallyErr_call1_helper (eventually_neg_num
-          (by simpa [encodeValue] using fragment_correct_in p m hsig hx henv hjenv hcx hw)) ?_
+          (by simpa [encodeValue] using fragment_correct_in p m hsig hprog hx henv hjenv hcx hw)) ?_
         rw [helper_i53, hi]
         rfl
       · rename_i htx
@@ -6700,7 +6705,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           exact eventuallyErr_neg (ihx henv hcov hjenv hcx hxe hne)
         rename_i w hw
         obtain ⟨i, rfl⟩ := hasTy_bigint_inv
-          (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          (htx' ▸ typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw)
         simp [applyUn] at he
       · simp at hc
     | abs =>
@@ -6721,11 +6726,11 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           exact eventuallyErr_call1 (eventuallyErr_call1 (ihx henv hcov hjenv hcx hxe hne))
         rename_i w hw
         obtain ⟨i, rfl⟩ := hasTy_int53_inv
-          (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          (htx' ▸ typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw)
         simp only [applyUn] at he
         obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
         have h1 : Eventually m jenv jx (.num i) := by
-          simpa [encodeValue] using fragment_correct_in p m hsig hx henv hjenv hcx hw
+          simpa [encodeValue] using fragment_correct_in p m hsig hprog hx henv hjenv hcx hw
         have h2 : Eventually m jenv (.call "__abs" [jx]) (.num i.natAbs) := by
           refine eventually_call1 h1 ?_
           simp [helper_abs_num, absInt i]
@@ -6743,7 +6748,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           exact eventuallyErr_call1 (ihx henv hcov hjenv hcx hxe hne)
         rename_i w hw
         obtain ⟨i, rfl⟩ := hasTy_bigint_inv
-          (htx' ▸ typeSound p f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+          (htx' ▸ typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw)
         simp [applyUn] at he
       · simp at hc
   | bin hl hr =>
@@ -6783,7 +6788,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         rename_i av hav
         have htlb : tl = Ty.bool := Ty.eq_of_beq htb
         obtain ⟨ab, rfl⟩ := hasTy_bool_inv
-          (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          (htlb ▸ typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
         cases ab with
         | false => simp at he
         | true =>
@@ -6792,10 +6797,10 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           · rename_i e0 hre
             obtain rfl : err = e0 := (Except.error.inj he).symm
             refine eventuallyErr_andR ?_ (ihr henv hcov hjenv hcr hre hne)
-            simpa [encodeValue] using fragment_correct_in p m hsig hl henv hjenv hcl hav
+            simpa [encodeValue] using fragment_correct_in p m hsig hprog hl henv hjenv hcl hav
           rename_i bv hbv
           obtain ⟨bb, rfl⟩ := hasTy_bool_inv
-            (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            (htlb ▸ typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
           simp [asBool] at he
       · simp at hbin
     by_cases hor : op = BinOp.or
@@ -6815,7 +6820,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         rename_i av hav
         have htlb : tl = Ty.bool := Ty.eq_of_beq htb
         obtain ⟨ab, rfl⟩ := hasTy_bool_inv
-          (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+          (htlb ▸ typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
         cases ab with
         | true => simp at he
         | false =>
@@ -6824,10 +6829,10 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           · rename_i e0 hre
             obtain rfl : err = e0 := (Except.error.inj he).symm
             refine eventuallyErr_orR ?_ (ihr henv hcov hjenv hcr hre hne)
-            simpa [encodeValue] using fragment_correct_in p m hsig hl henv hjenv hcl hav
+            simpa [encodeValue] using fragment_correct_in p m hsig hprog hl henv hjenv hcl hav
           rename_i bv hbv
           obtain ⟨bb, rfl⟩ := hasTy_bool_inv
-            (htlb ▸ typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
+            (htlb ▸ typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv)
           simp [asBool] at he
       · simp at hbin
     rw [evalExpr_bin _ _ _ _ _ _ hand hor] at he
@@ -6841,13 +6846,13 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     · rename_i e0 hre
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact compileExpr_bin_errR hand hor hcl hcr hc
-        (fragment_correct_in p m hsig hl henv hjenv hcl hav) (ihr henv hcov hjenv hcr hre hne)
+        (fragment_correct_in p m hsig hprog hl henv hjenv hcl hav) (ihr henv hcov hjenv hcr hre hne)
     rename_i bv hbv
     exact compileExpr_bin_trap hand hor hcl hcr hc
-      (typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
-      (typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv) he
-      (fragment_correct_in p m hsig hl henv hjenv hcl hav)
-      (fragment_correct_in p m hsig hr henv hjenv hcr hbv)
+      (typeSound p hprog f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
+      (typeSound p hprog f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv) he
+      (fragment_correct_in p m hsig hprog hl henv hjenv hcl hav)
+      (fragment_correct_in p m hsig hprog hr henv hjenv hcr hbv)
 
   | noneE elem =>
     intro ctx env jenv je ty err _ _ _ _ he hne
@@ -6935,7 +6940,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     rename_i w hw
     obtain rfl : tx = Ty.string := Ty.eq_of_not_bne htx
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env xE jx .string w hx.typeChecked henv hcx hw)
+      (typeSound p hprog f ctx env xE jx .string w hx.typeChecked henv hcx hw)
     obtain ⟨u, hok⟩ := applyStrUn_str op t
     rw [hok] at he
     simp at he
@@ -6972,16 +6977,16 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     obtain rfl : tl = Ty.string := Ty.eq_of_not_bne htl
     obtain rfl : tr = Ty.string := Ty.eq_of_not_bne htr
     obtain ⟨sa, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
+      (typeSound p hprog f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
     have hlv : Eventually m jenv jl (.str sa) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hl henv hjenv hcl hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hl henv hjenv hcl hav
     split at he
     · rename_i e0 hre
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2R hlv (ihr henv hcov hjenv hcr hre hne)
     rename_i bv hbv
     obtain ⟨sb, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
+      (typeSound p hprog f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
     obtain ⟨u, hok⟩ := applyStrBin_str op sa sb
     rw [hok] at he
     simp at he
@@ -7025,27 +7030,27 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     rename_i sv hsv
     obtain rfl : ts = Ty.string := Ty.eq_of_not_bne hts
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env strE jstr .string sv hs.typeChecked henv hcs hsv)
+      (typeSound p hprog f ctx env strE jstr .string sv hs.typeChecked henv hcs hsv)
     have hstr : Eventually m jenv jstr (.str t) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hs henv hjenv hcs hsv
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hs henv hjenv hcs hsv
     split at he
     · rename_i e0 hloe
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call3_2 hstr (ihlo henv hcov hjenv hclo hloe hne)
     rename_i lov hlov
-    have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+    have hlot := typeSound p hprog f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
     obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
     have hnuma : Eventually m jenv jlo (.num a) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hlo henv hjenv hclo hlov
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hlo henv hjenv hclo hlov
     split at he
     · rename_i e0 hhie
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call3_3 hstr hnuma (ihhi henv hcov hjenv hchi hhie hne)
     rename_i hiv hhiv
-    have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+    have hhit := typeSound p hprog f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
     obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
     refine eventuallyErr_call3_helper hstr hnuma
-      (by simpa [encodeValue] using fragment_correct_in p m hsig hhi henv hjenv hchi hhiv) ?_
+      (by simpa [encodeValue] using fragment_correct_in p m hsig hprog hhi henv hjenv hchi hhiv) ?_
     rw [show Js.helper "__substring" [Js.JsValue.str t, Js.JsValue.num a, Js.JsValue.num b]
       = some (Js.Runtime.strSlice t a b) from rfl, strSlice_trap he]
 
@@ -7063,19 +7068,19 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2L (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array ty) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array ty) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav
     split at he
     · rename_i e0 hie
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2R harrv (ihidx henv hcov hjenv hci hie hne)
     rename_i iv hiv
-    have hit := typeSound p f ctx env idxE jidx .int53 iv hidx.typeChecked henv hci hiv
+    have hit := typeSound p hprog f ctx env idxE jidx .int53 iv hidx.typeChecked henv hci hiv
     obtain ⟨n, rfl⟩ := hasTy_int53_inv hit
     have hnv : Eventually m jenv jidx (.num n) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hidx henv hjenv hci hiv
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hidx henv hjenv hci hiv
     split at he
     · rename_i xs' n' hxs hn'
       injection hxs with hxs
@@ -7115,28 +7120,28 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call3_1 (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav
     split at he
     · rename_i e0 hloe
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call3_2 harrv (ihlo henv hcov hjenv hclo hloe hne)
     rename_i lov hlov
-    have hlot := typeSound p f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
+    have hlot := typeSound p hprog f ctx env loE jlo .int53 lov hlo.typeChecked henv hclo hlov
     obtain ⟨a, rfl⟩ := hasTy_int53_inv hlot
     have hav' : Eventually m jenv jlo (.num a) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hlo henv hjenv hclo hlov
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hlo henv hjenv hclo hlov
     split at he
     · rename_i e0 hhie
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call3_3 harrv hav' (ihhi henv hcov hjenv hchi hhie hne)
     rename_i hiv hhiv
-    have hhit := typeSound p f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
+    have hhit := typeSound p hprog f ctx env hiE jhi .int53 hiv hhi.typeChecked henv hchi hhiv
     obtain ⟨b, rfl⟩ := hasTy_int53_inv hhit
     refine eventuallyErr_call3_helper harrv hav'
-      (by simpa [encodeValue] using fragment_correct_in p m hsig hhi henv hjenv hchi hhiv) ?_
+      (by simpa [encodeValue] using fragment_correct_in p m hsig hprog hhi henv hjenv hchi hhiv) ?_
     rw [helper_aslice, arrSlice_trap he]
   | arrayReverse harr =>
     rename_i arrE
@@ -7151,7 +7156,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call1 (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     split at he
     · simp at he
@@ -7172,7 +7177,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         exact eventuallyErr_call1 (eventuallyErr_member (iharr henv hcov hjenv hca hae hne))
       rename_i av hav
       obtain ⟨xs, rfl⟩ := hasTy_array_inv
-        (typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav)
+        (typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav)
       split at he
       · rename_i xs' hxs
         injection hxs with hxs
@@ -7180,7 +7185,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
         refine eventuallyErr_call1_helper (eventually_length_arr
           (by simpa [encodeValue, encodeList_eq] using
-            fragment_correct_in p m hsig harr henv hjenv hca hav)) ?_
+            fragment_correct_in p m hsig hprog harr henv hjenv hca hav)) ?_
         simp only [List.length_map]
         exact (helper_i53 _).trans (congrArg some hi)
       all_goals simp_all
@@ -7190,7 +7195,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         exact eventuallyErr_call1 (eventuallyErr_call1 (iharr henv hcov hjenv hca hae hne))
       rename_i av hav
       obtain ⟨t, rfl⟩ := hasTy_string_inv
-        (typeSound p f ctx env arrE jarr .string av harr.typeChecked henv hca hav)
+        (typeSound p hprog f ctx env arrE jarr .string av harr.typeChecked henv hca hav)
       split at he
       · simp_all
       · rename_i t' hstr
@@ -7198,7 +7203,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         subst hstr
         obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
         refine eventuallyErr_call1_helper (eventually_call1
-          (by simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav)
+          (by simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav)
           (helper_strlen t)) ?_
         exact (helper_i53 _).trans (congrArg some hi)
       all_goals simp_all
@@ -7208,7 +7213,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         exact eventuallyErr_call1 (eventuallyErr_member (iharr henv hcov hjenv hca hae hne))
       rename_i av hav
       obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-        (typeSound p f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
+        (typeSound p hprog f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
       split at he
       · simp_all
       · simp_all
@@ -7218,7 +7223,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         obtain ⟨rfl, hi⟩ := i53_err_of_mkInt53 he
         refine eventuallyErr_call1_helper (eventually_size_dict
           (by simpa [encodeValue, encodeFields_eq] using
-            fragment_correct_in p m hsig harr henv hjenv hca hav)) ?_
+            fragment_correct_in p m hsig hprog harr henv hjenv hca hav)) ?_
         simp only [List.length_map]
         exact (helper_i53 _).trans (congrArg some hi)
       all_goals simp_all
@@ -7237,16 +7242,16 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hd henv hjenv hcd hdv
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hd henv hjenv hcd hdv
     split at he
     · rename_i e0 hke
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2R hdvj (ihk henv hcov hjenv hck hke hne)
     rename_i kv hkv
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
     · simp at he
     · rename_i hno
@@ -7265,16 +7270,16 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hd henv hjenv hcd hdv
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hd henv hjenv hcd hdv
     split at he
     · rename_i e0 hke
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2R hdvj (ihk henv hcov hjenv hck hke hne)
     rename_i kv hkv
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
     · simp at he
     · rename_i hno
@@ -7293,16 +7298,16 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hd henv hjenv hcd hdv
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hd henv hjenv hcd hdv
     split at he
     · rename_i e0 hke
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2R hdvj (ihk henv hcov hjenv hck hke hne)
     rename_i kv hkv
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
     · simp at he
     · rename_i hno
@@ -7322,18 +7327,18 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call3_1 (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hd henv hjenv hcd hdv
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hd henv hjenv hcd hdv
     split at he
     · rename_i e0 hke
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call3_2 hdvj (ihk henv hcov hjenv hck hke hne)
     rename_i kv hkv
     obtain ⟨t, rfl⟩ := hasTy_string_inv
-      (typeSound p f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
+      (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     have hkvj : Eventually m jenv jk (.str t) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig hk henv hjenv hck hkv
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog hk henv hjenv hck hkv
     split at he
     · rename_i e0 hve
       obtain rfl : err = e0 := (Except.error.inj he).symm
@@ -7356,7 +7361,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call1 (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     split at he
     · simp at he
     · rename_i hno
@@ -7374,7 +7379,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call1 (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
     split at he
     · simp at he
     · rename_i hno
@@ -7392,7 +7397,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_member (ihx henv hcov hjenv hcx hxe hne')
     rename_i av hav
-    have hat := typeSound p f ctx env xE jx (.named n targs) av hx.typeChecked henv hcx hav
+    have hat := typeSound p hprog f ctx env xE jx (.named n targs) av hx.typeChecked henv hcx hav
     obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hat
     obtain ⟨t', c'', ht', hc'', hfields⟩ := hasTy_named_fields hat
     rw [ht] at ht'
@@ -7427,7 +7432,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     split at he
     · rename_i e0 hae
       obtain rfl : err = e0 := (Except.error.inj he).symm
-      exact eventuallyErr_ctorObj hlen' (eventuallyListErr_of_args p m hsig henv hjenv args js hargs
+      exact eventuallyErr_ctorObj hlen' (eventuallyListErr_of_args p m hsig hprog henv hjenv args js hargs
         (fun e he => ihargs e he henv hcov hjenv) hcs hae hne)
     rename_i vs hvs
     split at he
@@ -7462,7 +7467,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     split at he
     · rename_i e0 hie
       obtain rfl : err = e0 := (Except.error.inj he).symm
-      exact eventuallyErr_arrayLit (eventuallyListErr_of_args p m hsig henv hjenv items js hitems
+      exact eventuallyErr_arrayLit (eventuallyListErr_of_args p m hsig hprog henv hjenv items js hitems
         (fun e he => ihitems e he henv hcov hjenv) hcs hie hne)
     · simp at he
   | dictLit value hentries =>
@@ -7478,7 +7483,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     · rename_i e0 hie
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_dictLitZip hlen'
-        (eventuallyListErr_of_values p m hsig henv hjenv entries js hentries
+        (eventuallyListErr_of_values p m hsig hprog henv hjenv entries js hentries
           (fun e he => ihentries e he henv hcov hjenv) hcs hie hne)
     · simp at he
   | mapE harr hbody =>
@@ -7494,11 +7499,11 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_mapJs (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav
     split at he
     · rename_i xs' hxs
       injection hxs with hxs
@@ -7507,7 +7512,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       · rename_i e0 hie
         obtain rfl : err = e0 := (Except.error.inj he).symm
         exact eventuallyErr_mapJs_items harrv
-          (eventuallyMapErr_of_items p m hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat hie)
+          (eventuallyMapErr_of_items p m hprog hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat hie)
       · simp at he
     · rename_i hne'
       exact (hne' xs rfl).elim
@@ -7525,11 +7530,11 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_filterJs (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav
     split at he
     · rename_i xs' hxs
       injection hxs with hxs
@@ -7538,7 +7543,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       · rename_i e0 hie
         obtain rfl : err = e0 := (Except.error.inj he).symm
         exact eventuallyErr_filterJs_items harrv
-          (eventuallyFilterErr_of_items p m hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat hie)
+          (eventuallyFilterErr_of_items p m hprog hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat hie)
       · simp at he
     · rename_i hne'
       exact (hne' xs rfl).elim
@@ -7555,17 +7560,17 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_findJs (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav
     split at he
     · rename_i xs' hxs
       injection hxs with hxs
       subst hxs
       exact eventuallyErr_findJs_items harrv
-        (eventuallyFindErr_of_items p m hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat he)
+        (eventuallyFindErr_of_items p m hprog hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat he)
     · rename_i hne'
       exact (hne' xs rfl).elim
   | quantE harr hbody =>
@@ -7581,17 +7586,17 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_quantJs (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav
     split at he
     · rename_i xs' hxs
       injection hxs with hxs
       subst hxs
       exact eventuallyErr_quantJs_items harrv
-        (eventuallyQuantErr_of_items p m hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat he)
+        (eventuallyQuantErr_of_items p m hprog hsig hbody ihbody henv hcov hjenv hcb hbinder hne xs hat he)
     · rename_i hne'
       exact (hne' xs rfl).elim
   | reduceE harr hinit hbody =>
@@ -7609,11 +7614,11 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_reduceJs (iharr henv hcov hjenv hca hae hne)
     rename_i av hav
-    have hat := typeSound p f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
     rw [hasTy_array] at hat
     have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
-      simpa [encodeValue] using fragment_correct_in p m hsig harr henv hjenv hca hav
+      simpa [encodeValue] using fragment_correct_in p m hsig hprog harr henv hjenv hca hav
     split at he
     · rename_i xs' hxs
       injection hxs with hxs
@@ -7623,10 +7628,10 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         obtain rfl : err = e0 := (Except.error.inj he).symm
         exact eventuallyErr_reduceJs_init harrv (ihinit henv hcov hjenv hci hie hne)
       rename_i acc hacc
-      have hacct := typeSound p f ctx env initE jinit ty acc hinit.typeChecked henv hci hacc
+      have hacct := typeSound p hprog f ctx env initE jinit ty acc hinit.typeChecked henv hci hacc
       exact eventuallyErr_reduceJs_items harrv
-        (fragment_correct_in p m hsig hinit henv hjenv hci hacc)
-        (eventuallyReduceErr_of_items p m hsig hbody ihbody henv hcov hjenv hcb haccName helemName
+        (fragment_correct_in p m hsig hprog hinit henv hjenv hci hacc)
+        (eventuallyReduceErr_of_items p m hprog hsig hbody ihbody henv hcov hjenv hcb haccName helemName
           hne xs acc hat hacct he)
     · rename_i hne'
       exact (hne' xs rfl).elim
@@ -7644,9 +7649,9 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_arrowArg (ihscrut henv hcov hjenv hcs hse hne)
     rename_i sv hsv
-    have hst := typeSound p f ctx env scrutE jscrut tscrut sv hscrut.typeChecked henv hcs hsv
+    have hst := typeSound p hprog f ctx env scrutE jscrut tscrut sv hscrut.typeChecked henv hcs hsv
     have hsvv : Eventually m jenv jscrut (encodeValue sv) :=
-      fragment_correct_in p m hsig hscrut henv hjenv hcs hsv
+      fragment_correct_in p m hsig hprog hscrut henv hjenv hcs hsv
     split at he
     · rename_i binds body hfm
       refine eventuallyErr_arrowBody hsvv ?_
@@ -7656,7 +7661,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     · simp only [Except.error.injEq] at he
       exact absurd he.symm hne.2
 
-theorem fragment_traps_at (p : Program) (m : Js.Module) (hsig : SignatureOk p) (f : Nat) :
+theorem fragment_traps_at (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat) :
     ∀ {e : Expr}, InFragment e →
       ∀ ⦃ctx : Compile.Ctx⦄ ⦃env : Env⦄ ⦃jenv : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄ ⦃err : Err⦄,
         EnvTyped p env ctx →
@@ -7671,11 +7677,12 @@ theorem fragment_traps_at (p : Program) (m : Js.Module) (hsig : SignatureOk p) (
     intro e _ ctx env jenv je ty err _ _ _ _ he hne
     rw [evalExpr_zero] at he
     exact absurd (Except.error.inj he).symm hne.1
-  | succ f ih => exact fun hfrag => fragment_traps_succ p m hsig f (fun h => ih h) hfrag
+  | succ f ih => exact fun hfrag => fragment_traps_succ p m hsig hprog f (fun h => ih h) hfrag
 
 /-- If the reference semantics refuses, the generated code refuses with the same thrown code, for the
 failures `Mirrorable` names. -/
 theorem fragment_traps_in (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p)
     {e : Expr} (hfrag : InFragment e) :
     ∀ {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat}
       {err : Err},
@@ -7686,7 +7693,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       evalExpr p f env e = .error err →
       Mirrorable err →
       EventuallyErr m jenv je err.code :=
-  fun henv hcov hjenv hc he hne => fragment_traps_at p m hsig _ hfrag henv hcov hjenv hc he hne
+  fun henv hcov hjenv hc he hne => fragment_traps_at p m hsig hprog _ hfrag henv hcov hjenv hc he hne
 
 
 end LeanTs.Correct

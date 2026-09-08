@@ -682,6 +682,7 @@ def compileBody (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
     if (ctx.any (·.1 == name)) then compileFinish p ctx (.letE name ty val body) acc
     else do
       validateIdent "let-bound" name
+      wfTy p [] ty
       let (jv, tv) ← compileExpr p ctx val
       if tv != ty then .error s!"let {name} is declared {ty.render} but bound to {tv.render}"
       else compileBody p ((name, ty) :: ctx) body (.const name jv :: acc)

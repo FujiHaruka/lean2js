@@ -1760,9 +1760,19 @@ private theorem hasTy_of_reduceItems {p : Program} {f : Nat} {ctx : Compile.Ctx}
     exact ihr w v hxs.2
       (ih _ _ bodyE jbody tinit w hbody ((henv.cons hacc).cons hxs.1) hcb hw) hes
 
+/-- What the compiler establishes about every declaration of a program it accepted: each body compiles,
+under the context its parameters give, at the type the declaration is declared to return.
+
+A call is where a proof about one expression reaches into another declaration, so this is the shape the
+whole program has to be handed in. `Decl.programTyped_of_compileProgram` reads it off the module. -/
+def ProgramTyped (p : Program) : Prop :=
+  ∀ d ∈ p.decls, ∃ je,
+    Compile.compileExpr p (d.params.map fun param => (param.name, param.ty)) d.body
+      = .ok (je, d.ret)
+
 /-- If the compiler judged an expression to have type `T` and `eval` returns a value, the value satisfies
 `T`. -/
-theorem typeSound (p : Program) :
+theorem typeSound (p : Program) (hprog : ProgramTyped p) :
     ∀ (f : Nat) (ctx : Compile.Ctx) (env : Env) (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value),
       TypeChecked e → EnvTyped p env ctx →
       Compile.compileExpr p ctx e = .ok (je, ty) →

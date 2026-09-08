@@ -1102,7 +1102,7 @@ theorem evalStmts_ret (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (je : Js.Expr)
     (rest : List Js.Stmt) : Js.evalStmts m f jenv (.ret je :: rest) = Js.eval m f jenv je := by
   rw [Js.evalStmts.eq_def]
 
-theorem compileBody_finish (m : Js.Module) (p : Program) (hsig : SignatureOk p) {e : Expr}
+theorem compileBody_finish (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
     (hfrag : InFragment e)
     {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
     {v : Value}
@@ -1118,10 +1118,10 @@ theorem compileBody_finish (m : Js.Module) (p : Program) (hsig : SignatureOk p) 
     rw [hce] at hc
     have hs : stmts = acc.reverse ++ [Js.Stmt.ret je] :=
       (congrArg Prod.fst (Except.ok.inj hc)).symm
-    obtain ⟨g, hg⟩ := fragment_correct_in p m hsig hfrag henv hjenv hce he
+    obtain ⟨g, hg⟩ := fragment_correct_in p m hsig hprog hfrag henv hjenv hce he
     exact ⟨[.ret je], hs, g, fun g' hge => by rw [evalStmts_ret]; exact hg g' hge⟩
 
-theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p) {e : Expr}
+theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
     (hfrag : InFragment e) :
     ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
       {v : Value},
@@ -1135,10 +1135,13 @@ theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p)
     rw [compileBody.eq_def] at hc
     simp only [bind, Except.bind] at hc
     split at hc
-    · exact compileBody_finish m p hsig (.letE hval hbody) hc henv hjenv he
+    · exact compileBody_finish m p hsig hprog (.letE hval hbody) hc henv hjenv he
     split at hc
     · exact (errNeOk hc).elim
     rename_i _uv hvi
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i _uw hwf
     split at hc
     · exact (errNeOk hc).elim
     rename_i valPair hcv
@@ -1156,17 +1159,17 @@ theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p)
       · simp at he
       rename_i vv hvv
       have hvt : Value.hasTy p vv tv = true :=
-        typeSound p f ctx env val jv tv vv hval.typeChecked henv hcv hvv
+        typeSound p hprog f ctx env val jv tv vv hval.typeChecked henv hcv hvv
       obtain ⟨innerB, hshape, gB, hgB⟩ :=
         ihb hc (henv.cons hvt) (hjenv.cons (ne_scrutName_of_validateIdent hvi)) he
-      obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hval henv hjenv hcv hvv
+      obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hprog hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
       rw [evalStmts_const m g' jenv name jv _ innerB (hgV g' (by omega))]
       exact hgB g' (by omega)
   | _ =>
     intro ctx env jenv acc stmts ty f v hc henv hjenv he
-    exact compileBody_finish m p hsig (by constructor <;> assumption)
+    exact compileBody_finish m p hsig hprog (by constructor <;> assumption)
       (by rwa [compileBody.eq_def] at hc) henv hjenv he
 
 /-! ### The body throws
@@ -1190,6 +1193,85 @@ theorem compileFinish_shape {p : Program} {ctx : Ctx} {e : Expr} {acc stmts : Li
     rw [hce] at hc
     exact ⟨[.ret je], (congrArg Prod.fst (Except.ok.inj hc)).symm⟩
 
+/-- The type `compileFinish` returns is the one `compileExpr` gave the expression it wrapped. -/
+theorem compileFinish_type {p : Program} {ctx : Ctx} {e : Expr} {acc stmts : List Js.Stmt}
+    {ty : Ty} (hc : compileFinish p ctx e acc = .ok (stmts, ty)) :
+    ∃ je, Compile.compileExpr p ctx e = .ok (je, ty) := by
+  rw [compileFinish] at hc
+  cases hce : Compile.compileExpr p ctx e with
+  | error _ => rw [hce] at hc; exact (errNeOk hc).elim
+  | ok pair =>
+    obtain ⟨je, te⟩ := pair
+    rw [hce] at hc
+    simp only [bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨je, by rw [hc.2]⟩
+
+/-- The type `compileBody` gives an expression is the one `compileExpr` gives it. The leading lets it
+opens into statements are the ones `compileExpr` would have put in an arrow, and both check the same
+things in the same order. Only the let is worth reading; every other shape goes straight to
+`compileFinish`, which is `compileExpr` with the value wrapped in a `return`. -/
+theorem compileBody_type (p : Program) :
+    ∀ (e : Expr) (ctx : Ctx) (acc stmts : List Js.Stmt) (ty : Ty),
+      compileBody p ctx e acc = .ok (stmts, ty) →
+      ∃ je, Compile.compileExpr p ctx e = .ok (je, ty)
+  | .letE name t val body, ctx, acc, stmts, ty, hc => by
+    rw [compileBody.eq_def] at hc
+    simp only [bind, Except.bind] at hc
+    split at hc
+    · exact compileFinish_type hc
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i _uv hvi
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i _uw hwf
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i valPair hcv
+    obtain ⟨jv, tv⟩ := valPair
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i hsame
+    obtain ⟨jb, hjb⟩ := compileBody_type p body ((name, t) :: ctx) _ _ _ hc
+    refine ⟨.arrowCall [name] jb [jv], ?_⟩
+    rw [Compile.compileExpr.eq_def]
+    simp [bind, Except.bind, hvi, hwf, hcv, hsame, hjb]
+  | .lit _, ctx, acc, stmts, ty, hc
+  | .var _, ctx, acc, stmts, ty, hc
+  | .fnRef _, ctx, acc, stmts, ty, hc
+  | .un _ _, ctx, acc, stmts, ty, hc
+  | .bin _ _ _, ctx, acc, stmts, ty, hc
+  | .cond _ _ _, ctx, acc, stmts, ty, hc
+  | .call _ _, ctx, acc, stmts, ty, hc
+  | .ctor _ _ _ _, ctx, acc, stmts, ty, hc
+  | .proj _ _, ctx, acc, stmts, ty, hc
+  | .matchE _ _, ctx, acc, stmts, ty, hc
+  | .noneE _, ctx, acc, stmts, ty, hc
+  | .someE _, ctx, acc, stmts, ty, hc
+  | .okE _ _, ctx, acc, stmts, ty, hc
+  | .errorE _ _, ctx, acc, stmts, ty, hc
+  | .arrayLit _ _, ctx, acc, stmts, ty, hc
+  | .index _ _, ctx, acc, stmts, ty, hc
+  | .length _, ctx, acc, stmts, ty, hc
+  | .arraySlice _ _ _, ctx, acc, stmts, ty, hc
+  | .arrayReverse _, ctx, acc, stmts, ty, hc
+  | .mapE _ _ _, ctx, acc, stmts, ty, hc
+  | .filterE _ _ _, ctx, acc, stmts, ty, hc
+  | .findE _ _ _, ctx, acc, stmts, ty, hc
+  | .quantE _ _ _ _, ctx, acc, stmts, ty, hc
+  | .reduceE _ _ _ _ _, ctx, acc, stmts, ty, hc
+  | .dictLit _ _, ctx, acc, stmts, ty, hc
+  | .dictGet _ _, ctx, acc, stmts, ty, hc
+  | .dictHas _ _, ctx, acc, stmts, ty, hc
+  | .dictSet _ _ _, ctx, acc, stmts, ty, hc
+  | .dictKeys _, ctx, acc, stmts, ty, hc
+  | .dictValues _, ctx, acc, stmts, ty, hc
+  | .dictDelete _ _, ctx, acc, stmts, ty, hc
+  | .strUn _ _, ctx, acc, stmts, ty, hc
+  | .strBin _ _ _, ctx, acc, stmts, ty, hc
+  | .substring _ _ _, ctx, acc, stmts, ty, hc =>
+    compileFinish_type (by rwa [compileBody.eq_def] at hc)
+
 theorem compileBody_shape (p : Program) {e : Expr} (hfrag : InFragment e) :
     ∀ {ctx : Ctx} {acc stmts : List Js.Stmt} {ty : Ty},
       compileBody p ctx e acc = .ok (stmts, ty) → ∃ inner, stmts = acc.reverse ++ inner := by
@@ -1204,6 +1286,8 @@ theorem compileBody_shape (p : Program) {e : Expr} (hfrag : InFragment e) :
     · exact (errNeOk hc).elim
     split at hc
     · exact (errNeOk hc).elim
+    split at hc
+    · exact (errNeOk hc).elim
     rename_i valPair hcv
     obtain ⟨jv, tv⟩ := valPair
     split at hc
@@ -1214,7 +1298,7 @@ theorem compileBody_shape (p : Program) {e : Expr} (hfrag : InFragment e) :
     intro ctx acc stmts ty hc
     exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
 
-theorem compileBody_finish_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) {e : Expr}
+theorem compileBody_finish_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
     (hfrag : InFragment e)
     {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
     {err : Err}
@@ -1230,10 +1314,10 @@ theorem compileBody_finish_traps (m : Js.Module) (p : Program) (hsig : Signature
     rw [hce] at hc
     have hs : stmts = acc.reverse ++ [Js.Stmt.ret je] :=
       (congrArg Prod.fst (Except.ok.inj hc)).symm
-    obtain ⟨g, hg⟩ := fragment_traps_in p m hsig hfrag henv hcov hjenv hce he hne
+    obtain ⟨g, hg⟩ := fragment_traps_in p m hsig hprog hfrag henv hcov hjenv hce he hne
     exact ⟨[.ret je], hs, g, fun g' hge => by rw [evalStmts_ret]; exact hg g' hge⟩
 
-theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) {e : Expr}
+theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
     (hfrag : InFragment e) :
     ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
       {err : Err},
@@ -1247,10 +1331,13 @@ theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) {
     rw [compileBody.eq_def] at hc
     simp only [bind, Except.bind] at hc
     split at hc
-    · exact compileBody_finish_traps m p hsig (.letE hval hbody) hc henv hcov hjenv he hne
+    · exact compileBody_finish_traps m p hsig hprog (.letE hval hbody) hc henv hcov hjenv he hne
     split at hc
     · exact (errNeOk hc).elim
     rename_i _uv hvi
+    split at hc
+    · exact (errNeOk hc).elim
+    rename_i _uw hwf
     split at hc
     · exact (errNeOk hc).elim
     rename_i valPair hcv
@@ -1268,23 +1355,23 @@ theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) {
       · rename_i e0 hve
         obtain rfl : err = e0 := (Except.error.inj he).symm
         obtain ⟨innerB, hshape⟩ := compileBody_shape p hbody hc
-        obtain ⟨gV, hgV⟩ := fragment_traps_in p m hsig hval henv hcov hjenv hcv hve hne
+        obtain ⟨gV, hgV⟩ := fragment_traps_in p m hsig hprog hval henv hcov hjenv hcv hve hne
         refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, gV, ?_⟩
         intro g' hge
         exact evalStmts_const_fail m g' jenv name jv _ innerB (hgV g' hge)
       rename_i vv hvv
       have hvt : Value.hasTy p vv tv = true :=
-        typeSound p f ctx env val jv tv vv hval.typeChecked henv hcv hvv
+        typeSound p hprog f ctx env val jv tv vv hval.typeChecked henv hcv hvv
       obtain ⟨innerB, hshape, gB, hgB⟩ :=
         ihb hc (henv.cons hvt) hcov.cons (hjenv.cons (ne_scrutName_of_validateIdent hvi)) he hne
-      obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hval henv hjenv hcv hvv
+      obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hprog hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
       rw [evalStmts_const m g' jenv name jv _ innerB (hgV g' (by omega))]
       exact hgB g' (by omega)
   | _ =>
     intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
-    exact compileBody_finish_traps m p hsig (by constructor <;> assumption)
+    exact compileBody_finish_traps m p hsig hprog (by constructor <;> assumption)
       (by rwa [compileBody.eq_def] at hc) henv hcov hjenv he hne
 
 /-! ## One public function
@@ -1501,7 +1588,8 @@ theorem compileDecl_shape {p : Program} {d : Decl} {f : Js.Func} (h : compileDec
       Unreserved d.params ∧ DistinctNames d.params ∧
       compileBody p (d.params.map fun param => (param.name, param.ty)) d.body [] = .ok (stmts, ty) ∧
       paramChecks p 0 d.params = .ok checks ∧
-      f.name = d.name ∧ f.params = rawParams 0 d.params ∧ f.body = checks ++ stmts := by
+      f.name = d.name ∧ f.params = rawParams 0 d.params ∧ f.body = checks ++ stmts ∧
+      ty = d.ret := by
   rw [compileDecl] at h
   simp only [bind, Except.bind] at h
   split at h; · exact (errNeOk h).elim
@@ -1515,13 +1603,15 @@ theorem compileDecl_shape {p : Program} {d : Decl} {f : Js.Func} (h : compileDec
   rename_i bodyPair hbody
   obtain ⟨stmts, ty⟩ := bodyPair
   split at h; · exact (errNeOk h).elim
+  rename_i hret
   split at h; · exact (errNeOk h).elim
   rename_i checks hchecks
   refine ⟨stmts, ty, checks, unreserved_of_validated d.params (by simpa using hidents),
-    distinctNames_of_validated d.params (by simpa using hdistinct), hbody, hchecks, ?_, ?_, ?_⟩
+    distinctNames_of_validated d.params (by simpa using hdistinct), hbody, hchecks, ?_, ?_, ?_, ?_⟩
   · exact (congrArg Js.Func.name (Except.ok.inj h)).symm
   · exact (congrArg Js.Func.params (Except.ok.inj h)).symm
   · exact (congrArg Js.Func.body (Except.ok.inj h)).symm
+  · exact Ty.eq_of_not_bne hret
 
 theorem compileDecls_find :
     ∀ (p : Program) (i : Nat) (decls : List Decl) (funcs : List Js.Func) (fn : String) (d : Decl),
@@ -1539,7 +1629,7 @@ theorem compileDecls_find :
     rename_i funcsRest hrest
     obtain rfl : funcs = f₀ :: funcsRest := (Except.ok.inj hcs).symm
     have hname : f₀.name = d₀.name := by
-      obtain ⟨_, _, _, _, _, _, _, hn, _, _⟩ := compileDecl_shape hf₀
+      obtain ⟨_, _, _, _, _, _, _, hn, _, _, _⟩ := compileDecl_shape hf₀
       exact hn
     rw [List.find?_cons] at hfind
     cases hb : d₀.name == fn with
@@ -1553,6 +1643,38 @@ theorem compileDecls_find :
       simp only at hfind
       obtain ⟨f, hf, hfindf⟩ := compileDecls_find p (i + 1) rest funcsRest fn d hrest hfind
       exact ⟨f, hf, by simp [hname, hb, hfindf]⟩
+
+theorem compileDecls_mem :
+    ∀ (p : Program) (i : Nat) (decls : List Decl) (funcs : List Js.Func) (d : Decl),
+      compileDecls p i decls = .ok funcs → d ∈ decls → ∃ f, compileDecl p d = .ok f
+  | _, _, [], _, _, _, hmem => by simp at hmem
+  | p, i, d₀ :: rest, funcs, d, hcs, hmem => by
+    rw [compileDecls.eq_def] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs; · exact (errNeOk hcs).elim
+    split at hcs; · exact (errNeOk hcs).elim
+    rename_i f₀ hf₀
+    split at hcs; · exact (errNeOk hcs).elim
+    rename_i funcsRest hrest
+    rcases List.mem_cons.mp hmem with rfl | hr
+    · exact ⟨f₀, hf₀⟩
+    · exact compileDecls_mem p (i + 1) rest funcsRest d hrest hr
+
+/-- Every declaration of a program the compiler accepted compiles, under the context its parameters give,
+at the type it is declared to return. This is what a proof that reaches a call needs about the callee. -/
+theorem programTyped_of_compileProgram {p : Program} {m : Js.Module}
+    (hm : compileProgram p = .ok m) : ProgramTyped p := by
+  rw [compileProgram] at hm
+  simp only [bind, Except.bind] at hm
+  split at hm; · exact (errNeOk hm).elim
+  split at hm; · exact (errNeOk hm).elim
+  split at hm; · exact (errNeOk hm).elim
+  split at hm; · exact (errNeOk hm).elim
+  rename_i funcs hfuncs
+  intro d hd
+  obtain ⟨f, hf⟩ := compileDecls_mem p 0 p.decls funcs d hfuncs hd
+  obtain ⟨stmts, ty, _, _, _, hcb, _, _, _, _, hret⟩ := compileDecl_shape hf
+  exact compileBody_type p d.body _ [] stmts ty hcb |>.imp fun _ h => hret ▸ h
 
 theorem compileProgram_find {p : Program} {m : Js.Module} {fn : String} {d : Decl}
     (hm : compileProgram p = .ok m) (hd : p.find? fn = some d) :
@@ -1584,11 +1706,12 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
       Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v) := by
   obtain ⟨hlen, htyped, hbody⟩ := evalCall_inv hd he
   have hsig := signatureOk_of_compileProgram hm
+  have hprog := programTyped_of_compileProgram hm
   obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody⟩ :=
+  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody, hret⟩ :=
     compileDecl_shape hf
   obtain ⟨inner, hinner, gB, hgB⟩ :=
-    compileBody_correct m p hsig hfrag hcb (envTyped_bindParams p d.params args htyped)
+    compileBody_correct m p hsig hprog hfrag hcb (envTyped_bindParams p d.params args htyped)
       (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres) hbody
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
@@ -1620,11 +1743,12 @@ theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args 
       Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code := by
   rw [evalCall_body hd hlen htyped] at he
   have hsig := signatureOk_of_compileProgram hm
+  have hprog := programTyped_of_compileProgram hm
   obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody⟩ :=
+  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody, hret⟩ :=
     compileDecl_shape hf
   obtain ⟨inner, hinner, gB, hgB⟩ :=
-    compileBody_traps m p hsig hfrag hcb (envTyped_bindParams p d.params args htyped)
+    compileBody_traps m p hsig hprog hfrag hcb (envTyped_bindParams p d.params args htyped)
       (envCovers_bindParams d.params args hlen)
       (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres) he hne
   simp only [List.reverse_nil, List.nil_append] at hinner
@@ -1678,7 +1802,7 @@ theorem decl_refuses (p : Program) (m : Js.Module) (fn : String) (d : Decl)
   intro g hg
   obtain ⟨g', rfl⟩ : ∃ g', g = g' + 2 := ⟨g - 2, by omega⟩
   obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody⟩ :=
+  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody, hret⟩ :=
     compileDecl_shape hf
   rw [Js.callFunctionAt, hfindf]
   simp only [hparams, hfbody]
