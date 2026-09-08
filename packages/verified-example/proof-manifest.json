@@ -313,6 +313,18 @@
     {
       "name": "addMoney_traps",
       "statement": "for any arguments eval accepts, if eval throws then the generated addMoney throws the same code"
+    },
+    {
+      "name": "ship_calls_agree",
+      "statement": "for any arguments, the generated ship returns what eval returns, arm chosen by constructor"
+    },
+    {
+      "name": "cartTotal_calls_agree",
+      "statement": "for any arguments, the generated cartTotal returns what eval returns, fold included"
+    },
+    {
+      "name": "cartTotal_traps",
+      "statement": "for any arguments eval accepts, if the fold throws then the generated cartTotal throws the same code"
     }
   ]
 }

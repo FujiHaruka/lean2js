@@ -470,6 +470,8 @@ private theorem find_discounted : program.find? "discounted" = some discounted :
 
 private theorem find_rebindTwice : program.find? "rebindTwice" = some rebindTwice := rfl
 
+private theorem find_cartTotal : program.find? "cartTotal" = some cartTotal := rfl
+
 /-- Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
 is a single binary operation. -/
 theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
@@ -536,6 +538,35 @@ theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram progra
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .ok (encodeValue v) :=
   Decl.decl_correct program m "addMoney" addMoney args v hm find_addMoney
     (Correct.InFragment.of_inFragmentB rfl) he
+
+/-- The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads
+the fields that arm binds. -/
+theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (v : Value) (he : evalCall program "ship" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "ship" (args.map encodeValue) = .ok (encodeValue v) :=
+  Decl.decl_correct program m "ship" ship args v hm find_ship
+    (Correct.InFragment.of_inFragmentB rfl) he
+
+/-- And an array traversal: `cartTotal` folds a body over the elements, each under its own binding. -/
+theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (v : Value) (he : evalCall program "cartTotal" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .ok (encodeValue v) :=
+  Decl.decl_correct program m "cartTotal" cartTotal args v hm find_cartTotal
+    (Correct.InFragment.of_inFragmentB rfl) he
+
+/-- The trap side of a traversal: a fold whose running sum leaves `Int53` throws where `eval` does, at
+the element that overflowed rather than at the end. -/
+theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (err : Err)
+    (hlen : cartTotal.params.length = args.length)
+    (htyped : Decl.ParamsTyped program cartTotal.params args)
+    (he : evalCall program "cartTotal" args = .error err) (hne : Correct.Mirrorable err) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .error err.code :=
+  Decl.decl_traps program m "cartTotal" cartTotal args err hm find_cartTotal
+    (Correct.InFragment.of_inFragmentB rfl) hlen htyped he hne
 
 /-! ### Refusing what the reference semantics refuses
 
@@ -612,7 +643,19 @@ def manifest : Manifest := {
     { name := "addMoney_traps"
       statement :=
         "for any arguments eval accepts, if eval throws then the generated addMoney throws the same code"
-      proof := addMoney_traps }
+      proof := addMoney_traps },
+    { name := "ship_calls_agree"
+      statement :=
+        "for any arguments, the generated ship returns what eval returns, arm chosen by constructor"
+      proof := ship_calls_agree },
+    { name := "cartTotal_calls_agree"
+      statement :=
+        "for any arguments, the generated cartTotal returns what eval returns, fold included"
+      proof := cartTotal_calls_agree },
+    { name := "cartTotal_traps"
+      statement :=
+        "for any arguments eval accepts, if the fold throws then the generated cartTotal throws the same code"
+      proof := cartTotal_traps }
   ]
 }
 
