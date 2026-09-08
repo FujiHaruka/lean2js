@@ -286,6 +286,9 @@ private def doubleAll : Decl :=
     (reduce' (v "xs") (int53 0) "acc" "x" (v "acc" +' call "later" [v "x"])),
   decl "later" [("n", .int53)] .int53 (v "n")]
 
+#guard !compilesAll [rule, applyRule,
+  decl "shadowed" [("rule", .int53)] .int53 (call "applyRule" [fnRef "rule", v "rule"])]
+
 #guard !compiles (decl "returnsFn" [("amount", .int53)] (.fn [.int53] .int53) (v "amount"))
 #guard !compiles
   (decl "arrayOfFn" [("fs", .array (.fn [.int53] .int53))] .int53 (len (v "fs")))

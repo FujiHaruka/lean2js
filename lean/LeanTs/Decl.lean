@@ -773,9 +773,9 @@ theorem repr_inj {a b : Nat} (h : a.repr = b.repr) : a = b := by
   rw [hd] at ha
   omega
 
-theorem rawParam_reserved (i : Nat) : (rawParam i).startsWith reservedPrefix = true := by
-  show ("__p" ++ toString i).startsWith "__" = true
-  simp [String.toList_append]
+theorem rawParam_reserved (i : Nat) : isReserved (rawParam i) = true := by
+  show isReserved ("__p" ++ toString i) = true
+  simp [isReserved, String.toList_append]
 
 theorem rawParam_inj {i j : Nat} (h : rawParam i = rawParam j) : i = j := by
   have h' : ("__p" ++ toString i).toList = ("__p" ++ toString j).toList := by
@@ -784,17 +784,9 @@ theorem rawParam_inj {i j : Nat} (h : rawParam i = rawParam j) : i = j := by
   exact repr_inj (by simpa using String.toList_inj.mp (List.append_cancel_left h'))
 
 theorem validateIdent_unreserved {kind name : String} (h : validateIdent kind name = .ok ()) :
-    name.startsWith reservedPrefix = false := by
-  cases hc : name.startsWith reservedPrefix with
-  | false => rfl
-  | true =>
-    unfold validateIdent at h
-    split at h; · exact (errNeOk h).elim
-    split at h; · exact (errNeOk h).elim
-    split at h; · exact (errNeOk h).elim
-    exact (errNeOk h).elim
+    isReserved name = false := unreserved_of_validateIdent h
 
-theorem ne_rawParam {name : String} {i : Nat} (h : name.startsWith reservedPrefix = false) :
+theorem ne_rawParam {name : String} {i : Nat} (h : isReserved name = false) :
     (name == rawParam i) = false := by
   refine beq_eq_false_iff_ne.mpr fun hne => ?_
   rw [hne, rawParam_reserved] at h
@@ -808,7 +800,7 @@ def RawBound (jenv : Js.JsEnv) : Nat → List Js.JsValue → Prop
     ((jenv.find? (·.1 == rawParam i)).map (·.2)) = some jv ∧ RawBound jenv (i + 1) rest
 
 theorem RawBound.cons_unreserved {jenv : Js.JsEnv} {name : String} {v : Js.JsValue} {i : Nat}
-    (hname : name.startsWith reservedPrefix = false) :
+    (hname : isReserved name = false) :
     ∀ {as : List Js.JsValue}, RawBound jenv i as → RawBound ((name, v) :: jenv) i as
   | [], _ => trivial
   | _ :: as, h => by
@@ -839,7 +831,7 @@ theorem rawBound_bindAll : ∀ (params : List Param) (jargs : List Js.JsValue) (
 
 def Unreserved : List Param → Prop
   | [] => True
-  | param :: ps => param.name.startsWith reservedPrefix = false ∧ Unreserved ps
+  | param :: ps => isReserved param.name = false ∧ Unreserved ps
 
 def DistinctNames : List Param → Prop
   | [] => True
@@ -1008,22 +1000,6 @@ theorem envCovers_bindParams :
     simp only [List.map_cons, bindParams]
     exact (envCovers_bindParams ps as hlen).cons
 
-/-- The compiler's context and the reference environment are built from the same parameter list in the
-same order, so the name each lookup lands on is the same one. -/
-theorem envTyped_bindParams (p : Program) :
-    ∀ (params : List Param) (args : List Value), ParamsTyped p params args →
-      EnvTyped p (bindParams params args) (params.map fun param => (param.name, param.ty))
-  | [], [], _ => by
-    constructor
-    · intro name ty v hctx _; simp at hctx
-    · intro name g hbound; simp [bindParams, Env.lookup?] at hbound
-  | [], _ :: _, htyped => by simp [ParamsTyped] at htyped
-  | _ :: _, [], htyped => by simp [ParamsTyped] at htyped
-  | param :: ps, a :: as, htyped => by
-    have := (envTyped_bindParams p ps as htyped.2).cons (name := param.name) (ty := param.ty)
-      htyped.1
-    simpa [bindParams] using this
-
 theorem checkedBindings_find_none :
     ∀ (ps : List Param) (as : List Value) (nm : String),
       (ps.map (·.name)).contains nm = false →
@@ -1082,7 +1058,7 @@ theorem bindParams_scrutFree :
 theorem bindParams_unreserved :
     ∀ (params : List Param) (args : List Value), Unreserved params →
       ∀ (name : String) (v : Value), Env.lookup? (bindParams params args) name = some v →
-        name.startsWith reservedPrefix = false
+        isReserved name = false
   | [], _, _, _, _, h => by simp [bindParams, Env.lookup?] at h
   | _ :: _, [], _, _, _, h => by simp [bindParams, Env.lookup?] at h
   | param :: ps, a :: as, hres, name, v, h => by
@@ -1098,9 +1074,9 @@ names carry the reserved prefix. So an unreserved name the generated code can re
 environment binds too — which is what a call needs, since it reads its callee out of the environment. -/
 theorem checkedBindings_fresh (jenv : Js.JsEnv)
     (hraw : ∀ (name : String) (jv : Js.JsValue),
-      ((jenv.find? (·.1 == name)).map (·.2)) = some jv → name.startsWith reservedPrefix = true) :
+      ((jenv.find? (·.1 == name)).map (·.2)) = some jv → isReserved name = true) :
     ∀ (params : List Param) (args : List Value) (name : String) (jv : Js.JsValue),
-      name.startsWith reservedPrefix = false →
+      isReserved name = false →
       (((checkedBindings params args ++ jenv).find? (·.1 == name)).map (·.2)) = some jv →
       ∃ v, Env.lookup? (bindParams params args) name = some v
   | [], _, name, jv, hfree, h => by
@@ -1137,7 +1113,7 @@ theorem checkedBindings_fresh (jenv : Js.JsEnv)
 theorem bindAll_rawParams_reserved :
     ∀ (params : List Param) (jargs : List Js.JsValue) (i : Nat) (name : String) (jv : Js.JsValue),
       (((Js.bindAll (rawParams i params) jargs).find? (·.1 == name)).map (·.2)) = some jv →
-      name.startsWith reservedPrefix = true
+      isReserved name = true
   | [], _, _, _, _, h => by simp [rawParams, Js.bindAll] at h
   | _ :: _, [], _, _, _, h => by simp [rawParams, Js.bindAll] at h
   | _ :: ps, _ :: jas, i, name, jv, h => by
@@ -1152,7 +1128,7 @@ theorem jsEnvAgrees_checkedBindings (params : List Param) (args : List Value) (j
     (hlen : params.length = args.length) (hdist : DistinctNames params)
     (hres : Unreserved params)
     (hraw : ∀ (name : String) (jv : Js.JsValue),
-      ((jenv.find? (·.1 == name)).map (·.2)) = some jv → name.startsWith reservedPrefix = true) :
+      ((jenv.find? (·.1 == name)).map (·.2)) = some jv → isReserved name = true) :
     JsEnvAgrees (bindParams params args) (checkedBindings params args ++ jenv) :=
   ⟨jsEnvBinds_checkedBindings params args jenv hlen hdist,
     bindParams_unreserved params args hres,
@@ -1170,9 +1146,10 @@ theorem evalStmts_ret (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (je : Js.Expr)
     (rest : List Js.Stmt) : Js.evalStmts m f jenv (.ret je :: rest) = Js.eval m f jenv je := by
   rw [Js.evalStmts.eq_def]
 
-theorem compileBody_finish (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
+theorem compileBody_finish (m : Js.Module) (p : Program) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat) (iha : AgreesAt p m f) {e : Expr}
     (hfrag : InFragment e)
-    {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
+    {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty}
     {v : Value}
     (hc : compileFinish p ctx e acc = .ok (stmts, ty))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
@@ -1186,24 +1163,26 @@ theorem compileBody_finish (m : Js.Module) (p : Program) (hsig : SignatureOk p) 
     rw [hce] at hc
     have hs : stmts = acc.reverse ++ [Js.Stmt.ret je] :=
       (congrArg Prod.fst (Except.ok.inj hc)).symm
-    obtain ⟨g, hg⟩ := fragment_correct_in p m hsig hprog hfrag henv hjenv hce he
+    obtain ⟨g, hg⟩ := iha hfrag henv hjenv hce he
     exact ⟨[.ret je], hs, g, fun g' hge => by rw [evalStmts_ret]; exact hg g' hge⟩
 
-theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
+theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat) (iha : ∀ g, g ≤ f → AgreesAt p m g) {e : Expr}
     (hfrag : InFragment e) :
-    ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
-      {v : Value},
+    ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty}
+      {v : Value} {f' : Nat},
+      f' ≤ f →
       compileBody p ctx e acc = .ok (stmts, ty) →
       EnvTyped p env ctx → JsEnvAgrees env jenv →
-      evalExpr p f env e = .ok v →
+      evalExpr p f' env e = .ok v →
       ∃ inner, stmts = acc.reverse ++ inner ∧ EventuallyStmts m jenv inner (encodeValue v) := by
   induction hfrag with
   | @letE name t val body hval hbody ihv ihb =>
-    intro ctx env jenv acc stmts ty f v hc henv hjenv he
+    intro ctx env jenv acc stmts ty v f' hle hc henv hjenv he
     rw [compileBody.eq_def] at hc
     simp only [bind, Except.bind] at hc
     split at hc
-    · exact compileBody_finish m p hsig hprog (.letE hval hbody) hc henv hjenv he
+    · exact compileBody_finish m p hsig hprog f' (iha f' hle) (.letE hval hbody) hc henv hjenv he
     split at hc
     · exact (errNeOk hc).elim
     rename_i _uv hvi
@@ -1218,26 +1197,26 @@ theorem compileBody_correct (m : Js.Module) (p : Program) (hsig : SignatureOk p)
     · exact (errNeOk hc).elim
     rename_i hsame
     obtain rfl : tv = t := Ty.eq_of_not_bne hsame
-    cases f with
+    cases f' with
     | zero => simp [evalExpr] at he
-    | succ f =>
+    | succ f'' =>
       rw [evalExpr_letE] at he
       simp only [bind, Except.bind] at he
       split at he
       · simp at he
       rename_i vv hvv
       have hvt : Value.hasTy p vv tv = true :=
-        typeSound p hprog f ctx env val jv tv vv hval.typeChecked henv hcv hvv
+        typeSound p hprog f'' ctx env val jv tv vv hval.typeChecked henv hcv hvv
       obtain ⟨innerB, hshape, gB, hgB⟩ :=
-        ihb hc (henv.cons hvt) (hjenv.cons (startsWith_false_of_validateIdent hvi)) he
-      obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hprog hval henv hjenv hcv hvv
+        ihb (by omega) hc (henv.cons hvt) (hjenv.cons (unreserved_of_validateIdent hvi)) he
+      obtain ⟨gV, hgV⟩ := iha f'' (by omega) hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
       rw [evalStmts_const m g' jenv name jv _ innerB (hgV g' (by omega))]
       exact hgB g' (by omega)
   | _ =>
-    intro ctx env jenv acc stmts ty f v hc henv hjenv he
-    exact compileBody_finish m p hsig hprog (by constructor <;> assumption)
+    intro ctx env jenv acc stmts ty v f' hle hc henv hjenv he
+    exact compileBody_finish m p hsig hprog f' (iha f' hle) (by constructor <;> assumption)
       (by rwa [compileBody.eq_def] at hc) henv hjenv he
 
 /-! ### The body throws
@@ -1366,9 +1345,10 @@ theorem compileBody_shape (p : Program) {e : Expr} (hfrag : InFragment e) :
     intro ctx acc stmts ty hc
     exact compileFinish_shape (by rwa [compileBody.eq_def] at hc)
 
-theorem compileBody_finish_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
+theorem compileBody_finish_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat) (iha : AgreesAt p m f) (iht : TrapsAt p m f) {e : Expr}
     (hfrag : InFragment e)
-    {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
+    {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty}
     {err : Err}
     (hc : compileFinish p ctx e acc = .ok (stmts, ty))
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
@@ -1382,24 +1362,28 @@ theorem compileBody_finish_traps (m : Js.Module) (p : Program) (hsig : Signature
     rw [hce] at hc
     have hs : stmts = acc.reverse ++ [Js.Stmt.ret je] :=
       (congrArg Prod.fst (Except.ok.inj hc)).symm
-    obtain ⟨g, hg⟩ := fragment_traps_in p m hsig hprog hfrag henv hcov hjenv hce he hne
+    obtain ⟨g, hg⟩ := iht hfrag henv hcov hjenv hce he hne
     exact ⟨[.ret je], hs, g, fun g' hge => by rw [evalStmts_ret]; exact hg g' hge⟩
 
-theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) (hprog : ProgramTyped p) {e : Expr}
+theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) (f : Nat) (iha : ∀ g, g ≤ f → AgreesAt p m g)
+    (iht : ∀ g, g ≤ f → TrapsAt p m g) {e : Expr}
     (hfrag : InFragment e) :
-    ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty} {f : Nat}
-      {err : Err},
+    ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {acc stmts : List Js.Stmt} {ty : Ty}
+      {err : Err} {f' : Nat},
+      f' ≤ f →
       compileBody p ctx e acc = .ok (stmts, ty) →
       EnvTyped p env ctx → EnvCovers env ctx → JsEnvAgrees env jenv →
-      evalExpr p f env e = .error err → Mirrorable err →
+      evalExpr p f' env e = .error err → Mirrorable err →
       ∃ inner, stmts = acc.reverse ++ inner ∧ EventuallyStmtsErr m jenv inner err.code := by
   induction hfrag with
   | @letE name t val body hval hbody ihv ihb =>
-    intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
+    intro ctx env jenv acc stmts ty err f' hle hc henv hcov hjenv he hne
     rw [compileBody.eq_def] at hc
     simp only [bind, Except.bind] at hc
     split at hc
-    · exact compileBody_finish_traps m p hsig hprog (.letE hval hbody) hc henv hcov hjenv he hne
+    · exact compileBody_finish_traps m p hsig hprog f' (iha f' hle) (iht f' hle)
+        (.letE hval hbody) hc henv hcov hjenv he hne
     split at hc
     · exact (errNeOk hc).elim
     rename_i _uv hvi
@@ -1414,33 +1398,34 @@ theorem compileBody_traps (m : Js.Module) (p : Program) (hsig : SignatureOk p) (
     · exact (errNeOk hc).elim
     rename_i hsame
     obtain rfl : tv = t := Ty.eq_of_not_bne hsame
-    cases f with
+    cases f' with
     | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
-    | succ f =>
+    | succ f'' =>
       rw [evalExpr_letE] at he
       simp only [bind, Except.bind] at he
       split at he
       · rename_i e0 hve
         obtain rfl : err = e0 := (Except.error.inj he).symm
         obtain ⟨innerB, hshape⟩ := compileBody_shape p hbody hc
-        obtain ⟨gV, hgV⟩ := fragment_traps_in p m hsig hprog hval henv hcov hjenv hcv hve hne
+        obtain ⟨gV, hgV⟩ := iht f'' (by omega) hval henv hcov hjenv hcv hve hne
         refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, gV, ?_⟩
         intro g' hge
         exact evalStmts_const_fail m g' jenv name jv _ innerB (hgV g' hge)
       rename_i vv hvv
       have hvt : Value.hasTy p vv tv = true :=
-        typeSound p hprog f ctx env val jv tv vv hval.typeChecked henv hcv hvv
+        typeSound p hprog f'' ctx env val jv tv vv hval.typeChecked henv hcv hvv
       obtain ⟨innerB, hshape, gB, hgB⟩ :=
-        ihb hc (henv.cons hvt) hcov.cons (hjenv.cons (startsWith_false_of_validateIdent hvi)) he hne
-      obtain ⟨gV, hgV⟩ := fragment_correct_in p m hsig hprog hval henv hjenv hcv hvv
+        ihb (by omega) hc (henv.cons hvt) hcov.cons
+          (hjenv.cons (unreserved_of_validateIdent hvi)) he hne
+      obtain ⟨gV, hgV⟩ := iha f'' (by omega) hval henv hjenv hcv hvv
       refine ⟨Js.Stmt.const name jv :: innerB, by simpa using hshape, max gV gB, ?_⟩
       intro g' hge
       rw [evalStmts_const m g' jenv name jv _ innerB (hgV g' (by omega))]
       exact hgB g' (by omega)
   | _ =>
-    intro ctx env jenv acc stmts ty f err hc henv hcov hjenv he hne
-    exact compileBody_finish_traps m p hsig hprog (by constructor <;> assumption)
-      (by rwa [compileBody.eq_def] at hc) henv hcov hjenv he hne
+    intro ctx env jenv acc stmts ty err f' hle hc henv hcov hjenv he hne
+    exact compileBody_finish_traps m p hsig hprog f' (iha f' hle) (iht f' hle)
+      (by constructor <;> assumption) (by rwa [compileBody.eq_def] at hc) henv hcov hjenv he hne
 
 /-! ## One public function
 
@@ -1739,10 +1724,18 @@ theorem programTyped_of_compileProgram {p : Program} {m : Js.Module}
   split at hm; · exact (errNeOk hm).elim
   split at hm; · exact (errNeOk hm).elim
   rename_i funcs hfuncs
-  intro d hd
-  obtain ⟨f, hf⟩ := compileDecls_mem p 0 p.decls funcs d hfuncs hd
-  obtain ⟨stmts, ty, _, _, _, hcb, _, _, _, _, hret⟩ := compileDecl_shape hf
-  exact compileBody_type p d.body _ [] stmts ty hcb |>.imp fun _ h => hret ▸ h
+  refine ⟨?_, ?_⟩
+  · intro d hd
+    obtain ⟨f, hf⟩ := compileDecls_mem p 0 p.decls funcs d hfuncs hd
+    obtain ⟨stmts, ty, _, _, _, hcb, _, _, _, _, hret⟩ := compileDecl_shape hf
+    exact compileBody_type p d.body _ [] stmts ty hcb |>.imp fun _ h => hret ▸ h
+  · intro d hd
+    obtain ⟨f, hf⟩ := compileDecls_mem p 0 p.decls funcs d hfuncs hd
+    rw [compileDecl] at hf
+    simp only [bind, Except.bind] at hf
+    split at hf; · exact (errNeOk hf).elim
+    rename_i u hvi
+    exact unreserved_of_validateIdent (by simpa using hvi)
 
 theorem compileProgram_find {p : Program} {m : Js.Module} {fn : String} {d : Decl}
     (hm : compileProgram p = .ok m) (hd : p.find? fn = some d) :
@@ -1757,29 +1750,26 @@ theorem compileProgram_find {p : Program} {m : Js.Module} {fn : String} {d : Dec
   obtain rfl : m = { funcs := funcs } := (Except.ok.inj hm).symm
   exact compileDecls_find p 0 p.decls funcs fn d hfuncs hd
 
-/-- What a caller of an exported function gets. For a public declaration whose body is in the fragment:
-for any arguments of the declared types, if the reference semantics returns a value then the generated
-module's function returns the same value, at every large enough amount of the model's fuel.
+/-! ## The two levels, one induction
 
-This is the run-time agreement check's "the vectors we tried agreed" replaced by "any arguments at
-all" — for the declarations the fragment covers. Outside it, `Agree.checkAgreement` still carries the
-weight. -/
-theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
-    (v : Value)
-    (hm : compileProgram p = .ok m)
-    (hd : p.find? fn = some d)
-    (hfrag : InFragment d.body)
-    (he : evalCall p fn args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v) := by
-  obtain ⟨hlen, htyped, hbody⟩ := evalCall_inv hd he
+A call runs the callee's body at one less fuel than the call itself, and the callee is a declaration, so
+the expression-level statement and the declaration-level one have to be proved together. Both are stated
+at one amount of fuel and the induction below hands each the other at the fuel it needs. -/
+
+/-- The declaration-level statement at one fuel, from the expression-level statement at every fuel up to
+it. The body a call runs is compiled the same way a public function's is, so this is `decl_correct`
+without the entry the call did not go through. -/
+theorem decl_agrees_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
+    (iha : ∀ g, g ≤ f → AgreesAt p m g) : DeclAgrees p m f := by
+  intro fn d args v hd hlen htyped hbody
   have hsig := signatureOk_of_compileProgram hm
   have hprog := programTyped_of_compileProgram hm
-  obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
+  obtain ⟨fnc, hf, hfindf⟩ := compileProgram_find hm hd
   obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody, hret⟩ :=
     compileDecl_shape hf
   obtain ⟨inner, hinner, gB, hgB⟩ :=
-    compileBody_correct m p hsig hprog hfrag hcb (envTyped_bindParams p d.params args htyped)
+    compileBody_correct m p hsig hprog f iha (InFragment.all d.body) (Nat.le_refl f) hcb
+      (envTyped_bindParams p d.params args htyped)
       (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres
         (bindAll_rawParams_reserved d.params _ 0)) hbody
   simp only [List.reverse_nil, List.nil_append] at hinner
@@ -1793,34 +1783,21 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
       (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
   exact hgB (g + 2) (by omega)
 
-/-- The companion to `decl_correct` on the other side of the reference semantics. For arguments the
-entry accepts, if `eval` throws then the generated module's function throws the same code — division by
-zero and `Int53` overflow are the two the fragment can reach.
-
-The failures this carries are the ones `Correct.Mirrorable` names: `outOfFuel` is the reference side's
-alone, and `noMatchingAlternative` is the one the generated arm chain cannot report. -/
-theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
-    (err : Err)
-    (hm : compileProgram p = .ok m)
-    (hd : p.find? fn = some d)
-    (hfrag : InFragment d.body)
-    (hlen : d.params.length = args.length)
-    (htyped : ParamsTyped p d.params args)
-    (he : evalCall p fn args = .error err)
-    (hne : Mirrorable err) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code := by
-  rw [evalCall_body hd hlen htyped] at he
+/-- The same on the other side. -/
+theorem decl_traps_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
+    (iha : ∀ g, g ≤ f → AgreesAt p m g) (iht : ∀ g, g ≤ f → TrapsAt p m g) : DeclTraps p m f := by
+  intro fn d args err hd hlen htyped hbody hne
   have hsig := signatureOk_of_compileProgram hm
   have hprog := programTyped_of_compileProgram hm
-  obtain ⟨f, hf, hfindf⟩ := compileProgram_find hm hd
+  obtain ⟨fnc, hf, hfindf⟩ := compileProgram_find hm hd
   obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody, hret⟩ :=
     compileDecl_shape hf
   obtain ⟨inner, hinner, gB, hgB⟩ :=
-    compileBody_traps m p hsig hprog hfrag hcb (envTyped_bindParams p d.params args htyped)
+    compileBody_traps m p hsig hprog f iha iht (InFragment.all d.body) (Nat.le_refl f) hcb
+      (envTyped_bindParams p d.params args htyped)
       (envCovers_bindParams d.params args hlen)
       (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres
-        (bindAll_rawParams_reserved d.params _ 0)) he hne
+        (bindAll_rawParams_reserved d.params _ 0)) hbody hne
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
   refine ⟨gB + 2, fun g' hge => ?_⟩
@@ -1831,6 +1808,150 @@ theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args 
     evalStmts_paramChecks m p g d.params args 0 checks stmts _ hchecks htyped hres
       (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
   exact hgB (g + 2) (by omega)
+
+/-- Distinct names make membership and lookup the same thing. -/
+theorem find?_of_mem_nodup :
+    ∀ {decls : List Decl} {d : Decl}, (decls.map (·.name)).Nodup → d ∈ decls →
+      decls.find? (·.name == d.name) = some d
+  | [], _, _, hmem => absurd hmem (by simp)
+  | d₀ :: rest, d, hnd, hmem => by
+    rw [List.find?_cons]
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    cases hb : d₀.name == d.name with
+    | true =>
+      rcases List.mem_cons.mp hmem with rfl | hr
+      · simp
+      · exact absurd (by rw [eq_of_beq hb]; exact List.mem_map_of_mem hr) hnd.1
+    | false =>
+      rcases List.mem_cons.mp hmem with rfl | hr
+      · simp at hb
+      · exact find?_of_mem_nodup hnd.2 hr
+
+/-- Every declaration of a compiled program has a function of its own name in the module. -/
+theorem moduleHasDecls_of_compileProgram {p : Program} {m : Js.Module}
+    (hm : compileProgram p = .ok m) : ModuleHasDecls p m := by
+  intro d hd
+  have hnodup : (p.decls.map (·.name)).Nodup := by
+    rw [compileProgram] at hm
+    simp only [bind, Except.bind] at hm
+    split at hm; · exact (errNeOk hm).elim
+    split at hm; · exact (errNeOk hm).elim
+    split at hm; · exact (errNeOk hm).elim
+    rename_i hdistinct
+    exact nodup_of_validateDistinct (by simpa using hdistinct)
+  obtain ⟨f, _, hfindf⟩ := compileProgram_find hm (find?_of_mem_nodup hnodup hd)
+  simp [hfindf]
+
+/-- The two directions at every fuel up to a bound. The step lemmas take the level below, and the
+declaration-level statements at that level come from the expression-level ones, so one induction settles
+both. The bound is what a body of nested lets needs: each let the entry opens costs one fuel. -/
+theorem levels (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) :
+    ∀ (f g : Nat), g ≤ f → AgreesAt p m g ∧ TrapsAt p m g := by
+  have hsig := signatureOk_of_compileProgram hm
+  have hprog := programTyped_of_compileProgram hm
+  have hmod := moduleHasDecls_of_compileProgram hm
+  intro f
+  induction f with
+  | zero =>
+    intro g hg
+    obtain rfl : g = 0 := Nat.le_zero.mp hg
+    constructor
+    · intro e _ ctx env jenv je ty v _ _ _ he
+      simp [evalExpr] at he
+    · intro e _ ctx env jenv je ty err _ _ _ _ he hne
+      rw [evalExpr_zero] at he
+      exact absurd (Except.error.inj he).symm hne.1
+  | succ f ih =>
+    intro g hg
+    rcases Nat.lt_or_ge g (f + 1) with hlt | hge
+    · exact ih g (by omega)
+    · obtain rfl : g = f + 1 := by omega
+      have hA : ∀ g', g' ≤ f → AgreesAt p m g' := fun g' h => (ih g' h).1
+      have hT : ∀ g', g' ≤ f → TrapsAt p m g' := fun g' h => (ih g' h).2
+      exact ⟨fragment_correct_succ p m hsig hprog hmod f (hA f (Nat.le_refl f))
+          (decl_agrees_at p m hm f hA),
+        fragment_traps_succ p m hsig hprog f (hA f (Nat.le_refl f)) (hT f (Nat.le_refl f))
+          (decl_traps_at p m hm f hA hT)⟩
+
+/-- If the reference semantics returns a value, the generated code returns the same value. -/
+theorem fragment_correct_in (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m)
+    {e : Expr} (hfrag : InFragment e) :
+    ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},
+      EnvTyped p env ctx →
+      JsEnvAgrees env jenv →
+      Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .ok v →
+      Eventually m jenv je (encodeValue v) :=
+  fun henv hjenv hc he => (levels p m hm _ _ (Nat.le_refl _)).1 hfrag henv hjenv hc he
+
+/-- The shape the manifest quotes: the generated environment is exactly the encoded one.
+
+The environment must bind no reserved name. Two things need it: `match` gives its scrutinee one, and a
+call reads its callee out of the environment, so a binding the generated code cannot have would send the
+two sides to different declarations. Every name a program can bind went through `validateIdent`, which
+rejects the prefix, so an environment a compiled declaration builds satisfies it. -/
+theorem fragment_correct (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m)
+    {e : Expr} (hfrag : InFragment e) :
+    ∀ {ctx : Ctx} {env : Env} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},
+      EnvTyped p env ctx →
+      (∀ name w, Env.lookup? env name = some w → isReserved name = false) →
+      Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .ok v →
+      Eventually m (encodeEnv env) je (encodeValue v) :=
+  fun henv hfree hc he =>
+    fragment_correct_in p m hm hfrag henv (jsEnvAgrees_encodeEnv _ hfree) hc he
+
+/-- If the reference semantics refuses, the generated code refuses with the same thrown code, for the
+failures `Correct.Mirrorable` names. -/
+theorem fragment_traps_in (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m)
+    {e : Expr} (hfrag : InFragment e) :
+    ∀ {ctx : Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat} {err : Err},
+      EnvTyped p env ctx →
+      EnvCovers env ctx →
+      JsEnvAgrees env jenv →
+      Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .error err →
+      Mirrorable err →
+      EventuallyErr m jenv je err.code :=
+  fun henv hcov hjenv hc he hne =>
+    (levels p m hm _ _ (Nat.le_refl _)).2 hfrag henv hcov hjenv hc he hne
+
+/-! ## One public function
+
+What a caller of an exported function gets: for any arguments of the declared types, if the reference
+semantics returns a value then the generated module's function returns the same value, at every large
+enough amount of the model's fuel. The run-time agreement check's "the vectors we tried agreed" replaced
+by "any arguments at all", for every declaration the program has. -/
+
+theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
+    (v : Value)
+    (hm : compileProgram p = .ok m)
+    (hd : p.find? fn = some d)
+    (he : evalCall p fn args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v) := by
+  obtain ⟨hlen, htyped, hbody⟩ := evalCall_inv hd he
+  exact decl_agrees_at p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
+    fn d args v hd hlen htyped hbody
+
+/-- The companion to `decl_correct` on the other side of the reference semantics. For arguments the
+entry accepts, if `eval` throws then the generated module's function throws the same code.
+
+The failures this carries are the ones `Correct.Mirrorable` names: `outOfFuel` is the reference side's
+alone, and `noMatchingAlternative` is the one the generated arm chain cannot report. -/
+theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
+    (err : Err)
+    (hm : compileProgram p = .ok m)
+    (hd : p.find? fn = some d)
+    (hlen : d.params.length = args.length)
+    (htyped : ParamsTyped p d.params args)
+    (he : evalCall p fn args = .error err)
+    (hne : Mirrorable err) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code := by
+  rw [evalCall_body hd hlen htyped] at he
+  exact decl_traps_at p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
+    (fun g _ => (levels p m hm g g (Nat.le_refl g)).2) fn d args err hd hlen htyped he hne
 
 /-! ## One public function refuses
 

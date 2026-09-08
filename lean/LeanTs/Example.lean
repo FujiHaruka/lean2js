@@ -462,9 +462,9 @@ theorem same_currency_adds (x y : Int) (currency : String)
 
 /-! ### The generated function, not just the expression
 
-`Correct.fragment_correct` is about a compiled expression. `Decl.decl_correct` carries it up to a call of
-the generated function, entry check and all. Instantiating it on a declaration needs only that the body
-is in the fragment, which `inFragmentB` decides. -/
+`Decl.fragment_correct` is about a compiled expression. `Decl.decl_correct` carries it up to a call of
+the generated function, entry check and all. It holds of every declaration the program has: the fragment
+covers the whole subset. -/
 
 private theorem find_discounted : program.find? "discounted" = some discounted := rfl
 
@@ -478,16 +478,14 @@ theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .
     (args : List Value) (v : Value) (he : evalCall program "add" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "add" add args v hm find_add
-    (Correct.InFragment.of_inFragmentB rfl) he
+  Decl.decl_correct program m "add" add args v hm find_add he
 
 /-- The same for a body that opens with a `let`, which the compiler emits as a `const` statement. -/
 theorem discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "discounted" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "discounted" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "discounted" discounted args v hm find_discounted
-    (Correct.InFragment.of_inFragmentB rfl) he
+  Decl.decl_correct program m "discounted" discounted args v hm find_discounted he
 
 /-- And for a body whose second `let` rebinds a name already in scope, which the compiler leaves as an
 expression rather than a statement. -/
@@ -495,8 +493,7 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
     (args : List Value) (v : Value) (he : evalCall program "rebindTwice" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "rebindTwice" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "rebindTwice" rebindTwice args v hm find_rebindTwice
-    (Correct.InFragment.of_inFragmentB rfl) he
+  Decl.decl_correct program m "rebindTwice" rebindTwice args v hm find_rebindTwice he
 
 /-! ### Throwing what the reference semantics throws
 
@@ -512,8 +509,7 @@ theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (he : evalCall program "add" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps program m "add" add args err hm find_add
-    (Correct.InFragment.of_inFragmentB rfl) hlen htyped he hne
+  Decl.decl_traps program m "add" add args err hm find_add hlen htyped he hne
 
 /-- The trap is reachable, and reached the same way on both sides: one past the top of `Int53` throws
 `int53Overflow` out of the generated function. -/
@@ -536,8 +532,7 @@ theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram progra
     (args : List Value) (v : Value) (he : evalCall program "addMoney" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "addMoney" addMoney args v hm find_addMoney
-    (Correct.InFragment.of_inFragmentB rfl) he
+  Decl.decl_correct program m "addMoney" addMoney args v hm find_addMoney he
 
 /-- The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads
 the fields that arm binds. -/
@@ -545,16 +540,14 @@ theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = 
     (args : List Value) (v : Value) (he : evalCall program "ship" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "ship" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "ship" ship args v hm find_ship
-    (Correct.InFragment.of_inFragmentB rfl) he
+  Decl.decl_correct program m "ship" ship args v hm find_ship he
 
 /-- And an array traversal: `cartTotal` folds a body over the elements, each under its own binding. -/
 theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "cartTotal" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "cartTotal" cartTotal args v hm find_cartTotal
-    (Correct.InFragment.of_inFragmentB rfl) he
+  Decl.decl_correct program m "cartTotal" cartTotal args v hm find_cartTotal he
 
 /-- The trap side of a traversal: a fold whose running sum leaves `Int53` throws where `eval` does, at
 the element that overflowed rather than at the end. -/
@@ -565,8 +558,7 @@ theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .
     (he : evalCall program "cartTotal" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps program m "cartTotal" cartTotal args err hm find_cartTotal
-    (Correct.InFragment.of_inFragmentB rfl) hlen htyped he hne
+  Decl.decl_traps program m "cartTotal" cartTotal args err hm find_cartTotal hlen htyped he hne
 
 /-! ### Refusing what the reference semantics refuses
 
@@ -602,8 +594,7 @@ theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .o
     (he : evalCall program "addMoney" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps program m "addMoney" addMoney args err hm find_addMoney
-    (Correct.InFragment.of_inFragmentB rfl) hlen htyped he hne
+  Decl.decl_traps program m "addMoney" addMoney args err hm find_addMoney hlen htyped he hne
 
 def manifest : Manifest := {
   package := "@leants/verified-example"

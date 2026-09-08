@@ -315,9 +315,12 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | some ty => .ok (.ident name, ty)
     | none => .error s!"unbound variable: {name}"
   | .fnRef name =>
-    match p.find? name with
-    | none => .error s!"unknown function: {name}"
-    | some d => .ok (.ident name, .fn (d.params.map (·.ty)) d.ret)
+    if (ctx.find? (·.1 == name)).isSome then
+      .error s!"{name} names both a function and a binding in scope here"
+    else
+      match p.find? name with
+      | none => .error s!"unknown function: {name}"
+      | some d => .ok (.ident name, .fn (d.params.map (·.ty)) d.ret)
   | .un .not x => do
     let (jx, tx) ← compileExpr p ctx x
     if tx == .bool then .ok (.unary "!" jx, .bool)
@@ -421,6 +424,9 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
         else
           .ok (objOf ctorName ((c.fields.map (·.name)).zip (js.map (·.1))), .named typeName tyArgs)
   | .proj e field => do
+    if field == "tag" then
+      .error "tag is the discriminator of a constructor value, not a field"
+    else
     let (je, te) ← compileExpr p ctx e
     match te with
     | .named n args =>

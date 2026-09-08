@@ -1,3 +1,4 @@
+import LeanTs.Ident
 import LeanTs.Js
 
 /-!
@@ -164,7 +165,10 @@ end Runtime
 
 open _root_.LeanTs.Js.Runtime
 
+/-- The runtime helpers the generated code calls. Guarded by the reserved prefix every helper name
+carries, which is what tells a call to a declaration apart from a call to a helper. -/
 def helper (name : String) (args : List JsValue) : Option JsResult :=
+  if !isReserved name then none else
   match name, args with
   | "__i53", [.num a] => some (i53 a)
   | "__i53div", [.num a, .num b] => some (i53div a b)
@@ -325,6 +329,14 @@ def bindAll : List String → List JsValue → JsEnv
   | n :: ns, v :: vs => (n, v) :: bindAll ns vs
   | _, _ => []
 
+/-- The function a call lands on. A binding holding a function shadows the module's own, the way a local
+name shadows a function declaration in real JavaScript; anything else bound to the name is not something
+the compiler emits a call through. -/
+def calleeName (env : JsEnv) (name : String) : String :=
+  match (env.find? (·.1 == name)).map (·.2) with
+  | some (JsValue.fn callee) => callee
+  | _ => name
+
 mutual
 
 /-- Evaluation of the generated code. `&&` and `||` short-circuit as they do in JS. -/
@@ -377,11 +389,7 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
       match helper name vs with
       | some r => r
       | none =>
-        let target :=
-          match (env.find? (·.1 == name)).map (·.2) with
-          | some (.fn callee) => callee
-          | _ => name
-        match m.funcs.find? (·.name == target) with
+        match m.funcs.find? (·.name == calleeName env name) with
         | none => .error "unboundIdentifier"
         | some fn =>
           if fn.params.length != vs.length then .error "typeError"
@@ -519,6 +527,17 @@ def callFunctionAt (m : Module) (fuel : Nat) (name : String) (args : List JsValu
   | some fn =>
     if fn.params.length != args.length then .error "typeError"
     else evalStmts m fuel (bindAll fn.params args) fn.body
+
+/-- A call evaluates its arguments and then runs the callee, which is what `callFunctionAt` does. -/
+theorem eval_call (m : Module) (f : Nat) (env : JsEnv) (name : String) (args : List Expr) :
+    eval m (f + 1) env (.call name args) =
+      (do
+        let vs ← evalList m f env args
+        match helper name vs with
+        | some r => r
+        | none => callFunctionAt m f (calleeName env name) vs) := by
+  rw [eval.eq_def]
+  rfl
 
 def callFunction (m : Module) (name : String) (args : List JsValue) : JsResult :=
   callFunctionAt m 10000 name args

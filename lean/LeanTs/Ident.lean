@@ -27,13 +27,21 @@ private def isIdentPart (c : Char) : Bool := isIdentStart c || c.isDigit
 collide with them. -/
 def reservedPrefix : String := "__"
 
+/-- The same test as `String.startsWith reservedPrefix`, written on the characters so that it reduces:
+the generated code's helper dispatch is guarded by it, and a proof about a call has to see that a name
+the compiler let through is not a helper. -/
+def isReserved (name : String) : Bool :=
+  match name.toList with
+  | '_' :: '_' :: _ => true
+  | _ => false
+
 def validateIdent (kind name : String) : Except String Unit :=
   if name.isEmpty then .error s!"{kind} name is empty"
   else if !isIdentStart name.front then
     .error s!"{kind} name is not a JavaScript identifier: {name}"
   else if !(name.toList.all isIdentPart) then
     .error s!"{kind} name is not a JavaScript identifier: {name}"
-  else if name.startsWith reservedPrefix then
+  else if isReserved name then
     .error s!"{kind} name uses the reserved {reservedPrefix} prefix: {name}"
   else if jsReserved.contains name then
     .error s!"{kind} name is reserved in JavaScript: {name}"
@@ -41,8 +49,8 @@ def validateIdent (kind name : String) : Except String Unit :=
 
 /-- Nothing that passed the check carries the helper prefix, which is what keeps a compiled name from
 colliding with one the compiler introduces itself. -/
-theorem startsWith_false_of_validateIdent {kind name : String} {u : Unit}
-    (h : validateIdent kind name = .ok u) : name.startsWith reservedPrefix = false := by
+theorem unreserved_of_validateIdent {kind name : String} {u : Unit}
+    (h : validateIdent kind name = .ok u) : isReserved name = false := by
   rw [validateIdent] at h
   split at h
   · exact absurd h (by simp)

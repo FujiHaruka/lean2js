@@ -25,16 +25,16 @@ namespace LeanTs
 open Core
 
 /-- Every name the compiler's context has typed holds, if the environment binds it at all, a value of
-that type, and a function value in the environment is one the context typed as a function.
+that type, and every name it binds is one the context has.
 
-The second half is what a call needs. `eval` reads the callee out of the environment while the generated
-code was compiled against the context, so a function value the context did not type would send the two
-sides to different declarations. -/
+The second half is what a call and a function reference need. `eval` reads the callee out of the
+environment while the generated code was compiled against the context, so a name the context did not
+have would send the two sides to different declarations. -/
 structure EnvTyped (p : Program) (env : Env) (ctx : Compile.Ctx) : Prop where
   typed : ∀ name ty v, (ctx.find? (·.1 == name)).map (·.2) = some ty →
     Env.lookup? env name = some v → Value.hasTy p v ty = true
-  fnScoped : ∀ name g, Env.lookup? env name = some (.fn g) →
-    ∃ params ret, (ctx.find? (·.1 == name)).map (·.2) = some (.fn params ret)
+  inScope : ∀ name v, Env.lookup? env name = some v →
+    ∃ ty, (ctx.find? (·.1 == name)).map (·.2) = some ty
 
 /-- The expression forms type soundness reaches. -/
 inductive TypeChecked : Expr → Prop where
@@ -610,18 +610,23 @@ theorem EnvTyped.cons {p : Program} {env : Env} {ctx : Compile.Ctx} {name : Stri
     | false =>
       rw [hn] at hct hev
       exact henv.typed n t w hct hev
-  · intro n g hev
+  · intro n w hev
     simp only [Env.lookup?, List.find?_cons] at hev
     cases hn : name == n with
-    | true =>
-      rw [hn] at hev
-      simp only [Option.map_some, Option.some.injEq] at hev
-      obtain ⟨params, ret, rfl⟩ := hasTy_fnValue_inv (hev ▸ hv)
-      exact ⟨params, ret, by simp [List.find?_cons, hn]⟩
+    | true => exact ⟨ty, by simp [List.find?_cons, hn]⟩
     | false =>
       rw [hn] at hev
-      obtain ⟨params, ret, hfind⟩ := henv.fnScoped n g hev
-      exact ⟨params, ret, by simp [List.find?_cons, hn, hfind]⟩
+      obtain ⟨t, hfind⟩ := henv.inScope n w hev
+      exact ⟨t, by simp [List.find?_cons, hn, hfind]⟩
+
+/-- A function value in the environment is one the context typed as a function: it is bound, so the
+context has a type for it, and only a function type is satisfied by a function value. -/
+theorem EnvTyped.fnScoped {p : Program} {env : Env} {ctx : Compile.Ctx} (h : EnvTyped p env ctx)
+    (name g : String) (hv : Env.lookup? env name = some (.fn g)) :
+    ∃ params ret, (ctx.find? (·.1 == name)).map (·.2) = some (.fn params ret) := by
+  obtain ⟨ty, hty⟩ := h.inScope name _ hv
+  obtain ⟨params, ret, rfl⟩ := hasTy_fnValue_inv (h.typed name ty _ hty hv)
+  exact ⟨params, ret, hty⟩
 
 theorem litValue_hasTy (p : Program) (ctx : Compile.Ctx) (l : Lit) (je : Js.Expr) (ty : Ty)
     (hc : Compile.compileExpr p ctx (.lit l) = .ok (je, ty)) :
@@ -906,12 +911,10 @@ private theorem compileExpr_arrayReverse_inv {p : Program} {ctx : Compile.Ctx} {
     exact ⟨jarr, elem, hta ▸ hca, hc.2.symm⟩
   · simp at hc
 
-theorem scrutName_reserved : Compile.scrutName.startsWith reservedPrefix = true := by
-  show "__s".startsWith "__" = true
-  simp
+theorem scrutName_reserved : isReserved Compile.scrutName = true := rfl
 
 theorem ne_scrutName_of_unreserved {name : String}
-    (h : name.startsWith reservedPrefix = false) : name ≠ Compile.scrutName := by
+    (h : isReserved name = false) : name ≠ Compile.scrutName := by
   intro hn
   rw [hn, scrutName_reserved] at h
   exact Bool.noConfusion h
@@ -920,7 +923,7 @@ theorem ne_scrutName_of_unreserved {name : String}
 rejects the `__` prefix, and `scrutName` starts with it. -/
 theorem ne_scrutName_of_validateIdent {kind name : String} {u : Unit}
     (h : validateIdent kind name = .ok u) : name ≠ Compile.scrutName :=
-  ne_scrutName_of_unreserved (startsWith_false_of_validateIdent h)
+  ne_scrutName_of_unreserved (unreserved_of_validateIdent h)
 
 /-! ### Reading a traversal off the compiler
 
@@ -933,7 +936,7 @@ theorem compileExpr_mapE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
     ∃ jarr jbody elem tbody, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, tbody)
       ∧ ty = .array tbody ∧ je = .mapJs jarr binder jbody
-      ∧ binder.startsWith reservedPrefix = false := by
+      ∧ isReserved binder = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -950,7 +953,7 @@ theorem compileExpr_mapE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
     obtain ⟨jbody, tbody⟩ := bodyPair
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, tbody, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      startsWith_false_of_validateIdent hvi⟩
+      unreserved_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
@@ -959,7 +962,7 @@ theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Ex
     ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
       ∧ ty = .array elem ∧ je = .filterJs jarr binder jbody
-      ∧ binder.startsWith reservedPrefix = false := by
+      ∧ isReserved binder = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -980,7 +983,7 @@ theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Ex
     obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      startsWith_false_of_validateIdent hvi⟩
+      unreserved_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_findE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
@@ -989,7 +992,7 @@ theorem compileExpr_findE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr
     ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
       ∧ ty = .option elem ∧ je = .findJs jarr binder jbody
-      ∧ binder.startsWith reservedPrefix = false := by
+      ∧ isReserved binder = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1010,7 +1013,7 @@ theorem compileExpr_findE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr
     obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      startsWith_false_of_validateIdent hvi⟩
+      unreserved_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_quantE_inv {p : Program} {ctx : Compile.Ctx} {op : QuantOp} {arr body : Expr}
@@ -1019,7 +1022,7 @@ theorem compileExpr_quantE_inv {p : Program} {ctx : Compile.Ctx} {op : QuantOp} 
     ∃ jarr jbody elem, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
       ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, .bool)
       ∧ ty = .bool ∧ je = .quantJs op jarr binder jbody
-      ∧ binder.startsWith reservedPrefix = false := by
+      ∧ isReserved binder = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1040,7 +1043,7 @@ theorem compileExpr_quantE_inv {p : Program} {ctx : Compile.Ctx} {op : QuantOp} 
     obtain rfl : tbody = .bool := Ty.eq_of_not_bne hbool
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
-      startsWith_false_of_validateIdent hvi⟩
+      unreserved_of_validateIdent hvi⟩
   · simp at hc
 
 theorem compileExpr_reduceE_inv {p : Program} {ctx : Compile.Ctx} {arr init body : Expr}
@@ -1050,8 +1053,8 @@ theorem compileExpr_reduceE_inv {p : Program} {ctx : Compile.Ctx} {arr init body
       ∧ Compile.compileExpr p ctx init = .ok (jinit, ty)
       ∧ Compile.compileExpr p ((elemName, elem) :: (accName, ty) :: ctx) body = .ok (jbody, ty)
       ∧ je = .reduceJs jarr jinit accName elemName jbody
-      ∧ accName.startsWith reservedPrefix = false
-      ∧ elemName.startsWith reservedPrefix = false := by
+      ∧ isReserved accName = false
+      ∧ isReserved elemName = false := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1081,8 +1084,8 @@ theorem compileExpr_reduceE_inv {p : Program} {ctx : Compile.Ctx} {arr init body
     obtain rfl : tbody = tinit := Ty.eq_of_not_bne hsame
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jinit, jbody, elem, hta ▸ hca, hc.2 ▸ hci, hc.2 ▸ hcb, hc.1.symm,
-      startsWith_false_of_validateIdent hvia,
-      startsWith_false_of_validateIdent hvie⟩
+      unreserved_of_validateIdent hvia,
+      unreserved_of_validateIdent hvie⟩
   · simp at hc
 
 /-- The entries of a dictionary literal: their types, and the fact that zipping the keys back on keeps
@@ -1198,7 +1201,7 @@ private theorem hasFieldTys_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} 
 
 /-- A call checks its arguments against the types of the callee's parameters. The names come from the
 same parameter list, so the check the compiler wrote over types alone reads as one over parameters. -/
-private theorem zipAll_of_map {js : List (Js.Expr × Ty)} :
+theorem zipAll_of_map {js : List (Js.Expr × Ty)} :
     ∀ (params : List Param),
       (((params.map (·.ty)).zip js).all fun x => x.1 == x.2.2) = true →
       ((params.zip js).all fun x => x.1.ty == x.2.2) = true
@@ -1210,9 +1213,31 @@ private theorem zipAll_of_map {js : List (Js.Expr × Ty)} :
       simp only [List.map_cons, List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at h ⊢
       exact ⟨h.1, zipAll_of_map rest h.2⟩
 
+/-- Every argument has the type its parameter declared. -/
+def ParamsTyped (p : Program) : List Param → List Value → Prop
+  | [], [] => True
+  | param :: ps, a :: as => Value.hasTy p a param.ty = true ∧ ParamsTyped p ps as
+  | _, _ => False
+
+/-- The compiler's context and the reference environment are built from the same parameter list in the
+same order, so the name each lookup lands on is the same one. -/
+theorem envTyped_bindParams (p : Program) :
+    ∀ (params : List Param) (args : List Value), ParamsTyped p params args →
+      EnvTyped p (bindParams params args) (params.map fun param => (param.name, param.ty))
+  | [], [], _ => by
+    constructor
+    · intro name ty v hctx _; simp at hctx
+    · intro name g hbound; simp [bindParams, Env.lookup?] at hbound
+  | [], _ :: _, htyped => by simp [ParamsTyped] at htyped
+  | _ :: _, [], htyped => by simp [ParamsTyped] at htyped
+  | param :: ps, a :: as, htyped => by
+    have := (envTyped_bindParams p ps as htyped.2).cons (name := param.name) (ty := param.ty)
+      htyped.1
+    simpa [bindParams] using this
+
 /-- The arguments of a call, carrying the induction hypothesis of `typeSound` along them: the environment
 the callee's body runs in is typed by the context that body was compiled against. -/
-private theorem envTyped_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+theorem paramsTyped_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
     (ih : ∀ (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value), TypeChecked e →
       Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .ok v →
       Value.hasTy p v ty = true) :
@@ -1222,7 +1247,7 @@ private theorem envTyped_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {en
       evalArgs p f env args = .ok vs →
       ((params.zip js).all fun x => x.1.ty == x.2.2) = true →
       params.length = js.length →
-      EnvTyped p (bindParams params vs) (params.map fun param => (param.name, param.ty)) := by
+      ParamsTyped p params vs := by
   intro args
   induction args with
   | nil =>
@@ -1232,7 +1257,7 @@ private theorem envTyped_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {en
     simp only [Except.ok.injEq] at hcs hes
     subst hcs; subst hes
     match params with
-    | [] => exact ⟨fun _ _ _ h _ => by simp at h, fun _ _ h => by simp [bindParams, Env.lookup?] at h⟩
+    | [] => exact trivial
     | g :: gs => simp at hlen
   | cons arg rest ihr =>
     intro js vs params hchk hcs hes hall hlen
@@ -1261,10 +1286,8 @@ private theorem envTyped_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {en
     | [] => simp at hlen
     | g :: gs =>
       simp only [List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at hall
-      simp only [List.map_cons, bindParams]
-      exact (ihr tail vs' gs (fun e he => hchk e (by simp [he])) hctail hvs hall.2
-        (by simpa using hlen)).cons
-        (Ty.eq_of_beq hall.1 ▸ ih arg jh th v (hchk arg (by simp)) hchead hv)
+      exact ⟨Ty.eq_of_beq hall.1 ▸ ih arg jh th v (hchk arg (by simp)) hchead hv,
+        ihr tail vs' gs (fun e he => hchk e (by simp [he])) hctail hvs hall.2 (by simpa using hlen)⟩
 
 private theorem compileExpr_dictLit_inv {p : Program} {ctx : Compile.Ctx} {value : Ty}
     {entries : List (String × Expr)} {je : Js.Expr} {ty : Ty}
@@ -1425,6 +1448,8 @@ private theorem compileExpr_proj_inv {p : Program} {ctx : Compile.Ctx} {e : Expr
       ∧ p.findType? n = some t ∧ t.ctorsAt targs = [c]
       ∧ c.fields.find? (·.name == field) = some f ∧ ty = f.ty := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
   split at hc
   · simp at hc
   rename_i xPair hcx
@@ -1945,21 +1970,18 @@ private theorem hasTy_of_reduceItems {p : Program} {f : Nat} {ctx : Compile.Ctx}
     exact ihr w v hxs.2
       (ih _ _ bodyE jbody tinit w hbody ((henv.cons hacc).cons hxs.1) hcb hw) hes
 
-/-- Every argument has the type its parameter declared. -/
-def ParamsTyped (p : Program) : List Param → List Value → Prop
-  | [], [] => True
-  | param :: ps, a :: as => Value.hasTy p a param.ty = true ∧ ParamsTyped p ps as
-  | _, _ => False
-
 /-- What the compiler establishes about every declaration of a program it accepted: each body compiles,
 under the context its parameters give, at the type the declaration is declared to return.
 
 A call is where a proof about one expression reaches into another declaration, so this is the shape the
-whole program has to be handed in. `Decl.programTyped_of_compileProgram` reads it off the module. -/
-def ProgramTyped (p : Program) : Prop :=
-  ∀ d ∈ p.decls, ∃ je,
+whole program has to be handed in, names included: the generated code calls a declaration by its name,
+which has to be one the environment cannot be holding. `Decl.programTyped_of_compileProgram` reads both
+off the module. -/
+structure ProgramTyped (p : Program) : Prop where
+  bodies : ∀ d ∈ p.decls, ∃ je,
     Compile.compileExpr p (d.params.map fun param => (param.name, param.ty)) d.body
       = .ok (je, d.ret)
+  names : ∀ d ∈ p.decls, isReserved d.name = false
 
 /-- If the compiler judged an expression to have type `T` and `eval` returns a value, the value satisfies
 `T`. -/
@@ -2698,6 +2720,8 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       simp only [Compile.compileExpr] at hc
       split at hc
       · simp at hc
+      split at hc
+      · simp at hc
       rename_i d hfind
       simp only [Except.ok.injEq, Prod.mk.injEq] at hc
       rw [if_pos (by simp [hfind])] at he
@@ -2719,7 +2743,7 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       split at he
       · simp at he
       rename_i harity
-      obtain ⟨jb, hjb⟩ := hprog d (List.mem_of_find?_eq_some hfind)
+      obtain ⟨jb, hjb⟩ := hprog.bodies d (List.mem_of_find?_eq_some hfind)
       simp only [Compile.compileExpr] at hc
       split at hc
       · rename_i params ret hctx
@@ -2750,9 +2774,10 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
           obtain rfl : ret = d.ret := (Ty.eq_of_beq hwt.2).symm
           rw [← hc.2]
           exact ih _ _ d.body jb d.ret v (TypeChecked.all d.body)
-            (envTyped_of_args (fun e je t w' hchk' => ih ctx env e je t w' hchk' henv) args js vs
-              d.params hargs hcs hvs (zipAll_of_map d.params (by simpa using hall))
-              (by simpa using hlen)) hjb he
+            (envTyped_bindParams p d.params vs
+              (paramsTyped_of_args (fun e je t w' hchk' => ih ctx env e je t w' hchk' henv) args js vs
+                d.params hargs hcs hvs (zipAll_of_map d.params (by simpa using hall))
+                (by simpa using hlen))) hjb he
       · simp at hc
       · rename_i hctx
         split at hc
@@ -2786,8 +2811,9 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
         have hdd : d' = d := Option.some.inj hfind
         rw [← hc.2]
         exact ih _ _ d'.body jb d'.ret v (TypeChecked.all d'.body)
-          (envTyped_of_args (fun e je t w' hchk' => ih ctx env e je t w' hchk' henv) args js vs
-            d'.params hargs hcs hvs (by simpa using hall) (by simpa using hlen)) (hdd ▸ hjb)
+          (envTyped_bindParams p d'.params vs
+            (paramsTyped_of_args (fun e je t w' hchk' => ih ctx env e je t w' hchk' henv) args js vs
+              d'.params hargs hcs hvs (by simpa using hall) (by simpa using hlen))) (hdd ▸ hjb)
           (hdd ▸ he)
 
 end LeanTs

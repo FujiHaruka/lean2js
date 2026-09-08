@@ -82,13 +82,13 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 #guard_msgs in
 #print axioms LeanTs.typeSound
 
-/-- info: 'LeanTs.Correct.fragment_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanTs.Decl.fragment_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanTs.Correct.fragment_correct
+#print axioms LeanTs.Decl.fragment_correct
 
-/-- info: 'LeanTs.Correct.fragment_traps_in' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanTs.Decl.fragment_traps_in' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanTs.Correct.fragment_traps_in
+#print axioms LeanTs.Decl.fragment_traps_in
 
 /-- info: 'LeanTs.Decl.decl_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

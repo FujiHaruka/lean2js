@@ -52,8 +52,7 @@ inductive InFragment : Expr → Prop where
   | dictKeys {d : Expr} : InFragment d → InFragment (.dictKeys d)
   | dictValues {d : Expr} : InFragment d → InFragment (.dictValues d)
   | dictDelete {d key : Expr} : InFragment d → InFragment key → InFragment (.dictDelete d key)
-  | proj {e : Expr} {field : String} :
-      field ≠ "tag" → InFragment e → InFragment (.proj e field)
+  | proj {e : Expr} {field : String} : InFragment e → InFragment (.proj e field)
   | ctor (typeName : String) (tyArgs : List Ty) (ctorName : String) {args : List Expr} :
       (∀ e ∈ args, InFragment e) → InFragment (.ctor typeName tyArgs ctorName args)
   | arrayLit (elem : Ty) {items : List Expr} :
@@ -74,204 +73,89 @@ inductive InFragment : Expr → Prop where
   | matchE {scrut : Expr} {alts : List Alt} :
       InFragment scrut → (∀ alt ∈ alts, InFragment (Alt.body alt)) →
         InFragment (.matchE scrut alts)
+  | fnRef (name : String) : InFragment (.fnRef name)
+  | call {fn : String} {args : List Expr} :
+      (∀ e ∈ args, InFragment e) → InFragment (.call fn args)
 
 mutual
 
-/-- The fragment as a decision procedure, so that a user instantiating the per-declaration theorem on
-their own declaration discharges the hypothesis by `rfl` instead of building the derivation by hand. -/
-def inFragmentB : Expr → Bool
-  | .lit _ => true
-  | .var _ => true
-  | .cond c t e => inFragmentB c && inFragmentB t && inFragmentB e
-  | .letE _ _ val body => inFragmentB val && inFragmentB body
-  | .un _ x => inFragmentB x
-  | .bin _ lhs rhs => inFragmentB lhs && inFragmentB rhs
-  | .noneE _ => true
-  | .someE x => inFragmentB x
-  | .okE _ x => inFragmentB x
-  | .errorE _ x => inFragmentB x
-  | .strUn _ x => inFragmentB x
-  | .strBin _ lhs rhs => inFragmentB lhs && inFragmentB rhs
-  | .substring x lo hi => inFragmentB x && inFragmentB lo && inFragmentB hi
-  | .index arr idx => inFragmentB arr && inFragmentB idx
-  | .arraySlice arr lo hi => inFragmentB arr && inFragmentB lo && inFragmentB hi
-  | .arrayReverse arr => inFragmentB arr
-  | .length arr => inFragmentB arr
-  | .dictGet d key => inFragmentB d && inFragmentB key
-  | .dictHas d key => inFragmentB d && inFragmentB key
-  | .dictSet d key val => inFragmentB d && inFragmentB key && inFragmentB val
-  | .dictKeys d => inFragmentB d
-  | .dictValues d => inFragmentB d
-  | .dictDelete d key => inFragmentB d && inFragmentB key
-  | .proj x field => (field != "tag") && inFragmentB x
-  | .ctor _ _ _ args => inFragmentBList args
-  | .arrayLit _ items => inFragmentBList items
-  | .dictLit _ entries => inFragmentBValues entries
-  | .mapE arr _ body => inFragmentB arr && inFragmentB body
-  | .filterE arr _ body => inFragmentB arr && inFragmentB body
-  | .findE arr _ body => inFragmentB arr && inFragmentB body
-  | .quantE _ arr _ body => inFragmentB arr && inFragmentB body
-  | .reduceE arr init _ _ body => inFragmentB arr && inFragmentB init && inFragmentB body
-  | .matchE scrut alts => inFragmentB scrut && inFragmentBAlts alts
-  | _ => false
-
-def inFragmentBList : List Expr → Bool
-  | [] => true
-  | e :: rest => inFragmentB e && inFragmentBList rest
-
-def inFragmentBValues : List (String × Expr) → Bool
-  | [] => true
-  | e :: rest => inFragmentB e.2 && inFragmentBValues rest
-
-def inFragmentBAlts : List Alt → Bool
-  | [] => true
-  | (_, body) :: rest => inFragmentB body && inFragmentBAlts rest
-
-end
-
-mutual
-
-theorem InFragment.of_inFragmentB : ∀ {e : Expr}, inFragmentB e = true → InFragment e
-  | .lit l, _ => .lit l
-  | .var n, _ => .var n
-  | .cond _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .cond (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
-  | .letE _ _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .letE (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .un _ _, h => by rw [inFragmentB] at h; exact .un (of_inFragmentB h)
-  | .bin _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .bin (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .noneE elem, _ => .noneE elem
-  | .someE _, h => by rw [inFragmentB] at h; exact .someE (of_inFragmentB h)
-  | .okE _ _, h => by rw [inFragmentB] at h; exact .okE (of_inFragmentB h)
-  | .errorE _ _, h => by rw [inFragmentB] at h; exact .errorE (of_inFragmentB h)
-  | .strUn _ _, h => by rw [inFragmentB] at h; exact .strUn (of_inFragmentB h)
-  | .strBin _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .strBin (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .substring _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .substring (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
-  | .index _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .index (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .arraySlice _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .arraySlice (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
-  | .arrayReverse _, h => by rw [inFragmentB] at h; exact .arrayReverse (of_inFragmentB h)
-  | .length _, h => by rw [inFragmentB] at h; exact .length (of_inFragmentB h)
-  | .dictGet _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .dictGet (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .dictHas _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .dictHas (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .dictSet _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .dictSet (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
-  | .dictKeys _, h => by rw [inFragmentB] at h; exact .dictKeys (of_inFragmentB h)
-  | .proj _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .proj (by simpa using h.1) (of_inFragmentB h.2)
-  | .ctor tn ta cn _, h => by
-    rw [inFragmentB] at h
-    exact .ctor tn ta cn (of_inFragmentBList h)
-  | .arrayLit elem _, h => by
-    rw [inFragmentB] at h
-    exact .arrayLit elem (of_inFragmentBList h)
-  | .dictLit value _, h => by
-    rw [inFragmentB] at h
-    exact .dictLit value (of_inFragmentBValues h)
-  | .dictValues _, h => by rw [inFragmentB] at h; exact .dictValues (of_inFragmentB h)
-  | .dictDelete _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .dictDelete (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .fnRef _, h => by simp [inFragmentB] at h
-  | .call _ _, h => by simp [inFragmentB] at h
-  | .matchE _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .matchE (of_inFragmentB h.1) (of_inFragmentBAlts h.2)
-  | .mapE _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .mapE (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .filterE _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .filterE (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .findE _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .findE (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .quantE _ _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .quantE (of_inFragmentB h.1) (of_inFragmentB h.2)
-  | .reduceE _ _ _ _ _, h => by
-    rw [inFragmentB] at h
-    simp only [Bool.and_eq_true] at h
-    exact .reduceE (of_inFragmentB h.1.1) (of_inFragmentB h.1.2) (of_inFragmentB h.2)
+/-- Every shape of the subset is in the fragment. The proof reaches the whole syntax, so the induction
+the judgement drives reads as a case analysis on the expression. -/
+theorem InFragment.all : ∀ e : Expr, InFragment e
+  | .lit l => .lit l
+  | .var name => .var name
+  | .fnRef name => .fnRef name
+  | .un _ x => .un (InFragment.all x)
+  | .bin _ a b => .bin (InFragment.all a) (InFragment.all b)
+  | .cond c t e => .cond (InFragment.all c) (InFragment.all t) (InFragment.all e)
+  | .letE _ _ val body => .letE (InFragment.all val) (InFragment.all body)
+  | .call _ args => .call (InFragment.allList args)
+  | .ctor typeName tyArgs ctorName args => .ctor typeName tyArgs ctorName (InFragment.allList args)
+  | .proj e field => .proj (InFragment.all e)
+  | .matchE scrut alts => .matchE (InFragment.all scrut) (InFragment.allAlts alts)
+  | .noneE elem => .noneE elem
+  | .someE x => .someE (InFragment.all x)
+  | .okE _ x => .okE (InFragment.all x)
+  | .errorE _ x => .errorE (InFragment.all x)
+  | .arrayLit elem items => .arrayLit elem (InFragment.allList items)
+  | .index arr idx => .index (InFragment.all arr) (InFragment.all idx)
+  | .length arr => .length (InFragment.all arr)
+  | .arraySlice arr lo hi =>
+    .arraySlice (InFragment.all arr) (InFragment.all lo) (InFragment.all hi)
+  | .arrayReverse arr => .arrayReverse (InFragment.all arr)
+  | .mapE arr _ body => .mapE (InFragment.all arr) (InFragment.all body)
+  | .filterE arr _ body => .filterE (InFragment.all arr) (InFragment.all body)
+  | .findE arr _ body => .findE (InFragment.all arr) (InFragment.all body)
+  | .quantE _ arr _ body => .quantE (InFragment.all arr) (InFragment.all body)
+  | .reduceE arr init _ _ body =>
+    .reduceE (InFragment.all arr) (InFragment.all init) (InFragment.all body)
+  | .dictLit value entries => .dictLit value (InFragment.allValues entries)
+  | .dictGet d key => .dictGet (InFragment.all d) (InFragment.all key)
+  | .dictHas d key => .dictHas (InFragment.all d) (InFragment.all key)
+  | .dictSet d key val => .dictSet (InFragment.all d) (InFragment.all key) (InFragment.all val)
+  | .dictKeys d => .dictKeys (InFragment.all d)
+  | .dictValues d => .dictValues (InFragment.all d)
+  | .dictDelete d key => .dictDelete (InFragment.all d) (InFragment.all key)
+  | .strUn _ x => .strUn (InFragment.all x)
+  | .strBin _ a b => .strBin (InFragment.all a) (InFragment.all b)
+  | .substring str lo hi =>
+    .substring (InFragment.all str) (InFragment.all lo) (InFragment.all hi)
 termination_by e => sizeOf e
 
-theorem InFragment.of_inFragmentBList :
-    ∀ {es : List Expr}, inFragmentBList es = true → ∀ e ∈ es, InFragment e
-  | [], _, _, he => by simp at he
-  | x :: rest, h, e, he => by
-    rw [inFragmentBList] at h
-    simp only [Bool.and_eq_true] at h
-    rcases List.mem_cons.mp he with heq | hrest
-    · exact heq ▸ of_inFragmentB h.1
-    · exact of_inFragmentBList h.2 e hrest
+theorem InFragment.allList : ∀ (es : List Expr) (e : Expr), e ∈ es → InFragment e
+  | [], _, h => absurd h (by simp)
+  | x :: rest, e, h =>
+    match List.mem_cons.mp h with
+    | .inl heq => heq ▸ InFragment.all x
+    | .inr hr => InFragment.allList rest e hr
 termination_by es => sizeOf es
-decreasing_by all_goals (simp_wf; omega)
 
-theorem InFragment.of_inFragmentBValues :
-    ∀ {es : List (String × Expr)}, inFragmentBValues es = true → ∀ e ∈ es, InFragment e.2
-  | [], _, _, he => by simp at he
-  | (_, x) :: rest, h, e, he => by
-    rw [inFragmentBValues] at h
-    simp only [Bool.and_eq_true] at h
-    rcases List.mem_cons.mp he with heq | hrest
-    · exact heq ▸ of_inFragmentB h.1
-    · exact of_inFragmentBValues h.2 e hrest
-termination_by es => sizeOf es
-decreasing_by all_goals (simp_wf; omega)
+theorem InFragment.allValues :
+    ∀ (entries : List (String × Expr)) (entry : String × Expr), entry ∈ entries →
+      InFragment entry.2
+  | [], _, h => absurd h (by simp)
+  | (key, x) :: rest, entry, h =>
+    match List.mem_cons.mp h with
+    | .inl heq => heq ▸ InFragment.all x
+    | .inr hr => InFragment.allValues rest entry hr
+termination_by entries => sizeOf entries
 
-theorem InFragment.of_inFragmentBAlts :
-    ∀ {alts : List Alt}, inFragmentBAlts alts = true → ∀ alt ∈ alts, InFragment (Alt.body alt)
-  | [], _, _, ha => by simp at ha
-  | (pat, x) :: rest, h, alt, ha => by
-    rw [inFragmentBAlts] at h
-    simp only [Bool.and_eq_true] at h
-    rcases List.mem_cons.mp ha with heq | hrest
-    · subst heq
-      show InFragment x
-      exact of_inFragmentB h.1
-    · exact of_inFragmentBAlts h.2 alt hrest
+theorem InFragment.allAlts :
+    ∀ (alts : List Alt) (alt : Alt), alt ∈ alts → InFragment (Alt.body alt)
+  | [], _, h => absurd h (by simp)
+  | (pat, body) :: rest, alt, h =>
+    match List.mem_cons.mp h with
+    | .inl heq => heq ▸ InFragment.all body
+    | .inr hr => InFragment.allAlts rest alt hr
 termination_by alts => sizeOf alts
-decreasing_by all_goals (simp_wf; omega)
 
 end
 
 /-- Everything the correctness proof reaches is also reached by type soundness, which the arithmetic
 cases need to know that the values in the environment match the types the compiler read. -/
 theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
+  | .fnRef name => .fnRef name
+  | .call _ => TypeChecked.all _
   | .lit l => .lit l
   | .var name => .var name
   | .cond hc ht he => .cond hc.typeChecked ht.typeChecked he.typeChecked
@@ -295,7 +179,7 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .dictKeys hd => .dictKeys hd.typeChecked
   | .dictValues hd => .dictValues hd.typeChecked
   | .dictDelete hd hk => .dictDelete hd.typeChecked hk.typeChecked
-  | .proj (field := field) _ hx => .proj field hx.typeChecked
+  | .proj (field := field) hx => .proj field hx.typeChecked
   | .ctor tn ta cn hargs => .ctor tn ta cn fun e he => (hargs e he).typeChecked
   | .arrayLit elem hitems => .arrayLit elem fun e he => (hitems e he).typeChecked
   | .dictLit value hentries => .dictLit value fun e he => (hentries e he).typeChecked
@@ -2163,8 +2047,11 @@ private theorem compileExpr_proj_parts {p : Program} {ctx : Compile.Ctx} {e : Ex
     ∃ jx n targs t c f, Compile.compileExpr p ctx e = .ok (jx, .named n targs)
       ∧ p.findType? n = some t ∧ t.ctorsAt targs = [c]
       ∧ c.fields.find? (·.name == field) = some f
-      ∧ je = .member jx field ∧ ty = f.ty := by
+      ∧ je = .member jx field ∧ ty = f.ty ∧ field ≠ "tag" := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i hnottag
   split at hc
   · simp at hc
   rename_i xPair hcx
@@ -2179,7 +2066,8 @@ private theorem compileExpr_proj_parts {p : Program} {ctx : Compile.Ctx} {e : Ex
       split at hc
       · rename_i f hf
         simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-        exact ⟨jx, n, targs, t, c, f, htx ▸ hcx, ht, hctors, hf, hc.1.symm, hc.2.symm⟩
+        exact ⟨jx, n, targs, t, c, f, htx ▸ hcx, ht, hctors, hf, hc.1.symm, hc.2.symm,
+          by simpa using hnottag⟩
       · simp at hc
     · simp at hc
   · simp at hc
@@ -2396,8 +2284,8 @@ structure JsEnvAgrees (env : Env) (jenv : Js.JsEnv) : Prop where
   binds : ∀ name v, Env.lookup? env name = some v →
     ((jenv.find? (·.1 == name)).map (·.2)) = some (encodeValue v)
   unreserved : ∀ name v, Env.lookup? env name = some v →
-    name.startsWith reservedPrefix = false
-  fresh : ∀ name jv, name.startsWith reservedPrefix = false →
+    isReserved name = false
+  fresh : ∀ name jv, isReserved name = false →
     ((jenv.find? (·.1 == name)).map (·.2)) = some jv → ∃ v, Env.lookup? env name = some v
 
 /-- The reference environment binds no reserved name, so in particular not the scrutinee's. -/
@@ -2418,7 +2306,7 @@ theorem lookup_cons_none {env : Env} {name : String} {v : Value} {key : String}
   exact h
 
 theorem JsEnvAgrees.cons {env : Env} {jenv : Js.JsEnv} {name : String} {v : Value}
-    (h : JsEnvAgrees env jenv) (hname : name.startsWith reservedPrefix = false) :
+    (h : JsEnvAgrees env jenv) (hname : isReserved name = false) :
     JsEnvAgrees ((name, v) :: env) ((name, encodeValue v) :: jenv) := by
   refine ⟨?_, ?_, ?_⟩
   · intro key w hw
@@ -2470,7 +2358,7 @@ theorem lookup_of_encodeEnv :
       exact hv
 
 theorem jsEnvAgrees_encodeEnv (env : Env)
-    (hres : ∀ name v, Env.lookup? env name = some v → name.startsWith reservedPrefix = false) :
+    (hres : ∀ name v, Env.lookup? env name = some v → isReserved name = false) :
     JsEnvAgrees env (encodeEnv env) :=
   ⟨fun _ _ h => lookup_encodeEnv h, hres, fun _ _ _ h => lookup_of_encodeEnv h⟩
 
@@ -2503,7 +2391,7 @@ private theorem eventuallyMap_of_items (p : Program) (m : Js.Module) {ctx : Comp
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody))
-    (hbinder : binder.startsWith reservedPrefix = false) :
+    (hbinder : isReserved binder = false) :
     ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
       evalMapItems p f env binder bodyE xs = .ok vs →
       ∃ g, ∀ g', g ≤ g' →
@@ -2602,7 +2490,7 @@ private theorem eventuallyFilter_of_items (p : Program) (m : Js.Module) (hprog :
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder.startsWith reservedPrefix = false) :
+    (hbinder : isReserved binder = false) :
     ∀ (xs vs : List Value), Value.hasElemTy p xs elem = true →
       evalFilterItems p f env binder bodyE xs = .ok vs →
       ∃ g, ∀ g', g ≤ g' →
@@ -2654,7 +2542,7 @@ private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) (hprog : P
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder.startsWith reservedPrefix = false) :
+    (hbinder : isReserved binder = false) :
     ∀ (xs : List Value) (v : Value), Value.hasElemTy p xs elem = true →
       evalFindItems p f env binder bodyE xs = .ok v →
       ∃ g, ∀ g', g ≤ g' →
@@ -2701,7 +2589,7 @@ private theorem eventuallyQuant_of_items (p : Program) (m : Js.Module) (hprog : 
       Eventually m jenv' je (encodeValue v))
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder.startsWith reservedPrefix = false) :
+    (hbinder : isReserved binder = false) :
     ∀ (xs : List Value) (v : Value), Value.hasElemTy p xs elem = true →
       evalQuantItems p f env op binder bodyE xs = .ok v →
       ∃ g, ∀ g', g ≤ g' →
@@ -2764,8 +2652,8 @@ private theorem eventuallyReduce_of_items (p : Program) (m : Js.Module) (hprog :
     (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
       = .ok (jbody, tinit))
-    (haccName : accName.startsWith reservedPrefix = false)
-    (helemName : elemName.startsWith reservedPrefix = false) :
+    (haccName : isReserved accName = false)
+    (helemName : isReserved elemName = false) :
     ∀ (xs : List Value) (acc v : Value), Value.hasElemTy p xs elem = true →
       Value.hasTy p acc tinit = true →
       evalReduceItems p f env accName elemName bodyE acc xs = .ok v →
@@ -2957,7 +2845,7 @@ def PathsAgree (m : Js.Module) (jenv : Js.JsEnv) :
     List (String × Js.Expr × Ty) → Env → Prop
   | [], [] => True
   | (n, path, _) :: ps, (n', v) :: bs =>
-    n = n' ∧ n.startsWith reservedPrefix = false ∧ Eventually m jenv path (encodeValue v) ∧
+    n = n' ∧ isReserved n = false ∧ Eventually m jenv path (encodeValue v) ∧
       PathsAgree m jenv ps bs
   | _, _ => False
 
@@ -3143,7 +3031,7 @@ theorem patParts_matched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig :
     simp only [Option.some.injEq] at hm
     obtain ⟨rfl, rfl⟩ := hpp
     subst hm
-    exact ⟨by simp, rfl, startsWith_false_of_validateIdent hvi, hpath, trivial⟩
+    exact ⟨by simp, rfl, unreserved_of_validateIdent hvi, hpath, trivial⟩
   | ty, path, .lit l, v, _, _, _, hv, hpp, hpath, hm => by
     rw [Compile.patParts] at hpp
     simp only [bind, Except.bind] at hpp
@@ -3580,6 +3468,118 @@ private theorem eventually_chain (p : Program) (m : Js.Module) (hsig : Signature
           refine cond_false (eventually_andFold_of_fail ts t (htl ▸ hfail)) ?_
           exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
 
+/-! ## Calls
+
+A call is the one shape that leaves the expression it sits in: the callee's body is not a subterm, and
+the name it lands on is settled at run time by the environment. These read the generated side of that. -/
+
+/-- No name a program can write is a runtime helper: `validateIdent` rejects the reserved prefix and the
+helper dispatch is guarded by it. -/
+theorem helper_of_unreserved {name : String} (h : isReserved name = false)
+    (args : List Js.JsValue) : Js.helper name args = none := by
+  unfold Js.helper
+  rw [if_pos (by simp [h])]
+
+/-- A declaration found by name carries that name. -/
+theorem find?_name {p : Program} {name : String} {d : Decl} (h : p.find? name = some d) :
+    d.name = name := by
+  have h' := List.find?_some h
+  exact eq_of_beq (by simpa using h')
+
+/-- A function reference in the generated code: the name is not bound, so it reads the module's own
+function of that name. -/
+theorem eventually_fnRef {m : Js.Module} {jenv : Js.JsEnv} {name : String}
+    (hfree : ((jenv.find? (·.1 == name)).map (·.2)) = none)
+    (hmod : (m.funcs.find? (·.name == name)).isSome = true) :
+    Eventually m jenv (.ident name) (.fn name) :=
+  eventually_lit m jenv _ _ fun _ => by
+    simp only [Js.eval.eq_def]
+    rw [hfree]
+    simp only [hmod, if_true]
+
+/-- The generated code and the reference semantics pick the same callee. A function value in the
+reference environment is one the generated environment holds under the same name; anything else leaves
+both sides with the name they were given. -/
+theorem calleeName_agrees {env : Env} {jenv : Js.JsEnv} {name : String}
+    (h : JsEnvAgrees env jenv) (hname : isReserved name = false) :
+    Js.calleeName jenv name = calleeOf env name := by
+  rw [Js.calleeName, calleeOf]
+  cases hv : Env.lookup? env name with
+  | none =>
+    cases hj : ((jenv.find? (·.1 == name)).map (·.2)) with
+    | none => simp only [hj]
+    | some jv =>
+      obtain ⟨w, hw⟩ := h.fresh name jv hname hj
+      rw [hv] at hw
+      exact absurd hw (by simp)
+  | some w =>
+    rw [h.binds name w hv]
+    cases w <;> rw [encodeValue]
+
+/-- A call in the generated code: the arguments evaluate, the name is no helper, and the callee returns
+what the reference semantics returned. -/
+theorem eventually_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {jargs : List Js.Expr}
+    {jvs : List Js.JsValue} {r : Js.JsValue}
+    (hname : isReserved name = false)
+    (hargs : EventuallyList m jenv jargs jvs)
+    (hcall : ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' (Js.calleeName jenv name) jvs = .ok r) :
+    Eventually m jenv (.call name jargs) r := by
+  obtain ⟨g1, hg1⟩ := hargs
+  obtain ⟨g2, hg2⟩ := hcall
+  refine ⟨max g1 g2 + 1, fun g' hge => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval_call]
+    simp only [bind, Except.bind, hg1 g (by omega), helper_of_unreserved hname]
+    exact hg2 g (by omega)
+
+/-- The same when the callee throws. -/
+theorem eventuallyErr_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {jargs : List Js.Expr}
+    {jvs : List Js.JsValue} {code : String}
+    (hname : isReserved name = false)
+    (hargs : EventuallyList m jenv jargs jvs)
+    (hcall : ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' (Js.calleeName jenv name) jvs = .error code) :
+    EventuallyErr m jenv (.call name jargs) code := by
+  obtain ⟨g1, hg1⟩ := hargs
+  obtain ⟨g2, hg2⟩ := hcall
+  refine ⟨max g1 g2 + 1, fun g' hge => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval_call]
+    simp only [bind, Except.bind, hg1 g (by omega), helper_of_unreserved hname]
+    exact hg2 g (by omega)
+
+/-- And when an argument throws before the call is made. -/
+theorem eventuallyErr_call_args {m : Js.Module} {jenv : Js.JsEnv} {name : String}
+    {jargs : List Js.Expr} {code : String} (hargs : EventuallyListErr m jenv jargs code) :
+    EventuallyErr m jenv (.call name jargs) code := by
+  obtain ⟨g1, hg1⟩ := hargs
+  refine ⟨g1 + 1, fun g' hge => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval_call]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+/-- Every declaration has a function of its own name in the module. `Decl` reads it off the compiled
+program; a function reference evaluates to the name, and the generated code resolves it there. -/
+abbrev ModuleHasDecls (p : Program) (m : Js.Module) : Prop :=
+  ∀ d ∈ p.decls, (m.funcs.find? (·.name == d.name)).isSome = true
+
+/-- What a call needs about the declaration it lands on: at this much reference fuel, the module's
+function of that name returns what the body returns. The body runs at exactly the fuel the call is left
+with, so this is the same fuel the expression-level statement is at. -/
+abbrev DeclAgrees (p : Program) (m : Js.Module) (f : Nat) : Prop :=
+  ∀ (fn : String) (d : Decl) (args : List Value) (v : Value),
+    p.find? fn = some d →
+    d.params.length = args.length →
+    ParamsTyped p d.params args →
+    evalExpr p f (bindParams d.params args) d.body = .ok v →
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v)
+
 /-- Expression-level agreement at one amount of the reference semantics' fuel.
 
 The induction runs on this rather than on the fragment derivation: a call evaluates the callee's body,
@@ -3599,7 +3599,8 @@ The induction is on fuel rather than on the fragment derivation because a call r
 which is not a subterm of the call. Every shape evaluates its subterms with one less fuel, so the
 hypothesis at `f` reaches subterms and callee bodies alike. -/
 theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
-    (hprog : ProgramTyped p) (f : Nat) (ih : AgreesAt p m f) : AgreesAt p m (f + 1) := by
+    (hprog : ProgramTyped p) (hmod : ModuleHasDecls p m) (f : Nat) (ih : AgreesAt p m f)
+    (ihd : DeclAgrees p m f) : AgreesAt p m (f + 1) := by
   intro e hfrag
   cases hfrag with
   | lit l =>
@@ -3727,7 +3728,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       typeSound p hprog f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
     exact eventually_arrowCall (ihv henv hjenv hcv hvv)
       (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt))
-        (hjenv.cons (startsWith_false_of_validateIdent hvi)) hcb he)
+        (hjenv.cons (unreserved_of_validateIdent hvi)) hcb he)
   | un hx =>
     rename_i op xE
     have ihx := ih hx
@@ -5440,11 +5441,12 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · rename_i hno
       exact (hno entries t rfl rfl).elim
 
-  | proj hne hx =>
+  | proj hx =>
     rename_i xE field
     have ihx := ih hx
     intro ctx env jenv je ty v henv hjenv hc he
-    obtain ⟨jx, n, targs, t, c, fd, hcx, ht, hctors, hfd, rfl, rfl⟩ := compileExpr_proj_parts hc
+    obtain ⟨jx, n, targs, t, c, fd, hcx, ht, hctors, hfd, rfl, rfl, hne⟩ :=
+      compileExpr_proj_parts hc
     rw [evalExpr_proj] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -5664,6 +5666,142 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · rename_i hne
       exact (hne xs rfl).elim
 
+  | fnRef name =>
+    intro ctx env jenv je ty v henv hjenv hc he
+    rw [evalExpr_fnRef] at he
+    simp only [Compile.compileExpr] at hc
+    split at hc
+    · simp at hc
+    rename_i hshadow
+    split at hc
+    · simp at hc
+    rename_i d hfind
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    rw [if_pos (by simp [hfind])] at he
+    simp only [Except.ok.injEq] at he
+    subst he
+    obtain ⟨hje, -⟩ := hc
+    subst hje
+    have hmem : d ∈ p.decls := List.mem_of_find?_eq_some hfind
+    have hdname : d.name = name := find?_name hfind
+    have hunres : isReserved name = false := by
+      have := hprog.names d hmem
+      rwa [hdname] at this
+    have hjfree : ((jenv.find? (·.1 == name)).map (·.2)) = none := by
+      cases hj : ((jenv.find? (·.1 == name)).map (·.2)) with
+      | none => rfl
+      | some jv =>
+        obtain ⟨w, hw⟩ := hjenv.fresh name jv hunres hj
+        obtain ⟨t, ht⟩ := henv.inScope name w hw
+        refine absurd ?_ hshadow
+        cases hf : ctx.find? (·.1 == name) with
+        | none => rw [hf] at ht; simp at ht
+        | some _ => rfl
+    rw [encodeValue]
+    exact eventually_fnRef hjfree (hdname ▸ hmod d hmem)
+  | call hargs =>
+    rename_i fn args
+    have iharg := fun a ha => ih (hargs a ha)
+    intro ctx env jenv je ty v henv hjenv hc he
+    rw [evalExpr_call] at he
+    simp only [bind, Except.bind] at he
+    split at he
+    · simp at he
+    rename_i vs hvs
+    split at he
+    · simp at he
+    rename_i d hfind
+    split at he
+    · simp at he
+    rename_i harity
+    have hmem : d ∈ p.decls := List.mem_of_find?_eq_some hfind
+    have hlenv : d.params.length = vs.length := by simpa using harity
+    simp only [Compile.compileExpr] at hc
+    split at hc
+    · rename_i params ret hctx
+      split at hc
+      · simp at hc
+      rename_i hnodecl
+      simp only [bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i js hcs
+      split at hc
+      · simp at hc
+      rename_i hlen
+      split at hc
+      · simp at hc
+      rename_i hall
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      cases hw : Env.lookup? env fn with
+      | none =>
+        rw [calleeOf, hw] at hfind
+        exact absurd (by simp [hfind] : (p.find? fn).isSome = true) hnodecl
+      | some w =>
+        have hwt := henv.typed fn (.fn params ret) w hctx hw
+        obtain ⟨g0, rfl⟩ := hasTy_fn_inv hwt
+        have hcallee : calleeOf env fn = g0 := by rw [calleeOf, hw]
+        rw [hcallee] at hfind
+        rw [hasTy_fn, hfind, Bool.and_eq_true] at hwt
+        obtain rfl : params = d.params.map (·.ty) := (tyList_eq_of_beq hwt.1).symm
+        have htyped := paramsTyped_of_args
+          (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
+          d.params (fun a ha => (hargs a ha).typeChecked) hcs hvs
+          (zipAll_of_map d.params (by simpa using hall)) (by simpa using hlen)
+        refine eventually_call (jvs := vs.map encodeValue) (hjenv.unreserved fn _ hw) ?_ ?_
+        · rw [← encodeList_eq]
+          exact eventuallyList_of_args p m args js vs
+            (fun a ha => iharg a ha henv hjenv) hcs hvs
+        · rw [calleeName_agrees hjenv (hjenv.unreserved fn _ hw), hcallee]
+          exact ihd g0 d vs v hfind hlenv htyped he
+    · simp at hc
+    · rename_i hctx
+      split at hc
+      · simp at hc
+      rename_i d' hfind'
+      simp only [bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i js hcs
+      split at hc
+      · simp at hc
+      rename_i hlen
+      split at hc
+      · simp at hc
+      rename_i hall
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      have hcallee : calleeOf env fn = fn := by
+        rw [calleeOf]
+        cases hw : Env.lookup? env fn with
+        | none => rfl
+        | some w =>
+          obtain ⟨t, ht⟩ := henv.inScope fn w hw
+          rw [ht] at hctx
+          simp at hctx
+      have hmem' : d' ∈ p.decls := List.mem_of_find?_eq_some hfind'
+      have hdd : d' = d := Option.some.inj (hfind'.symm.trans (hcallee ▸ hfind))
+      have he' : evalExpr p f (bindParams d'.params vs) d'.body = .ok v := by rw [hdd]; exact he
+      have hlen' : d'.params.length = vs.length := by rw [hdd]; exact hlenv
+      have hunres : isReserved fn = false := by
+        have := hprog.names d' hmem'
+        rwa [find?_name hfind'] at this
+      have htyped := paramsTyped_of_args
+        (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
+        d'.params (fun a ha => (hargs a ha).typeChecked) hcs hvs (by simpa using hall)
+        (by simpa using hlen)
+      rw [find?_name hfind']
+      refine eventually_call (jvs := vs.map encodeValue) hunres ?_ ?_
+      · rw [← encodeList_eq]
+        exact eventuallyList_of_args p m args js vs
+          (fun a ha => iharg a ha henv hjenv) hcs hvs
+      · rw [calleeName_agrees hjenv hunres, hcallee]
+        exact ihd fn d' vs v hfind' hlen' htyped he'
   | matchE hscrut halts =>
     rename_i scrutE alts
     have ihscrut := ih hscrut
@@ -5683,55 +5821,6 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         (eventually_ident (by simp)) alts (arm0 :: arms) binds body
         (fun alt ha => ihalts alt ha) hca hfm he
     · simp at he
-
-theorem fragment_correct_at (p : Program) (m : Js.Module) (hsig : SignatureOk p)
-    (hprog : ProgramTyped p) (f : Nat) :
-    ∀ {e : Expr}, InFragment e →
-      ∀ ⦃ctx : Compile.Ctx⦄ ⦃env : Env⦄ ⦃jenv : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄ ⦃v : Value⦄,
-        EnvTyped p env ctx →
-        JsEnvAgrees env jenv →
-        Compile.compileExpr p ctx e = .ok (je, ty) →
-        evalExpr p f env e = .ok v →
-        Eventually m jenv je (encodeValue v) := by
-  induction f with
-  | zero => intro e _ ctx env jenv je ty v _ _ _ he; simp [evalExpr] at he
-  | succ f ih => exact fragment_correct_succ p m hsig hprog f ih
-
-/-- If the reference semantics returns a value, the generated code returns the same value.
-
-Stated over any generated environment that agrees with the reference one, rather than over
-`encodeEnv env` alone: a public function's body runs under the raw parameters as well, and those are not
-in the reference environment. -/
-theorem fragment_correct_in (p : Program) (m : Js.Module) (hsig : SignatureOk p)
-    (hprog : ProgramTyped p)
-    {e : Expr} (hfrag : InFragment e) :
-    ∀ {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat}
-      {v : Value},
-      EnvTyped p env ctx →
-      JsEnvAgrees env jenv →
-      Compile.compileExpr p ctx e = .ok (je, ty) →
-      evalExpr p f env e = .ok v →
-      Eventually m jenv je (encodeValue v) :=
-  fun henv hjenv hc he => fragment_correct_at p m hsig hprog _ hfrag henv hjenv hc he
-
-/-- The shape the manifest quotes: the generated environment is exactly the encoded one.
-
-The environment must bind no reserved name. Two things need it: `match` gives its scrutinee one, and a
-call reads its callee out of the environment, so a binding the generated code cannot have would send the
-two sides to different declarations. Every name a program can bind went through `validateIdent`, which
-rejects the prefix, so an environment a compiled declaration builds satisfies it; `Decl.decl_correct`
-discharges it there. -/
-theorem fragment_correct (p : Program) (m : Js.Module) (hsig : SignatureOk p)
-    (hprog : ProgramTyped p)
-    {e : Expr} (hfrag : InFragment e) :
-    ∀ {ctx : Compile.Ctx} {env : Env} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},
-      EnvTyped p env ctx →
-      (∀ name w, Env.lookup? env name = some w → name.startsWith reservedPrefix = false) →
-      Compile.compileExpr p ctx e = .ok (je, ty) →
-      evalExpr p f env e = .ok v →
-      Eventually m (encodeEnv env) je (encodeValue v) :=
-  fun henv hfree hc he =>
-    fragment_correct_in p m hsig hprog hfrag henv (jsEnvAgrees_encodeEnv _ hfree) hc he
 
 /-- The failures the trap direction carries across.
 
@@ -6020,7 +6109,7 @@ private theorem eventuallyMapErr_of_items (p : Program) (m : Js.Module) (hprog :
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody))
-    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
+    (hbinder : isReserved binder = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalMapItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6182,7 +6271,7 @@ private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) (hpro
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
+    (hbinder : isReserved binder = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalFilterItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6238,7 +6327,7 @@ private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) (hprog 
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
+    (hbinder : isReserved binder = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalFindItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6285,7 +6374,7 @@ private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) (hprog
     (iha : AgreesAt p m f)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder.startsWith reservedPrefix = false) (hne : Mirrorable err) :
+    (hbinder : isReserved binder = false) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalQuantItems p f env op binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -6342,8 +6431,8 @@ private theorem eventuallyReduceErr_of_items (p : Program) (m : Js.Module) (hpro
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
       = .ok (jbody, tinit))
-    (haccName : accName.startsWith reservedPrefix = false)
-    (helemName : elemName.startsWith reservedPrefix = false)
+    (haccName : isReserved accName = false)
+    (helemName : isReserved elemName = false)
     (hne : Mirrorable err) :
     ∀ (xs : List Value) (acc : Value), Value.hasElemTy p xs elem = true →
       Value.hasTy p acc tinit = true →
@@ -6590,6 +6679,16 @@ private theorem eventuallyErr_chain (p : Program) (m : Js.Module) (hsig : Signat
           refine eventuallyErr_condE (eventually_andFold_of_fail ts t (htl ▸ hfail)) ?_
           exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
 
+/-- The same for a callee that throws. -/
+abbrev DeclTraps (p : Program) (m : Js.Module) (f : Nat) : Prop :=
+  ∀ (fn : String) (d : Decl) (args : List Value) (err : Err),
+    p.find? fn = some d →
+    d.params.length = args.length →
+    ParamsTyped p d.params args →
+    evalExpr p f (bindParams d.params args) d.body = .error err →
+    Mirrorable err →
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code
+
 /-- Expression-level trap agreement at one amount of the reference semantics' fuel. -/
 abbrev TrapsAt (p : Program) (m : Js.Module) (f : Nat) : Prop :=
   ∀ {e : Expr}, InFragment e →
@@ -6606,8 +6705,8 @@ abbrev TrapsAt (p : Program) (m : Js.Module) (f : Nat) : Prop :=
 
 On fuel for the same reason as `fragment_correct_succ`: the callee's body is not a subterm of the call. -/
 theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
-    (hprog : ProgramTyped p) (f : Nat) (iha : AgreesAt p m f) (ih : TrapsAt p m f) :
-    TrapsAt p m (f + 1) := by
+    (hprog : ProgramTyped p) (f : Nat) (iha : AgreesAt p m f) (ih : TrapsAt p m f)
+    (ihd : DeclTraps p m f) : TrapsAt p m (f + 1) := by
   intro e hfrag
   cases hfrag with
   | lit l =>
@@ -6704,7 +6803,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       typeSound p hprog f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
     exact eventuallyErr_arrowBody (iha hval henv hjenv hcv hvv)
       (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt)) hcov.cons
-        (hjenv.cons (startsWith_false_of_validateIdent hvi)) hcb he hne)
+        (hjenv.cons (unreserved_of_validateIdent hvi)) hcb he hne)
   | un hx =>
     rename_i op xE
     have ihx := ih hx
@@ -7449,11 +7548,11 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     · rename_i hno
       exact (hno entries rfl).elim
 
-  | proj hne hx =>
+  | proj hx =>
     rename_i xE field
     have ihx := ih hx
     intro ctx env jenv je ty err henv hcov hjenv hc he hne'
-    obtain ⟨jx, n, targs, t, c, fd, hcx, ht, hctors, hfd, rfl, rfl⟩ := compileExpr_proj_parts hc
+    obtain ⟨jx, n, targs, t, c, fd, hcx, ht, hctors, hfd, rfl, rfl, -⟩ := compileExpr_proj_parts hc
     rw [evalExpr_proj] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -7700,6 +7799,146 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     · rename_i hne'
       exact (hne' xs rfl).elim
 
+  | fnRef name =>
+    intro ctx env jenv je ty err henv hcov hjenv hc he hne
+    rw [evalExpr_fnRef] at he
+    simp only [Compile.compileExpr] at hc
+    split at hc
+    · simp at hc
+    split at hc
+    · simp at hc
+    rename_i d hfind
+    rw [if_pos (by simp [hfind])] at he
+    simp at he
+  | call hargs =>
+    rename_i fn args
+    have iharg := fun a ha => ih (hargs a ha)
+    intro ctx env jenv je ty err henv hcov hjenv hc he hne
+    rw [evalExpr_call] at he
+    simp only [bind, Except.bind] at he
+    simp only [Compile.compileExpr] at hc
+    split at hc
+    · rename_i params ret hctx
+      split at hc
+      · simp at hc
+      rename_i hnodecl
+      simp only [bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i js hcs
+      split at hc
+      · simp at hc
+      rename_i hlen
+      split at hc
+      · simp at hc
+      rename_i hall
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      cases hw : Env.lookup? env fn with
+      | none =>
+        obtain ⟨w, hw'⟩ := hcov fn (.fn params ret) hctx
+        rw [hw'] at hw
+        exact absurd hw (by simp)
+      | some w =>
+        have hwt := henv.typed fn (.fn params ret) w hctx hw
+        obtain ⟨g0, rfl⟩ := hasTy_fn_inv hwt
+        have hcallee : calleeOf env fn = g0 := by rw [calleeOf, hw]
+        have hunres := hjenv.unreserved fn _ hw
+        split at he
+        · rename_i e0 hae
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_call_args (eventuallyListErr_of_args p m hsig hprog iha henv hjenv
+            args js hargs (fun a ha => iharg a ha henv hcov hjenv) hcs hae hne)
+        rename_i vs hvs
+        rw [hcallee] at he
+        split at he
+        · rename_i hnone
+          rw [hasTy_fn, hnone] at hwt
+          exact absurd hwt (by simp)
+        rename_i d hfind
+        rw [hasTy_fn, hfind, Bool.and_eq_true] at hwt
+        obtain rfl : params = d.params.map (·.ty) := (tyList_eq_of_beq hwt.1).symm
+        have hfl : d.params.length = vs.length := by
+          have hpl : (d.params.map (·.ty)).length = js.length := by simpa using hlen
+          rw [evalArgs_length hvs, ← compileArgs_length hcs, ← hpl]
+          simp
+        split at he
+        · rename_i hbad
+          exact absurd hfl (by simpa using hbad)
+        have htyped := paramsTyped_of_args
+          (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
+          d.params (fun a ha => (hargs a ha).typeChecked) hcs hvs
+          (zipAll_of_map d.params (by simpa using hall)) (by simpa using hlen)
+        refine eventuallyErr_call (jvs := vs.map encodeValue) hunres ?_ ?_
+        · rw [← encodeList_eq]
+          exact eventuallyList_of_args p m args js vs
+            (fun a ha => iha (hargs a ha) henv hjenv) hcs hvs
+        · rw [calleeName_agrees hjenv hunres, hcallee]
+          exact ihd g0 d vs err hfind hfl htyped he hne
+    · simp at hc
+    · rename_i hctx
+      split at hc
+      · simp at hc
+      rename_i d' hfind'
+      simp only [bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i js hcs
+      split at hc
+      · simp at hc
+      rename_i hlen
+      split at hc
+      · simp at hc
+      rename_i hall
+      split at hc
+      · simp at hc
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      obtain ⟨hje, -⟩ := hc
+      subst hje
+      have hmem' : d' ∈ p.decls := List.mem_of_find?_eq_some hfind'
+      have hdname : d'.name = fn := find?_name hfind'
+      have hunres : isReserved fn = false := by
+        have := hprog.names d' hmem'
+        rwa [hdname] at this
+      have hcallee : calleeOf env fn = fn := by
+        rw [calleeOf]
+        cases hw : Env.lookup? env fn with
+        | none => rfl
+        | some w =>
+          obtain ⟨t, ht⟩ := henv.inScope fn w hw
+          rw [ht] at hctx
+          simp at hctx
+      rw [hdname]
+      split at he
+      · rename_i e0 hae
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_call_args (eventuallyListErr_of_args p m hsig hprog iha henv hjenv
+          args js hargs (fun a ha => iharg a ha henv hcov hjenv) hcs hae hne)
+      rename_i vs hvs
+      rw [hcallee] at he
+      split at he
+      · rename_i hnone
+        rw [hfind'] at hnone
+        simp at hnone
+      rename_i d hfind
+      have hdd : d' = d := Option.some.inj (hfind'.symm.trans hfind)
+      have hfl : d.params.length = vs.length := by
+        have hpl : d'.params.length = js.length := by simpa using hlen
+        rw [evalArgs_length hvs, ← compileArgs_length hcs, ← hpl, hdd]
+      split at he
+      · rename_i hbad
+        exact absurd hfl (by simpa using hbad)
+      have htyped := paramsTyped_of_args
+        (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
+        d'.params (fun a ha => (hargs a ha).typeChecked) hcs hvs (by simpa using hall)
+        (by simpa using hlen)
+      refine eventuallyErr_call (jvs := vs.map encodeValue) hunres ?_ ?_
+      · rw [← encodeList_eq]
+        exact eventuallyList_of_args p m args js vs
+          (fun a ha => iha (hargs a ha) henv hjenv) hcs hvs
+      · rw [calleeName_agrees hjenv hunres, hcallee]
+        exact ihd fn d vs err (hdd ▸ hfind') hfl (hdd ▸ htyped) he hne
   | matchE hscrut halts =>
     rename_i scrutE alts
     have ihscrut := ih hscrut
@@ -7724,41 +7963,5 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         (fun alt ha => ihalts alt ha) hca hfm he
     · simp only [Except.error.injEq] at he
       exact absurd he.symm hne.2
-
-theorem fragment_traps_at (p : Program) (m : Js.Module) (hsig : SignatureOk p)
-    (hprog : ProgramTyped p) (f : Nat) :
-    ∀ {e : Expr}, InFragment e →
-      ∀ ⦃ctx : Compile.Ctx⦄ ⦃env : Env⦄ ⦃jenv : Js.JsEnv⦄ ⦃je : Js.Expr⦄ ⦃ty : Ty⦄ ⦃err : Err⦄,
-        EnvTyped p env ctx →
-        EnvCovers env ctx →
-        JsEnvAgrees env jenv →
-        Compile.compileExpr p ctx e = .ok (je, ty) →
-        evalExpr p f env e = .error err →
-        Mirrorable err →
-        EventuallyErr m jenv je err.code := by
-  induction f with
-  | zero =>
-    intro e _ ctx env jenv je ty err _ _ _ _ he hne
-    rw [evalExpr_zero] at he
-    exact absurd (Except.error.inj he).symm hne.1
-  | succ f ih =>
-    exact fragment_traps_succ p m hsig hprog f (fragment_correct_at p m hsig hprog f) ih
-
-/-- If the reference semantics refuses, the generated code refuses with the same thrown code, for the
-failures `Mirrorable` names. -/
-theorem fragment_traps_in (p : Program) (m : Js.Module) (hsig : SignatureOk p)
-    (hprog : ProgramTyped p)
-    {e : Expr} (hfrag : InFragment e) :
-    ∀ {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat}
-      {err : Err},
-      EnvTyped p env ctx →
-      EnvCovers env ctx →
-      JsEnvAgrees env jenv →
-      Compile.compileExpr p ctx e = .ok (je, ty) →
-      evalExpr p f env e = .error err →
-      Mirrorable err →
-      EventuallyErr m jenv je err.code :=
-  fun henv hcov hjenv hc he hne => fragment_traps_at p m hsig hprog _ hfrag henv hcov hjenv hc he hne
-
 
 end LeanTs.Correct
