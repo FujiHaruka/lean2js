@@ -107,8 +107,8 @@ mutual
 /-- The text the module carries. Written as a mutual recursion over the lists rather than `partial`, so
 a proof about the file the compiler writes can unfold it. -/
 def Expr.render : Expr → String
-  | .num i => toString i
-  | .bigLit i => toString i ++ "n"
+  | .num i => renderInt i
+  | .bigLit i => renderInt i ++ "n"
   | .str s => "\"" ++ escapeString s ++ "\""
   | .bool b => if b then "true" else "false"
   | .ident name => name

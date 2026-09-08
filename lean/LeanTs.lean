@@ -1,3 +1,4 @@
+import LeanTs.Text
 import LeanTs.Core
 import LeanTs.Value
 import LeanTs.Eval
