@@ -63,6 +63,25 @@ end
 
 instance : BEq Ty := ⟨Ty.beq⟩
 
+mutual
+
+/-- A node count, used to bound how far a type can be expanded. `sizeOf` would say the same thing, but its
+derived instance is noncomputable and this number is computed while compiling. -/
+def Ty.size : Ty → Nat
+  | .bool | .int53 | .uint32 | .string | .bigint | .var _ => 1
+  | .named _ args => 1 + Ty.sizeList args
+  | .option t => 1 + Ty.size t
+  | .result ok err => 1 + Ty.size ok + Ty.size err
+  | .array t => 1 + Ty.size t
+  | .dict v => 1 + Ty.size v
+  | .fn params ret => 1 + Ty.sizeList params + Ty.size ret
+
+def Ty.sizeList : List Ty → Nat
+  | [] => 0
+  | t :: ts => Ty.size t + Ty.sizeList ts
+
+end
+
 partial def Ty.render : Ty → String
   | .bool => "Bool"
   | .int53 => "Int53"

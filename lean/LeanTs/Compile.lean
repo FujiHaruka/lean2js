@@ -653,46 +653,59 @@ end
 /-- Unfolds a tail `let` into a `const` statement. A `let` appearing mid-expression has to be wrapped in
 an immediately invoked arrow to preserve evaluation order, but wrapping the `let`s lined up at the head of
 a function as well would make the output unreadable. -/
-private partial def compileBody (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
+def compileFinish (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
+    Except String (List Js.Stmt × Ty) := do
+  let (je, te) ← compileExpr p ctx e
+  .ok (acc.reverse ++ [.ret je], te)
+
+def compileBody (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
     Except String (List Js.Stmt × Ty) :=
   match e with
   | .letE name ty val body =>
-    if (ctx.any (·.1 == name)) then finish p ctx e acc
+    if (ctx.any (·.1 == name)) then compileFinish p ctx (.letE name ty val body) acc
     else do
       validateIdent "let-bound" name
       let (jv, tv) ← compileExpr p ctx val
       if tv != ty then .error s!"let {name} is declared {ty.render} but bound to {tv.render}"
       else compileBody p ((name, ty) :: ctx) body (.const name jv :: acc)
-  | e => finish p ctx e acc
-where
-  finish (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
-      Except String (List Js.Stmt × Ty) := do
-    let (je, te) ← compileExpr p ctx e
-    .ok (acc.reverse ++ [.ret je], te)
+  | e => compileFinish p ctx e acc
+termination_by e
 
 /-- Expands a declared type into the shape the generated code checks an argument against. Recursion is
 what would make this diverge, and `validateType` has already rejected it, so no occurs check is needed
-here — one by name would reject `Paginated (Paginated Int53)`, which is not recursive. -/
-private partial def tyDesc (p : Program) : Ty → Except String Js.TyDesc
-  | .bool => .ok .bool
-  | .int53 => .ok .int53
-  | .uint32 => .ok .uint32
-  | .string => .ok .string
-  | .bigint => .ok .bigint
-  | .var n => .error s!"unbound type parameter: {n}"
-  | .option t => do .ok (.option (← tyDesc p t))
-  | .result ok err => do .ok (.result (← tyDesc p ok) (← tyDesc p err))
-  | .array t => do .ok (.array (← tyDesc p t))
-  | .dict v => do .ok (.dict (← tyDesc p v))
-  | .fn _ _ => .error "a function type has no shape to check at the boundary"
-  | .named n args =>
+here — one by name would reject `Paginated (Paginated Int53)`, which is not recursive.
+
+`budget` counts the name expansions still allowed. A name expansion substitutes the type arguments into
+the field types, so the result can be larger than what was expanded and the structure alone does not
+measure the recursion; `tyDescBudget` is what bounds it from above. Exhausting it is a compile error, so a
+budget that turns out to be too small loses the artifact rather than weakening the check it emits. -/
+def tyDesc (p : Program) : Nat → Ty → Except String Js.TyDesc
+  | _, .bool => .ok .bool
+  | _, .int53 => .ok .int53
+  | _, .uint32 => .ok .uint32
+  | _, .string => .ok .string
+  | _, .bigint => .ok .bigint
+  | _, .var n => .error s!"unbound type parameter: {n}"
+  | budget, .option t => do .ok (.option (← tyDesc p budget t))
+  | budget, .result ok err => do .ok (.result (← tyDesc p budget ok) (← tyDesc p budget err))
+  | budget, .array t => do .ok (.array (← tyDesc p budget t))
+  | budget, .dict v => do .ok (.dict (← tyDesc p budget v))
+  | _, .fn _ _ => .error "a function type has no shape to check at the boundary"
+  | 0, .named n _ => .error s!"ran out of budget expanding type: {n}"
+  | budget + 1, .named n args =>
     match p.findType? n with
     | none => .error s!"unknown type: {n}"
     | some t => do
       let alts ← (t.ctorsAt args).mapM fun c => do
-        let fields ← c.fields.mapM fun f => do .ok (f.name, ← tyDesc p f.ty)
+        let fields ← c.fields.mapM fun f => do .ok (f.name, ← tyDesc p budget f.ty)
         .ok (c.name, fields)
       .ok (.ctors n alts)
+termination_by budget ty => (budget, sizeOf ty)
+
+/-- Every name expansion either descends one edge of the declaration graph, which `validateType` keeps
+acyclic and so is at most `p.types.length` long, or lands in a type argument, of which the type carries at
+most `sizeOf ty`. -/
+def tyDescBudget (p : Program) (ty : Ty) : Nat := (ty.size + 1) * (p.types.length + 1)
 
 /-- The name an exported function takes its argument under, before the entry check hands it to the body
 under the declared name. -/
@@ -712,7 +725,7 @@ def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
     let checks ← d.params.zipIdx.mapM fun (param, i) => do
       if param.ty.isFn then .ok (Js.Stmt.const param.name (.ident (rawParam i)))
       else do
-        let desc ← tyDesc p param.ty
+        let desc ← tyDesc p (tyDescBudget p param.ty) param.ty
         .ok (Js.Stmt.const param.name (.check desc (.ident (rawParam i))))
     let sig := d.params.map fun param => s!"{param.name} : {param.ty.render}"
     .ok {
