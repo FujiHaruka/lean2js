@@ -578,4 +578,286 @@ termination_by f
 
 end
 
+/-! ## Expressions
+
+The grammar is fully parenthesised and has no optional whitespace, so one character of lookahead picks
+the form everywhere except after `(`, where `arrowHead` reads ahead for `(names) => (`. Nothing else the
+printer writes has that shape: `member` closes with `).`, and `binary` and `cond` put a space where the
+arrow wants `)`.
+-/
+
+def isOpChar (c : Char) : Bool :=
+  c == '+' || c == '-' || c == '*' || c == '/' || c == '%' ||
+  c == '<' || c == '>' || c == '=' || c == '!' || c == '&' || c == '|'
+
+def parseOpChars : List Char → List Char × List Char
+  | [] => ([], [])
+  | c :: rest =>
+    if isOpChar c then
+      let (ds, r) := parseOpChars rest
+      (c :: ds, r)
+    else ([], c :: rest)
+
+def parseOp (cs : List Char) : Option (String × List Char) :=
+  let (ds, r) := parseOpChars cs
+  if ds.isEmpty then none else some (String.ofList ds, r)
+
+def parseNumeral (cs : List Char) : Option (Js.Expr × List Char) :=
+  match parseInt cs with
+  | none => none
+  | some (i, r) =>
+    match r with
+    | 'n' :: r => some (.bigLit i, r)
+    | _ => some (.num i, r)
+
+/-- Undoes the sign a numeral reader takes with it, for the one place where `(-` opens a unary minus
+rather than a negative literal. -/
+def negateNumeral : Js.Expr → Option Js.Expr
+  | .num i => some (.num (-i))
+  | .bigLit i => some (.bigLit (-i))
+  | _ => none
+
+def parseIdentList : Nat → List Char → Option (List String × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match parseIdent cs with
+    | none => some ([], cs)
+    | some (n, r) =>
+      match expect [',', ' '] r with
+      | none => some ([n], r)
+      | some r => (parseIdentList f r).map fun p => (n :: p.1, p.2)
+
+def parseArrowHead (f : Nat) (cs : List Char) : Option (List String × List Char) := do
+  let cs ← expect ['('] cs
+  let (ps, cs) ← parseIdentList f cs
+  let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+  pure (ps, cs)
+
+mutual
+
+def parseExpr : Nat → List Char → Option (Js.Expr × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match cs with
+    | [] => none
+    | '"' :: _ => (parseStr cs).map fun p => (.str p.1, p.2)
+    | '[' :: r => do
+      let (items, r) ← parseExprList f ']' r
+      let r ← expect [']'] r
+      pure (.arrayLit items, r)
+    | '{' :: ' ' :: r => do
+      let (fields, r) ← parseObjFields f r
+      let r ← expect [' ', '}'] r
+      pure (.objLit fields, r)
+    | '(' :: r => parseParen f r
+    | c :: _ =>
+      if c == '-' || c.isDigit then parseNumeral cs
+      else if isIdentStart c then
+        match parseIdent cs with
+        | none => none
+        | some (name, r) => parseNamed f name r
+      else none
+
+/-- What follows a name: a keyword, a helper the printer has a constructor for, a call, or the name
+itself. -/
+def parseNamed : Nat → String → List Char → Option (Js.Expr × List Char)
+  | 0, _, _ => none
+  | f + 1, name, cs =>
+    if name == "true" then some (.bool true, cs)
+    else if name == "false" then some (.bool false, cs)
+    else if name == "new" then do
+      let cs ← expect [' ', 'M', 'a', 'p', '(', '['] cs
+      let (entries, cs) ← parseEntries f cs
+      let cs ← expect [']', ')'] cs
+      pure (.dictLit entries, cs)
+    else if name == "__ck" then do
+      let cs ← expect ['('] cs
+      let (e, cs) ← parseExpr f cs
+      let cs ← expect [',', ' '] cs
+      let (d, cs) ← parseDesc f cs
+      let cs ← expect [')'] cs
+      pure (.check d e, cs)
+    else if name == "__map" then do
+      let (arr, binder, body, cs) ← parseLambdaCall f cs
+      pure (.mapJs arr binder body, cs)
+    else if name == "__filter" then do
+      let (arr, binder, body, cs) ← parseLambdaCall f cs
+      pure (.filterJs arr binder body, cs)
+    else if name == "__find" then do
+      let (arr, binder, body, cs) ← parseLambdaCall f cs
+      pure (.findJs arr binder body, cs)
+    else if name == "__all" then do
+      let (arr, binder, body, cs) ← parseLambdaCall f cs
+      pure (.quantJs .all arr binder body, cs)
+    else if name == "__any" then do
+      let (arr, binder, body, cs) ← parseLambdaCall f cs
+      pure (.quantJs .any arr binder body, cs)
+    else if name == "__reduce" then do
+      let cs ← expect ['('] cs
+      let (arr, cs) ← parseExpr f cs
+      let cs ← expect [',', ' '] cs
+      let (init, cs) ← parseExpr f cs
+      let cs ← expect [',', ' ', '('] cs
+      let (acc, cs) ← parseIdent cs
+      let cs ← expect [',', ' '] cs
+      let (elem, cs) ← parseIdent cs
+      let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+      let (body, cs) ← parseExpr f cs
+      let cs ← expect [')', ')'] cs
+      pure (.reduceJs arr init acc elem body, cs)
+    else
+      match expect ['('] cs with
+      | none => some (.ident name, cs)
+      | some cs => do
+        let (args, cs) ← parseExprList f ')' cs
+        let cs ← expect [')'] cs
+        pure (.call name args, cs)
+
+def parseLambdaCall : Nat → List Char →
+    Option (Js.Expr × String × Js.Expr × List Char)
+  | 0, _ => none
+  | f + 1, cs => do
+    let cs ← expect ['('] cs
+    let (arr, cs) ← parseExpr f cs
+    let cs ← expect [',', ' ', '('] cs
+    let (binder, cs) ← parseIdent cs
+    let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+    let (body, cs) ← parseExpr f cs
+    let cs ← expect [')', ')'] cs
+    pure (arr, binder, body, cs)
+
+def parseParen : Nat → List Char → Option (Js.Expr × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match parseArrowHead f cs with
+    | some (ps, r) => do
+      let (body, r) ← parseExpr f r
+      let r ← expect [')', ')', '('] r
+      let (args, r) ← parseExprList f ')' r
+      let r ← expect [')'] r
+      pure (.arrowCall ps body args, r)
+    | none =>
+      match cs with
+      | '!' :: r => do
+        let (e, r) ← parseExpr f r
+        let r ← expect [')'] r
+        pure (.unary "!" e, r)
+      | '-' :: d :: r =>
+        if d.isDigit then do
+          let (e, r) ← parseNumeral cs
+          parseAfterHead f e r
+        else do
+          let (e, r) ← parseExpr f (d :: r)
+          let r ← expect [')'] r
+          pure (.unary "-" e, r)
+      | _ => do
+        let (e, r) ← parseExpr f cs
+        parseAfterHead f e r
+
+/-- The three forms that open with a subexpression: `(e).f`, `(e op e)` and `(e ? e : e)`. A `)` with no
+field behind it is the unary minus a numeral reader has already swallowed the sign of. -/
+def parseAfterHead : Nat → Js.Expr → List Char → Option (Js.Expr × List Char)
+  | 0, _, _ => none
+  | f + 1, e, cs =>
+    match cs with
+    | ')' :: '.' :: r => do
+      let (field, r) ← parseIdent r
+      pure (.member e field, r)
+    | ')' :: r => (negateNumeral e).map fun e => (.unary "-" e, r)
+    | ' ' :: '?' :: ' ' :: r => do
+      let (t, r) ← parseExpr f r
+      let r ← expect [' ', ':', ' '] r
+      let (el, r) ← parseExpr f r
+      let r ← expect [')'] r
+      pure (.cond e t el, r)
+    | ' ' :: r => do
+      let (op, r) ← parseOp r
+      let r ← expect [' '] r
+      let (rhs, r) ← parseExpr f r
+      let r ← expect [')'] r
+      pure (.binary op e rhs, r)
+    | _ => none
+
+def parseExprList : Nat → Char → List Char → Option (List Js.Expr × List Char)
+  | 0, _, _ => none
+  | f + 1, close, cs =>
+    match cs with
+    | [] => none
+    | c :: _ =>
+      if c == close then some ([], cs)
+      else do
+        let (e, r) ← parseExpr f cs
+        match expect [',', ' '] r with
+        | none => pure ([e], r)
+        | some r => do
+          let (es, r) ← parseExprList f close r
+          pure (e :: es, r)
+
+def parseObjFields : Nat → List Char → Option (List (String × Js.Expr) × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match cs with
+    | ' ' :: _ => some ([], cs)
+    | _ => do
+      let (k, cs) ← parseStr cs
+      let cs ← expect [':', ' '] cs
+      let (v, cs) ← parseExpr f cs
+      match expect [',', ' '] cs with
+      | none => pure ([(k, v)], cs)
+      | some cs => do
+        let (fs, cs) ← parseObjFields f cs
+        pure ((k, v) :: fs, cs)
+
+def parseEntries : Nat → List Char → Option (List (String × Js.Expr) × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match cs with
+    | ']' :: _ => some ([], cs)
+    | _ => do
+      let cs ← expect ['['] cs
+      let (k, cs) ← parseStr cs
+      let cs ← expect [',', ' '] cs
+      let (v, cs) ← parseExpr f cs
+      let cs ← expect [']'] cs
+      match expect [',', ' '] cs with
+      | none => pure ([(k, v)], cs)
+      | some cs => do
+        let (es, cs) ← parseEntries f cs
+        pure ((k, v) :: es, cs)
+
+end
+
+/-! ## The grammar the reader accepts
+
+One case per printer branch, plus the places where two branches open with the same character. The
+theorem below covers these too; they are here because a reader that drifts from the printer stops
+building long before a proof about it does. -/
+
+private def roundTrips (e : Js.Expr) : Bool :=
+  let text := e.render.toList
+  parseExpr (text.length + 1) text == some (e, [])
+
+private def x : Js.Expr := .ident "x"
+
+#guard [Js.Expr.num 0, .num 42, .num (-42), .bigLit 0, .bigLit 7, .bigLit (-7),
+  .str "", .str "a\"b\\c", .str "\n\t", .str "日本語", .bool true, .bool false,
+  .ident "value", .ident "__p0",
+  .unary "!" x, .unary "-" x, .unary "-" (.num 3), .unary "-" (.bigLit 3),
+  .unary "-" (.member (.num 3) "f"), .unary "!" (.binary "&&" x x),
+  .binary "+" x x, .binary "===" (.num (-3)) (.num 1), .binary "&&" (.binary "||" x x) x,
+  .binary ">>>" (.arrowCall ["a"] x [x]) x,
+  .cond x x x, .cond (.num (-3)) x x, .cond (.binary "<" x x) (.num 1) (.num 2),
+  .member x "f", .member (.num (-3)) "f", .member (.member x "a") "b",
+  .call "f" [], .call "f" [x], .call "__i53" [x, .num (-1)],
+  .arrowCall [] x [], .arrowCall ["a"] x [x], .arrowCall ["a", "b"] x [x, .num 1],
+  .objLit [], .objLit [("tag", .str "some")], .objLit [("tag", .str "ok"), ("value", x)],
+  .arrayLit [], .arrayLit [x], .arrayLit [.num (-1), .str "k"],
+  .dictLit [], .dictLit [("k", x)], .dictLit [("k", x), ("l", .num 2)],
+  .check .bool x, .check .int53 x, .check .uint32 x, .check .string x, .check .bigint x,
+  .check (.option .bool) x, .check (.result .bool .string) x, .check (.array .int53) x,
+  .check (.dict (.array .bool)) x, .check (.ctors []) x,
+  .check (.ctors [("none", []), ("some", [("value", .int53)])]) x,
+  .mapJs x "e" x, .filterJs x "e" x, .findJs x "e" x,
+  .quantJs .all x "e" x, .quantJs .any x "e" x, .reduceJs x (.num 0) "a" "e" x].all roundTrips
+
 end LeanTs.Parse

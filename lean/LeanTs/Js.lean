@@ -26,7 +26,7 @@ inductive TyDesc where
   | array (t : TyDesc)
   | dict (value : TyDesc)
   | ctors (alts : List (String × List (String × TyDesc)))
-  deriving Inhabited
+  deriving Inhabited, BEq
 
 mutual
 
@@ -83,7 +83,7 @@ inductive Expr where
   | findJs (arr : Expr) (binder : String) (body : Expr)
   | quantJs (op : Core.QuantOp) (arr : Expr) (binder : String) (body : Expr)
   | reduceJs (arr init : Expr) (accName elemName : String) (body : Expr)
-  deriving Inhabited
+  deriving Inhabited, BEq
 
 inductive Stmt where
   | const (name : String) (val : Expr)
