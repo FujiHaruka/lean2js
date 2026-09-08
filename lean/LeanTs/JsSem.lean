@@ -289,6 +289,38 @@ termination_by entries => sizeOf entries
 
 end
 
+/-! ### Dictionaries a `Map` could have produced
+
+`checkTy` never looks at a dictionary's keys, because the value it is handed is a `Map` and a `Map`
+cannot hold one key twice. This model holds a dictionary as an association list, which can carry what no
+`Map` can, so a claim about what the generated code accepts has to say it is looking at the values the
+runtime actually hands it. -/
+
+def keysDistinct : List String → Bool
+  | [] => true
+  | k :: rest => !rest.contains k && keysDistinct rest
+
+mutual
+
+def dictKeysDistinct : JsValue → Bool
+  | .obj fields => dictKeysDistinctFields fields
+  | .arr xs => dictKeysDistinctList xs
+  | .dict entries => keysDistinct (entries.map (·.1)) && dictKeysDistinctFields entries
+  | _ => true
+termination_by v => sizeOf v
+
+def dictKeysDistinctFields : List (String × JsValue) → Bool
+  | [] => true
+  | (_, v) :: rest => dictKeysDistinct v && dictKeysDistinctFields rest
+termination_by fields => sizeOf fields
+
+def dictKeysDistinctList : List JsValue → Bool
+  | [] => true
+  | x :: rest => dictKeysDistinct x && dictKeysDistinctList rest
+termination_by xs => sizeOf xs
+
+end
+
 def bindAll : List String → List JsValue → JsEnv
   | n :: ns, v :: vs => (n, v) :: bindAll ns vs
   | _, _ => []
