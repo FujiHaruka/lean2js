@@ -76,7 +76,7 @@ every one of those names in `p.types`, and `validateType` has already put every 
 The scope is empty wherever a declaration's types are checked, so `Ty.var` never survives to be rendered
 and a type parameter's name never has to be accounted for. -/
 
-private theorem errNotOk {ε α : Type} {e : ε} {d : α}
+private theorem errNotOk {ε : Type u} {α : Type v} {e : ε} {d : α}
     (h : (Except.error e : Except ε α) = .ok d) : False := by cases h
 
 /-- Every type the program declares is named by an identifier. -/
@@ -1465,3 +1465,274 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     subst h
     simp only [List.map_cons]
     exact renderableList_cons (ihe hctx je te he) (ihr hctx tail htail)
+
+/-! ## The statements a declaration's body becomes
+
+The entry's `const`s bind the declared names to the raw `__p0`, `__p1`, … it was called with, and the
+body's are the `let`s lined up at its head. Both are names the reader takes back: the declared ones went
+through `validateIdent` and the raw ones are the compiler's own. -/
+
+theorem isDigit_digitChar : ∀ d : Nat, d < 10 → (Nat.digitChar d).isDigit = true := by
+  intro d hd
+  match d with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 => decide
+  | n + 10 => omega
+
+theorem toDigitsCore_all_digit : ∀ (fuel n : Nat) (ds : List Char),
+    ds.all Char.isDigit = true → (Nat.toDigitsCore 10 fuel n ds).all Char.isDigit = true
+  | 0, _, ds, h => h
+  | fuel + 1, n, ds, h => by
+    rw [Nat.toDigitsCore]
+    have hd : (Nat.digitChar (n % 10)).isDigit = true :=
+      isDigit_digitChar _ (Nat.mod_lt _ (by omega))
+    split
+    · simp [hd, h]
+    · exact toDigitsCore_all_digit fuel _ _ (by simp [hd, h])
+
+/-- `Nat.repr` is a wall to a proof that wants to read its characters back, but not to one that only
+wants to know they are digits. -/
+theorem repr_all_digit (n : Nat) : (toString n).toList.all Char.isDigit = true := by
+  show (Nat.repr n).toList.all Char.isDigit = true
+  rw [Nat.toList_repr, Nat.toDigits]
+  exact toDigitsCore_all_digit _ _ _ rfl
+
+theorem okCallee_rawParam (i : Nat) : okCallee (rawParam i) = true := by
+  have hlist : (rawParam i).toList = '_' :: '_' :: 'p' :: (toString i).toList := by
+    show ("__p" ++ toString i).toList = _
+    rw [String.toList_append]; rfl
+  have hparts : (toString i).toList.all isIdentPart = true := by
+    have hd := repr_all_digit i
+    simp only [List.all_eq_true] at hd ⊢
+    exact fun c hc => digit_isIdentPart (hd c hc)
+  have hall : ('_' :: '_' :: 'p' :: (toString i).toList).all isIdentPart = true := by
+    simp only [List.all_cons, Bool.and_eq_true]
+    exact ⟨by decide, by decide, by decide, hparts⟩
+  have hok : okName (rawParam i) = true := by rw [okName, hlist]; simp only [hall]; decide
+  have hnd : rawParam i ∉ dispatchNames := by
+    intro hmem
+    simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
+    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
+      (have hc := congrArg String.toList hq; rw [hlist] at hc; simp at hc)
+  simp [okCallee, hok, hnd]
+
+theorem rawParams_all_okName : ∀ (i : Nat) (params : List Param),
+    (rawParams i params).all okName = true
+  | _, [] => by rw [rawParams]; rfl
+  | i, _ :: rest => by
+    rw [rawParams]
+    simp [okName_of_okCallee (okCallee_rawParam i), rawParams_all_okName (i + 1) rest]
+
+private theorem forM_ok {α : Type} {f : α → Except String PUnit} {u : PUnit} :
+    ∀ xs : List α, xs.forM f = .ok u → ∀ x ∈ xs, ∃ v, f x = .ok v
+  | [], _ => by simp
+  | x :: rest, h => by
+    have h' : (do f x; rest.forM f) = .ok u := h
+    cases hx : f x with
+    | error e => rw [hx] at h'; exact (errNotOk h').elim
+    | ok v =>
+      rw [hx] at h'
+      intro y hy
+      cases hy with
+      | head => exact ⟨v, hx⟩
+      | tail _ hy => exact forM_ok rest h' y hy
+
+theorem ctxOk_of_params : ∀ params : List Param,
+    (params.forM fun param => validateIdent "parameter" param.name) = .ok () →
+    CtxOk (params.map fun param => (param.name, param.ty))
+  | [], _ => by intro x hx; simp at hx
+  | param :: rest, h => by
+    obtain ⟨_, hv, h⟩ := bind_ok h
+    intro x hx
+    simp only [List.map_cons, List.mem_cons] at hx
+    rcases hx with rfl | hx
+    · exact okCallee_of_validateIdent hv
+    · exact ctxOk_of_params rest h x hx
+
+theorem renderable_compileFinish {p : Program} (hp : DeclNamesOk p) (hfn : FieldNamesOk p)
+    {ctx : Ctx} {e : Expr} {acc stmts : List Js.Stmt} {ty : Ty}
+    (hctx : CtxOk ctx) (hacc : acc.all RenderableStmt = true)
+    (h : compileFinish p ctx e acc = .ok (stmts, ty)) : stmts.all RenderableStmt = true := by
+  rw [compileFinish] at h
+  obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+  try simp only at h
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, -⟩ := h
+  simp only [List.all_append, List.all_reverse, Bool.and_eq_true]
+  refine ⟨hacc, ?_⟩
+  simp [RenderableStmt, (renderable_compiled hp hfn).1 ctx e hctx je te he]
+
+theorem renderable_compileBody {p : Program} (hp : DeclNamesOk p) (hfn : FieldNamesOk p) :
+    ∀ (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) (stmts : List Js.Stmt) (ty : Ty),
+      CtxOk ctx → acc.all RenderableStmt = true →
+      compileBody p ctx e acc = .ok (stmts, ty) → stmts.all RenderableStmt = true := by
+  intro ctx e acc
+  induction ctx, e, acc using compileBody.induct with
+  | case1 ctx acc name ty val body hany =>
+    intro stmts t hctx hacc h
+    rw [compileBody] at h
+    peel h
+    all_goals
+      (split at h <;>
+        first
+          | exact (errNotOk h).elim
+          | exact renderable_compileFinish hp hfn hctx hacc h
+          | (rename_i hc; exact absurd hany hc))
+  | case2 ctx acc name ty val body hany ih =>
+    intro stmts t hctx hacc h
+    rw [compileBody] at h
+    peel h
+    all_goals (split at h <;> first | (rename_i hc; exact absurd hc hany) | skip)
+    all_goals
+      (obtain ⟨_, hvi, h⟩ := bind_ok h
+       obtain ⟨_, _, h⟩ := bind_ok h
+       obtain ⟨⟨jv, tv⟩, hv, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (refine ih jv stmts t (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) ?_ h
+          simp [RenderableStmt, okName_of_validateIdent hvi, hacc,
+            (renderable_compiled hp hfn).1 ctx val hctx jv tv hv]))
+  | case3 ctx acc e hne =>
+    intro stmts t hctx hacc h
+    rw [compileBody] at h <;>
+      first
+        | exact renderable_compileFinish hp hfn hctx hacc h
+        | (intro name ty val body heq; exact hne name ty val body heq)
+
+theorem renderable_paramChecks {p : Program} :
+    ∀ (i : Nat) (params : List Param) (checks : List Js.Stmt),
+      (params.forM fun param => validateIdent "parameter" param.name) = .ok () →
+      paramChecks p i params = .ok checks → checks.all RenderableStmt = true
+  | _, [], checks, _, h => by
+    rw [paramChecks] at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    rfl
+  | i, param :: rest, checks, hv, h => by
+    obtain ⟨_, hv1, hv2⟩ := bind_ok hv
+    rw [paramChecks] at h
+    have hname := okName_of_validateIdent hv1
+    have hraw := renderable_ident (okCallee_rawParam i)
+    split at h
+    · obtain ⟨cs, hcs, h⟩ := bind_ok h
+      simp only [Except.ok.injEq] at h
+      subst h
+      simp only [List.all_cons, Bool.and_eq_true]
+      exact ⟨by simp [RenderableStmt, hname, hraw], renderable_paramChecks (i + 1) rest cs hv2 hcs⟩
+    · obtain ⟨desc, _, h⟩ := bind_ok h
+      obtain ⟨cs, hcs, h⟩ := bind_ok h
+      simp only [Except.ok.injEq] at h
+      subst h
+      simp only [List.all_cons, Bool.and_eq_true]
+      exact ⟨by simp [RenderableStmt, hname, renderable_check hraw],
+        renderable_paramChecks (i + 1) rest cs hv2 hcs⟩
+
+/-! ## The declaration and the program -/
+
+theorem fieldNamesOk_of_validated {p : Program} (ts : List TypeDef)
+    (h : ts.forM (validateType p) = .ok ()) :
+    ∀ t ∈ ts, ∀ c ∈ t.ctors, ∀ f ∈ c.fields, okName f.name = true := by
+  intro t ht c hc f hf
+  obtain ⟨_, h1⟩ := forM_ok ts h t ht
+  rw [validateType] at h1
+  obtain ⟨_, _, h1⟩ := bind_ok h1
+  obtain ⟨_, _, h1⟩ := bind_ok h1
+  obtain ⟨_, _, h1⟩ := bind_ok h1
+  obtain ⟨_, _, h1⟩ := bind_ok h1
+  obtain ⟨_, h2⟩ := forM_ok _ h1 c hc
+  obtain ⟨_, _, h2⟩ := bind_ok h2
+  obtain ⟨_, _, h2⟩ := bind_ok h2
+  obtain ⟨_, h3⟩ := forM_ok _ h2 f hf
+  obtain ⟨_, hvi, _⟩ := bind_ok h3
+  exact okName_of_validateIdent hvi
+
+theorem renderableFunc_of_compileDecl {p : Program} (hp : DeclNamesOk p) (hfn : FieldNamesOk p)
+    (hn : TypeNamesOk p) {d : Decl} {fn : Js.Func} (h : compileDecl p d = .ok fn) :
+    RenderableFunc fn = true := by
+  rw [compileDecl] at h
+  obtain ⟨_, hvi, h⟩ := bind_ok h
+  obtain ⟨_, hvp, h⟩ := bind_ok h
+  obtain ⟨_, _, h⟩ := bind_ok h
+  obtain ⟨_, hwp, h⟩ := bind_ok h
+  obtain ⟨_, hwr, h⟩ := bind_ok h
+  obtain ⟨⟨stmts, ty⟩, hbody, h⟩ := bind_ok h
+  try simp only at h
+  split at h
+  · exact (errNotOk h).elim
+  obtain ⟨checks, hchecks, h⟩ := bind_ok h
+  simp only [Except.ok.injEq] at h
+  subst h
+  simp only [RenderableFunc, Bool.and_eq_true]
+  refine ⟨⟨⟨okName_of_validateIdent hvi, rawParams_all_okName 0 d.params⟩, ?_⟩, ?_⟩
+  · simp only [List.all_append, Bool.and_eq_true]
+    exact ⟨renderable_paramChecks 0 d.params checks hvp hchecks,
+      renderable_compileBody hp hfn _ d.body [] stmts ty (ctxOk_of_params d.params hvp) rfl hbody⟩
+  · refine noCommentClose_of_noStar ?_
+    exact noStar_append (noStar_append (noStar_append
+      (noStar_append (noStar_of_okName (okName_of_validateIdent hvi)) (by decide))
+      (noStar_declSig hn d.params hvp hwp)) (by decide)) (noStar_render hn d.ret hwr)
+
+theorem declNames_of_compileDecls {p : Program} :
+    ∀ (i : Nat) (ds : List Decl) (fs : List Js.Func),
+      compileDecls p i ds = .ok fs → ∀ d ∈ ds, okCallee d.name = true
+  | _, [], _, _, d, hd => by simp at hd
+  | i, e, fs, h, d, hd => by
+    match e, hd with
+    | c :: rest, hd =>
+      rw [compileDecls] at h
+      obtain ⟨_, _, h⟩ := bind_ok h
+      obtain ⟨f, hf, h⟩ := bind_ok h
+      obtain ⟨fsRest, hrest, h⟩ := bind_ok h
+      cases hd with
+      | head =>
+        rw [compileDecl] at hf
+        obtain ⟨_, hvi, _⟩ := bind_ok hf
+        exact okCallee_of_validateIdent hvi
+      | tail _ hd => exact declNames_of_compileDecls (i + 1) rest fsRest hrest d hd
+
+theorem renderable_compileDecls {p : Program} (hp : DeclNamesOk p) (hfn : FieldNamesOk p)
+    (hn : TypeNamesOk p) :
+    ∀ (i : Nat) (ds : List Decl) (fs : List Js.Func),
+      compileDecls p i ds = .ok fs → fs.all RenderableFunc = true
+  | _, [], fs, h => by
+    rw [compileDecls] at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    rfl
+  | i, d :: rest, fs, h => by
+    rw [compileDecls] at h
+    obtain ⟨_, _, h⟩ := bind_ok h
+    obtain ⟨f, hf, h⟩ := bind_ok h
+    obtain ⟨fsRest, hrest, h⟩ := bind_ok h
+    simp only [Except.ok.injEq] at h
+    subst h
+    simp only [List.all_cons, Bool.and_eq_true]
+    exact ⟨renderableFunc_of_compileDecl hp hfn hn hf,
+      renderable_compileDecls hp hfn hn (i + 1) rest fsRest hrest⟩
+
+/-- Nothing the compiler builds falls outside what the reader takes back. `Renderable` names the trees
+`render` does not separate, and this says the compiler never writes one: the names it emits are the ones
+`validateIdent` accepted or the ones it spells itself, and its operators and callees are a fixed handful
+that the reader does not dispatch on. -/
+theorem renderableModule_of_compileProgram {p : Program} {m : Js.Module}
+    (h : compileProgram p = .ok m) : RenderableModule m = true := by
+  rw [compileProgram] at h
+  obtain ⟨_, _, h⟩ := bind_ok h
+  obtain ⟨_, htypes, h⟩ := bind_ok h
+  obtain ⟨_, _, h⟩ := bind_ok h
+  obtain ⟨funcs, hfuncs, h⟩ := bind_ok h
+  simp only [Except.ok.injEq] at h
+  subst h
+  have hn : TypeNamesOk p := typeNamesOk_of_validated p.types htypes
+  have hfn : FieldNamesOk p := fieldNamesOk_of_validated p.types htypes
+  have hp : DeclNamesOk p := declNames_of_compileDecls 0 p.decls funcs hfuncs
+  rw [RenderableModule]
+  exact renderable_compileDecls hp hfn hn 0 p.decls funcs hfuncs
+
+/-- The file the compiler writes reads back as the module it was compiled from. No side condition is
+left: the roundtrip holds of everything `compileProgram` produces. -/
+theorem parseModule_render_of_compileProgram {p : Program} {m : Js.Module}
+    (h : compileProgram p = .ok m) : parseModule (Js.Module.render m).toList = some m :=
+  parseModule_render m (renderableModule_of_compileProgram h)
+
+end LeanTs.Compile

@@ -155,7 +155,7 @@ Float）に加えて、このマイルストーンで新たに外すもの。
   `render` を単射でなくしていた
 - **D-4 読む側 — 完了。** 式・文・関数・モジュールを読む `Parse.lean`。出荷する `index.js` が
   コンパイラの作った AST に読み戻せることを **`emit` が書き出す前に検査する** ——
-  `checkAgreement` と同じ位置で、証明が届くまでの間をここが受け持つ
+  `checkAgreement` と同じ位置で、出荷するテキストそのもので毎回確かめる
 
   **印字器は出荷ファイルそのものを書くようになった。** `Js.Module.render` は誰も呼んでおらず、
   出荷していたのは `emitModule` が組み立てる別のテキストだった。往復を言う相手が出荷ファイルで
@@ -191,14 +191,29 @@ Float）に加えて、このマイルストーンで新たに外すもの。
   引数名の並びは `Js.renderNames`、文の並びは `Js.Stmt.renderAll` という素の再帰にした。
   前置きと末尾の source-map 行も `Js.preamble` / `Js.sourceMapLink` という名前を持つ ——
   `runtime` の 4000 字を展開させないため。出力は 1 バイトも動いていない
-- **D-5b `Renderable` を成果物から取り出す。** `compileProgram p = .ok m → RenderableModule m`。
-  これが付くまで、往復の主張には `Renderable` の但し書きが残る。いま出荷を守っているのは
-  D-4 で入れた `emit` の実行時検査のほう。doc は `Ty.render`（`partial`）から組み立てられるので、
-  そこを全域にするか、コンパイラ側の検査から取り出すかを決める必要がある
+- **D-5b `Renderable` を成果物から取り出す — 完了。** `LeanTs/Renderable.lean` の
+  `renderableModule_of_compileProgram` —— `compileProgram p = .ok m → RenderableModule m`。
+  **往復の主張から但し書きが消えた**: `parseModule_render_of_compileProgram` は
+  「コンパイルが通ったなら、書き出したテキストは同じモジュールに読み戻る」を無条件で言う。
+  `Axioms.lean` がこの行を固定している。
+
+  **証明はコンパイラ自身の再帰**（`compileExpr.mutual_induct` の 56 場合）。生成木に入る名前は
+  2 か所からしか来ない —— スコープと宣言で、どちらも `validateIdent` を通っている。演算子と呼び先は
+  コンパイラが自分で綴る一握りで、読み手が構成子に振り分ける 10 語のどれでもない。`__p0` や `__i53`
+  のような予約接頭辞のヘルパ名は、構成子を持たないので素通りする。
+
+  **`Ty.render` は全域になった。** doc コメントは型の描画から組み立てられるので、`partial` のままでは
+  その文字について何も言えない。`Js.Expr.render` と同じ書き換え —— リストごとの相互再帰 —— で、
+  出力は 1 バイトも動いていない。`String.intercalate` も印字器と同じ理由で落とし、パラメータの並びは
+  `declSig` という素の再帰にした。**doc が `*/` を閉じないことは「`*` を 1 文字も含まない」から出る**
+  —— 型名もフィールド名も識別子で、間に入るのは括弧・コロン・矢印だけ。
+
+  `emit` の実行時検査は回帰テストとして残る
 - **D-6 `runtime` を AST にする。** 手書きの 200 行あまりの JS 文字列を `Js` の AST として持ち直し、
   `JsSem.helper` が仮定している等式をその AST の意味論から出す。ここが TCB のいちばん厚い層
-- **D-7 往復を出荷する。** `parse (render m) = some m` を manifest の `Claim` にし、
-  `Axioms.lean` に行を足す。README の保証の組み立てに「ファイル」を入れ、TCB の記述を直す
+- **D-7 往復を出荷する。** `parse (render m) = some m` を manifest の `Claim` にする
+  （`Axioms.lean` の行は D-5b で足りている）。README の保証の組み立てに「ファイル」を入れ、
+  TCB の記述を直す
 
 ## Step E. `.d.ts` の健全性
 

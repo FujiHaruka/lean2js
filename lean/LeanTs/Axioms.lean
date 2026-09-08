@@ -1,6 +1,7 @@
 import LeanTs.Example
 import LeanTs.Correct
 import LeanTs.Decl
+import LeanTs.Renderable
 
 /-!
 # Axioms
@@ -12,6 +13,9 @@ manifest, plus the six the guarantee itself rests on: `typeSound`, `fragment_cor
 `Claim` demands a proof term, so a missing theorem is caught by a failing `lake build`; a proof plugged
 with `sorry`, however, still goes through as a term. Pinning the axiom set makes this fail the moment
 `sorryAx` gets mixed in.
+
+The roundtrip is pinned here too, ahead of the manifest carrying it: it is the only thing standing
+between the trees the proofs are about and the text that ships.
 -/
 
 /-- info: 'LeanTs.Example.add_comm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -105,3 +109,7 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 /-- info: 'LeanTs.Decl.decl_traps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Decl.decl_traps
+
+/-- info: 'LeanTs.Compile.parseModule_render_of_compileProgram' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Compile.parseModule_render_of_compileProgram
