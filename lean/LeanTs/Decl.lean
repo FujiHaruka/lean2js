@@ -1223,7 +1223,7 @@ theorem compileBody_finish_traps (m : Js.Module) (p : Program) {e : Expr} (hfrag
     {err : Err}
     (hc : compileFinish p ctx e acc = .ok (stmts, ty))
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
-    (he : evalExpr p f env e = .error err) (hne : err ≠ .outOfFuel) :
+    (he : evalExpr p f env e = .error err) (hne : Mirrorable err) :
     ∃ inner, stmts = acc.reverse ++ inner ∧ EventuallyStmtsErr m jenv inner err.code := by
   rw [compileFinish] at hc
   cases hce : Compile.compileExpr p ctx e with
@@ -1241,7 +1241,7 @@ theorem compileBody_traps (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFr
       {err : Err},
       compileBody p ctx e acc = .ok (stmts, ty) →
       EnvTyped p env ctx → EnvCovers env ctx → JsEnvAgrees env jenv →
-      evalExpr p f env e = .error err → err ≠ .outOfFuel →
+      evalExpr p f env e = .error err → Mirrorable err →
       ∃ inner, stmts = acc.reverse ++ inner ∧ EventuallyStmtsErr m jenv inner err.code := by
   induction hfrag with
   | @letE name t val body hval hbody ihv ihb =>
@@ -1262,7 +1262,7 @@ theorem compileBody_traps (m : Js.Module) (p : Program) {e : Expr} (hfrag : InFr
     rename_i hsame
     obtain rfl : tv = t := Ty.eq_of_not_bne hsame
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       rw [evalExpr_letE] at he
       simp only [bind, Except.bind] at he
@@ -1742,9 +1742,8 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (arg
 entry accepts, if `eval` throws then the generated module's function throws the same code — division by
 zero and `Int53` overflow are the two the fragment can reach.
 
-`outOfFuel` is excluded for the reason `fragment_traps_in` excludes it: the conclusion is stated at
-every large enough amount of the model's fuel, so a run only the reference side ran out of has nothing
-on the other side to match. -/
+The failures this carries are the ones `Correct.Mirrorable` names: `outOfFuel` is the reference side's
+alone, and `noMatchingAlternative` is the one the generated arm chain cannot report. -/
 theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
     (err : Err)
     (hm : compileProgram p = .ok m)
@@ -1753,7 +1752,7 @@ theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args 
     (hlen : d.params.length = args.length)
     (htyped : ParamsTyped p d.params args)
     (he : evalCall p fn args = .error err)
-    (hne : err ≠ .outOfFuel) :
+    (hne : Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code := by
   rw [evalCall_body hd hlen htyped] at he

@@ -1337,14 +1337,15 @@ theorem valuesTyped_of_hasFieldTys {p : Program} :
 theorem hasFieldTys_of_signature {p : Program} {ty : Ty}
     {heads : List (Compile.Head × List (String × Ty))} {ctor : String}
     {fields : List (String × Value)} {ftys : List (String × Ty)}
-    (hsig : Compile.signature p ty = some heads)
+    (hsig : Compile.signature p.types ty = some heads)
     (hfind : ((heads.find? (·.1 == Compile.Head.ctor ctor)).map (·.2)) = some ftys)
     (hv : Value.hasTy p (.obj ctor fields) ty = true) :
     Value.hasFieldTys p fields ftys = true := by
   cases ty with
   | named n args =>
     obtain ⟨t, c, ht, hc, hf⟩ := hasTy_named_fields hv
-    simp only [Compile.signature, ht, Option.map_some, Option.some.injEq] at hsig
+    have ht' : p.types.find? (·.name == n) = some t := ht
+    simp only [Compile.signature, ht', Option.map_some, Option.some.injEq] at hsig
     subst hsig
     have hbeq : ∀ x : CtorDef,
         (Compile.Head.ctor x.name == Compile.Head.ctor ctor) = (x.name == ctor) := fun _ => rfl
@@ -1383,7 +1384,7 @@ mutual
 theorem matchPat_binds {p : Program} : ∀ {ty : Ty} {path : Js.Expr} {pat : Pat} {v : Value}
     {tests : List Js.Expr} {pbinds : List (String × Js.Expr × Ty)} {binds : Env},
     Value.hasTy p v ty = true →
-    Compile.patParts p ty path pat = .ok (tests, pbinds) →
+    Compile.patParts p.types ty path pat = .ok (tests, pbinds) →
     matchPat pat v = some binds →
     BindsAgree p binds (pbinds.map fun b => (b.1, b.2.2))
   | _, _, .wild, _, _, _, _, _, hpp, hm => by
@@ -1449,7 +1450,7 @@ theorem matchPats_binds {p : Program} : ∀ {tys : List Ty} {paths : List Js.Exp
     {pats : List Pat} {vs : List Value} {tests : List Js.Expr}
     {pbinds : List (String × Js.Expr × Ty)} {binds : Env},
     ValuesTyped p vs tys →
-    Compile.patPartsList p tys paths pats = .ok (tests, pbinds) →
+    Compile.patPartsList p.types tys paths pats = .ok (tests, pbinds) →
     matchPats pats vs = some binds →
     BindsAgree p binds (pbinds.map fun b => (b.1, b.2.2))
   | _, _, [], vs, _, _, _, _, hpl, hm => by

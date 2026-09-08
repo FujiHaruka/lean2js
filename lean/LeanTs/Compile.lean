@@ -140,10 +140,14 @@ inductive Head where
   deriving BEq
 
 /-- Every head a value of this type can take, each with the fields it carries. `none` where the values
-cannot be enumerated, so nothing short of a wildcard covers them. -/
-def signature (p : Program) : Ty → Option (List (Head × List (String × Ty)))
+cannot be enumerated, so nothing short of a wildcard covers them.
+
+Takes the type declarations rather than the program: a declaration is compiled against the prefix before
+it, and reading only the types is what lets the proof see that the prefix decides a `match` the same way
+the whole program does. -/
+def signature (types : List TypeDef) : Ty → Option (List (Head × List (String × Ty)))
   | .named n args =>
-    (p.findType? n).map fun t =>
+    (types.find? (·.name == n)).map fun t =>
       (t.ctorsAt args).map fun c => (.ctor c.name, c.fields.map fun f => (f.name, f.ty))
   | .option t => some [(.ctor "none", []), (.ctor "some", [("value", t)])]
   | .result ok err => some [(.ctor "ok", [("value", ok)]), (.ctor "error", [("error", err)])]
@@ -189,16 +193,17 @@ against the arms before it, so one function answers both.
 
 Patterns are type-checked before this runs, so a head that does not belong to its column's type cannot
 reach here. -/
-private partial def useful (p : Program) (rows : List (List Pat)) (q : List Pat) (tys : List Ty) : Bool :=
+private partial def useful (types : List TypeDef) (rows : List (List Pat)) (q : List Pat)
+    (tys : List Ty) : Bool :=
   match q, tys with
   | [], _ => rows.isEmpty
   | pat :: qs, ty :: tys =>
-    let sig := signature p ty
+    let sig := signature types ty
     match pat with
-    | .lit l => useful p (specialize (.lit l) 0 rows) qs tys
+    | .lit l => useful types (specialize (.lit l) 0 rows) qs tys
     | .ctor name args =>
       let ftys := fieldTysOf sig (.ctor name)
-      useful p (specialize (.ctor name) ftys.length rows) (args ++ qs) (ftys ++ tys)
+      useful types (specialize (.ctor name) ftys.length rows) (args ++ qs) (ftys ++ tys)
     | _ =>
       let seen := rows.filterMap fun row =>
         match row with
@@ -209,19 +214,19 @@ private partial def useful (p : Program) (rows : List (List Pat)) (q : List Pat)
         if heads.all fun (h, _) => seen.contains h then
           heads.any fun (h, fields) =>
             let ftys := fields.map (·.2)
-            useful p (specialize h ftys.length rows)
+            useful types (specialize h ftys.length rows)
               (List.replicate ftys.length .wild ++ qs) (ftys ++ tys)
-        else useful p (defaultRows rows) qs tys
-      | none => useful p (defaultRows rows) qs tys
+        else useful types (defaultRows rows) qs tys
+      | none => useful types (defaultRows rows) qs tys
   | _ :: _, [] => false
 
 /-- The index of the first arm no value can reach, which is what replaces the old "every constructor
 exactly once" rule now that a wildcard may stand for several. -/
-private def firstUnreachable (p : Program) (ty : Ty) (seen : List (List Pat)) (i : Nat) :
+private def firstUnreachable (types : List TypeDef) (ty : Ty) (seen : List (List Pat)) (i : Nat) :
     List Pat → Option Nat
   | [] => none
   | pat :: rest =>
-    if useful p seen [pat] [ty] then firstUnreachable p ty (seen ++ [[pat]]) (i + 1) rest
+    if useful types seen [pat] [ty] then firstUnreachable types ty (seen ++ [[pat]]) (i + 1) rest
     else some i
 
 /-- One lowered `match` arm: what the generated code tests before taking it, the names it binds and where
@@ -238,7 +243,7 @@ def objOf (ctor : String) (fields : List (String × Js.Expr)) : Js.Expr :=
 
 /-- A literal pattern is held to the same rules as a literal expression: an Int53 outside the safe range
 is no more matchable than it is writable. -/
-private def litJs (ty : Ty) : Lit → Except String Js.Expr
+def litJs (ty : Ty) : Lit → Except String Js.Expr
   | .bool b => if ty == .bool then .ok (.bool b) else .error s!"a Bool pattern cannot match {ty.render}"
   | .int53 i =>
     if ty != .int53 then .error s!"an Int53 pattern cannot match {ty.render}"
@@ -258,7 +263,7 @@ code runs and the names it binds, each paired with the path it is read from.
 
 The tests are conjoined left to right by the caller, so an inner test is only reached once the tag it
 sits under has been confirmed and the path it reads is known to exist. -/
-def patParts (p : Program) (ty : Ty) (path : Js.Expr) :
+def patParts (types : List TypeDef) (ty : Ty) (path : Js.Expr) :
     Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
   | .wild => .ok ([], [])
   | .bind name => do
@@ -266,7 +271,7 @@ def patParts (p : Program) (ty : Ty) (path : Js.Expr) :
     .ok ([], [(name, path, ty)])
   | .lit l => do .ok ([.binary "===" path (← litJs ty l)], [])
   | .ctor name args =>
-    match signature p ty with
+    match signature types ty with
     | none => .error s!"{ty.render} has no constructors to match on"
     | some heads =>
       match (heads.find? (·.1 == Head.ctor name)).map (·.2) with
@@ -275,19 +280,19 @@ def patParts (p : Program) (ty : Ty) (path : Js.Expr) :
         if fields.length != args.length then
           .error s!"{name} binds {fields.length} fields but the pattern names {args.length}"
         else do
-          let (tests, binds) ← patPartsList p (fields.map (·.2))
+          let (tests, binds) ← patPartsList types (fields.map (·.2))
             (fields.map fun f => Js.Expr.member path f.1) args
           .ok (.binary "===" (.member path "tag") (.str name) :: tests, binds)
 termination_by pat => sizeOf pat
 
-def patPartsList (p : Program) (tys : List Ty) (paths : List Js.Expr) :
+def patPartsList (types : List TypeDef) (tys : List Ty) (paths : List Js.Expr) :
     List Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
   | [] => .ok ([], [])
   | pat :: pats =>
     match tys, paths with
     | ty :: tys, path :: paths => do
-      let (tests, binds) ← patParts p ty path pat
-      let (restTests, restBinds) ← patPartsList p tys paths pats
+      let (tests, binds) ← patParts types ty path pat
+      let (restTests, restBinds) ← patPartsList types tys paths pats
       .ok (tests ++ restTests, binds ++ restBinds)
     | _, _ => .error "a pattern names more fields than the constructor has"
 termination_by pats => sizeOf pats
@@ -433,10 +438,10 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     let (jscrut, tscrut) ← compileExpr p ctx scrut
     let arms ← compileAlts p ctx tscrut alts
     let pats := alts.map Alt.pat
-    if useful p (pats.map ([·])) [.wild] [tscrut] then
+    if useful p.types (pats.map ([·])) [.wild] [tscrut] then
       .error s!"match on {tscrut.render} is not exhaustive"
     else
-      match firstUnreachable p tscrut [] 0 pats with
+      match firstUnreachable p.types tscrut [] 0 pats with
       | some i => .error s!"match alternative {i + 1} is unreachable"
       | none =>
         match arms with
@@ -651,7 +656,7 @@ def compileAlts (p : Program) (ctx : Ctx) (ty : Ty) (alts : List Alt) :
   match alts with
   | [] => .ok []
   | (pat, body) :: rest => do
-    let (tests, binds) ← patParts p ty (.ident scrutName) pat
+    let (tests, binds) ← patParts p.types ty (.ident scrutName) pat
     validateDistinct "pattern" (binds.map (·.1))
     let (jbody, tbody) ← compileExpr p ((binds.map fun b => (b.1, b.2.2)) ++ ctx) body
     let tail ← compileAlts p ctx ty rest

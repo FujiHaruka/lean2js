@@ -2720,6 +2720,783 @@ private theorem eventuallyReduce_of_items (p : Program) (m : Js.Module) {ctx : C
     rw [encodeList, Js.evalReduceJs]
     simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
 
+/-! ## Arms
+
+`match` compiles to an arrow that binds the scrutinee to `scrutName` and then to a chain of conditionals,
+one per arm: the arm's tests conjoined with `&&`, its body applied to the values its pattern reads. The
+last arm carries no test — exhaustiveness was checked at compile time, so falling through to it is what
+the compiler decided is safe.
+
+Three things therefore have to line up with `firstMatch`: a matching pattern makes its tests true, a
+pattern that does not match makes the conjunction false without evaluating past the test that failed, and
+the values the arm reads out of the scrutinee are the ones the pattern bound. -/
+
+theorem eventually_eqq {m : Js.Module} {jenv : Js.JsEnv} {jl jr : Js.Expr} {a b : Js.JsValue}
+    (hl : Eventually m jenv jl a) (hr : Eventually m jenv jr b) :
+    Eventually m jenv (.binary "===" jl jr) (.bool (Js.arith.sameValue a b)) := by
+  obtain ⟨g1, hg1⟩ := hl
+  obtain ⟨g2, hg2⟩ := hr
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [eval_binary_eqq]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+    exact arith_eqq a b
+
+theorem eventually_and_false {m : Js.Module} {jenv : Js.JsEnv} {jl jr : Js.Expr}
+    (h : Eventually m jenv jl (.bool false)) :
+    Eventually m jenv (.binary "&&" jl jr) (.bool false) := by
+  obtain ⟨g1, hg1⟩ := h
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventually_and_true {m : Js.Module} {jenv : Js.JsEnv} {jl jr : Js.Expr} {b : Bool}
+    (hl : Eventually m jenv jl (.bool true)) (hr : Eventually m jenv jr (.bool b)) :
+    Eventually m jenv (.binary "&&" jl jr) (.bool b) := by
+  obtain ⟨g1, hg1⟩ := hl
+  obtain ⟨g2, hg2⟩ := hr
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+theorem eventually_andFold_false {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ (ts : List Js.Expr) (t : Js.Expr), Eventually m jenv t (.bool false) →
+      Eventually m jenv (ts.foldl (.binary "&&") t) (.bool false)
+  | [], _, h => h
+  | x :: rest, t, h => by
+    rw [List.foldl_cons]
+    exact eventually_andFold_false rest _ (eventually_and_false h)
+
+theorem eventually_andFold_true {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ (ts : List Js.Expr) (t : Js.Expr), Eventually m jenv t (.bool true) →
+      (∀ x ∈ ts, Eventually m jenv x (.bool true)) →
+      Eventually m jenv (ts.foldl (.binary "&&") t) (.bool true)
+  | [], _, h, _ => h
+  | x :: rest, t, h, hrest => by
+    rw [List.foldl_cons]
+    exact eventually_andFold_true rest _ (eventually_and_true h (hrest x (by simp)))
+      fun y hy => hrest y (by simp [hy])
+
+/-- The tests of an arm the scrutinee does not take: the one that decides it evaluates to `false`, and
+every test before it to `true`. Nothing is said about the tests after it — `&&` short-circuits, and an
+inner test that reads a field the value does not carry is exactly what that protects. -/
+def TestsFail (m : Js.Module) (jenv : Js.JsEnv) : List Js.Expr → Prop
+  | [] => False
+  | x :: rest =>
+    Eventually m jenv x (.bool false) ∨
+      (Eventually m jenv x (.bool true) ∧ TestsFail m jenv rest)
+
+theorem TestsFail.append_right {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ {l r : List Js.Expr}, TestsFail m jenv l → TestsFail m jenv (l ++ r)
+  | [], _, h => absurd h (by simp [TestsFail])
+  | _ :: rest, r, h => by
+    rcases h with hx | ⟨hx, hrest⟩
+    · exact Or.inl hx
+    · exact Or.inr ⟨hx, TestsFail.append_right hrest⟩
+
+theorem TestsFail.append_left {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ {l r : List Js.Expr}, (∀ x ∈ l, Eventually m jenv x (.bool true)) → TestsFail m jenv r →
+      TestsFail m jenv (l ++ r)
+  | [], _, _, h => by simpa using h
+  | x :: rest, r, hl, h =>
+    Or.inr ⟨hl x (by simp), TestsFail.append_left (fun y hy => hl y (by simp [hy])) h⟩
+
+theorem eventually_andFold_of_fail {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ (ts : List Js.Expr) (t : Js.Expr), TestsFail m jenv (t :: ts) →
+      Eventually m jenv (ts.foldl (.binary "&&") t) (.bool false)
+  | [], t, h => by
+    rcases h with hx | ⟨_, hrest⟩
+    · exact hx
+    · exact absurd hrest (by simp [TestsFail])
+  | x :: rest, t, h => by
+    rw [List.foldl_cons]
+    rcases h with ht | ⟨ht, hrest⟩
+    · exact eventually_andFold_false rest _ (eventually_and_false ht)
+    · rcases hrest with hx | ⟨hx, hrest'⟩
+      · exact eventually_andFold_false rest _ (eventually_and_true ht hx)
+      · exact eventually_andFold_of_fail rest _ (Or.inr ⟨eventually_and_true ht hx, hrest'⟩)
+
+theorem eventually_arrowCallN {m : Js.Module} {jenv : Js.JsEnv} {names : List String}
+    {paths : List Js.Expr} {vals : List Js.JsValue} {jbody : Js.Expr} {v : Js.JsValue}
+    (hargs : EventuallyList m jenv paths vals) (hlen : names.length = vals.length)
+    (hbody : Eventually m (Js.bindAll names vals ++ jenv) jbody v) :
+    Eventually m jenv (.arrowCall names jbody paths) v := by
+  obtain ⟨g1, hg1⟩ := hargs
+  obtain ⟨g2, hg2⟩ := hbody
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hlen, bne_self_eq_false, if_neg]
+    simpa using hg2 g (by omega)
+
+/-- Each declared field name reads back the value the reference semantics has at that position. The two
+sides line up by name on the generated side and by position on the reference side, which is why the names
+have to be distinct and none of them may be `tag`. -/
+def LookupsAgree (obj : List (String × Js.JsValue)) :
+    List (String × Ty) → List Value → Prop
+  | [], [] => True
+  | (n, _) :: fs, v :: vs =>
+    ((obj.find? (·.1 == n)).map (·.2)) = some (encodeValue v) ∧ LookupsAgree obj fs vs
+  | _, _ => False
+
+theorem lookupsAgree_of_hasFieldTys {p : Program} :
+    ∀ (fields : List (String × Value)) (ftys : List (String × Ty)),
+      Value.hasFieldTys p fields ftys = true → (ftys.map (·.1)).Nodup →
+      ∀ (pre : List (String × Js.JsValue)),
+        (∀ n ∈ ftys.map (·.1), pre.find? (·.1 == n) = none) →
+        LookupsAgree (pre ++ encodeFields fields) ftys (fields.map (·.2))
+  | [], [], _, _, _, _ => by simp [encodeFields, LookupsAgree]
+  | [], _ :: _, h, _, _, _ => by rw [Value.hasFieldTys.eq_def] at h; simp at h
+  | _ :: _, [], h, _, _, _ => by rw [Value.hasFieldTys.eq_def] at h; simp at h
+  | (k, v) :: rest, (n, t) :: tys, h, hnodup, pre, hpre => by
+    rw [hasFieldTys_cons, Bool.and_eq_true, Bool.and_eq_true] at h
+    obtain rfl : k = n := eq_of_beq h.1.1
+    simp only [List.map_cons, List.nodup_cons] at hnodup
+    refine ⟨?_, ?_⟩
+    · rw [encodeFields, List.find?_append, hpre k (by simp)]
+      simp
+    · have hrest := lookupsAgree_of_hasFieldTys rest tys h.2 hnodup.2
+        (pre ++ [(k, encodeValue v)]) (by
+          intro n' hn'
+          rw [List.find?_append, hpre n' (by simp [hn'])]
+          simp only [List.find?_cons, List.find?_nil]
+          rw [beq_eq_false_iff_ne.mpr (fun hEq => hnodup.1 (by rw [hEq]; exact hn'))]
+          rfl)
+      simpa [encodeFields, List.append_assoc] using hrest
+
+/-- The values an arm's paths read, against the values its pattern bound: the same names in the same
+order, and no name the scrutinee binding could shadow. -/
+def PathsAgree (m : Js.Module) (jenv : Js.JsEnv) :
+    List (String × Js.Expr × Ty) → Env → Prop
+  | [], [] => True
+  | (n, path, _) :: ps, (n', v) :: bs =>
+    n = n' ∧ n ≠ Compile.scrutName ∧ Eventually m jenv path (encodeValue v) ∧
+      PathsAgree m jenv ps bs
+  | _, _ => False
+
+def EventuallyEach (m : Js.Module) (jenv : Js.JsEnv) : List Js.Expr → List Value → Prop
+  | [], [] => True
+  | e :: es, v :: vs => Eventually m jenv e (encodeValue v) ∧ EventuallyEach m jenv es vs
+  | _, _ => False
+
+theorem ValuesTyped.length {p : Program} :
+    ∀ {vs : List Value} {tys : List Ty}, ValuesTyped p vs tys → vs.length = tys.length
+  | [], [], _ => rfl
+  | [], _ :: _, h => absurd h (by simp [ValuesTyped])
+  | _ :: _, [], h => absurd h (by simp [ValuesTyped])
+  | _ :: vs, _ :: tys, h => by simpa using ValuesTyped.length (p := p) (vs := vs) (tys := tys) h.2
+
+theorem eventuallyEach_members {m : Js.Module} {jenv : Js.JsEnv} {path : Js.Expr}
+    {obj : List (String × Js.JsValue)} (hpath : Eventually m jenv path (.obj obj)) :
+    ∀ (ftys : List (String × Ty)) (vs : List Value), LookupsAgree obj ftys vs →
+      EventuallyEach m jenv (ftys.map fun f => .member path f.1) vs
+  | [], [], _ => by simp [EventuallyEach]
+  | [], _ :: _, h => absurd h (by simp [LookupsAgree])
+  | _ :: _, [], h => absurd h (by simp [LookupsAgree])
+  | (n, _) :: fs, v :: vs, h =>
+    ⟨eventually_member hpath h.1, eventuallyEach_members hpath fs vs h.2⟩
+
+/-- What the arm chain needs from the program's type declarations: a constructor's fields are named apart
+from each other and from `tag`, which the generated object carries its discriminator under.
+`Compile.validateType` checks both and `compileProgram` runs it over every declared type, so
+`Decl.decl_correct` discharges this from the module it was handed. -/
+def SignatureOk (p : Program) : Prop :=
+  ∀ (ty : Ty) (heads : List (Compile.Head × List (String × Ty))) (h : Compile.Head)
+    (fs : List (String × Ty)),
+    Compile.signature p.types ty = some heads → (h, fs) ∈ heads →
+      (∀ f ∈ fs, f.1 ≠ "tag") ∧ (fs.map (·.1)).Nodup
+
+theorem signatureOk_fields {p : Program} (hsig : SignatureOk p) {ty : Ty}
+    {heads : List (Compile.Head × List (String × Ty))} {name : String}
+    {ftys : List (String × Ty)} (hs : Compile.signature p.types ty = some heads)
+    (hfind : ((heads.find? (·.1 == Compile.Head.ctor name)).map (·.2)) = some ftys) :
+    (∀ f ∈ ftys, f.1 ≠ "tag") ∧ (ftys.map (·.1)).Nodup := by
+  obtain ⟨pair, hpair, rfl⟩ := Option.map_eq_some_iff.mp hfind
+  exact hsig ty heads pair.1 pair.2 hs (List.mem_of_find?_eq_some hpair)
+
+/-- A constructor pattern only compiles against a type whose values are objects. `bool` has a signature
+too, but its heads are literals, so the lookup by constructor name fails before this is reached. -/
+theorem obj_of_signature_ctor {p : Program} {ty : Ty}
+    {heads : List (Compile.Head × List (String × Ty))} {name : String}
+    {ftys : List (String × Ty)} {v : Value} (hs : Compile.signature p.types ty = some heads)
+    (hfind : ((heads.find? (·.1 == Compile.Head.ctor name)).map (·.2)) = some ftys)
+    (hv : Value.hasTy p v ty = true) : ∃ ctor fields, v = .obj ctor fields := by
+  cases ty with
+  | named n args => exact hasTy_named_inv hv
+  | option elem => exact hasTy_option_inv hv
+  | result ok err => exact hasTy_result_inv hv
+  | bool =>
+    simp only [Compile.signature, Option.some.injEq] at hs
+    subst hs
+    exact absurd (show (none : Option (List (String × Ty))) = some ftys from hfind) (by simp)
+  | _ => simp [Compile.signature] at hs
+
+theorem sameValue_comm (x y : Js.JsValue) : Js.arith.sameValue x y = Js.arith.sameValue y x := by
+  cases x <;> cases y <;> simp only [Js.arith.sameValue] <;>
+    first
+      | rfl
+      | exact Bool.eq_iff_iff.mpr ⟨fun h => beq_iff_eq.mpr (beq_iff_eq.mp h).symm,
+          fun h => beq_iff_eq.mpr (beq_iff_eq.mp h).symm⟩
+
+theorem litJs_ok {p : Program} {ty : Ty} {l : Lit} {jl : Js.Expr}
+    (h : Compile.litJs ty l = .ok jl) :
+    Compile.isScalar ty = true ∧ Value.hasTy p (litValue l) ty = true ∧
+      ∀ (m : Js.Module) (jenv : Js.JsEnv), Eventually m jenv jl (encodeValue (litValue l)) := by
+  cases l with
+  | bool b =>
+    rw [Compile.litJs] at h
+    split at h
+    · rename_i hty
+      obtain rfl : ty = .bool := Ty.eq_of_beq hty
+      obtain rfl : jl = .bool b := (Except.ok.inj h).symm
+      exact ⟨rfl, hasTy_bool p b, fun m jenv => by
+        simpa [litValue, encodeValue] using eventually_bool m jenv b⟩
+    · exact absurd h (by simp)
+  | int53 i =>
+    rw [Compile.litJs] at h
+    split at h
+    · exact absurd h (by simp)
+    split at h
+    · exact absurd h (by simp)
+    rename_i hty hrange
+    obtain rfl : ty = .int53 := Ty.eq_of_not_bne hty
+    obtain rfl : jl = .num i := (Except.ok.inj h).symm
+    refine ⟨rfl, ?_, fun m jenv => by simpa [litValue, encodeValue] using eventually_num m jenv i⟩
+    rw [litValue, hasTy_int53]
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at hrange
+    simp only [Bool.and_eq_true, decide_eq_true_eq]
+    have h1 : ¬(i < int53Min) := fun hlo => hrange (Or.inl hlo)
+    have h2 : ¬(int53Max < i) := fun hhi => hrange (Or.inr hhi)
+    omega
+  | uint32 n =>
+    rw [Compile.litJs] at h
+    split at h
+    · rename_i hty
+      obtain rfl : ty = .uint32 := Ty.eq_of_beq hty
+      obtain rfl : jl = .num n.toNat := (Except.ok.inj h).symm
+      exact ⟨rfl, hasTy_uint32 p n, fun m jenv => by
+        simpa [litValue, encodeValue] using eventually_num m jenv n.toNat⟩
+    · exact absurd h (by simp)
+  | str t =>
+    rw [Compile.litJs] at h
+    split at h
+    · rename_i hty
+      obtain rfl : ty = .string := Ty.eq_of_beq hty
+      obtain rfl : jl = .str t := (Except.ok.inj h).symm
+      exact ⟨rfl, hasTy_str p t, fun m jenv => by
+        simpa [litValue, encodeValue] using eventually_str m jenv t⟩
+    · exact absurd h (by simp)
+  | bigint i =>
+    rw [Compile.litJs] at h
+    split at h
+    · rename_i hty
+      obtain rfl : ty = .bigint := Ty.eq_of_beq hty
+      obtain rfl : jl = .bigLit i := (Except.ok.inj h).symm
+      exact ⟨rfl, hasTy_bigint p i, fun m jenv => by
+        simpa [litValue, encodeValue] using eventually_big m jenv i⟩
+    · exact absurd h (by simp)
+
+theorem eventually_litTest {p : Program} {m : Js.Module} {jenv : Js.JsEnv} {ty : Ty} {l : Lit}
+    {jl path : Js.Expr} {v : Value} (hlit : Compile.litJs ty l = .ok jl)
+    (hv : Value.hasTy p v ty = true) (hpath : Eventually m jenv path (encodeValue v)) :
+    Eventually m jenv (.binary "===" path jl) (.bool (Value.beq (litValue l) v)) := by
+  obtain ⟨hsc, hlt, hev⟩ := litJs_ok (p := p) hlit
+  have := eventually_eqq hpath (hev m jenv)
+  rwa [sameValue_comm, sameValue_encodeValue hsc hlt hv] at this
+
+theorem eventually_tagTest {m : Js.Module} {jenv : Js.JsEnv} {path : Js.Expr}
+    {ctor name : String} {fields : List (String × Value)}
+    (hpath : Eventually m jenv path (encodeValue (Value.obj ctor fields))) :
+    Eventually m jenv (.binary "===" (.member path "tag") (.str name)) (.bool (ctor == name)) := by
+  rw [encodeValue] at hpath
+  have hmem : Eventually m jenv (.member path "tag") (.str ctor) :=
+    eventually_member hpath (by simp)
+  have := eventually_eqq hmem (eventually_str m jenv name)
+  simpa [Js.arith.sameValue] using this
+
+theorem PathsAgree.append {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ {p1 : List (String × Js.Expr × Ty)} {b1 : Env} {p2 : List (String × Js.Expr × Ty)} {b2 : Env},
+      PathsAgree m jenv p1 b1 → PathsAgree m jenv p2 b2 →
+      PathsAgree m jenv (p1 ++ p2) (b1 ++ b2)
+  | [], [], _, _, _, h2 => by simpa using h2
+  | [], _ :: _, _, _, h1, _ => absurd h1 (by simp [PathsAgree])
+  | _ :: _, [], _, _, h1, _ => absurd h1 (by simp [PathsAgree])
+  | (n, path, t) :: ps, (n', v) :: bs, _, _, h1, h2 => by
+    obtain ⟨hn, hne, hev, hrest⟩ := h1
+    exact ⟨hn, hne, hev, PathsAgree.append hrest h2⟩
+
+mutual
+
+/-- A pattern that matched makes every test the compiler emitted true, and the paths the arm reads land
+on the values the pattern bound. -/
+theorem patParts_matched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig : SignatureOk p) :
+    ∀ (ty : Ty) (path : Js.Expr) (pat : Pat) (v : Value) (tests : List Js.Expr)
+      (pbinds : List (String × Js.Expr × Ty)) (binds : Env),
+      Value.hasTy p v ty = true →
+      Compile.patParts p.types ty path pat = .ok (tests, pbinds) →
+      Eventually m jenv path (encodeValue v) →
+      matchPat pat v = some binds →
+      (∀ t ∈ tests, Eventually m jenv t (.bool true)) ∧ PathsAgree m jenv pbinds binds
+  | _, _, .wild, _, _, _, _, _, hpp, _, hm => by
+    rw [Compile.patParts] at hpp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    simp only [Option.some.injEq] at hm
+    obtain ⟨rfl, rfl⟩ := hpp
+    subst hm
+    exact ⟨by simp, trivial⟩
+  | ty, path, .bind name, v, _, _, _, _, hpp, hpath, hm => by
+    rw [Compile.patParts] at hpp
+    simp only [bind, Except.bind] at hpp
+    split at hpp
+    · simp at hpp
+    rename_i _u hvi
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    simp only [Option.some.injEq] at hm
+    obtain ⟨rfl, rfl⟩ := hpp
+    subst hm
+    exact ⟨by simp, rfl, ne_scrutName_of_validateIdent hvi, hpath, trivial⟩
+  | ty, path, .lit l, v, _, _, _, hv, hpp, hpath, hm => by
+    rw [Compile.patParts] at hpp
+    simp only [bind, Except.bind] at hpp
+    split at hpp
+    · simp at hpp
+    rename_i jl hlit
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    split at hm
+    · rename_i heq
+      simp only [Option.some.injEq] at hm
+      obtain ⟨rfl, rfl⟩ := hpp
+      subst hm
+      refine ⟨?_, trivial⟩
+      intro t ht
+      simp only [List.mem_singleton] at ht
+      subst ht
+      have := eventually_litTest hlit hv hpath
+      rwa [show Value.beq (litValue l) v = true from heq] at this
+    · simp at hm
+  | ty, path, .ctor name args, v, _, _, binds, hv, hpp, hpath, hm => by
+    rw [Compile.patParts] at hpp
+    split at hpp
+    · simp at hpp
+    rename_i heads hs
+    split at hpp
+    · simp at hpp
+    rename_i ftys hfind
+    split at hpp
+    · simp at hpp
+    rename_i hlen
+    simp only [bind, Except.bind] at hpp
+    split at hpp
+    · simp at hpp
+    rename_i parts hpl
+    obtain ⟨itests, ibinds⟩ := parts
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    obtain ⟨ctor, fields, rfl⟩ := obj_of_signature_ctor hs hfind hv
+    rw [matchPat] at hm
+    split at hm
+    · rename_i hname
+      obtain rfl : name = ctor := by simpa using hname
+      obtain ⟨rfl, rfl⟩ := hpp
+      have hft := hasFieldTys_of_signature hs hfind hv
+      obtain ⟨hnotag, hnodup⟩ := signatureOk_fields hsig hs hfind
+      have hlk : LookupsAgree (("tag", Js.JsValue.str name) :: encodeFields fields) ftys
+          (fields.map (·.2)) := by
+        have := lookupsAgree_of_hasFieldTys fields ftys hft hnodup
+          [("tag", Js.JsValue.str name)] (by
+            intro n hn
+            obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hn
+            simp only [List.find?_cons, List.find?_nil]
+            rw [beq_eq_false_iff_ne.mpr (fun he => hnotag f hf he.symm)])
+        simpa using this
+      have heach : EventuallyEach m jenv (ftys.map fun f => Js.Expr.member path f.1)
+          (fields.map (·.2)) :=
+        eventuallyEach_members (by rw [encodeValue] at hpath; exact hpath) ftys _ hlk
+      obtain ⟨htests, hbinds⟩ :=
+        patPartsList_matched hsig (ftys.map (·.2)) (ftys.map fun f => Js.Expr.member path f.1)
+          args (fields.map (·.2)) itests ibinds binds
+          (valuesTyped_of_hasFieldTys hft) hpl heach hm
+      refine ⟨?_, hbinds⟩
+      intro t ht
+      rcases List.mem_cons.mp ht with rfl | hrest
+      · have := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields) hpath
+        rwa [beq_self_eq_true] at this
+      · exact htests t hrest
+    · simp at hm
+
+/-- A pattern that did not match makes the conjunction false: the test that decides it evaluates to
+`false`, and the ones before it to `true`. -/
+theorem patParts_unmatched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig : SignatureOk p) :
+    ∀ (ty : Ty) (path : Js.Expr) (pat : Pat) (v : Value) (tests : List Js.Expr)
+      (pbinds : List (String × Js.Expr × Ty)),
+      Value.hasTy p v ty = true →
+      Compile.patParts p.types ty path pat = .ok (tests, pbinds) →
+      Eventually m jenv path (encodeValue v) →
+      matchPat pat v = none →
+      TestsFail m jenv tests
+  | _, _, .wild, _, _, _, _, _, _, hm => by rw [matchPat] at hm; simp at hm
+  | _, _, .bind _, _, _, _, _, _, _, hm => by rw [matchPat] at hm; simp at hm
+  | ty, path, .lit l, v, _, _, hv, hpp, hpath, hm => by
+    rw [Compile.patParts] at hpp
+    simp only [bind, Except.bind] at hpp
+    split at hpp
+    · simp at hpp
+    rename_i jl hlit
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    split at hm
+    · simp at hm
+    · rename_i heq
+      obtain ⟨rfl, rfl⟩ := hpp
+      refine Or.inl ?_
+      have := eventually_litTest hlit hv hpath
+      have hfalse : Value.beq (litValue l) v = false := by
+        cases hb : Value.beq (litValue l) v with
+        | false => rfl
+        | true => exact absurd (show (litValue l == v) = true from hb) heq
+      rwa [hfalse] at this
+  | ty, path, .ctor name args, v, _, _, hv, hpp, hpath, hm => by
+    rw [Compile.patParts] at hpp
+    split at hpp
+    · simp at hpp
+    rename_i heads hs
+    split at hpp
+    · simp at hpp
+    rename_i ftys hfind
+    split at hpp
+    · simp at hpp
+    rename_i hlen
+    simp only [bind, Except.bind] at hpp
+    split at hpp
+    · simp at hpp
+    rename_i parts hpl
+    obtain ⟨itests, ibinds⟩ := parts
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    obtain ⟨ctor, fields, rfl⟩ := obj_of_signature_ctor hs hfind hv
+    obtain ⟨rfl, rfl⟩ := hpp
+    have htag := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields) hpath
+    rw [matchPat] at hm
+    split at hm
+    · rename_i hname
+      obtain rfl : name = ctor := by simpa using hname
+      have hft := hasFieldTys_of_signature hs hfind hv
+      obtain ⟨hnotag, hnodup⟩ := signatureOk_fields hsig hs hfind
+      have hlk : LookupsAgree (("tag", Js.JsValue.str name) :: encodeFields fields) ftys
+          (fields.map (·.2)) := by
+        have := lookupsAgree_of_hasFieldTys fields ftys hft hnodup
+          [("tag", Js.JsValue.str name)] (by
+            intro n hn
+            obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hn
+            simp only [List.find?_cons, List.find?_nil]
+            rw [beq_eq_false_iff_ne.mpr (fun he => hnotag f hf he.symm)])
+        simpa using this
+      have heach : EventuallyEach m jenv (ftys.map fun f => Js.Expr.member path f.1)
+          (fields.map (·.2)) :=
+        eventuallyEach_members (by rw [encodeValue] at hpath; exact hpath) ftys _ hlk
+      have hvt := valuesTyped_of_hasFieldTys hft
+      have hlen' : args.length = (fields.map (·.2)).length := by
+        have hft' : ftys.length = args.length := by
+          simpa using (Bool.not_eq_true _ ▸ hlen : (ftys.length != args.length) = false)
+        have hlv : (fields.map (·.2)).length = ftys.length := by
+          simpa using ValuesTyped.length hvt
+        omega
+      refine Or.inr ⟨by rwa [beq_self_eq_true] at htag, ?_⟩
+      exact patPartsList_unmatched hsig (ftys.map (·.2))
+        (ftys.map fun f => Js.Expr.member path f.1) args (fields.map (·.2)) itests ibinds
+        hvt hpl heach hlen' hm
+    · rename_i hname
+      refine Or.inl ?_
+      have hne : (ctor == name) = false :=
+        beq_eq_false_iff_ne.mpr fun he => hname (by simp [he])
+      rwa [hne] at htag
+
+theorem patPartsList_matched {p : Program} {m : Js.Module} {jenv : Js.JsEnv}
+    (hsig : SignatureOk p) :
+    ∀ (tys : List Ty) (paths : List Js.Expr) (pats : List Pat) (vs : List Value)
+      (tests : List Js.Expr) (pbinds : List (String × Js.Expr × Ty)) (binds : Env),
+      ValuesTyped p vs tys →
+      Compile.patPartsList p.types tys paths pats = .ok (tests, pbinds) →
+      EventuallyEach m jenv paths vs →
+      matchPats pats vs = some binds →
+      (∀ t ∈ tests, Eventually m jenv t (.bool true)) ∧ PathsAgree m jenv pbinds binds
+  | _, _, [], vs, _, _, _, _, hpl, _, hm => by
+    rw [Compile.patPartsList] at hpl
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpl
+    obtain ⟨rfl, rfl⟩ := hpl
+    cases vs with
+    | nil =>
+      rw [matchPats] at hm
+      simp only [Option.some.injEq] at hm
+      subst hm
+      exact ⟨by simp, trivial⟩
+    | cons _ _ => simp [matchPats] at hm
+  | tys, paths, pat :: pats, vs, _, _, binds, hvs, hpl, heach, hm => by
+    cases vs with
+    | nil => simp [matchPats] at hm
+    | cons v vs =>
+      cases tys with
+      | nil => exact absurd hvs (by simp [ValuesTyped])
+      | cons ty tys =>
+        cases paths with
+        | nil => exact absurd heach (by simp [EventuallyEach])
+        | cons path paths =>
+          rw [Compile.patPartsList] at hpl
+          simp only [bind, Except.bind] at hpl
+          split at hpl
+          · simp at hpl
+          rename_i here hhere
+          obtain ⟨htests, hbinds⟩ := here
+          split at hpl
+          · simp at hpl
+          rename_i rest hrest
+          obtain ⟨rtests, rbinds⟩ := rest
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hpl
+          obtain ⟨rfl, rfl⟩ := hpl
+          rw [matchPats] at hm
+          simp only [bind, Option.bind] at hm
+          split at hm
+          · simp at hm
+          rename_i bhere hbhere
+          simp only at hm
+          split at hm
+          · simp at hm
+          rename_i brest hbrest
+          simp only [Option.some.injEq] at hm
+          subst hm
+          obtain ⟨hth, hbh⟩ := patParts_matched hsig ty path pat v htests hbinds bhere
+            hvs.1 hhere heach.1 hbhere
+          obtain ⟨htr, hbr⟩ := patPartsList_matched hsig tys paths pats vs rtests rbinds brest
+            hvs.2 hrest heach.2 hbrest
+          refine ⟨?_, PathsAgree.append hbh hbr⟩
+          intro t ht
+          rcases List.mem_append.mp ht with hl | hr
+          · exact hth t hl
+          · exact htr t hr
+
+theorem patPartsList_unmatched {p : Program} {m : Js.Module} {jenv : Js.JsEnv}
+    (hsig : SignatureOk p) :
+    ∀ (tys : List Ty) (paths : List Js.Expr) (pats : List Pat) (vs : List Value)
+      (tests : List Js.Expr) (pbinds : List (String × Js.Expr × Ty)),
+      ValuesTyped p vs tys →
+      Compile.patPartsList p.types tys paths pats = .ok (tests, pbinds) →
+      EventuallyEach m jenv paths vs →
+      pats.length = vs.length →
+      matchPats pats vs = none →
+      TestsFail m jenv tests
+  | _, _, [], vs, _, _, _, _, _, hlen, hm => by
+    cases vs with
+    | nil => simp [matchPats] at hm
+    | cons _ _ => simp at hlen
+  | tys, paths, pat :: pats, vs, _, _, hvs, hpl, heach, hlen, hm => by
+    cases vs with
+    | nil => simp at hlen
+    | cons v vs =>
+      cases tys with
+      | nil => exact absurd hvs (by simp [ValuesTyped])
+      | cons ty tys =>
+        cases paths with
+        | nil => exact absurd heach (by simp [EventuallyEach])
+        | cons path paths =>
+          rw [Compile.patPartsList] at hpl
+          simp only [bind, Except.bind] at hpl
+          split at hpl
+          · simp at hpl
+          rename_i here hhere
+          obtain ⟨htests, hbinds⟩ := here
+          split at hpl
+          · simp at hpl
+          rename_i rest hrest
+          obtain ⟨rtests, rbinds⟩ := rest
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hpl
+          obtain ⟨rfl, rfl⟩ := hpl
+          rw [matchPats] at hm
+          simp only [bind, Option.bind] at hm
+          split at hm
+          · rename_i hbhere
+            exact TestsFail.append_right
+              (patParts_unmatched hsig ty path pat v htests hbinds hvs.1 hhere heach.1 hbhere)
+          rename_i bhere hbhere
+          simp only at hm
+          split at hm
+          · rename_i hbrest
+            obtain ⟨hth, -⟩ := patParts_matched hsig ty path pat v htests hbinds bhere
+              hvs.1 hhere heach.1 hbhere
+            refine TestsFail.append_left hth ?_
+            exact patPartsList_unmatched hsig tys paths pats vs rtests rbinds hvs.2 hrest heach.2
+              (by simpa using hlen) hbrest
+          · simp at hm
+
+end
+
+theorem eventually_ident {m : Js.Module} {jenv : Js.JsEnv} {name : String} {w : Js.JsValue}
+    (h : ((jenv.find? (·.1 == name)).map (·.2)) = some w) :
+    Eventually m jenv (.ident name) w :=
+  eventually_lit m jenv _ _ fun _ => by simp only [Js.eval.eq_def]; rw [h]
+
+theorem JsEnvAgrees.consScrut {env : Env} {jenv : Js.JsEnv} (h : JsEnvAgrees env jenv)
+    (w : Js.JsValue) : JsEnvAgrees env ((Compile.scrutName, w) :: jenv) := by
+  refine ⟨?_, h.scrutFree⟩
+  intro name v hv
+  have hne : (Compile.scrutName == name) = false := by
+    refine beq_eq_false_iff_ne.mpr fun hEq => ?_
+    rw [← hEq, h.scrutFree] at hv
+    exact absurd hv (by simp)
+  rw [List.find?_cons, hne]
+  exact h.binds name v hv
+
+theorem PathsAgree.names {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ {pbinds : List (String × Js.Expr × Ty)} {binds : Env}, PathsAgree m jenv pbinds binds →
+      pbinds.map (·.1) = binds.map (·.1)
+  | [], [], _ => rfl
+  | [], _ :: _, h => absurd h (by simp [PathsAgree])
+  | _ :: _, [], h => absurd h (by simp [PathsAgree])
+  | (n, _, _) :: ps, (_, _) :: bs, h => by
+    obtain ⟨hn, _, _, hrest⟩ := h
+    simpa [hn] using PathsAgree.names hrest
+
+theorem PathsAgree.eventuallyList {m : Js.Module} {jenv : Js.JsEnv} :
+    ∀ {pbinds : List (String × Js.Expr × Ty)} {binds : Env}, PathsAgree m jenv pbinds binds →
+      EventuallyList m jenv (pbinds.map (·.2.1)) (encodeList (binds.map (·.2)))
+  | [], [], _ => by simpa [encodeList] using eventuallyList_nil m jenv
+  | [], _ :: _, h => absurd h (by simp [PathsAgree])
+  | _ :: _, [], h => absurd h (by simp [PathsAgree])
+  | (n, path, t) :: ps, (n', v) :: bs, h => by
+    obtain ⟨-, -, hev, hrest⟩ := h
+    simpa [encodeList] using eventuallyList_cons hev (PathsAgree.eventuallyList hrest)
+
+theorem PathsAgree.jsEnvAgrees {m : Js.Module} {env : Env} {jenv : Js.JsEnv}
+    (hjenv : JsEnvAgrees env jenv) :
+    ∀ {pbinds : List (String × Js.Expr × Ty)} {binds : Env}, PathsAgree m jenv pbinds binds →
+      JsEnvAgrees (binds ++ env)
+        (Js.bindAll (pbinds.map (·.1)) (encodeList (binds.map (·.2))) ++ jenv)
+  | [], [], _ => by simpa [encodeList, Js.bindAll] using hjenv
+  | [], _ :: _, h => absurd h (by simp [PathsAgree])
+  | _ :: _, [], h => absurd h (by simp [PathsAgree])
+  | (n, path, t) :: ps, (n', v) :: bs, h => by
+    obtain ⟨rfl, hne, -, hrest⟩ := h
+    simpa [encodeList, Js.bindAll] using (PathsAgree.jsEnvAgrees hjenv hrest).cons hne
+
+theorem compileAlts_cons_inv {p : Program} {ctx : Compile.Ctx} {tscrut : Ty} {alt : Alt}
+    {rest : List Alt} {arms : List Compile.Arm}
+    (h : Compile.compileAlts p ctx tscrut (alt :: rest) = .ok arms) :
+    ∃ tests pbinds jbody tbody tail,
+      Compile.patParts p.types tscrut (.ident Compile.scrutName) (Alt.pat alt) = .ok (tests, pbinds)
+        ∧ Compile.compileExpr p ((pbinds.map fun b => (b.1, b.2.2)) ++ ctx) (Alt.body alt)
+            = .ok (jbody, tbody)
+        ∧ Compile.compileAlts p ctx tscrut rest = .ok tail
+        ∧ arms = Compile.Arm.mk tests (pbinds.map (·.1)) (pbinds.map (·.2.1)) jbody tbody
+            :: tail := by
+  obtain ⟨pat, abody⟩ := alt
+  rw [Compile.compileAlts] at h
+  simp only [bind, Except.bind] at h
+  split at h
+  · simp at h
+  rename_i parts hpp
+  obtain ⟨tests, pbinds⟩ := parts
+  split at h
+  · simp at h
+  split at h
+  · simp at h
+  rename_i bodyPair hcb
+  obtain ⟨jbody, tbody⟩ := bodyPair
+  split at h
+  · simp at h
+  rename_i tail hctail
+  simp only [Except.ok.injEq] at h
+  exact ⟨tests, pbinds, jbody, tbody, tail, hpp, hcb, hctail, h.symm⟩
+
+/-- The arm the reference semantics took is the arm the chain takes: the tests of every earlier arm are
+false because its pattern did not match, and the values this one reads are the ones it bound. -/
+private theorem eventually_chain (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {tscrut : Ty} {sv : Value} {f : Nat}
+    {v : Value} (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (hsv : Value.hasTy p sv tscrut = true)
+    (hscrut : Eventually m jenv (.ident Compile.scrutName) (encodeValue sv)) :
+    ∀ (alts : List Alt) (arms : List Compile.Arm) (binds : Env) (body : Expr),
+      (∀ alt ∈ alts, ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr}
+        {ty : Ty} {v' : Value},
+        EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+        Compile.compileExpr p ctx' (Alt.body alt) = .ok (je, ty) →
+        evalExpr p f env' (Alt.body alt) = .ok v' →
+        Eventually m jenv' je (encodeValue v')) →
+      Compile.compileAlts p ctx tscrut alts = .ok arms →
+      firstMatch alts sv = some (binds, body) →
+      evalExpr p f (binds ++ env) body = .ok v →
+      Eventually m jenv (Compile.compileExpr.chain arms) (encodeValue v) := by
+  intro alts
+  induction alts with
+  | nil => intro arms binds body _ _ hfm _; rw [firstMatch] at hfm; simp at hfm
+  | cons alt alts ihr =>
+    intro arms binds body ih hca hfm he
+    obtain ⟨tests, pbinds, jbody, tbody, tail, hpp, hcb, hctail, rfl⟩ := compileAlts_cons_inv hca
+    rw [firstMatch] at hfm
+    split at hfm
+    · rename_i binds' hmp
+      simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+      obtain ⟨rfl, rfl⟩ := hfm
+      obtain ⟨htests, hpaths⟩ :=
+        patParts_matched hsig tscrut (.ident Compile.scrutName) (Alt.pat alt) sv tests pbinds
+          binds' hsv hpp hscrut hmp
+      have hbody : Eventually m jenv (Compile.compileExpr.apply
+          (Compile.Arm.mk tests (pbinds.map (·.1)) (pbinds.map (·.2.1)) jbody tbody))
+          (encodeValue v) := by
+        have henv' : EnvTyped p (binds' ++ env) ((pbinds.map fun b => (b.1, b.2.2)) ++ ctx) :=
+          henv.append (matchPat_binds hsv hpp hmp)
+        rw [Compile.compileExpr.apply]
+        split
+        · rename_i hempty
+          simp only [List.isEmpty_iff, List.map_eq_nil_iff] at hempty
+          subst hempty
+          have hbinds : binds' = [] := by
+            cases binds' with
+            | nil => rfl
+            | cons b bs => exact absurd hpaths (by simp [PathsAgree])
+          subst hbinds
+          exact ih alt (by simp) (by simpa using henv') hjenv (by simpa using hcb)
+            (by simpa using he)
+        · refine eventually_arrowCallN hpaths.eventuallyList ?_
+            (ih alt (by simp) henv' (hpaths.jsEnvAgrees hjenv) hcb he)
+          rw [hpaths.names]
+          simp [encodeList_eq]
+      cases tail with
+      | nil => rw [Compile.compileExpr.chain.eq_def]; exact hbody
+      | cons arm2 rest2 =>
+        rw [Compile.compileExpr.chain.eq_def]
+        cases htl : tests with
+        | nil => simpa [htl] using hbody
+        | cons t ts =>
+          simp only [htl]
+          exact cond_true (eventually_andFold_true ts t (htests t (by rw [htl]; simp))
+            (fun x hx => htests x (by rw [htl]; simp [hx]))) hbody
+    · rename_i hmp
+      have hfail :=
+        patParts_unmatched hsig tscrut (.ident Compile.scrutName) (Alt.pat alt) sv tests pbinds
+          hsv hpp hscrut hmp
+      cases alts with
+      | nil => rw [firstMatch] at hfm; simp at hfm
+      | cons alt2 rest2 =>
+        obtain ⟨tests2, pbinds2, jbody2, tbody2, tail2, hpp2, hcb2, hctail2, rfl⟩ :=
+          compileAlts_cons_inv hctail
+        rw [Compile.compileExpr.chain.eq_def]
+        cases htl : tests with
+        | nil => exact absurd (htl ▸ hfail) (by simp [TestsFail])
+        | cons t ts =>
+          simp only [htl]
+          refine cond_false (eventually_andFold_of_fail ts t (htl ▸ hfail)) ?_
+          exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
+
 /-- If the reference semantics returns a value, the generated code returns the same value.
 
 Stated over any generated environment that agrees with the reference one, rather than over
@@ -4858,6 +5635,15 @@ theorem fragment_correct (p : Program) (m : Js.Module)
       Eventually m (encodeEnv env) je (encodeValue v) :=
   fun henv hfree hc he => fragment_correct_in p m hfrag henv (jsEnvAgrees_encodeEnv _ hfree) hc he
 
+/-- The failures the trap direction carries across.
+
+`outOfFuel` is the reference side's own: fuel is what makes `eval` total, and the claim about the
+generated code is stated at every large enough amount of the model's, so a run only `eval` ran out of has
+nothing to match. `noMatchingAlternative` is the generated side's: exhaustiveness is checked at compile
+time, so the chain takes its last arm without a test, and mirroring the refusal would need the usefulness
+checker proved correct — and that checker is `partial`, which puts it out of reach of a proof entirely. -/
+def Mirrorable (err : Err) : Prop := err ≠ .outOfFuel ∧ err ≠ .noMatchingAlternative
+
 /-! ## Refusing what the reference semantics refuses
 
 The other direction of `fragment_correct_in`. `Agree` compares two failures by their thrown code, so
@@ -5131,11 +5917,11 @@ private theorem eventuallyMapErr_of_items (p : Program) (m : Js.Module) {ctx : C
     (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
       {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
       JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
-      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      evalExpr p f' env' bodyE = .error err' → Mirrorable err' →
       EventuallyErr m jenv' je err'.code)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, tbody))
-    (hbinder : binder ≠ Compile.scrutName) (hne : err ≠ .outOfFuel) :
+    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalMapItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -5292,11 +6078,11 @@ private theorem eventuallyFilterErr_of_items (p : Program) (m : Js.Module) {ctx 
     (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
       {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
       JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
-      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      evalExpr p f' env' bodyE = .error err' → Mirrorable err' →
       EventuallyErr m jenv' je err'.code)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) (hne : err ≠ .outOfFuel) :
+    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalFilterItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -5347,11 +6133,11 @@ private theorem eventuallyFindErr_of_items (p : Program) (m : Js.Module) {ctx : 
     (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
       {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
       JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
-      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      evalExpr p f' env' bodyE = .error err' → Mirrorable err' →
       EventuallyErr m jenv' je err'.code)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) (hne : err ≠ .outOfFuel) :
+    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalFindItems p f env binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -5393,11 +6179,11 @@ private theorem eventuallyQuantErr_of_items (p : Program) (m : Js.Module) {ctx :
     (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
       {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
       JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
-      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      evalExpr p f' env' bodyE = .error err' → Mirrorable err' →
       EventuallyErr m jenv' je err'.code)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((binder, elem) :: ctx) bodyE = .ok (jbody, .bool))
-    (hbinder : binder ≠ Compile.scrutName) (hne : err ≠ .outOfFuel) :
+    (hbinder : binder ≠ Compile.scrutName) (hne : Mirrorable err) :
     ∀ (xs : List Value), Value.hasElemTy p xs elem = true →
       evalQuantItems p f env op binder bodyE xs = .error err →
       ∃ g, ∀ g', g ≤ g' →
@@ -5447,13 +6233,13 @@ private theorem eventuallyReduceErr_of_items (p : Program) (m : Js.Module) {ctx 
     (ihb : ∀ {ctx' : Compile.Ctx} {env' : Env} {jenv' : Js.JsEnv} {je : Js.Expr} {ty : Ty}
       {f' : Nat} {err' : Err}, EnvTyped p env' ctx' → EnvCovers env' ctx' →
       JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' bodyE = .ok (je, ty) →
-      evalExpr p f' env' bodyE = .error err' → err' ≠ .outOfFuel →
+      evalExpr p f' env' bodyE = .error err' → Mirrorable err' →
       EventuallyErr m jenv' je err'.code)
     (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
     (hcb : Compile.compileExpr p ((elemName, elem) :: (accName, tinit) :: ctx) bodyE
       = .ok (jbody, tinit))
     (haccName : accName ≠ Compile.scrutName) (helemName : elemName ≠ Compile.scrutName)
-    (hne : err ≠ .outOfFuel) :
+    (hne : Mirrorable err) :
     ∀ (xs : List Value) (acc : Value), Value.hasElemTy p xs elem = true →
       Value.hasTy p acc tinit = true →
       evalReduceItems p f env accName elemName bodyE acc xs = .error err →
@@ -5498,9 +6284,9 @@ private theorem eventuallyListErr_of_args (p : Program) (m : Js.Module) {ctx : C
       (∀ e ∈ items, InFragment e) →
       (∀ e ∈ items, ∀ {je : Js.Expr} {ty : Ty},
         Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .error err →
-        err ≠ .outOfFuel → EventuallyErr m jenv je err.code) →
+        Mirrorable err → EventuallyErr m jenv je err.code) →
       Compile.compileArgs p ctx items = .ok js →
-      evalArgs p f env items = .error err → err ≠ .outOfFuel →
+      evalArgs p f env items = .error err → Mirrorable err →
       EventuallyListErr m jenv (js.map (·.1)) err.code := by
   intro items
   induction items with
@@ -5546,9 +6332,9 @@ private theorem eventuallyListErr_of_values (p : Program) (m : Js.Module) {ctx :
       (∀ e ∈ entries, InFragment e.2) →
       (∀ e ∈ entries, ∀ {je : Js.Expr} {ty : Ty},
         Compile.compileExpr p ctx e.2 = .ok (je, ty) → evalExpr p f env e.2 = .error err →
-        err ≠ .outOfFuel → EventuallyErr m jenv je err.code) →
+        Mirrorable err → EventuallyErr m jenv je err.code) →
       Compile.compileValues p ctx entries = .ok js →
-      evalArgs p f env (entries.map (·.2)) = .error err → err ≠ .outOfFuel →
+      evalArgs p f env (entries.map (·.2)) = .error err → Mirrorable err →
       EventuallyListErr m jenv (js.map (·.1)) err.code := by
   intro entries
   induction entries with
@@ -5590,10 +6376,8 @@ private theorem eventuallyListErr_of_values (p : Program) (m : Js.Module) {ctx :
     · simp at hes
 
 
-/-- If the reference semantics refuses, the generated code refuses with the same thrown code.
-
-`outOfFuel` is excluded: fuel is what makes `eval` total, and the conclusion is stated at every large
-enough amount of the model's, so a run that only the reference side ran out of has nothing to match. -/
+/-- If the reference semantics refuses, the generated code refuses with the same thrown code, for the
+failures `Mirrorable` names. -/
 theorem fragment_traps_in (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
     ∀ {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat}
@@ -5603,18 +6387,18 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
       JsEnvAgrees env jenv →
       Compile.compileExpr p ctx e = .ok (je, ty) →
       evalExpr p f env e = .error err →
-      err ≠ .outOfFuel →
+      Mirrorable err →
       EventuallyErr m jenv je err.code := by
   induction hfrag with
   | lit l =>
     intro ctx env jenv je ty f err _ _ _ _ he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f => rw [evalExpr_lit] at he; simp at he
   | var name =>
     intro ctx env jenv je ty f err _ hcov _ hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr] at hc
       split at hc
@@ -5627,7 +6411,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i cE tE eE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -5673,7 +6457,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i name lty valE bodyE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -5711,7 +6495,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i op xE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       rw [evalExpr_un] at he
       simp only [bind, Except.bind] at he
@@ -5823,7 +6607,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i op lhsE rhsE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       have hbin := hc
       simp only [Compile.compileExpr, bind, Except.bind] at hbin
@@ -5926,12 +6710,12 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
   | noneE elem =>
     intro ctx env jenv je ty f err _ _ _ _ he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f => rw [evalExpr_noneE] at he; simp at he
   | someE hx ihx =>
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -5951,7 +6735,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
   | okE hx ihx =>
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -5973,7 +6757,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
   | errorE hx ihx =>
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -5997,7 +6781,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i op xE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -6027,7 +6811,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i op lhsE rhsE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -6074,7 +6858,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i strE loE hiE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
@@ -6138,7 +6922,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE idxE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, jidx, hca, hci, hje⟩ := compileExpr_index_parts hc
       subst hje
@@ -6190,7 +6974,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE loE hiE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, jlo, jhi, elem, hca, hclo, hchi, hje, -⟩ := compileExpr_arraySlice_parts hc
       subst hje
@@ -6228,7 +7012,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, elem, hca, hje, -⟩ := compileExpr_arrayReverse_parts hc
       subst hje
@@ -6250,7 +7034,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨rfl, jarr, hshape⟩ := compileExpr_length_parts hc
       rw [evalExpr_length] at he
@@ -6317,7 +7101,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i dE keyE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictGet_parts hc
       rw [evalExpr_dictGet] at he
@@ -6346,7 +7130,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i dE keyE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictHas_parts hc
       rw [evalExpr_dictHas] at he
@@ -6375,7 +7159,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i dE keyE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictDelete_parts hc
       rw [evalExpr_dictDelete] at he
@@ -6404,7 +7188,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i dE keyE valE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jd, jk, jv, value, hcd, hck, hcv, rfl, -⟩ := compileExpr_dictSet_parts hc
       rw [evalExpr_dictSet] at he
@@ -6440,7 +7224,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i dE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictKeys_parts hc
       rw [evalExpr_dictKeys] at he
@@ -6460,7 +7244,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i dE
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictValues_parts hc
       rw [evalExpr_dictValues] at he
@@ -6481,7 +7265,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i xE field
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne'
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne'
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne'.1
     | succ f =>
       obtain ⟨jx, n, targs, t, c, fd, hcx, ht, hctors, hfd, rfl, rfl⟩ := compileExpr_proj_parts hc
       rw [evalExpr_proj] at he
@@ -6519,7 +7303,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i args
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨t, c', js, ht, hc', hcs, hlen, rfl⟩ := compileExpr_ctor_parts hc
       have hlen' : (c'.fields.map (·.name)).length = (js.map (·.1)).length := by simp [hlen]
@@ -6557,7 +7341,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i items
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨js, hcs, rfl⟩ := compileExpr_arrayLit_parts hc
       rw [evalExpr_arrayLit] at he
@@ -6572,7 +7356,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i entries
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨js, hcs, rfl⟩ := compileExpr_dictLit_parts hc
       have hlen' : (entries.map (·.1)).length = (js.map (·.1)).length := by
@@ -6590,7 +7374,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE bodyE binder
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, jbody, elem, tbody, hca, hcb, -, rfl, hbinder⟩ := compileExpr_mapE_inv hc
       rw [evalExpr_mapE] at he
@@ -6622,7 +7406,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE bodyE binder
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl, hbinder⟩ := compileExpr_filterE_inv hc
       rw [evalExpr_filterE] at he
@@ -6653,7 +7437,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE bodyE binder
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl, hbinder⟩ := compileExpr_findE_inv hc
       rw [evalExpr_findE] at he
@@ -6680,7 +7464,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i op arrE bodyE binder
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, jbody, elem, hca, hcb, -, rfl, hbinder⟩ := compileExpr_quantE_inv hc
       rw [evalExpr_quantE] at he
@@ -6707,7 +7491,7 @@ theorem fragment_traps_in (p : Program) (m : Js.Module)
     rename_i arrE initE bodyE accName elemName
     intro ctx env jenv je ty f err henv hcov hjenv hc he hne
     cases f with
-    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne
+    | zero => rw [evalExpr_zero] at he; exact absurd (Except.error.inj he).symm hne.1
     | succ f =>
       obtain ⟨jarr, jinit, jbody, elem, hca, hci, hcb, rfl, haccName, helemName⟩ :=
         compileExpr_reduceE_inv hc

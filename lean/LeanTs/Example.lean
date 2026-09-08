@@ -507,7 +507,7 @@ theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
     (hlen : add.params.length = args.length)
     (htyped : Decl.ParamsTyped program add.params args)
-    (he : evalCall program "add" args = .error err) (hne : err ≠ .outOfFuel) :
+    (he : evalCall program "add" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" (args.map encodeValue) = .error err.code :=
   Decl.decl_traps program m "add" add args err hm find_add
@@ -525,7 +525,7 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
       Value.hasTy program (.int53 1) .int53 = true := by
     constructor <;> (rw [hasTy_int53]; simp [int53Min, int53Max])
   have h := add_traps m hm [.int53 int53Max, .int53 1] .int53Overflow rfl
-    ⟨hty.1, hty.2, trivial⟩ hcall (by simp)
+    ⟨hty.1, hty.2, trivial⟩ hcall ⟨by simp, by simp⟩
   simpa [encodeValue, Err.code] using h
 
 /-- The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
@@ -568,7 +568,7 @@ theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .o
     (args : List Value) (err : Err)
     (hlen : addMoney.params.length = args.length)
     (htyped : Decl.ParamsTyped program addMoney.params args)
-    (he : evalCall program "addMoney" args = .error err) (hne : err ≠ .outOfFuel) :
+    (he : evalCall program "addMoney" args = .error err) (hne : Correct.Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=
   Decl.decl_traps program m "addMoney" addMoney args err hm find_addMoney
