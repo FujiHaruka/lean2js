@@ -89,6 +89,109 @@ inductive TypeChecked : Expr → Prop where
   | matchE {scrut : Expr} {alts : List Alt} :
       TypeChecked scrut → (∀ alt ∈ alts, TypeChecked (Alt.body alt)) →
         TypeChecked (.matchE scrut alts)
+  | fnRef (name : String) : TypeChecked (.fnRef name)
+  | call {fn : String} {args : List Expr} :
+      (∀ e ∈ args, TypeChecked e) → TypeChecked (.call fn args)
+
+mutual
+
+/-- Every shape of the subset type checks. The judgement covers the syntax, so the induction it drives
+reads as a case analysis on the expression. -/
+theorem TypeChecked.all : ∀ e : Expr, TypeChecked e
+  | .lit l => .lit l
+  | .var name => .var name
+  | .fnRef name => .fnRef name
+  | .un _ x => .un (TypeChecked.all x)
+  | .bin _ a b => .bin (TypeChecked.all a) (TypeChecked.all b)
+  | .cond c t e => .cond (TypeChecked.all c) (TypeChecked.all t) (TypeChecked.all e)
+  | .letE _ _ val body => .letE (TypeChecked.all val) (TypeChecked.all body)
+  | .call _ args => .call (TypeChecked.allList args)
+  | .ctor typeName tyArgs ctorName args => .ctor typeName tyArgs ctorName (TypeChecked.allList args)
+  | .proj e field => .proj field (TypeChecked.all e)
+  | .matchE scrut alts => .matchE (TypeChecked.all scrut) (TypeChecked.allAlts alts)
+  | .noneE elem => .noneE elem
+  | .someE x => .someE (TypeChecked.all x)
+  | .okE _ x => .okE (TypeChecked.all x)
+  | .errorE _ x => .errorE (TypeChecked.all x)
+  | .arrayLit elem items => .arrayLit elem (TypeChecked.allList items)
+  | .index arr idx => .index (TypeChecked.all arr) (TypeChecked.all idx)
+  | .length arr => .length (TypeChecked.all arr)
+  | .arraySlice arr lo hi =>
+    .arraySlice (TypeChecked.all arr) (TypeChecked.all lo) (TypeChecked.all hi)
+  | .arrayReverse arr => .arrayReverse (TypeChecked.all arr)
+  | .mapE arr _ body => .mapE (TypeChecked.all arr) (TypeChecked.all body)
+  | .filterE arr _ body => .filterE (TypeChecked.all arr) (TypeChecked.all body)
+  | .findE arr _ body => .findE (TypeChecked.all arr) (TypeChecked.all body)
+  | .quantE _ arr _ body => .quantE (TypeChecked.all arr) (TypeChecked.all body)
+  | .reduceE arr init _ _ body =>
+    .reduceE (TypeChecked.all arr) (TypeChecked.all init) (TypeChecked.all body)
+  | .dictLit value entries => .dictLit value (TypeChecked.allValues entries)
+  | .dictGet d key => .dictGet (TypeChecked.all d) (TypeChecked.all key)
+  | .dictHas d key => .dictHas (TypeChecked.all d) (TypeChecked.all key)
+  | .dictSet d key val => .dictSet (TypeChecked.all d) (TypeChecked.all key) (TypeChecked.all val)
+  | .dictKeys d => .dictKeys (TypeChecked.all d)
+  | .dictValues d => .dictValues (TypeChecked.all d)
+  | .dictDelete d key => .dictDelete (TypeChecked.all d) (TypeChecked.all key)
+  | .strUn _ x => .strUn (TypeChecked.all x)
+  | .strBin _ a b => .strBin (TypeChecked.all a) (TypeChecked.all b)
+  | .substring str lo hi =>
+    .substring (TypeChecked.all str) (TypeChecked.all lo) (TypeChecked.all hi)
+termination_by e => sizeOf e
+
+theorem TypeChecked.allList : ∀ (es : List Expr) (e : Expr), e ∈ es → TypeChecked e
+  | [], _, h => absurd h (by simp)
+  | x :: rest, e, h =>
+    match List.mem_cons.mp h with
+    | .inl heq => heq ▸ TypeChecked.all x
+    | .inr hr => TypeChecked.allList rest e hr
+termination_by es => sizeOf es
+
+theorem TypeChecked.allValues :
+    ∀ (entries : List (String × Expr)) (entry : String × Expr), entry ∈ entries →
+      TypeChecked entry.2
+  | [], _, h => absurd h (by simp)
+  | (key, x) :: rest, entry, h =>
+    match List.mem_cons.mp h with
+    | .inl heq => heq ▸ TypeChecked.all x
+    | .inr hr => TypeChecked.allValues rest entry hr
+termination_by entries => sizeOf entries
+
+theorem TypeChecked.allAlts :
+    ∀ (alts : List Alt) (alt : Alt), alt ∈ alts → TypeChecked (Alt.body alt)
+  | [], _, h => absurd h (by simp)
+  | (pat, body) :: rest, alt, h =>
+    match List.mem_cons.mp h with
+    | .inl heq => heq ▸ TypeChecked.all body
+    | .inr hr => TypeChecked.allAlts rest alt hr
+termination_by alts => sizeOf alts
+
+end
+
+mutual
+
+theorem Ty.beq_refl : ∀ t : Ty, Ty.beq t t = true
+  | .bool | .int53 | .uint32 | .string | .bigint => by rw [Ty.beq]
+  | .var n => by rw [Ty.beq]; simp
+  | .named n as => by rw [Ty.beq]; simp [Ty.beqList_refl as]
+  | .option t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .result a b => by rw [Ty.beq]; simp [Ty.beq_refl a, Ty.beq_refl b]
+  | .array t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .dict t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .fn as a => by rw [Ty.beq]; simp [Ty.beqList_refl as, Ty.beq_refl a]
+
+theorem Ty.beqList_refl : ∀ ts : List Ty, Ty.beqList ts ts = true
+  | [] => by rw [Ty.beqList]
+  | t :: rest => by rw [Ty.beqList]; simp [Ty.beq_refl t, Ty.beqList_refl rest]
+
+end
+
+/-- Reflexivity for the plain list comparison the entry check and the signatures use, which goes through
+`List`'s own `BEq` rather than `Ty.beqList`. -/
+theorem tyList_beq_refl : ∀ ts : List Ty, (ts == ts) = true
+  | [] => rfl
+  | t :: rest => by
+    simp only [List.cons_beq_cons, Bool.and_eq_true]
+    exact ⟨Ty.beq_refl t, tyList_beq_refl rest⟩
 
 mutual
 
@@ -195,6 +298,16 @@ theorem hasTy_dict_inv {p : Program} {v : Value} {elem : Ty}
 theorem hasTy_fn_inv {p : Program} {v : Value} {params : List Ty} {ret : Ty}
     (h : Value.hasTy p v (.fn params ret) = true) : ∃ name, v = .fn name := by
   cases v <;> simp_all [Value.hasTy]
+
+/-- Soundness of the plain list comparison, matching `tyList_beq_refl`. -/
+theorem tyList_eq_of_beq : ∀ {as bs : List Ty}, (as == bs) = true → as = bs
+  | [], bs, h => by cases bs <;> simp_all
+  | a :: as, bs, h => by
+    cases bs with
+    | nil => simp at h
+    | cons b bs =>
+      simp only [List.cons_beq_cons, Bool.and_eq_true] at h
+      rw [Ty.eq_of_beq h.1, tyList_eq_of_beq h.2]
 
 /-- The converse direction: a function value satisfies no type but a function type. What a call needs,
 since `eval` reads the callee out of the environment. -/
@@ -1080,6 +1193,76 @@ private theorem hasFieldTys_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} 
       simp only [List.map_cons, List.zip_cons_cons, hasFieldTys_cons, Bool.and_eq_true]
       refine ⟨⟨beq_self_eq_true _, Ty.eq_of_beq hall.1 ▸ ih arg jh th v (hchk arg (by simp)) hchead hv⟩,
         ihr tail vs' gs (fun e he => hchk e (by simp [he])) hctail hvs hall.2 (by simpa using hlen)⟩
+
+/-- A call checks its arguments against the types of the callee's parameters. The names come from the
+same parameter list, so the check the compiler wrote over types alone reads as one over parameters. -/
+private theorem zipAll_of_map {js : List (Js.Expr × Ty)} :
+    ∀ (params : List Param),
+      (((params.map (·.ty)).zip js).all fun x => x.1 == x.2.2) = true →
+      ((params.zip js).all fun x => x.1.ty == x.2.2) = true
+  | [], _ => by simp
+  | param :: rest, h => by
+    cases js with
+    | nil => simp
+    | cons j jrest =>
+      simp only [List.map_cons, List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at h ⊢
+      exact ⟨h.1, zipAll_of_map rest h.2⟩
+
+/-- The arguments of a call, carrying the induction hypothesis of `typeSound` along them: the environment
+the callee's body runs in is typed by the context that body was compiled against. -/
+private theorem envTyped_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+    (ih : ∀ (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value), TypeChecked e →
+      Compile.compileExpr p ctx e = .ok (je, ty) → evalExpr p f env e = .ok v →
+      Value.hasTy p v ty = true) :
+    ∀ (args : List Expr) (js : List (Js.Expr × Ty)) (vs : List Value) (params : List Param),
+      (∀ e ∈ args, TypeChecked e) →
+      Compile.compileArgs p ctx args = .ok js →
+      evalArgs p f env args = .ok vs →
+      ((params.zip js).all fun x => x.1.ty == x.2.2) = true →
+      params.length = js.length →
+      EnvTyped p (bindParams params vs) (params.map fun param => (param.name, param.ty)) := by
+  intro args
+  induction args with
+  | nil =>
+    intro js vs params _ hcs hes _ hlen
+    rw [Compile.compileArgs] at hcs
+    rw [evalArgs_nil] at hes
+    simp only [Except.ok.injEq] at hcs hes
+    subst hcs; subst hes
+    match params with
+    | [] => exact ⟨fun _ _ _ h _ => by simp at h, fun _ _ h => by simp [bindParams, Env.lookup?] at h⟩
+    | g :: gs => simp at hlen
+  | cons arg rest ihr =>
+    intro js vs params hchk hcs hes hall hlen
+    rw [Compile.compileArgs] at hcs
+    simp only [bind, Except.bind] at hcs
+    split at hcs
+    · simp at hcs
+    rename_i headPair hchead
+    obtain ⟨jh, th⟩ := headPair
+    split at hcs
+    · simp at hcs
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hcs
+    subst hcs
+    rw [evalArgs_cons] at hes
+    simp only [bind, Except.bind] at hes
+    split at hes
+    · simp at hes
+    rename_i v hv
+    split at hes
+    · simp at hes
+    rename_i vs' hvs
+    simp only [Except.ok.injEq] at hes
+    subst hes
+    match params with
+    | [] => simp at hlen
+    | g :: gs =>
+      simp only [List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at hall
+      simp only [List.map_cons, bindParams]
+      exact (ihr tail vs' gs (fun e he => hchk e (by simp [he])) hctail hvs hall.2
+        (by simpa using hlen)).cons
+        (Ty.eq_of_beq hall.1 ▸ ih arg jh th v (hchk arg (by simp)) hchead hv)
 
 private theorem compileExpr_dictLit_inv {p : Program} {ctx : Compile.Ctx} {value : Ty}
     {entries : List (String × Expr)} {je : Js.Expr} {ty : Ty}
@@ -2502,5 +2685,101 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
           (ih ctx env initE jinit ty acc hinit henv hci hacc) he
       · rename_i hne
         exact (hne xs rfl).elim
+    | fnRef name =>
+      rw [evalExpr_fnRef] at he
+      simp only [Compile.compileExpr] at hc
+      split at hc
+      · simp at hc
+      rename_i d hfind
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+      rw [if_pos (by simp [hfind])] at he
+      simp only [Except.ok.injEq] at he
+      subst he
+      rw [← hc.2, hasTy_fn, hfind]
+      simp only [tyList_beq_refl, Bool.true_and]
+      exact Ty.beq_refl _
+    | call hargs =>
+      rename_i fn args
+      rw [evalExpr_call] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i vs hvs
+      split at he
+      · simp at he
+      rename_i d hfind
+      split at he
+      · simp at he
+      rename_i harity
+      obtain ⟨jb, hjb⟩ := hprog d (List.mem_of_find?_eq_some hfind)
+      simp only [Compile.compileExpr] at hc
+      split at hc
+      · rename_i params ret hctx
+        split at hc
+        · simp at hc
+        rename_i hnodecl
+        simp only [bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i js hcs
+        split at hc
+        · simp at hc
+        rename_i hlen
+        split at hc
+        · simp at hc
+        rename_i hall
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+        cases hw : Env.lookup? env fn with
+        | none =>
+          rw [calleeOf, hw] at hfind
+          exact absurd (by simp [hfind] : (p.find? fn).isSome = true) hnodecl
+        | some w =>
+          have hwt := henv.typed fn (.fn params ret) w hctx hw
+          obtain ⟨g, rfl⟩ := hasTy_fn_inv hwt
+          rw [calleeOf, hw] at hfind
+          rw [hasTy_fn, hfind, Bool.and_eq_true] at hwt
+          obtain rfl : params = d.params.map (·.ty) := (tyList_eq_of_beq hwt.1).symm
+          obtain rfl : ret = d.ret := (Ty.eq_of_beq hwt.2).symm
+          rw [← hc.2]
+          exact ih _ _ d.body jb d.ret v (TypeChecked.all d.body)
+            (envTyped_of_args (fun e je t w' hchk' => ih ctx env e je t w' hchk' henv) args js vs
+              d.params hargs hcs hvs (zipAll_of_map d.params (by simpa using hall))
+              (by simpa using hlen)) hjb he
+      · simp at hc
+      · rename_i hctx
+        split at hc
+        · simp at hc
+        rename_i d' hfind'
+        simp only [bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i js hcs
+        split at hc
+        · simp at hc
+        rename_i hlen
+        split at hc
+        · simp at hc
+        rename_i hall
+        split at hc
+        · simp at hc
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+        have hcallee : calleeOf env fn = fn := by
+          rw [calleeOf]
+          cases hw : Env.lookup? env fn with
+          | none => rfl
+          | some w =>
+            cases w with
+            | fn g =>
+              obtain ⟨ps, r, hfn⟩ := henv.fnScoped fn g hw
+              rw [hfn] at hctx
+              simp at hctx
+            | _ => rfl
+        rw [hcallee, hfind'] at hfind
+        have hdd : d' = d := Option.some.inj hfind
+        rw [← hc.2]
+        exact ih _ _ d'.body jb d'.ret v (TypeChecked.all d'.body)
+          (envTyped_of_args (fun e je t w' hchk' => ih ctx env e je t w' hchk' henv) args js vs
+            d'.params hargs hcs hvs (by simpa using hall) (by simpa using hlen)) (hdd ▸ hjb)
+          (hdd ▸ he)
 
 end LeanTs
