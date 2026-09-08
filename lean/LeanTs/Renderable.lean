@@ -445,3 +445,138 @@ theorem okName_of_signature {p : Program} (hf : FieldNamesOk p) :
   | array _ => simp [signature] at h
   | dict _ => simp [signature] at h
   | fn _ _ => simp [signature] at h
+
+/-- What a pattern's bindings have to be for the arm built from them to be readable back: a name the
+reader can read, bound to a path it can read. -/
+def BindsOk (binds : List (String × Js.Expr × Ty)) : Bool :=
+  binds.all fun b => okName b.1 && RenderableExpr b.2.1
+
+theorem renderable_litJs {ty : Ty} {l : Lit} {j : Js.Expr} (h : litJs ty l = .ok j) :
+    RenderableExpr j = true := by
+  cases l <;> rw [litJs] at h <;> split at h <;>
+    first
+      | exact (errNotOk h).elim
+      | (simp only [Except.ok.injEq] at h; subst h; rw [RenderableExpr])
+      | (split at h
+         · exact (errNotOk h).elim
+         simp only [Except.ok.injEq] at h; subst h; rw [RenderableExpr])
+
+theorem renderable_patParts {p : Program} (hfn : FieldNamesOk p) :
+    (∀ (ty : Ty) (path : Js.Expr) (pat : Pat), RenderableExpr path = true →
+        ∀ tests binds, patParts p.types ty path pat = .ok (tests, binds) →
+          RenderableList tests = true ∧ BindsOk binds = true)
+    ∧ (∀ (tys : List Ty) (paths : List Js.Expr) (pats : List Pat),
+        paths.all RenderableExpr = true →
+        ∀ tests binds, patPartsList p.types tys paths pats = .ok (tests, binds) →
+          RenderableList tests = true ∧ BindsOk binds = true) := by
+  apply patParts.mutual_induct p.types
+  -- `.wild`
+  · intro ty path _ tests binds h
+    rw [patParts] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨renderableList_nil, rfl⟩
+  -- `.bind name`
+  · intro ty path name hpath tests binds h
+    rw [patParts] at h
+    cases hv : validateIdent "pattern" name with
+    | error e => rw [hv] at h; exact (errNotOk h).elim
+    | ok u =>
+      rw [hv] at h
+      simp only [bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      refine ⟨renderableList_nil, ?_⟩
+      simp [BindsOk, okName_of_validateIdent hv, hpath]
+  -- `.lit l`
+  · intro ty path l hpath tests binds h
+    rw [patParts] at h
+    cases hl : litJs ty l with
+    | error e => rw [hl] at h; exact (errNotOk h).elim
+    | ok jl =>
+      rw [hl] at h
+      simp only [bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      refine ⟨?_, rfl⟩
+      rw [RenderableList, RenderableExpr]
+      simp [hpath, renderable_litJs hl, renderableList_nil, show okOp "===" = true by decide]
+  -- no `signature`
+  · intro ty path name args hsig _ tests binds h
+    rw [patParts, hsig] at h
+    exact (errNotOk h).elim
+  -- no such constructor
+  · intro ty path name args heads hsig hfind _ tests binds h
+    rw [patParts, hsig] at h
+    simp only [hfind] at h
+    exact (errNotOk h).elim
+  -- the pattern names the wrong number of fields
+  · intro ty path name args heads hsig fields hfind hlen _ tests binds h
+    rw [patParts, hsig] at h
+    simp only [hfind, hlen, if_true] at h
+    exact (errNotOk h).elim
+  -- a constructor pattern
+  · intro ty path name args heads hsig fields hfind hlen ih hpath tests binds h
+    rw [patParts, hsig] at h
+    simp only [hfind, hlen, Bool.false_eq_true, if_false] at h
+    have hfields : ∀ f ∈ fields, okName f.1 = true := by
+      cases hff : List.find? (fun x => x.1 == Head.ctor name) heads with
+      | none => rw [hff] at hfind; exact absurd hfind (by simp)
+      | some hd =>
+        rw [hff] at hfind
+        simp only [Option.map_some, Option.some.injEq] at hfind
+        subst hfind
+        exact okName_of_signature hfn ty heads hsig hd (List.mem_of_find?_eq_some hff)
+    have hpaths : (fields.map fun f => Js.Expr.member path f.1).all RenderableExpr = true := by
+      refine List.all_eq_true.2 fun x hx => ?_
+      obtain ⟨f, hf, rfl⟩ := List.mem_map.1 hx
+      rw [RenderableExpr]
+      simp [hpath, hfields f hf]
+    cases hrec : patPartsList p.types (fields.map (·.2))
+        (fields.map fun f => Js.Expr.member path f.1) args with
+    | error e => rw [hrec] at h; exact (errNotOk h).elim
+    | ok pr =>
+      obtain ⟨rtests, rbinds⟩ := pr
+      rw [hrec] at h
+      simp only [bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨htests, hbinds⟩ := ih hpaths rtests rbinds hrec
+      refine ⟨?_, hbinds⟩
+      have hmem : RenderableExpr (Js.Expr.member path "tag") = true := by
+        rw [RenderableExpr]; simp [hpath, show okName "tag" = true by decide]
+      have hstr : RenderableExpr (Js.Expr.str name) = true := by rw [RenderableExpr]
+      rw [RenderableList, RenderableExpr]
+      simp [hmem, hstr, htests, show okOp "===" = true by decide]
+  -- `patPartsList` over no patterns
+  · intro tys paths _ tests binds h
+    rw [patPartsList] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨renderableList_nil, rfl⟩
+  -- `patPartsList` over one more
+  · intro pat ps ty tys path paths ih ihs hpaths tests binds h
+    rw [patPartsList] at h
+    simp only [List.all_cons, Bool.and_eq_true] at hpaths
+    cases hhead : patParts p.types ty path pat with
+    | error e => rw [hhead] at h; exact (errNotOk h).elim
+    | ok hpr =>
+      obtain ⟨htests, hbinds⟩ := hpr
+      rw [hhead] at h
+      cases htail : patPartsList p.types tys paths ps with
+      | error e => rw [htail] at h; exact (errNotOk h).elim
+      | ok tpr =>
+        obtain ⟨ttests, tbinds⟩ := tpr
+        rw [htail] at h
+        simp only [Except.ok.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        obtain ⟨h1, h2⟩ := ih hpaths.1 htests hbinds hhead
+        obtain ⟨h3, h4⟩ := ihs hpaths.2 ttests tbinds htail
+        refine ⟨renderableList_append _ _ h1 h3, ?_⟩
+        simp only [BindsOk, List.all_append, Bool.and_eq_true]
+        exact ⟨h2, h4⟩
+  -- the lists ran out of step
+  · intro tys paths pat ps hne _ tests binds h
+    cases tys with
+    | nil => rw [patPartsList.eq_def] at h; exact (errNotOk h).elim
+    | cons ty tys' =>
+      cases paths with
+      | nil => rw [patPartsList.eq_def] at h; exact (errNotOk h).elim
+      | cons path paths' => exact (hne ty tys' path paths' rfl rfl).elim
