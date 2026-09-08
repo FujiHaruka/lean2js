@@ -323,6 +323,10 @@
       "statement": "for any arguments, the generated cartTotal returns what eval returns, fold included"
     },
     {
+      "name": "memberPrice_calls_agree",
+      "statement": "for any arguments, the generated memberPrice returns what eval returns, the call it makes and the function it passes included"
+    },
+    {
       "name": "cartTotal_traps",
       "statement": "for any arguments eval accepts, if the fold throws — out of fuel and no matching arm aside — the generated cartTotal throws the same code"
     }

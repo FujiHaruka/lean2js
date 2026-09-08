@@ -495,6 +495,17 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
       Js.callFunctionAt m g' "rebindTwice" (args.map encodeValue) = .ok (encodeValue v) :=
   Decl.decl_correct program m "rebindTwice" rebindTwice args v hm find_rebindTwice he
 
+private theorem find_memberPrice : program.find? "memberPrice" = some memberPrice := rfl
+
+/-- And for a body that calls another declaration, handing it a third by name. The call is where the
+proof leaves the expression it is looking at: `priced` applies the function it was given, so the claim
+about `memberPrice` rests on the same claim about `tenPercentOff`. -/
+theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (v : Value) (he : evalCall program "memberPrice" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "memberPrice" (args.map encodeValue) = .ok (encodeValue v) :=
+  Decl.decl_correct program m "memberPrice" memberPrice args v hm find_memberPrice he
+
 /-! ### Throwing what the reference semantics throws
 
 `Decl.decl_traps` is the other half of `decl_correct`: for arguments the entry accepts, a body that
@@ -643,6 +654,10 @@ def manifest : Manifest := {
       statement :=
         "for any arguments, the generated cartTotal returns what eval returns, fold included"
       proof := cartTotal_calls_agree },
+    { name := "memberPrice_calls_agree"
+      statement :=
+        "for any arguments, the generated memberPrice returns what eval returns, the call it makes and the function it passes included"
+      proof := memberPrice_calls_agree },
     { name := "cartTotal_traps"
       statement :=
         "for any arguments eval accepts, if the fold throws — out of fuel and no matching arm aside — the generated cartTotal throws the same code"
