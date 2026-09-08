@@ -1,5 +1,6 @@
 import LeanTs.Ident
 import LeanTs.Text
+import LeanTs.Js
 
 /-!
 # Parse
@@ -254,6 +255,13 @@ theorem parseStr_append (s : String) (tail : List Char) :
   show parseStr ('"' :: ((escapeChars s.toList).toList ++ ('"' :: tail))) = _
   simp [parseStr, unescape_escapeChars, String.ofList_toList]
 
+/-- The shape a string literal takes inside a larger rendering, where the quotes are part of a
+neighbouring chunk of literal text rather than of the escaped body. -/
+theorem parseStr_cons (s : String) (tail : List Char) :
+    parseStr ('"' :: ((escapeString s).toList ++ ('"' :: tail))) = some (s, tail) := by
+  rw [escapeString]
+  simp [parseStr, unescape_escapeChars, String.ofList_toList]
+
 /-! ## Identifiers -/
 
 def parseIdentChars : List Char → List Char × List Char
@@ -291,5 +299,283 @@ theorem parseIdent_append (name : String) (hne : name.toList ≠ [])
   rw [parseIdent, parseIdentChars_append _ hall rest hrest]
   simp only [String.ofList_toList]
   rw [if_neg (by simpa using hne)]
+
+/-! ## Literal chunks -/
+
+def expect : List Char → List Char → Option (List Char)
+  | [], cs => some cs
+  | l :: ls, c :: cs => if l = c then expect ls cs else none
+  | _ :: _, [] => none
+
+theorem expect_append (lit rest : List Char) : expect lit (lit ++ rest) = some rest := by
+  induction lit with
+  | nil => rfl
+  | cons l ls ih => simpa [expect] using ih
+
+/-! ## Type descriptors
+
+The budget is the descriptor's own size, which the caller reads off the text it is about to hand over.
+It bounds the descent, not the guarantee: the roundtrip below holds for every budget that is large
+enough, and the top-level reader takes the length of the text it was given. -/
+
+mutual
+
+def descSize : Js.TyDesc → Nat
+  | .bool | .int53 | .uint32 | .string | .bigint => 1
+  | .option t | .array t | .dict t => descSize t + 1
+  | .result ok err => descSize ok + descSize err + 1
+  | .ctors alts => altsSize alts + 1
+termination_by d => sizeOf d
+
+def altsSize : List (String × List (String × Js.TyDesc)) → Nat
+  | [] => 1
+  | (_, fs) :: rest => fieldsSize fs + altsSize rest + 1
+termination_by alts => sizeOf alts
+
+def fieldsSize : List (String × Js.TyDesc) → Nat
+  | [] => 1
+  | (_, d) :: rest => descSize d + fieldsSize rest + 1
+termination_by fs => sizeOf fs
+
+end
+
+mutual
+
+def parseDesc : Nat → List Char → Option (Js.TyDesc × List Char)
+  | 0, _ => none
+  | f + 1, cs => do
+    let cs ← expect ['['] cs
+    let (tag, cs) ← parseStr cs
+    match tag with
+    | "bool" => (expect [']'] cs).map fun r => (.bool, r)
+    | "int53" => (expect [']'] cs).map fun r => (.int53, r)
+    | "uint32" => (expect [']'] cs).map fun r => (.uint32, r)
+    | "string" => (expect [']'] cs).map fun r => (.string, r)
+    | "bigint" => (expect [']'] cs).map fun r => (.bigint, r)
+    | "option" => do
+      let cs ← expect [',', ' '] cs
+      let (t, cs) ← parseDesc f cs
+      let cs ← expect [']'] cs
+      pure (.option t, cs)
+    | "array" => do
+      let cs ← expect [',', ' '] cs
+      let (t, cs) ← parseDesc f cs
+      let cs ← expect [']'] cs
+      pure (.array t, cs)
+    | "dict" => do
+      let cs ← expect [',', ' '] cs
+      let (t, cs) ← parseDesc f cs
+      let cs ← expect [']'] cs
+      pure (.dict t, cs)
+    | "result" => do
+      let cs ← expect [',', ' '] cs
+      let (ok, cs) ← parseDesc f cs
+      let cs ← expect [',', ' '] cs
+      let (err, cs) ← parseDesc f cs
+      let cs ← expect [']'] cs
+      pure (.result ok err, cs)
+    | "ctors" => do
+      let cs ← expect [',', ' ', '['] cs
+      let (alts, cs) ← parseAlts f cs
+      let cs ← expect [']', ']'] cs
+      pure (.ctors alts, cs)
+    | _ => none
+
+def parseAlts : Nat → List Char →
+    Option (List (String × List (String × Js.TyDesc)) × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match cs with
+    | ']' :: _ => some ([], cs)
+    | _ => do
+      let cs ← expect ['['] cs
+      let (name, cs) ← parseStr cs
+      let cs ← expect [',', ' ', '['] cs
+      let (fields, cs) ← parseFields f cs
+      let cs ← expect [']', ']'] cs
+      match expect [',', ' '] cs with
+      | none => pure ([(name, fields)], cs)
+      | some cs => do
+        let (rest, cs) ← parseAlts f cs
+        pure ((name, fields) :: rest, cs)
+
+def parseFields : Nat → List Char → Option (List (String × Js.TyDesc) × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match cs with
+    | ']' :: _ => some ([], cs)
+    | _ => do
+      let cs ← expect ['['] cs
+      let (name, cs) ← parseStr cs
+      let cs ← expect [',', ' '] cs
+      let (d, cs) ← parseDesc f cs
+      let cs ← expect [']'] cs
+      match expect [',', ' '] cs with
+      | none => pure ([(name, d)], cs)
+      | some cs => do
+        let (rest, cs) ← parseFields f cs
+        pure ((name, d) :: rest, cs)
+
+end
+
+theorem descSize_pos (d : Js.TyDesc) : 0 < descSize d := by
+  cases d <;> simp [descSize]
+
+theorem altsSize_pos (alts : List (String × List (String × Js.TyDesc))) : 0 < altsSize alts := by
+  match alts with
+  | [] => simp [altsSize]
+  | (_, _) :: _ => simp [altsSize]
+
+theorem fieldsSize_pos (fs : List (String × Js.TyDesc)) : 0 < fieldsSize fs := by
+  match fs with
+  | [] => simp [fieldsSize]
+  | (_, _) :: _ => simp [fieldsSize]
+
+mutual
+
+theorem parseDesc_append (d : Js.TyDesc) (f : Nat) (hf : descSize d ≤ f) (rest : List Char) :
+    parseDesc f ((Js.TyDesc.render d).toList ++ rest) = some (d, rest) := by
+  match f with
+  | 0 => exact absurd (Nat.lt_of_lt_of_le (descSize_pos d) hf) (by omega)
+  | f + 1 =>
+    match d with
+    | .bool =>
+      rw [show Js.TyDesc.render .bool = "[\"bool\"]" from by rw [Js.TyDesc.render]]
+      show parseDesc (f + 1) ('[' :: '"' :: 'b' :: 'o' :: 'o' :: 'l' :: '"' :: ']' :: rest) = _
+      simp [parseDesc, expect, parseStr, unescape]
+    | .int53 =>
+      rw [show Js.TyDesc.render .int53 = "[\"int53\"]" from by rw [Js.TyDesc.render]]
+      show parseDesc (f + 1) ('[' :: '"' :: 'i' :: 'n' :: 't' :: '5' :: '3' :: '"' :: ']' :: rest) = _
+      simp [parseDesc, expect, parseStr, unescape]
+    | .uint32 =>
+      rw [show Js.TyDesc.render .uint32 = "[\"uint32\"]" from by rw [Js.TyDesc.render]]
+      show parseDesc (f + 1)
+        ('[' :: '"' :: 'u' :: 'i' :: 'n' :: 't' :: '3' :: '2' :: '"' :: ']' :: rest) = _
+      simp [parseDesc, expect, parseStr, unescape]
+    | .string =>
+      rw [show Js.TyDesc.render .string = "[\"string\"]" from by rw [Js.TyDesc.render]]
+      show parseDesc (f + 1)
+        ('[' :: '"' :: 's' :: 't' :: 'r' :: 'i' :: 'n' :: 'g' :: '"' :: ']' :: rest) = _
+      simp [parseDesc, expect, parseStr, unescape]
+    | .bigint =>
+      rw [show Js.TyDesc.render .bigint = "[\"bigint\"]" from by rw [Js.TyDesc.render]]
+      show parseDesc (f + 1)
+        ('[' :: '"' :: 'b' :: 'i' :: 'g' :: 'i' :: 'n' :: 't' :: '"' :: ']' :: rest) = _
+      simp [parseDesc, expect, parseStr, unescape]
+    | .option t =>
+      have ih := parseDesc_append t f (by rw [descSize] at hf; omega)
+      rw [Js.TyDesc.render, String.toList_append, String.toList_append, List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'o' :: 'p' :: 't' :: 'i' :: 'o' :: 'n' :: '"' :: ',' ::
+        ' ' :: ((Js.TyDesc.render t).toList ++ (']' :: rest))) = _
+      simp [parseDesc, expect, parseStr, unescape, ih]
+    | .array t =>
+      have ih := parseDesc_append t f (by rw [descSize] at hf; omega)
+      rw [Js.TyDesc.render, String.toList_append, String.toList_append, List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'a' :: 'r' :: 'r' :: 'a' :: 'y' :: '"' :: ',' ::
+        ' ' :: ((Js.TyDesc.render t).toList ++ (']' :: rest))) = _
+      simp [parseDesc, expect, parseStr, unescape, ih]
+    | .dict t =>
+      have ih := parseDesc_append t f (by rw [descSize] at hf; omega)
+      rw [Js.TyDesc.render, String.toList_append, String.toList_append, List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'd' :: 'i' :: 'c' :: 't' :: '"' :: ',' ::
+        ' ' :: ((Js.TyDesc.render t).toList ++ (']' :: rest))) = _
+      simp [parseDesc, expect, parseStr, unescape, ih]
+    | .result ok err =>
+      rw [descSize] at hf
+      have hok := descSize_pos ok
+      have herr := descSize_pos err
+      have ihok := parseDesc_append ok f (by omega)
+      have iherr := parseDesc_append err f (by omega)
+      rw [Js.TyDesc.render, String.toList_append, String.toList_append, String.toList_append,
+        String.toList_append]
+      simp only [List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'r' :: 'e' :: 's' :: 'u' :: 'l' :: 't' :: '"' :: ',' ::
+        ' ' :: ((Js.TyDesc.render ok).toList ++ (',' :: ' ' ::
+          ((Js.TyDesc.render err).toList ++ (']' :: rest))))) = _
+      simp [parseDesc, expect, parseStr, unescape, ihok, iherr]
+    | .ctors alts =>
+      have ih := parseAlts_append alts f (by rw [descSize] at hf; omega) (']' :: ']' :: rest) ⟨_, rfl⟩
+      rw [Js.TyDesc.render, String.toList_append, String.toList_append]
+      simp only [List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'c' :: 't' :: 'o' :: 'r' :: 's' :: '"' :: ',' :: ' ' ::
+        '[' :: ((Js.TyDesc.renderAlts alts).toList ++ (']' :: ']' :: rest))) = _
+      simp [parseDesc, expect, parseStr, unescape, ih]
+termination_by f
+
+theorem parseAlts_append (alts : List (String × List (String × Js.TyDesc))) (f : Nat)
+    (hf : altsSize alts ≤ f) (rest : List Char) (hrest : ∃ r, rest = ']' :: r) :
+    parseAlts f ((Js.TyDesc.renderAlts alts).toList ++ rest) = some (alts, rest) := by
+  obtain ⟨r, rfl⟩ := hrest
+  match f with
+  | 0 => exact absurd (Nat.lt_of_lt_of_le (altsSize_pos alts) hf) (by omega)
+  | f + 1 =>
+    match alts with
+    | [] =>
+      rw [show Js.TyDesc.renderAlts [] = "" from by rw [Js.TyDesc.renderAlts]]
+      show parseAlts (f + 1) (']' :: r) = _
+      simp [parseAlts]
+    | [(c, fields)] =>
+      have hfz := altsSize_pos ([] : List (String × List (String × Js.TyDesc)))
+      rw [altsSize] at hf
+      have ih := parseFields_append fields f (by omega) (']' :: ']' :: ']' :: r) ⟨_, rfl⟩
+      rw [Js.TyDesc.renderAlts]
+      simp only [String.toList_append, List.append_assoc]
+      show parseAlts (f + 1) ('[' :: ('"' :: ((escapeString c).toList ++ ('"' :: ',' :: ' ' :: '[' ::
+        ((Js.TyDesc.renderFields fields).toList ++ (']' :: ']' :: ']' :: r)))))) = _
+      simp [parseAlts, expect, parseStr_cons, ih]
+
+    | (c, fields) :: b :: alts =>
+      rw [altsSize] at hf
+      have hb := altsSize_pos (b :: alts)
+      have ihf := parseFields_append fields f (by omega) (']' :: ']' :: ',' :: ' ' ::
+        ((Js.TyDesc.renderAlts (b :: alts)).toList ++ (']' :: r))) ⟨_, rfl⟩
+      have iha := parseAlts_append (b :: alts) f (by omega) (']' :: r) ⟨_, rfl⟩
+      rw [Js.TyDesc.renderAlts]
+      simp only [String.toList_append, List.append_assoc]
+      show parseAlts (f + 1) ('[' :: ('"' :: ((escapeString c).toList ++ ('"' :: ',' :: ' ' :: '[' ::
+        ((Js.TyDesc.renderFields fields).toList ++ (']' :: ']' :: ',' :: ' ' ::
+          ((Js.TyDesc.renderAlts (b :: alts)).toList ++ (']' :: r)))))))) = _
+      simp [parseAlts, expect, parseStr_cons, ihf, iha]
+      simp
+termination_by f
+
+theorem parseFields_append (fs : List (String × Js.TyDesc)) (f : Nat)
+    (hf : fieldsSize fs ≤ f) (rest : List Char) (hrest : ∃ r, rest = ']' :: r) :
+    parseFields f ((Js.TyDesc.renderFields fs).toList ++ rest) = some (fs, rest) := by
+  obtain ⟨r, rfl⟩ := hrest
+  match f with
+  | 0 => exact absurd (Nat.lt_of_lt_of_le (fieldsSize_pos fs) hf) (by omega)
+  | f + 1 =>
+    match fs with
+    | [] =>
+      rw [show Js.TyDesc.renderFields [] = "" from by rw [Js.TyDesc.renderFields]]
+      show parseFields (f + 1) (']' :: r) = _
+      simp [parseFields]
+    | [(n, d)] =>
+      have hfz := fieldsSize_pos ([] : List (String × Js.TyDesc))
+      rw [fieldsSize] at hf
+      have ih := parseDesc_append d f (by omega) (']' :: ']' :: r)
+      rw [Js.TyDesc.renderFields]
+      simp only [String.toList_append, List.append_assoc]
+      show parseFields (f + 1) ('[' :: ('"' :: ((escapeString n).toList ++ ('"' :: ',' :: ' ' ::
+        ((Js.TyDesc.render d).toList ++ (']' :: ']' :: r)))))) = _
+      simp [parseFields, expect, parseStr_cons, ih]
+
+    | (n, d) :: b :: fs =>
+      rw [fieldsSize] at hf
+      have hb := fieldsSize_pos (b :: fs)
+      have ihd := parseDesc_append d f (by omega) (']' :: ',' :: ' ' ::
+        ((Js.TyDesc.renderFields (b :: fs)).toList ++ (']' :: r)))
+      have ihf := parseFields_append (b :: fs) f (by omega) (']' :: r) ⟨_, rfl⟩
+      rw [Js.TyDesc.renderFields]
+      simp only [String.toList_append, List.append_assoc]
+      show parseFields (f + 1) ('[' :: ('"' :: ((escapeString n).toList ++ ('"' :: ',' :: ' ' ::
+        ((Js.TyDesc.render d).toList ++ (']' :: ',' :: ' ' ::
+          ((Js.TyDesc.renderFields (b :: fs)).toList ++ (']' :: r)))))))) = _
+      simp [parseFields, expect, parseStr_cons, ihd, ihf]
+      simp
+termination_by f
+
+end
 
 end LeanTs.Parse
