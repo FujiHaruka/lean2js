@@ -9,7 +9,7 @@
 ```
 decl_refuses :
   compileProgram p = .ok m → p.find? fn = some d → d.isPublic = true →
-  (∀ jv ∈ jargs, Js.keysDistinct jv = true) →
+  Js.dictKeysDistinctList jargs = true →
   ¬ EvalAccepts p d jargs →
   ∀ g, 2 ≤ g → Js.callFunctionAt m g fn jargs = .error "typeError"
 ```
@@ -41,7 +41,7 @@ JS 側に区別は無い。`Value.hasTy p (.uint32 5) .int53 = false` だが `Js
 `Map` は同じキーを二度持てないから、実物にこの隙間は無い。隙間があるのは `JsValue.dict` を連想リストで
 模型にしている側である。
 
-だから仮定として書く：`Js.keysDistinct jv = true`（値の中のすべての辞書でキーが相異なる）。
+だから仮定として書く：`Js.dictKeysDistinct jv = true`（値の中のすべての辞書でキーが相異なる）。
 これは模型の緩さを明示する仮定で、成果物側では `Map` であることが与えている。
 
 **3. 関数型の引数には検査が出ない。** `paramChecks` は `param.ty.isFn` のとき素の
@@ -62,7 +62,7 @@ JS 側に区別は無い。`Value.hasTy p (.uint32 5) .int53 = false` だが `Js
 次へ」。最後まで復号できたら `EvalAccepts` が立つので、対偶が主張になる。
 
 1. **逆像の補題** —— `checkTy_sound`。`tyDesc p b ty = .ok d` と `Js.checkTy jv d = true` と
-   `Js.keysDistinct jv = true` から `∃ v, encodeValue v = jv ∧ Value.hasTy p v ty = true`。
+   `Js.dictKeysDistinct jv = true` から `∃ v, encodeValue v = jv ∧ Value.hasTy p v ty = true`。
    `.uint32` の逆像は `UInt32.ofNat i.toNat`（`0 ≤ i < 2^32` が丸めを消す）、`.named` の逆像は
    `tyDescAlts_find` の逆 —— 記述子リストで見つかった構成子が、宣言側の `findAt?` でも見つかること
 2. **入口の二択** —— `evalStmts_paramChecks_sound`。`paramChecks` の列を `evalStmts` で歩き、
@@ -76,14 +76,14 @@ JS 側に区別は無い。`Value.hasTy p (.uint32 5) .int53 = false` だが `Js
 
 | ファイル | 足すもの |
 | --- | --- |
-| `LeanTs/JsSem.lean` | `Js.keysDistinct` / `keysDistinctFields` / `keysDistinctList` —— 値の中のすべての辞書でキーが相異なること。`Js.checkTy` の隣に置く |
+| `LeanTs/JsSem.lean` | `Js.dictKeysDistinct` / `dictKeysDistinctFields` / `dictKeysDistinctList` —— 値の中のすべての辞書でキーが相異なること。`Js.checkTy` の隣に置く |
 | `LeanTs/Decl.lean` | `Js.checkTy` の「真 → 形」の反転補題一式（`checkTy_bool_inv` …、`.option` / `.result` / `.ctors` は場合分けを畳んだ形）、`tyDescAlts_find_inv`、`checkTy_sound` の相互再帰 4 本、`EvalAccepts`、`evalStmts_paramChecks_sound`、`decl_refuses` と `Js.callFunction` での系 |
 | `LeanTs/Example.lean` | `add_refuses`（`decl_refuses` の具体化）と manifest の `Claim` |
 | `LeanTs/Axioms.lean` | `add_refuses` と `decl_refuses` の `#print axioms` |
 | `README.md` | 「保証の組み立て」の**境界の検査**の行 —— 今は実行時検査が受け持っている主張が、公開関数 67 本について証明に変わる |
 | `docs/mvp-plan.md` | Phase 2 の到達点に陰性方向を書く |
 
-`Js.keysDistinct` も `checkTy_sound` も、`mapM` と `partial` を避けた明示の再帰で書く。理由は
+`Js.dictKeysDistinct` も `checkTy_sound` も、`mapM` と `partial` を避けた明示の再帰で書く。理由は
 `docs/decl-correctness-plan.md` の「展開できること」と同じで、証明が展開できないものは橋に使えない。
 
 ## 覆っていないもの
@@ -91,7 +91,7 @@ JS 側に区別は無い。`Value.hasTy p (.uint32 5) .int53 = false` だが `Js
 | 外れるもの | 理由 |
 | --- | --- |
 | 関数型の引数を取る宣言 | 検査が出ない。JS に関数の引数型を実行時に見る手段が無い。`d.isPublic` がその線 |
-| 重複キーを持つ辞書 | 模型の `JsValue.dict` が連想リストであることの緩さ。本物は `Map` で、`Js.keysDistinct` を仮定として明示する |
+| 重複キーを持つ辞書 | 模型の `JsValue.dict` が連想リストであることの緩さ。本物は `Map` で、`Js.dictKeysDistinct` を仮定として明示する |
 | 本体が落ちる場合（`divByZero`・`int53Overflow` ほか） | ここで渡すのは**入口**の橋だけ。本体の陰性方向は `fragment_correct` の陰性版が要る |
 | 未宣言の関数名（`Err.unknownFn`） | 別の橋（`compileDecls` が名前の不在を保つこと）。ここには含めない |
 
