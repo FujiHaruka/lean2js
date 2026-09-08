@@ -154,19 +154,22 @@ def signature (types : List TypeDef) : Ty → Option (List (Head × List (String
   | .bool => some [(.lit (.bool true), []), (.lit (.bool false), [])]
   | _ => none
 
-private def fieldTysOf (sig : Option (List (Head × List (String × Ty)))) (h : Head) : List Ty :=
+def fieldTysOf (sig : Option (List (Head × List (String × Ty)))) (h : Head) : List Ty :=
   match sig with
   | some heads => (((heads.find? (·.1 == h)).map (·.2)).getD []).map (·.2)
   | none => []
 
-private def headOf : Pat → Option Head
+def headOf : Pat → Option Head
   | .lit l => some (.lit l)
   | .ctor name _ => some (.ctor name)
   | _ => none
 
 /-- The rows left once the first column is known to have head `h`, with that head's own fields spliced in
-front of the rest. -/
-private def specialize (h : Head) (arity : Nat) : List (List Pat) → List (List Pat)
+front of the rest. A constructor pattern of the wrong width is dropped rather than spliced: the compiler
+type checks the patterns before asking about usefulness, so this drops nothing a program can write, and
+dropping a row only ever makes the answer "useful" — the answer that reports a `match` as not
+exhaustive. -/
+def specialize (h : Head) (arity : Nat) : List (List Pat) → List (List Pat)
   | [] => []
   | row :: rows =>
     let rest := specialize h arity rows
@@ -176,10 +179,11 @@ private def specialize (h : Head) (arity : Nat) : List (List Pat) → List (List
       match pat with
       | .wild | .bind _ => (List.replicate arity .wild ++ ps) :: rest
       | .lit l => if Head.lit l == h then ps :: rest else rest
-      | .ctor name args => if Head.ctor name == h then (args ++ ps) :: rest else rest
+      | .ctor name args =>
+        if Head.ctor name == h && args.length == arity then (args ++ ps) :: rest else rest
 
 /-- The rows left once the first column is known to have none of the heads already listed. -/
-private def defaultRows : List (List Pat) → List (List Pat)
+def defaultRows : List (List Pat) → List (List Pat)
   | [] => []
   | row :: rows =>
     let rest := defaultRows rows

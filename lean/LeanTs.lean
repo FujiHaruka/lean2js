@@ -12,6 +12,7 @@ import LeanTs.Syntax
 import LeanTs.Ident
 import LeanTs.JsSem
 import LeanTs.Agree
+import LeanTs.Exhaustive
 import LeanTs.Correct
 import LeanTs.Sound
 import LeanTs.Render

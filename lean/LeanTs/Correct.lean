@@ -1,5 +1,5 @@
 import LeanTs.Agree
-import LeanTs.Sound
+import LeanTs.Exhaustive
 
 /-!
 # Correct
