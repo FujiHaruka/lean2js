@@ -528,6 +528,15 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
     ⟨hty.1, hty.2, trivial⟩ hcall (by simp)
   simpa [encodeValue, Err.code] using h
 
+/-- The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
+and builds a `Result` around a constructor. -/
+theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (v : Value) (he : evalCall program "addMoney" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .ok (encodeValue v) :=
+  Decl.decl_correct program m "addMoney" addMoney args v hm find_addMoney
+    (Correct.InFragment.of_inFragmentB rfl) he
+
 /-! ### Refusing what the reference semantics refuses
 
 `Decl.decl_refuses` needs no `InFragment`: the entry check does not look at the body, so this direction
@@ -552,6 +561,18 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
   | v :: rest =>
     obtain ⟨i, rfl⟩ := hasTy_int53_inv htyped.1
     simp [encodeValue] at hargs
+
+/-- The same for `addMoney`: the only way its body throws is the `Int53` overflow of the sum, and the
+generated function throws that code. -/
+theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (args : List Value) (err : Err)
+    (hlen : addMoney.params.length = args.length)
+    (htyped : Decl.ParamsTyped program addMoney.params args)
+    (he : evalCall program "addMoney" args = .error err) (hne : err ≠ .outOfFuel) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=
+  Decl.decl_traps program m "addMoney" addMoney args err hm find_addMoney
+    (Correct.InFragment.of_inFragmentB rfl) hlen htyped he hne
 
 def manifest : Manifest := {
   package := "@leants/verified-example"
@@ -583,7 +604,15 @@ def manifest : Manifest := {
     { name := "add_traps"
       statement :=
         "for any arguments eval accepts, if eval throws then the generated add throws the same code"
-      proof := add_traps }
+      proof := add_traps },
+    { name := "addMoney_calls_agree"
+      statement :=
+        "for any arguments, the generated addMoney returns what eval returns, entry check included"
+      proof := addMoney_calls_agree },
+    { name := "addMoney_traps"
+      statement :=
+        "for any arguments eval accepts, if eval throws then the generated addMoney throws the same code"
+      proof := addMoney_traps }
   ]
 }
 

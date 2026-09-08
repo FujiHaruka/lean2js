@@ -305,6 +305,14 @@
     {
       "name": "add_traps",
       "statement": "for any arguments eval accepts, if eval throws then the generated add throws the same code"
+    },
+    {
+      "name": "addMoney_calls_agree",
+      "statement": "for any arguments, the generated addMoney returns what eval returns, entry check included"
+    },
+    {
+      "name": "addMoney_traps",
+      "statement": "for any arguments eval accepts, if eval throws then the generated addMoney throws the same code"
     }
   ]
 }

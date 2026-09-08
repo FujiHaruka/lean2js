@@ -58,6 +58,14 @@ with `sorry`, however, still goes through as a term. Pinning the axiom set makes
 #guard_msgs in
 #print axioms LeanTs.Example.add_overflow_throws
 
+/-- info: 'LeanTs.Example.addMoney_calls_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.addMoney_calls_agree
+
+/-- info: 'LeanTs.Example.addMoney_traps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.addMoney_traps
+
 /-- info: 'LeanTs.typeSound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.typeSound
