@@ -716,17 +716,49 @@ theorem cond_false {m : Js.Module} {env : Js.JsEnv} {jc jt jel : Js.Expr} {v : J
     rw [hg1 g (by omega)]
     exact hg2 g (by omega)
 
-/-- If the reference semantics returns a value, the generated code returns the same value. -/
-theorem fragment_correct (p : Program) (m : Js.Module)
+/-- The generated environment binds everything the reference one does, to the encoding of the same
+value. It may bind more: a public function's entry check leaves the raw parameters in scope, and the
+compiled body never names them. -/
+def JsEnvAgrees (env : Env) (jenv : Js.JsEnv) : Prop :=
+  ∀ name v, Env.lookup? env name = some v →
+    ((jenv.find? (·.1 == name)).map (·.2)) = some (encodeValue v)
+
+theorem JsEnvAgrees.cons {env : Env} {jenv : Js.JsEnv} {name : String} {v : Value}
+    (h : JsEnvAgrees env jenv) :
+    JsEnvAgrees ((name, v) :: env) ((name, encodeValue v) :: jenv) := by
+  intro key w hw
+  simp only [Env.lookup?, List.find?_cons] at hw
+  cases hkey : name == key with
+  | true =>
+    rw [hkey] at hw
+    simp only [Option.map_some] at hw
+    obtain rfl : v = w := Option.some.inj hw
+    simp [hkey]
+  | false =>
+    rw [hkey] at hw
+    simp only [List.find?_cons, hkey]
+    exact h key w hw
+
+theorem jsEnvAgrees_encodeEnv (env : Env) : JsEnvAgrees env (encodeEnv env) :=
+  fun _ _ h => lookup_encodeEnv h
+
+/-- If the reference semantics returns a value, the generated code returns the same value.
+
+Stated over any generated environment that agrees with the reference one, rather than over
+`encodeEnv env` alone: a public function's body runs under the raw parameters as well, and those are not
+in the reference environment. -/
+theorem fragment_correct_in (p : Program) (m : Js.Module)
     {e : Expr} (hfrag : InFragment e) :
-    ∀ {ctx : Compile.Ctx} {env : Env} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},
+    ∀ {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {je : Js.Expr} {ty : Ty} {f : Nat}
+      {v : Value},
       EnvTyped p env ctx →
+      JsEnvAgrees env jenv →
       Compile.compileExpr p ctx e = .ok (je, ty) →
       evalExpr p f env e = .ok v →
-      Eventually m (encodeEnv env) je (encodeValue v) := by
+      Eventually m jenv je (encodeValue v) := by
   induction hfrag with
   | lit l =>
-    intro ctx env je ty f v henv hc he
+    intro ctx env jenv je ty f v henv hjenv hc he
     cases f with
     | zero => simp [evalExpr] at he
     | succ f =>
@@ -767,7 +799,7 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         simp only [litValue, encodeValue]
         exact eventually_big m _ i
   | var name =>
-    intro ctx env je ty f v henv hc he
+    intro ctx env jenv je ty f v henv hjenv hc he
     cases f with
     | zero => simp [evalExpr] at he
     | succ f =>
@@ -783,11 +815,11 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           subst he
           refine eventually_lit m _ _ _ fun g => ?_
           simp only [Js.eval.eq_def]
-          rw [lookup_encodeEnv hw]
+          rw [hjenv _ _ hw]
         · simp at he
       · simp at hc
   | cond hc' ht' he' ihc iht ihe =>
-    intro ctx env je ty f v henv hc he
+    intro ctx env jenv je ty f v henv hjenv hc he
     cases f with
     | zero => simp [evalExpr] at he
     | succ f =>
@@ -817,14 +849,14 @@ theorem fragment_correct (p : Program) (m : Js.Module)
       rename_i hec
       split at he
       · first
-        | exact cond_true (by simpa [encodeValue] using ihc henv hcc hec) (iht henv hct he)
-        | exact cond_false (by simpa [encodeValue] using ihc henv hcc hec) (ihe henv hce he)
+        | exact cond_true (by simpa [encodeValue] using ihc henv hjenv hcc hec) (iht henv hjenv hct he)
+        | exact cond_false (by simpa [encodeValue] using ihc henv hjenv hcc hec) (ihe henv hjenv hce he)
       · first
-        | exact cond_true (by simpa [encodeValue] using ihc henv hcc hec) (iht henv hct he)
-        | exact cond_false (by simpa [encodeValue] using ihc henv hcc hec) (ihe henv hce he)
+        | exact cond_true (by simpa [encodeValue] using ihc henv hjenv hcc hec) (iht henv hjenv hct he)
+        | exact cond_false (by simpa [encodeValue] using ihc henv hjenv hcc hec) (ihe henv hjenv hce he)
       · simp at he
   | letE hval hbody ihv ihb =>
-    intro ctx env je ty f v henv hc he
+    intro ctx env jenv je ty f v henv hjenv hc he
     cases f with
     | zero => simp [evalExpr] at he
     | succ f =>
@@ -854,11 +886,11 @@ theorem fragment_correct (p : Program) (m : Js.Module)
       rename_i vv hvv
       have hvt : Value.hasTy p vv tv = true :=
         typeSound p f ctx env _ jv tv vv hval.typeChecked henv hcv hvv
-      exact eventually_arrowCall (ihv henv hcv hvv)
-        (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt)) hcb he)
+      exact eventually_arrowCall (ihv henv hjenv hcv hvv)
+        (ihb (henv.cons (Ty.eq_of_not_bne hsame ▸ hvt)) hjenv.cons hcb he)
   | un hx ihx =>
     rename_i op xE
-    intro ctx env je ty f v henv hc he
+    intro ctx env jenv je ty f v henv hjenv hc he
     cases f with
     | zero => simp [evalExpr] at he
     | succ f =>
@@ -886,7 +918,7 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           simp only [applyUn, Except.ok.injEq] at he
           subst he
           simpa [encodeValue] using
-            eventually_not (by simpa [encodeValue] using ihx henv hcx hw)
+            eventually_not (by simpa [encodeValue] using ihx henv hjenv hcx hw)
         · simp at hc
       | neg =>
         simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -905,7 +937,7 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           subst hi
           simp only [applyUn] at he
           refine eventually_call1 (eventually_neg_num
-            (by simpa [encodeValue] using ihx henv hcx hw)) ?_
+            (by simpa [encodeValue] using ihx henv hjenv hcx hw)) ?_
           simp [helper_i53, i53_of_mkInt53 he]
         · rename_i htx
           have htx' : tx = Ty.bigint := htx
@@ -917,7 +949,7 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           simp only [applyUn, Except.ok.injEq] at he
           subst he
           simpa [encodeValue] using
-            eventually_neg_big (by simpa [encodeValue] using ihx henv hcx hw)
+            eventually_neg_big (by simpa [encodeValue] using ihx henv hjenv hcx hw)
         · simp at hc
       | abs =>
         simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -934,9 +966,9 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           subst hje
           obtain ⟨i, hi⟩ := hasTy_int53_inv (htx' ▸ hwt)
           subst hi
-          have h1 : Eventually m (encodeEnv env) jx (.num i) := by
-            simpa [encodeValue] using ihx henv hcx hw
-          have h2 : Eventually m (encodeEnv env) (.call "__abs" [jx]) (.num i.natAbs) := by
+          have h1 : Eventually m jenv jx (.num i) := by
+            simpa [encodeValue] using ihx henv hjenv hcx hw
+          have h2 : Eventually m jenv (.call "__abs" [jx]) (.num i.natAbs) := by
             refine eventually_call1 h1 ?_
             simp [helper_abs_num, absInt i]
           simp only [applyUn] at he
@@ -951,13 +983,13 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           subst hi
           simp only [applyUn, Except.ok.injEq] at he
           subst he
-          refine eventually_call1 (by simpa [encodeValue] using ihx henv hcx hw :
-            Eventually m (encodeEnv env) jx (.bigint i)) ?_
+          refine eventually_call1 (by simpa [encodeValue] using ihx henv hjenv hcx hw :
+            Eventually m jenv jx (.bigint i)) ?_
           simp [helper_abs_big, absInt i, encodeValue]
         · simp at hc
   | bin hl hr ihl ihr =>
     rename_i op lhsE rhsE
-    intro ctx env je ty f v henv hc he
+    intro ctx env jenv je ty f v henv hjenv hc he
     cases f with
     | zero => simp [evalExpr] at he
     | succ f =>
@@ -991,8 +1023,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           obtain ⟨ab, hab⟩ := hasTy_bool_inv
             (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
           subst hab
-          have hle : Eventually m (encodeEnv env) jl (.bool ab) := by
-            simpa [encodeValue] using ihl henv hcl hav
+          have hle : Eventually m jenv jl (.bool ab) := by
+            simpa [encodeValue] using ihl henv hjenv hcl hav
           cases ab with
           | false =>
             simp only [Except.ok.injEq] at he
@@ -1009,7 +1041,7 @@ theorem fragment_correct (p : Program) (m : Js.Module)
             simp only [asBool, Except.ok.injEq] at he
             subst he
             refine eventually_andR hle ?_
-            simpa [encodeValue] using ihr henv hcr hbv
+            simpa [encodeValue] using ihr henv hjenv hcr hbv
         · simp at hc
       | or =>
         simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -1040,8 +1072,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           obtain ⟨ab, hab⟩ := hasTy_bool_inv
             (htlb ▸ typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav)
           subst hab
-          have hle : Eventually m (encodeEnv env) jl (.bool ab) := by
-            simpa [encodeValue] using ihl henv hcl hav
+          have hle : Eventually m jenv jl (.bool ab) := by
+            simpa [encodeValue] using ihl henv hjenv hcl hav
           cases ab with
           | true =>
             simp only [Except.ok.injEq] at he
@@ -1058,7 +1090,7 @@ theorem fragment_correct (p : Program) (m : Js.Module)
             simp only [asBool, Except.ok.injEq] at he
             subst he
             refine eventually_orR hle ?_
-            simpa [encodeValue] using ihr henv hcr hbv
+            simpa [encodeValue] using ihr henv hjenv hcr hbv
         · simp at hc
       | concat =>
         simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -1098,8 +1130,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           subst he
           simp only [encodeValue]
           refine eventually_plus_str ?_ ?_
-          · simpa [encodeValue] using ihl henv hcl hav
-          · simpa [encodeValue] using ihr henv hcr hbv
+          · simpa [encodeValue] using ihl henv hjenv hcl hav
+          · simpa [encodeValue] using ihr henv hjenv hcr hbv
         · rename_i elem htl
           have htl' : tl = Ty.array elem := htl
           simp only [Except.ok.injEq, Prod.mk.injEq] at hc
@@ -1111,8 +1143,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
           simp only [applyBin, Except.ok.injEq] at he
           subst he
           simp only [encodeValue, encodeList_append]
-          exact eventually_call2 (by simpa [encodeValue] using ihl henv hcl hav)
-            (by simpa [encodeValue] using ihr henv hcr hbv) (helper_aconcat _ _)
+          exact eventually_call2 (by simpa [encodeValue] using ihl henv hjenv hcl hav)
+            (by simpa [encodeValue] using ihr henv hjenv hcr hbv) (helper_aconcat _ _)
         · simp at hc
       | min =>
         simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -1139,8 +1171,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         cases tl <;> simp only [Compile.numericHelper] at hc <;>
           first
             | (exfalso; simp at hc; done)
@@ -1214,8 +1246,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         cases tl <;> simp only [Compile.numericHelper] at hc <;>
           first
             | (exfalso; simp at hc; done)
@@ -1288,8 +1320,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         cases tl <;> simp only [Compile.numericHelper] at hc <;>
           first
             | (exfalso; simp at hc; done)
@@ -1354,8 +1386,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         cases tl <;> simp only [Compile.numericHelper] at hc <;>
           first
             | (exfalso; simp at hc; done)
@@ -1419,8 +1451,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         cases tl <;> simp only [Compile.numericHelper] at hc <;>
           first
             | (exfalso; simp at hc; done)
@@ -1483,8 +1515,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         cases tl <;> simp only [Compile.numericHelper] at hc <;>
           first
             | (exfalso; simp at hc; done)
@@ -1566,8 +1598,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         cases tl <;> simp only [Compile.numericHelper] at hc <;>
           first
             | (exfalso; simp at hc; done)
@@ -1649,8 +1681,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         simp only [Compile.orderSymbol] at hc
         split at hc
         · simp at hc
@@ -1735,8 +1767,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         simp only [Compile.orderSymbol] at hc
         split at hc
         · simp at hc
@@ -1821,8 +1853,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         simp only [Compile.orderSymbol] at hc
         split at hc
         · simp at hc
@@ -1907,8 +1939,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         simp only [Compile.orderSymbol] at hc
         split at hc
         · simp at hc
@@ -1992,8 +2024,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         simp only [applyBin, Except.ok.injEq] at he
         subst he
         split at hc
@@ -2037,8 +2069,8 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         rename_i bv hbv
         have hat := typeSound p f ctx env lhsE jl tl av hl.typeChecked henv hcl hav
         have hbt := typeSound p f ctx env rhsE jr tl bv hr.typeChecked henv hcr hbv
-        have hle := ihl henv hcl hav
-        have hre := ihr henv hcr hbv
+        have hle := ihl henv hjenv hcl hav
+        have hre := ihr henv hjenv hcr hbv
         simp only [applyBin, Except.ok.injEq] at he
         subst he
         split at hc
@@ -2053,10 +2085,20 @@ theorem fragment_correct (p : Program) (m : Js.Module)
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hc
           obtain ⟨hje, _⟩ := hc
           subst hje
-          have hcall : Eventually m (encodeEnv env) (.call "__eq" [jl, jr])
+          have hcall : Eventually m jenv (.call "__eq" [jl, jr])
               (.bool (av == bv)) := by
             refine eventually_call2 hle hre ?_
             rw [helper_eq, beq_encodeValue p tl av bv hat hbt]
             rfl
           simpa [encodeValue, bne] using eventually_not hcall
+/-- The shape the manifest quotes: the generated environment is exactly the encoded one. -/
+theorem fragment_correct (p : Program) (m : Js.Module)
+    {e : Expr} (hfrag : InFragment e) :
+    ∀ {ctx : Compile.Ctx} {env : Env} {je : Js.Expr} {ty : Ty} {f : Nat} {v : Value},
+      EnvTyped p env ctx →
+      Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .ok v →
+      Eventually m (encodeEnv env) je (encodeValue v) :=
+  fun henv hc he => fragment_correct_in p m hfrag henv (jsEnvAgrees_encodeEnv _) hc he
+
 end LeanTs.Correct
