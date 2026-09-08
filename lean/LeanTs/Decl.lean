@@ -721,4 +721,151 @@ theorem compileBody_correct (m : Js.Module) (p : Program) {e : Expr} (hfrag : In
     intro ctx env jenv acc stmts ty f v hc henv hjenv he
     exact compileBody_finish m p (.bin hl hr) (by rwa [compileBody.eq_def] at hc) henv hjenv he
 
+/-! ## Two programs, one declaration
+
+`compileProgram` compiles declaration *i* against `p.decls.take i`, so nothing can call itself or a later
+declaration, while `evalCall` runs on the whole program. The two agree on everything a fragment body
+touches, because that is only the type declarations, and taking a prefix of `decls` leaves `types`
+alone. -/
+
+mutual
+
+theorem wfTy_types_irrel {p q : Program} (h : q.types = p.types) :
+    ∀ (scope : List String) (ty : Ty), wfTy q scope ty = wfTy p scope ty
+  | _, .bool | _, .int53 | _, .uint32 | _, .string | _, .bigint => by rw [wfTy.eq_def, wfTy.eq_def]
+  | _, .var _ => by rw [wfTy.eq_def, wfTy.eq_def]
+  | _, .fn _ _ => by rw [wfTy.eq_def, wfTy.eq_def]
+  | scope, .option t => by rw [wfTy.eq_def, wfTy.eq_def]; exact wfTy_types_irrel h scope t
+  | scope, .array t => by rw [wfTy.eq_def, wfTy.eq_def]; exact wfTy_types_irrel h scope t
+  | scope, .dict t => by rw [wfTy.eq_def, wfTy.eq_def]; exact wfTy_types_irrel h scope t
+  | scope, .result a b => by
+    rw [wfTy.eq_def, wfTy.eq_def]
+    simp only [wfTy_types_irrel h scope a, wfTy_types_irrel h scope b]
+  | scope, .named n args => by
+    rw [wfTy.eq_def, wfTy.eq_def]
+    simp only [Program.findType?, h, wfTyArgs_types_irrel h scope args]
+termination_by _ ty => sizeOf ty
+
+theorem wfTyArgs_types_irrel {p q : Program} (h : q.types = p.types) :
+    ∀ (scope : List String) (args : List Ty), wfTyArgs q scope args = wfTyArgs p scope args
+  | _, [] => by rw [wfTyArgs.eq_def, wfTyArgs.eq_def]
+  | scope, t :: rest => by
+    rw [wfTyArgs.eq_def, wfTyArgs.eq_def]
+    simp only [wfTy_types_irrel h scope t, wfTyArgs_types_irrel h scope rest]
+termination_by _ args => sizeOf args
+
+end
+
+mutual
+
+theorem tyDesc_types_irrel {p q : Program} (h : q.types = p.types) :
+    ∀ (b : Nat) (ty : Ty), tyDesc q b ty = tyDesc p b ty
+  | _, .bool | _, .int53 | _, .uint32 | _, .string | _, .bigint => by
+    rw [tyDesc.eq_def, tyDesc.eq_def]
+  | _, .var _ => by rw [tyDesc.eq_def, tyDesc.eq_def]
+  | _, .fn _ _ => by rw [tyDesc.eq_def, tyDesc.eq_def]
+  | b, .option t => by rw [tyDesc.eq_def, tyDesc.eq_def]; simp only [tyDesc_types_irrel h b t]
+  | b, .array t => by rw [tyDesc.eq_def, tyDesc.eq_def]; simp only [tyDesc_types_irrel h b t]
+  | b, .dict t => by rw [tyDesc.eq_def, tyDesc.eq_def]; simp only [tyDesc_types_irrel h b t]
+  | b, .result a c => by
+    rw [tyDesc.eq_def, tyDesc.eq_def]
+    simp only [tyDesc_types_irrel h b a, tyDesc_types_irrel h b c]
+  | 0, .named _ _ => by rw [tyDesc.eq_def, tyDesc.eq_def]
+  | b + 1, .named n args => by
+    rw [tyDesc.eq_def, tyDesc.eq_def]
+    simp only [Program.findType?, h]
+    split
+    · rfl
+    · simp only [tyDescAlts_types_irrel h b _]
+termination_by b ty => (b, 0, sizeOf ty)
+
+theorem tyDescAlts_types_irrel {p q : Program} (h : q.types = p.types) :
+    ∀ (b : Nat) (cs : List CtorDef), tyDescAlts q b cs = tyDescAlts p b cs
+  | _, [] => by rw [tyDescAlts.eq_def, tyDescAlts.eq_def]
+  | b, c :: rest => by
+    rw [tyDescAlts.eq_def, tyDescAlts.eq_def]
+    simp only [tyDescFields_types_irrel h b c.fields, tyDescAlts_types_irrel h b rest]
+termination_by b cs => (b, 2, sizeOf cs)
+
+theorem tyDescFields_types_irrel {p q : Program} (h : q.types = p.types) :
+    ∀ (b : Nat) (fs : List Field), tyDescFields q b fs = tyDescFields p b fs
+  | _, [] => by rw [tyDescFields.eq_def, tyDescFields.eq_def]
+  | b, f :: rest => by
+    rw [tyDescFields.eq_def, tyDescFields.eq_def]
+    simp only [tyDesc_types_irrel h b f.ty, tyDescFields_types_irrel h b rest]
+termination_by b fs => (b, 1, sizeOf fs)
+
+end
+
+theorem tyDescBudget_types_irrel {p q : Program} (h : q.types = p.types) (ty : Ty) :
+    tyDescBudget q ty = tyDescBudget p ty := by
+  simp [tyDescBudget, h]
+
+theorem paramChecks_types_irrel {p q : Program} (h : q.types = p.types) :
+    ∀ (i : Nat) (params : List Param), paramChecks q i params = paramChecks p i params
+  | _, [] => by rw [paramChecks.eq_def, paramChecks.eq_def]
+  | i, param :: rest => by
+    rw [paramChecks.eq_def, paramChecks.eq_def]
+    simp only [tyDescBudget_types_irrel h param.ty, tyDesc_types_irrel h _ param.ty,
+      paramChecks_types_irrel h (i + 1) rest]
+
+theorem compileExpr_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
+    (hfrag : InFragment e) :
+    ∀ (ctx : Ctx), Compile.compileExpr q ctx e = Compile.compileExpr p ctx e := by
+  induction hfrag with
+  | lit l => intro ctx; cases l <;> rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+  | var n => intro ctx; rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+  | cond _ _ _ ihc iht ihe =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihc ctx, iht ctx, ihe ctx]
+  | @letE name ty _ _ _ _ ihv ihb =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [wfTy_types_irrel h [] ty, ihv ctx, ihb ((name, ty) :: ctx)]
+  | @un op _ _ ihx =>
+    intro ctx
+    cases op <;>
+      · rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+        simp only [ihx ctx]
+  | bin _ _ ihl ihr =>
+    intro ctx
+    rw [Compile.compileExpr.eq_def, Compile.compileExpr.eq_def]
+    simp only [ihl ctx, ihr ctx]
+
+theorem compileFinish_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
+    (hfrag : InFragment e) (ctx : Ctx) (acc : List Js.Stmt) :
+    compileFinish q ctx e acc = compileFinish p ctx e acc := by
+  rw [compileFinish, compileFinish, compileExpr_types_irrel h hfrag ctx]
+
+theorem compileBody_types_irrel {p q : Program} (h : q.types = p.types) {e : Expr}
+    (hfrag : InFragment e) :
+    ∀ (ctx : Ctx) (acc : List Js.Stmt), compileBody q ctx e acc = compileBody p ctx e acc := by
+  induction hfrag with
+  | @letE name ty val body hval hbody _ ihb =>
+    intro ctx acc
+    rw [compileBody.eq_def, compileBody.eq_def]
+    simp only [compileFinish_types_irrel h (.letE hval hbody) ctx acc,
+      compileExpr_types_irrel h hval ctx, ihb]
+  | lit l =>
+    intro ctx acc
+    rw [compileBody.eq_def, compileBody.eq_def]
+    exact compileFinish_types_irrel h (.lit l) ctx acc
+  | var n =>
+    intro ctx acc
+    rw [compileBody.eq_def, compileBody.eq_def]
+    exact compileFinish_types_irrel h (.var n) ctx acc
+  | cond hc ht he _ _ _ =>
+    intro ctx acc
+    rw [compileBody.eq_def, compileBody.eq_def]
+    exact compileFinish_types_irrel h (.cond hc ht he) ctx acc
+  | un hx _ =>
+    intro ctx acc
+    rw [compileBody.eq_def, compileBody.eq_def]
+    exact compileFinish_types_irrel h (.un hx) ctx acc
+  | bin hl hr _ _ =>
+    intro ctx acc
+    rw [compileBody.eq_def, compileBody.eq_def]
+    exact compileFinish_types_irrel h (.bin hl hr) ctx acc
+
 end LeanTs.Decl

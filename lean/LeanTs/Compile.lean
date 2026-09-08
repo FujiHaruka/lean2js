@@ -20,9 +20,11 @@ abbrev Ctx := List (String × Ty)
 /-- The scrutinee that `match` binds. It starts with `__`, so it never collides with a user's name. -/
 private def scrutName : String := "__s"
 
+mutual
+
 /-- Whether a type is one this program can talk about: every name is declared, applied to as many
 arguments as it takes, and every type variable is bound by the declaration the type is written in. -/
-private partial def wfTy (p : Program) (scope : List String) : Ty → Except String Unit
+def wfTy (p : Program) (scope : List String) : Ty → Except String Unit
   | .bool | .int53 | .uint32 | .string | .bigint => .ok ()
   | .var n => if scope.contains n then .ok () else .error s!"unbound type parameter: {n}"
   | .option t => wfTy p scope t
@@ -36,12 +38,20 @@ private partial def wfTy (p : Program) (scope : List String) : Ty → Except Str
     | some t =>
       if t.params.length != args.length then
         .error s!"{n} takes {t.params.length} type arguments but is given {args.length}"
-      else args.forM (wfTy p scope)
+      else wfTyArgs p scope args
+termination_by ty => sizeOf ty
+
+def wfTyArgs (p : Program) (scope : List String) : List Ty → Except String Unit
+  | [] => .ok ()
+  | t :: rest => do wfTy p scope t; wfTyArgs p scope rest
+termination_by ts => sizeOf ts
+
+end
 
 /-- A parameter is the one place a function type may sit. Its own parameters and result go through
 `wfTy`, which rejects a function type, so the types stay first order and the entry check never has to
 look inside one. -/
-private def wfParamTy (p : Program) : Ty → Except String Unit
+def wfParamTy (p : Program) : Ty → Except String Unit
   | .fn params ret => do params.forM (wfTy p []); wfTy p [] ret
   | ty => wfTy p [] ty
 
