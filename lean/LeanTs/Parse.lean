@@ -1,0 +1,295 @@
+import LeanTs.Ident
+import LeanTs.Text
+
+/-!
+# Parse
+
+A reader for the text the printers write, and the proof that it gives the printers' input back.
+
+The grammar it accepts is not JavaScript: it is the subset this compiler emits, which is fully
+parenthesised and has no optional whitespace. Reading JS is not the goal — reading back what was
+written is.
+
+Every reader takes a `List Char` and returns what it read together with the characters left over, so
+the roundtrip lemmas compose: each one is stated about a rendering followed by an arbitrary remainder.
+-/
+
+namespace LeanTs.Parse
+
+/-! ## Decimal numerals -/
+
+def digitVal (c : Char) : Nat := c.toNat - '0'.toNat
+
+def parseDigits (acc : Nat) : List Char → Nat × List Char
+  | [] => (acc, [])
+  | c :: rest => if c.isDigit then parseDigits (acc * 10 + digitVal c) rest else (acc, c :: rest)
+
+def parseNat : List Char → Option (Nat × List Char)
+  | [] => none
+  | c :: rest => if c.isDigit then some (parseDigits (digitVal c) rest) else none
+
+def parseInt (cs : List Char) : Option (Int × List Char) :=
+  if cs.head? = some '-' then (parseNat cs.tail).map fun (n, r) => (-(n : Int), r)
+  else (parseNat cs).map fun (n, r) => ((n : Int), r)
+
+/-- What a numeral can be followed by. A reader of digits is greedy, so the character after the numeral
+has to be one it will not take. -/
+def notDigitFirst (cs : List Char) : Prop :=
+  ∀ c rest, cs = c :: rest → c.isDigit = false
+
+theorem digitVal_digitChar {d : Nat} (h : d < 10) : digitVal (digitChar d) = d := by
+  match d with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 => rfl
+  | _ + 10 => omega
+
+theorem isDigit_digitChar {d : Nat} (h : d < 10) : (digitChar d).isDigit = true := by
+  match d with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 => rfl
+  | _ + 10 => omega
+
+theorem natDigits_all_digit (n : Nat) : (natDigits n).all Char.isDigit = true := by
+  induction n using natDigits.induct with
+  | case1 n h => simp [natDigits, h, isDigit_digitChar h]
+  | case2 n h ih =>
+    rw [natDigits]
+    simp [h, ih, isDigit_digitChar (Nat.mod_lt n (by omega))]
+
+theorem natDigits_ne_nil (n : Nat) : natDigits n ≠ [] := by
+  induction n using natDigits.induct with
+  | case1 n h => simp [natDigits, h]
+  | case2 n h ih => rw [natDigits]; simp [h]
+
+/-- Reading digits off a rendering of `n`, with anything that is not a digit behind it, gives `n` back
+and leaves the remainder untouched. -/
+theorem parseDigits_append (ds : List Char) (hds : ds.all Char.isDigit = true)
+    (rest : List Char) (hrest : notDigitFirst rest) (acc : Nat) :
+    parseDigits acc (ds ++ rest) =
+      (ds.foldl (fun a c => a * 10 + digitVal c) acc, rest) := by
+  induction ds generalizing acc with
+  | nil =>
+    match rest with
+    | [] => rfl
+    | c :: cs => simp [parseDigits, hrest c cs rfl]
+  | cons d ds ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at hds
+    simp [parseDigits, hds.1, ih hds.2]
+
+theorem foldl_natDigits (n : Nat) :
+    (natDigits n).foldl (fun a c => a * 10 + digitVal c) 0 = n := by
+  induction n using natDigits.induct with
+  | case1 n h => simp [natDigits, h, digitVal_digitChar h]
+  | case2 n h ih =>
+    rw [natDigits, if_neg h, List.foldl_append, ih]
+    simp [digitVal_digitChar (Nat.mod_lt n (by omega))]
+    omega
+
+theorem toList_renderNat (n : Nat) : (renderNat n).toList = natDigits n :=
+  String.toList_ofList
+
+theorem parseNat_append (n : Nat) (rest : List Char) (hrest : notDigitFirst rest) :
+    parseNat ((renderNat n).toList ++ rest) = some (n, rest) := by
+  rw [toList_renderNat]
+  match hn : natDigits n with
+  | [] => exact absurd hn (natDigits_ne_nil n)
+  | d :: ds =>
+    have hall : (d :: ds).all Char.isDigit = true := hn ▸ natDigits_all_digit n
+    simp only [List.all_cons, Bool.and_eq_true] at hall
+    have hfold : (d :: ds).foldl (fun a c => a * 10 + digitVal c) 0 = n := hn ▸ foldl_natDigits n
+    simp only [List.cons_append, parseNat, hall.1, if_pos]
+    rw [parseDigits_append ds hall.2 rest hrest]
+    simpa [List.foldl_cons] using hfold
+
+theorem head_natDigits_ne_neg {n : Nat} {d : Char} {ds : List Char} (hn : natDigits n = d :: ds) :
+    d ≠ '-' := by
+  have h := natDigits_all_digit n
+  rw [hn] at h
+  simp only [List.all_cons, Bool.and_eq_true] at h
+  intro hd
+  rw [hd] at h
+  exact absurd h.1 (by decide)
+
+theorem parseInt_ofNat (n : Nat) (rest : List Char) (hrest : notDigitFirst rest) :
+    parseInt ((renderNat n).toList ++ rest) = some ((n : Int), rest) := by
+  have hp := parseNat_append n rest hrest
+  rw [toList_renderNat] at hp ⊢
+  match hn : natDigits n with
+  | [] => exact absurd hn (natDigits_ne_nil n)
+  | d :: ds =>
+    rw [hn] at hp
+    rw [parseInt, if_neg (by simp [head_natDigits_ne_neg hn]), hp]
+    rfl
+
+theorem parseInt_negSucc (n : Nat) (rest : List Char) (hrest : notDigitFirst rest) :
+    parseInt (('-' :: (renderNat (n + 1)).toList) ++ rest) = some (Int.negSucc n, rest) := by
+  have hp := parseNat_append (n + 1) rest hrest
+  rw [parseInt, if_pos (by simp), List.cons_append, List.tail_cons, hp]
+  simp [Int.negSucc_eq]
+
+theorem parseInt_append (i : Int) (rest : List Char) (hrest : notDigitFirst rest) :
+    parseInt ((renderInt i).toList ++ rest) = some (i, rest) := by
+  match i with
+  | .ofNat n => exact parseInt_ofNat n rest hrest
+  | .negSucc n =>
+    show parseInt (("-" ++ renderNat (n + 1)).toList ++ rest) = _
+    rw [String.toList_append]
+    exact parseInt_negSucc n rest hrest
+
+/-! ## String literals -/
+
+def hexVal (c : Char) : Option Nat :=
+  if c.isDigit then some (c.toNat - '0'.toNat)
+  else if 'a'.toNat ≤ c.toNat && c.toNat ≤ 'f'.toNat then some (c.toNat - 'a'.toNat + 10)
+  else none
+
+/-- Reads the body of a string literal up to its closing quote, returning the characters it stood for
+and what follows the quote. -/
+def unescape : List Char → Option (List Char × List Char)
+  | [] => none
+  | '"' :: rest => some ([], rest)
+  | '\\' :: 'n' :: rest => (unescape rest).map fun p => ('\n' :: p.1, p.2)
+  | '\\' :: 'r' :: rest => (unescape rest).map fun p => ('\r' :: p.1, p.2)
+  | '\\' :: 't' :: rest => (unescape rest).map fun p => ('\t' :: p.1, p.2)
+  | '\\' :: '"' :: rest => (unescape rest).map fun p => ('"' :: p.1, p.2)
+  | '\\' :: '\\' :: rest => (unescape rest).map fun p => ('\\' :: p.1, p.2)
+  | '\\' :: 'u' :: a :: b :: c :: d :: rest =>
+    match hexVal a, hexVal b, hexVal c, hexVal d with
+    | some va, some vb, some vc, some vd =>
+      (unescape rest).map fun p =>
+        (Char.ofNat (((va * 16 + vb) * 16 + vc) * 16 + vd) :: p.1, p.2)
+    | _, _, _, _ => none
+  | '\\' :: _ => none
+  | c :: rest => (unescape rest).map fun p => (c :: p.1, p.2)
+
+def parseStr : List Char → Option (String × List Char)
+  | '"' :: rest => (unescape rest).map fun p => (String.ofList p.1, p.2)
+  | _ => none
+
+theorem hex4_toList (n : Nat) :
+    (hex4 n).toList =
+      [hexDigit (n / 4096 % 16), hexDigit (n / 256 % 16), hexDigit (n / 16 % 16), hexDigit (n % 16)] :=
+  String.toList_ofList
+
+theorem hexVal_hexDigit {d : Nat} (h : d < 16) : hexVal (hexDigit d) = some d := by
+  match d with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => rfl
+  | _ + 16 => omega
+
+theorem unescape_hex4 (n : Nat) (h : n < 65536) (tail : List Char) :
+    unescape ('\\' :: 'u' :: ((hex4 n).toList ++ tail))
+      = (unescape tail).map fun p => (Char.ofNat n :: p.1, p.2) := by
+  have harith : ((n / 4096 % 16 * 16 + n / 256 % 16) * 16 + n / 16 % 16) * 16 + n % 16 = n := by
+    omega
+  rw [hex4_toList]
+  simp only [List.cons_append, unescape, harith,
+    hexVal_hexDigit (Nat.mod_lt (n / 4096) (by omega)),
+    hexVal_hexDigit (Nat.mod_lt (n / 256) (by omega)),
+    hexVal_hexDigit (Nat.mod_lt (n / 16) (by omega)),
+    hexVal_hexDigit (Nat.mod_lt n (by omega)), List.nil_append]
+
+theorem unescape_plain {c : Char} (h1 : c ≠ '"') (h2 : c ≠ '\\') (tail : List Char) :
+    unescape (c :: tail) = (unescape tail).map fun p => (c :: p.1, p.2) := by
+  rw [unescape.eq_def]
+  split <;> simp_all
+
+theorem unescape_escapeChar (c : Char) (tail : List Char) :
+    unescape ((escapeChar c).toList ++ tail)
+      = (unescape tail).map fun p => (c :: p.1, p.2) := by
+  rw [escapeChar]
+  by_cases h1 : c = '"'
+  · subst h1
+    rw [if_pos rfl]
+    show unescape ('\\' :: '"' :: tail) = _
+    simp [unescape]
+  rw [if_neg h1]
+  by_cases h2 : c = '\\'
+  · subst h2
+    rw [if_pos rfl]
+    show unescape ('\\' :: '\\' :: tail) = _
+    simp [unescape]
+  rw [if_neg h2]
+  by_cases h3 : c = '\n'
+  · subst h3
+    rw [if_pos rfl]
+    show unescape ('\\' :: 'n' :: tail) = _
+    simp [unescape]
+  rw [if_neg h3]
+  by_cases h4 : c = '\r'
+  · subst h4
+    rw [if_pos rfl]
+    show unescape ('\\' :: 'r' :: tail) = _
+    simp [unescape]
+  rw [if_neg h4]
+  by_cases h5 : c = '\t'
+  · subst h5
+    rw [if_pos rfl]
+    show unescape ('\\' :: 't' :: tail) = _
+    simp [unescape]
+  rw [if_neg h5]
+  by_cases h6 : c.toNat < 0x20 || c.toNat == 0x2028 || c.toNat == 0x2029
+  · rw [if_pos h6]
+    have hn : c.toNat < 65536 := by
+      simp only [Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at h6
+      omega
+    rw [String.toList_append, List.append_assoc]
+    show unescape ('\\' :: 'u' :: ((hex4 c.toNat).toList ++ tail)) = _
+    rw [unescape_hex4 c.toNat hn tail, Char.ofNat_toNat]
+  rw [if_neg h6]
+  have : c.toString.toList = [c] := by simp
+  rw [this, List.cons_append, List.nil_append, unescape_plain h1 h2]
+
+theorem unescape_escapeChars (cs tail : List Char) :
+    unescape ((escapeChars cs).toList ++ '"' :: tail) = some (cs, tail) := by
+  induction cs with
+  | nil =>
+    show unescape ('"' :: tail) = _
+    simp [unescape]
+  | cons c cs ih =>
+    rw [escapeChars, String.toList_append, List.append_assoc, unescape_escapeChar, ih]
+    rfl
+
+theorem parseStr_append (s : String) (tail : List Char) :
+    parseStr (("\"" ++ escapeString s ++ "\"").toList ++ tail) = some (s, tail) := by
+  rw [String.toList_append, String.toList_append, escapeString]
+  simp only [List.append_assoc]
+  show parseStr ('"' :: ((escapeChars s.toList).toList ++ ('"' :: tail))) = _
+  simp [parseStr, unescape_escapeChars, String.ofList_toList]
+
+/-! ## Identifiers -/
+
+def parseIdentChars : List Char → List Char × List Char
+  | [] => ([], [])
+  | c :: rest =>
+    if isIdentPart c then
+      let (ds, r) := parseIdentChars rest
+      (c :: ds, r)
+    else ([], c :: rest)
+
+def parseIdent (cs : List Char) : Option (String × List Char) :=
+  let (ds, r) := parseIdentChars cs
+  if ds.isEmpty then none else some (String.ofList ds, r)
+
+/-- What a name can be followed by. A reader of names is greedy, so the character after the name has to
+be one it will not take. -/
+def notIdentFirst (cs : List Char) : Prop :=
+  ∀ c rest, cs = c :: rest → isIdentPart c = false
+
+theorem parseIdentChars_append (ds : List Char) (hds : ds.all isIdentPart = true)
+    (rest : List Char) (hrest : notIdentFirst rest) :
+    parseIdentChars (ds ++ rest) = (ds, rest) := by
+  induction ds with
+  | nil =>
+    match rest with
+    | [] => rfl
+    | c :: cs => simp [parseIdentChars, hrest c cs rfl]
+  | cons d ds ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at hds
+    simp [parseIdentChars, hds.1, ih hds.2]
+
+theorem parseIdent_append (name : String) (hne : name.toList ≠ [])
+    (hall : name.toList.all isIdentPart = true) (rest : List Char) (hrest : notIdentFirst rest) :
+    parseIdent (name.toList ++ rest) = some (name, rest) := by
+  rw [parseIdent, parseIdentChars_append _ hall rest hrest]
+  simp only [String.ofList_toList]
+  rw [if_neg (by simpa using hne)]
+
+end LeanTs.Parse

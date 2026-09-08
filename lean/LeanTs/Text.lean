@@ -24,7 +24,7 @@ def renderInt : Int → String
   | .ofNat n => renderNat n
   | .negSucc n => "-" ++ renderNat (n + 1)
 
-private def hexDigit (d : Nat) : Char :=
+def hexDigit (d : Nat) : Char :=
   if d < 10 then Char.ofNat ('0'.toNat + d) else Char.ofNat ('a'.toNat + d - 10)
 
 def hex4 (n : Nat) : String :=
@@ -35,16 +35,13 @@ def hex4 (n : Nat) : String :=
 U+2028 / U+2029 are not passed through because, legal as they are in JSON, placing them directly in JS
 source can have them read as line terminators. -/
 def escapeChar (c : Char) : String :=
-  match c with
-  | '"' => "\\\""
-  | '\\' => "\\\\"
-  | '\n' => "\\n"
-  | '\r' => "\\r"
-  | '\t' => "\\t"
-  | c =>
-    let n := c.toNat
-    if n < 0x20 || n == 0x2028 || n == 0x2029 then "\\u" ++ hex4 n
-    else c.toString
+  if c = '"' then "\\\""
+  else if c = '\\' then "\\\\"
+  else if c = '\n' then "\\n"
+  else if c = '\r' then "\\r"
+  else if c = '\t' then "\\t"
+  else if c.toNat < 0x20 || c.toNat == 0x2028 || c.toNat == 0x2029 then "\\u" ++ hex4 c.toNat
+  else c.toString
 
 def escapeChars : List Char → String
   | [] => ""

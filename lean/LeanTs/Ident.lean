@@ -19,9 +19,9 @@ def jsReserved : List String :=
    "Infinity", "NaN", "undefined", "globalThis", "Array", "BigInt", "Boolean", "Error", "JSON",
    "Math", "Number", "Object", "String", "Symbol"]
 
-private def isIdentStart (c : Char) : Bool := c.isAlpha || c == '_' || c == '$'
+def isIdentStart (c : Char) : Bool := c.isAlpha || c == '_' || c == '$'
 
-private def isIdentPart (c : Char) : Bool := isIdentStart c || c.isDigit
+def isIdentPart (c : Char) : Bool := isIdentStart c || c.isDigit
 
 /-- Every helper in the generated code starts with `__`. The prefix is reserved so that user names cannot
 collide with them. -/
