@@ -1976,4 +1976,461 @@ decreasing_by all_goals first | omega | (simp_wf; omega)
 
 end
 
+/-! ## Statements, functions and the module -/
+
+def RenderableStmt : Js.Stmt → Bool
+  | .const name val => okName name && RenderableExpr val
+  | .ret e => RenderableExpr e
+
+/-- A doc comment goes into `/** */` unescaped, so it must not close the comment itself. -/
+def noCommentClose : List Char → Bool
+  | [] => true
+  | [_] => true
+  | [_, _] => true
+  | [_, _, _] => true
+  | a :: b :: c :: d :: rest =>
+    !(' ' == a && '*' == b && '/' == c && '\n' == d) && noCommentClose (b :: c :: d :: rest)
+
+def RenderableFunc (fn : Js.Func) : Bool :=
+  okName fn.name && fn.params.all okName && fn.body.all RenderableStmt
+    && noCommentClose fn.doc.toList
+
+def RenderableModule (m : Js.Module) : Bool := m.funcs.all RenderableFunc
+
+theorem render_const_toList (name : String) (val : Js.Expr) :
+    (Js.Stmt.render (.const name val)).toList =
+      ' ' :: ' ' :: 'c' :: 'o' :: 'n' :: 's' :: 't' :: ' ' :: (name.toList ++
+        (' ' :: '=' :: ' ' :: (val.render.toList ++ [';']))) := by
+  rw [Js.Stmt.render]
+  simp only [String.toList_append, List.append_assoc]
+  rfl
+
+theorem render_ret_toList (e : Js.Expr) :
+    (Js.Stmt.render (.ret e)).toList =
+      ' ' :: ' ' :: 'r' :: 'e' :: 't' :: 'u' :: 'r' :: 'n' :: ' ' :: (e.render.toList ++ [';']) := by
+  rw [Js.Stmt.render]
+  simp only [String.toList_append, List.append_assoc]
+  rfl
+
+theorem render_stmt_head (st : Js.Stmt) : ∃ x, (Js.Stmt.render st).toList = ' ' :: ' ' :: x := by
+  match st with
+  | .const name val => exact ⟨_, render_const_toList name val⟩
+  | .ret e => exact ⟨_, render_ret_toList e⟩
+
+theorem stmtAll_nil_toList : (Js.Stmt.renderAll []).toList = [] := by
+  rw [Js.Stmt.renderAll]; rfl
+
+theorem stmtAll_one_toList (st : Js.Stmt) :
+    (Js.Stmt.renderAll [st]).toList = (Js.Stmt.render st).toList := by rw [Js.Stmt.renderAll]
+
+theorem stmtAll_cons_toList (st a : Js.Stmt) (rest : List Js.Stmt) :
+    (Js.Stmt.renderAll (st :: a :: rest)).toList =
+      (Js.Stmt.render st).toList ++ ('\n' :: (Js.Stmt.renderAll (a :: rest)).toList) := by
+  rw [Js.Stmt.renderAll]
+  · simp only [String.toList_append, List.append_assoc]
+    rfl
+  · simp
+
+theorem funcAll_nil_toList : (Js.Func.renderAll []).toList = [] := by
+  rw [Js.Func.renderAll]; rfl
+
+theorem funcAll_cons_toList (fn : Js.Func) (rest : List Js.Func) :
+    (Js.Func.renderAll (fn :: rest)).toList =
+      (Js.Func.render fn).toList ++ ('\n' :: '\n' :: (Js.Func.renderAll rest).toList) := by
+  rw [Js.Func.renderAll]
+  simp only [String.toList_append, List.append_assoc]
+  rfl
+
+theorem render_func_toList (fn : Js.Func) :
+    (Js.Func.render fn).toList =
+      (if fn.doc.isEmpty then ([] : List Char)
+       else '/' :: '*' :: '*' :: ' ' :: (fn.doc.toList ++ [' ', '*', '/', '\n'])) ++
+      ((if fn.exported then ['e', 'x', 'p', 'o', 'r', 't', ' '] else ([] : List Char)) ++
+        ('f' :: 'u' :: 'n' :: 'c' :: 't' :: 'i' :: 'o' :: 'n' :: ' ' :: (fn.name.toList ++
+          ('(' :: ((Js.renderNames fn.params).toList ++ (')' :: ' ' :: '{' :: '\n' ::
+            ((Js.Stmt.renderAll fn.body).toList ++ ['\n', '}']))))))) := by
+  rw [Js.Func.render]
+  by_cases hd : fn.doc.isEmpty = true <;> by_cases hx : fn.exported = true <;>
+    simp only [hd, hx, Bool.false_eq_true, if_true, if_false, reduceIte, String.toList_append,
+      List.append_assoc, List.cons_append, List.nil_append] <;> rfl
+
+theorem render_func_split (fn : Js.Func) (rest : List Char) :
+    (Js.Func.render fn).toList ++ rest =
+      (if fn.doc.isEmpty then ([] : List Char)
+       else '/' :: '*' :: '*' :: ' ' :: (fn.doc.toList ++ [' ', '*', '/', '\n'])) ++
+      ((if fn.exported then ['e', 'x', 'p', 'o', 'r', 't', ' '] else ([] : List Char)) ++
+        ('f' :: 'u' :: 'n' :: 'c' :: 't' :: 'i' :: 'o' :: 'n' :: ' ' :: (fn.name.toList ++
+          ('(' :: ((Js.renderNames fn.params).toList ++ (')' :: ' ' :: '{' :: '\n' ::
+            ((Js.Stmt.renderAll fn.body).toList ++ ('\n' :: '}' :: rest)))))))) := by
+  rw [render_func_toList]
+  simp [List.append_assoc]
+
+theorem render_func_length (fn : Js.Func) :
+    (Js.renderNames fn.params).toList.length + (Js.Stmt.renderAll fn.body).toList.length + 13
+      ≤ (Js.Func.render fn).toList.length := by
+  rw [render_func_toList]
+  simp only [List.length_append, List.length_cons, List.length_nil]
+  split <;> split <;> simp <;> omega
+
+/-! ### Reading a doc comment back -/
+
+theorem takeUntil_close (rest : List Char) :
+    takeUntil [' ', '*', '/', '\n'] ([' ', '*', '/', '\n'] ++ rest)
+      = some ([], [' ', '*', '/', '\n'] ++ rest) := by
+  simp [takeUntil, List.isPrefixOf]
+
+theorem noCommentClose_tail {a : Char} {d : List Char} (h : noCommentClose (a :: d) = true) :
+    noCommentClose d = true := by
+  match d with
+  | [] => rfl
+  | [_] => rfl
+  | [_, _] => rfl
+  | b :: c :: e :: tl =>
+    rw [noCommentClose] at h
+    simp only [Bool.and_eq_true] at h
+    exact h.2
+
+theorem takeUntil_doc (d : List Char) (h : noCommentClose d = true) (rest : List Char) :
+    takeUntil [' ', '*', '/', '\n'] (d ++ ([' ', '*', '/', '\n'] ++ rest))
+      = some (d, [' ', '*', '/', '\n'] ++ rest) := by
+  induction d with
+  | nil => exact takeUntil_close rest
+  | cons a d ih =>
+    have hpre : [' ', '*', '/', '\n'].isPrefixOf (a :: (d ++ ([' ', '*', '/', '\n'] ++ rest)))
+        = false := by
+      match d with
+      | [] => simp [List.isPrefixOf]
+      | [x] => simp [List.isPrefixOf]
+      | [x, y] => simp [List.isPrefixOf]
+      | b :: c :: e :: tl =>
+        rw [noCommentClose] at h
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+        simpa [List.isPrefixOf] using h.1
+    rw [List.cons_append, takeUntil, if_neg (by rw [hpre]; simp), ih (noCommentClose_tail h)]
+    rfl
+
+theorem expect_docOpen (Y : List Char) :
+    expect ['/', '*', '*', ' '] ('/' :: '*' :: '*' :: ' ' :: Y) = some Y := by simp [expect]
+
+theorem expect_docClose (Y : List Char) :
+    expect [' ', '*', '/', '\n'] (' ' :: '*' :: '/' :: '\n' :: Y) = some Y := by simp [expect]
+
+/-- The shape a doc comment takes inside a rendering, where the closing marker is spelled out. -/
+theorem takeUntil_doc' (d : List Char) (h : noCommentClose d = true) (rest : List Char) :
+    takeUntil [' ', '*', '/', '\n'] (d ++ (' ' :: '*' :: '/' :: '\n' :: rest))
+      = some (d, ' ' :: '*' :: '/' :: '\n' :: rest) := takeUntil_doc d h rest
+
+/-! ### The roundtrip on statements, functions and the module -/
+
+theorem parseStmt_append (st : Js.Stmt) (hst : RenderableStmt st = true) (f : Nat)
+    (hf : (Js.Stmt.render st).toList.length < f) (rest : List Char) :
+    parseStmt f ((Js.Stmt.render st).toList ++ rest) = some (st, rest) := by
+  match st with
+  | .const name val =>
+    rw [RenderableStmt] at hst
+    simp only [Bool.and_eq_true] at hst
+    rw [render_const_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append, List.length_nil] at hf
+    rw [parseStmt]
+    show (do
+      let (nm, cs) ← parseIdent (name.toList ++
+        (' ' :: '=' :: ' ' :: (val.render.toList ++ (';' :: rest))))
+      let cs ← expect [' ', '=', ' '] cs
+      let (v, cs) ← parseExpr f cs
+      let cs ← expect [';'] cs
+      pure (Js.Stmt.const nm v, cs)) = some (Js.Stmt.const name val, rest)
+    rw [parseIdent_append name (okName_ne_nil hst.1) (okName_all hst.1) _
+      (by intro c r hc; cases hc; decide)]
+    show (do
+      let (v, cs) ← parseExpr f (val.render.toList ++ (';' :: rest))
+      let cs ← expect [';'] cs
+      pure (Js.Stmt.const name v, cs)) = some (Js.Stmt.const name val, rest)
+    rw [parseExpr_append val hst.2 f (by omega) _
+      (Sep.cons (by decide) (by decide) (by decide) _)]
+    simp [expect]
+  | .ret e =>
+    rw [RenderableStmt] at hst
+    rw [render_ret_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append, List.length_nil] at hf
+    rw [parseStmt]
+    show (do
+      let (v, cs) ← parseExpr f (e.render.toList ++ (';' :: rest))
+      let cs ← expect [';'] cs
+      pure (Js.Stmt.ret v, cs)) = some (Js.Stmt.ret e, rest)
+    rw [parseExpr_append e hst f (by omega) _
+      (Sep.cons (by decide) (by decide) (by decide) _)]
+    simp [expect]
+
+theorem stmtAll_head (ss : List Js.Stmt) (h : ss ≠ []) :
+    ∃ z, (Js.Stmt.renderAll ss).toList = ' ' :: ' ' :: z := by
+  match ss with
+  | [] => exact absurd rfl h
+  | [st] =>
+    obtain ⟨x, hx⟩ := render_stmt_head st
+    exact ⟨x, by rw [stmtAll_one_toList, hx]⟩
+  | st :: a :: tl =>
+    obtain ⟨x, hx⟩ := render_stmt_head st
+    exact ⟨x ++ ('\n' :: (Js.Stmt.renderAll (a :: tl)).toList),
+      by rw [stmtAll_cons_toList, hx]; rfl⟩
+
+theorem parseStmts_step (f : Nat) (cs x : List Char) (h : cs = ' ' :: ' ' :: x) :
+    parseStmts (f + 1) cs = (do
+      let (st, r) ← parseStmt f cs
+      match r with
+      | '\n' :: '}' :: _ => pure ([st], r)
+      | '\n' :: r' => do
+        let (ss, r') ← parseStmts f r'
+        pure (st :: ss, r')
+      | _ => none) := by
+  subst h
+  rw [parseStmts] <;> first
+    | rfl
+    | (intros; simp_all)
+
+theorem parseStmts_append (ss : List Js.Stmt) (hss : ss.all RenderableStmt = true) (f : Nat)
+    (hf : (Js.Stmt.renderAll ss).toList.length + 1 < f) (rest : List Char) :
+    parseStmts f ((Js.Stmt.renderAll ss).toList ++ ('\n' :: '}' :: rest))
+      = some (ss, '\n' :: '}' :: rest) := by
+  induction ss generalizing f with
+  | nil =>
+    match f with
+    | 0 => omega
+    | f + 1 => rw [stmtAll_nil_toList, List.nil_append, parseStmts]
+  | cons st tl ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at hss
+    obtain ⟨x, hx⟩ := render_stmt_head st
+    match f with
+    | 0 => omega
+    | f + 1 =>
+      match tl with
+      | [] =>
+        rw [stmtAll_one_toList] at hf ⊢
+        rw [parseStmts_step f _ (x ++ ('\n' :: '}' :: rest)) (by rw [hx]; rfl),
+          parseStmt_append st hss.1 f (by omega) _]
+        rfl
+      | a :: tl =>
+        rw [stmtAll_cons_toList] at hf ⊢
+        simp only [List.append_assoc, List.cons_append] at hf ⊢
+        simp only [List.length_cons, List.length_append] at hf
+        obtain ⟨z, hz⟩ := stmtAll_head (a :: tl) (by simp)
+        rw [parseStmts_step f _ (x ++ ('\n' :: ((Js.Stmt.renderAll (a :: tl)).toList ++
+            ('\n' :: '}' :: rest)))) (by rw [hx]; rfl),
+          parseStmt_append st hss.1 f (by omega) _,
+          show ('\n' :: ((Js.Stmt.renderAll (a :: tl)).toList ++ ('\n' :: '}' :: rest)))
+            = '\n' :: ' ' :: ' ' :: (z ++ ('\n' :: '}' :: rest)) from by rw [hz]; rfl]
+        show (do
+          let (ss', r') ← parseStmts f (' ' :: ' ' :: (z ++ ('\n' :: '}' :: rest)))
+          pure (st :: ss', r')) = some (st :: a :: tl, '\n' :: '}' :: rest)
+        rw [show (' ' :: ' ' :: (z ++ ('\n' :: '}' :: rest)))
+            = (Js.Stmt.renderAll (a :: tl)).toList ++ ('\n' :: '}' :: rest) from by rw [hz]; rfl,
+          ih hss.2 f (by omega)]
+        rfl
+
+theorem parseFunc_append (fn : Js.Func) (hfn : RenderableFunc fn = true) (f : Nat)
+    (hf : (Js.Func.render fn).toList.length + 1 < f) (rest : List Char) :
+    parseFunc f ((Js.Func.render fn).toList ++ rest) = some (fn, rest) := by
+  rw [RenderableFunc] at hfn
+  simp only [Bool.and_eq_true] at hfn
+  obtain ⟨⟨⟨hname, hparams⟩, hbody⟩, hdoc⟩ := hfn
+  have hpl := renderNames_length fn.params hparams
+  have hlen := render_func_length fn
+  match f with
+  | 0 => omega
+  | F + 1 =>
+    have core : ∀ (d : String) (ex : Bool),
+        (do
+          let (nm, cs) ← parseIdent (fn.name.toList ++
+            ('(' :: ((Js.renderNames fn.params).toList ++ (')' :: ' ' :: '{' :: '\n' ::
+              ((Js.Stmt.renderAll fn.body).toList ++ ('\n' :: '}' :: rest))))))
+          let cs ← expect ['('] cs
+          let (ps, cs) ← parseIdentList F cs
+          let cs ← expect [')', ' ', '{', '\n'] cs
+          let (bd, cs) ← parseStmts F cs
+          let cs ← expect ['\n', '}'] cs
+          pure (({ name := nm, params := ps, body := bd, doc := d, exported := ex } : Js.Func), cs))
+          = some ({ fn with doc := d, exported := ex }, rest) := by
+      intro d ex
+      rw [parseIdent_append fn.name (okName_ne_nil hname) (okName_all hname) _
+        (by intro c r hc; cases hc; decide)]
+      show (do
+        let (ps, cs) ← parseIdentList F ((Js.renderNames fn.params).toList ++
+          (')' :: ' ' :: '{' :: '\n' :: ((Js.Stmt.renderAll fn.body).toList ++
+            ('\n' :: '}' :: rest))))
+        let cs ← expect [')', ' ', '{', '\n'] cs
+        let (bd, cs) ← parseStmts F cs
+        let cs ← expect ['\n', '}'] cs
+        pure (({ name := fn.name, params := ps, body := bd, doc := d, exported := ex } : Js.Func),
+          cs)) = _
+      rw [parseIdentList_names fn.params hparams F (by omega) _
+        (by intro c r hc; cases hc; decide) (by simp [expect])]
+      show (do
+        let (bd, cs) ← parseStmts F ((Js.Stmt.renderAll fn.body).toList ++ ('\n' :: '}' :: rest))
+        let cs ← expect ['\n', '}'] cs
+        pure (({ name := fn.name, params := fn.params, body := bd, doc := d, exported := ex }
+          : Js.Func), cs)) = _
+      rw [parseStmts_append fn.body hbody F (by omega) rest]
+      simp [expect]
+    rw [render_func_split]
+    by_cases hd : fn.doc.isEmpty = true
+    · have hdoc0 : fn.doc = "" := by simpa using hd
+      rw [if_pos hd]
+      simp only [List.nil_append]
+      by_cases hx : fn.exported = true
+      · rw [if_pos hx, parseFunc]
+        show (do
+          let (nm, cs) ← parseIdent (fn.name.toList ++
+            ('(' :: ((Js.renderNames fn.params).toList ++ (')' :: ' ' :: '{' :: '\n' ::
+              ((Js.Stmt.renderAll fn.body).toList ++ ('\n' :: '}' :: rest))))))
+          let cs ← expect ['('] cs
+          let (ps, cs) ← parseIdentList F cs
+          let cs ← expect [')', ' ', '{', '\n'] cs
+          let (bd, cs) ← parseStmts F cs
+          let cs ← expect ['\n', '}'] cs
+          pure (({ name := nm, params := ps, body := bd, doc := "", exported := true } : Js.Func),
+            cs)) = _
+        rw [core "" true, show ({ fn with doc := "", exported := true } : Js.Func) = fn from by
+          rw [← hdoc0, ← hx]]
+      · rw [if_neg hx]
+        simp only [List.nil_append]
+        rw [parseFunc]
+        show (do
+          let (nm, cs) ← parseIdent (fn.name.toList ++
+            ('(' :: ((Js.renderNames fn.params).toList ++ (')' :: ' ' :: '{' :: '\n' ::
+              ((Js.Stmt.renderAll fn.body).toList ++ ('\n' :: '}' :: rest))))))
+          let cs ← expect ['('] cs
+          let (ps, cs) ← parseIdentList F cs
+          let cs ← expect [')', ' ', '{', '\n'] cs
+          let (bd, cs) ← parseStmts F cs
+          let cs ← expect ['\n', '}'] cs
+          pure (({ name := nm, params := ps, body := bd, doc := "", exported := false } : Js.Func),
+            cs)) = _
+        have hx0 : fn.exported = false := by simpa using hx
+        rw [core "" false, show ({ fn with doc := "", exported := false } : Js.Func) = fn from by
+          rw [← hdoc0, ← hx0]]
+    · rw [if_neg hd]
+      simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append]
+      by_cases hx : fn.exported = true
+      · rw [if_pos hx, parseFunc]
+        simp only [expect_docOpen, takeUntil_doc' fn.doc.toList hdoc, expect_docClose,
+          String.ofList_toList, Option.bind_eq_bind, Option.bind_some]
+        show (do
+          let (nm, cs) ← parseIdent (fn.name.toList ++
+            ('(' :: ((Js.renderNames fn.params).toList ++ (')' :: ' ' :: '{' :: '\n' ::
+              ((Js.Stmt.renderAll fn.body).toList ++ ('\n' :: '}' :: rest))))))
+          let cs ← expect ['('] cs
+          let (ps, cs) ← parseIdentList F cs
+          let cs ← expect [')', ' ', '{', '\n'] cs
+          let (bd, cs) ← parseStmts F cs
+          let cs ← expect ['\n', '}'] cs
+          pure (({ name := nm, params := ps, body := bd, doc := fn.doc, exported := true }
+            : Js.Func), cs)) = _
+        rw [core fn.doc true, show ({ fn with doc := fn.doc, exported := true } : Js.Func) = fn
+          from by rw [← hx]]
+      · rw [if_neg hx]
+        simp only [List.nil_append]
+        rw [parseFunc]
+        simp only [expect_docOpen, takeUntil_doc' fn.doc.toList hdoc, expect_docClose,
+          String.ofList_toList, Option.bind_eq_bind, Option.bind_some]
+        show (do
+          let (nm, cs) ← parseIdent (fn.name.toList ++
+            ('(' :: ((Js.renderNames fn.params).toList ++ (')' :: ' ' :: '{' :: '\n' ::
+              ((Js.Stmt.renderAll fn.body).toList ++ ('\n' :: '}' :: rest))))))
+          let cs ← expect ['('] cs
+          let (ps, cs) ← parseIdentList F cs
+          let cs ← expect [')', ' ', '{', '\n'] cs
+          let (bd, cs) ← parseStmts F cs
+          let cs ← expect ['\n', '}'] cs
+          pure (({ name := nm, params := ps, body := bd, doc := fn.doc, exported := false }
+            : Js.Func), cs)) = _
+        have hx0 : fn.exported = false := by simpa using hx
+        rw [core fn.doc false, show ({ fn with doc := fn.doc, exported := false } : Js.Func) = fn
+          from by rw [← hx0]]
+
+theorem parseFuncs_step (f : Nat) (cs : List Char) (c1 c2 : Char) (x : List Char)
+    (h : cs = c1 :: c2 :: x) (hne : ¬(c1 = '/' ∧ c2 = '/')) :
+    parseFuncs (f + 1) cs = (do
+      let (fn, r) ← parseFunc f cs
+      let r ← expect ['\n', '\n'] r
+      let (fs, r) ← parseFuncs f r
+      pure (fn :: fs, r)) := by
+  subst h
+  rw [parseFuncs] <;> first
+    | rfl
+    | (intros; simp_all)
+
+theorem expect_self (l : List Char) : expect l l = some [] := by
+  simpa using expect_append l []
+
+theorem render_func_head (fn : Js.Func) :
+    ∃ c1 c2 x, (Js.Func.render fn).toList = c1 :: c2 :: x ∧ ¬(c1 = '/' ∧ c2 = '/') := by
+  rw [render_func_toList]
+  by_cases hd : fn.doc.isEmpty = true
+  · rw [if_pos hd]
+    simp only [List.nil_append]
+    by_cases hx : fn.exported = true
+    · rw [if_pos hx]; exact ⟨'e', 'x', _, rfl, by simp⟩
+    · rw [if_neg hx]; simp only [List.nil_append]; exact ⟨'f', 'u', _, rfl, by simp⟩
+  · rw [if_neg hd]; exact ⟨'/', '*', _, rfl, by simp⟩
+
+theorem parseFuncs_append (fs : List Js.Func) (hfs : fs.all RenderableFunc = true) (f : Nat)
+    (hf : (Js.Func.renderAll fs).toList.length + 1 < f) (rest : List Char) :
+    parseFuncs f ((Js.Func.renderAll fs).toList ++ ('/' :: '/' :: '#' :: rest))
+      = some (fs, '/' :: '/' :: '#' :: rest) := by
+  induction fs generalizing f with
+  | nil =>
+    match f with
+    | 0 => omega
+    | f + 1 => rw [funcAll_nil_toList, List.nil_append, parseFuncs]
+  | cons fn tl ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at hfs
+    obtain ⟨c1, c2, x, hx, hne⟩ := render_func_head fn
+    match f with
+    | 0 => omega
+    | f + 1 =>
+      rw [funcAll_cons_toList] at hf ⊢
+      simp only [List.append_assoc, List.cons_append] at hf ⊢
+      simp only [List.length_cons, List.length_append] at hf
+      rw [parseFuncs_step f _ c1 c2 (x ++ ('\n' :: '\n' :: ((Js.Func.renderAll tl).toList ++
+          ('/' :: '/' :: '#' :: rest)))) (by rw [hx]; rfl) hne,
+        parseFunc_append fn hfs.1 f (by omega) _]
+      show (do
+        let (fs', r) ← parseFuncs f ((Js.Func.renderAll tl).toList ++ ('/' :: '/' :: '#' :: rest))
+        pure (fn :: fs', r)) = some (fn :: tl, '/' :: '/' :: '#' :: rest)
+      rw [ih hfs.2 f (by omega)]
+      rfl
+
+/-- The prelude and the source-map link are long literals, so they are kept opaque here: nothing about
+the roundtrip depends on what they say, only on their being the same text on both sides. -/
+theorem parseModule_of (P : List Char) (fs : List Js.Func) (hfs : fs.all RenderableFunc = true)
+    (t : List Char) :
+    (do
+      let r ← expect P (P ++ ((Js.Func.renderAll fs).toList ++ ('/' :: '/' :: '#' :: t)))
+      let (fs', r) ← parseFuncs
+        (P ++ ((Js.Func.renderAll fs).toList ++ ('/' :: '/' :: '#' :: t))).length r
+      let r ← expect ('/' :: '/' :: '#' :: t) r
+      if r.isEmpty then some (⟨fs'⟩ : Js.Module) else none) = some ⟨fs⟩ := by
+  rw [expect_append]
+  simp only [Option.bind_eq_bind, Option.bind_some]
+  rw [parseFuncs_append fs hfs _ (by
+    simp only [List.length_append, List.length_cons]
+    omega) t]
+  simp only [Option.bind_eq_bind, Option.bind_some]
+  rw [expect_self]
+  simp
+
+/-- The file the compiler writes reads back as the module it was compiled from. -/
+theorem parseModule_render (m : Js.Module) (hm : RenderableModule m = true) :
+    parseModule (Js.Module.render m).toList = some m := by
+  rw [RenderableModule] at hm
+  obtain ⟨t, hsuf⟩ : ∃ t, Js.sourceMapLink.toList = '/' :: '/' :: '#' :: t := by
+    rw [Js.sourceMapLink]
+    exact ⟨_, rfl⟩
+  have hsplit : (Js.Module.render m).toList =
+      Js.preamble.toList ++ ((Js.Func.renderAll m.funcs).toList ++ Js.sourceMapLink.toList) := by
+    rw [Js.Module.render, String.toList_append, String.toList_append, List.append_assoc]
+  rw [parseModule, hsplit, hsuf]
+  exact parseModule_of _ m.funcs hm t
+
 end LeanTs.Parse
