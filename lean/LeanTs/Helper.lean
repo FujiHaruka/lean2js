@@ -28,6 +28,11 @@ inductive Expr where
   | neg (e : Expr)
   | typeOf (e : Expr)
   | bin (op : String) (lhs rhs : Expr)
+  /-- `&&`, `||` and `instanceof Map` are their own forms rather than spellings of `bin`: the first two
+  do not evaluate their right side, and the third takes a class where the others take a value. -/
+  | andAlso (lhs rhs : Expr)
+  | orElse (lhs rhs : Expr)
+  | isMap (e : Expr)
   | cond (c t e : Expr)
   /-- A call to another helper. -/
   | call (name : String) (args : List Expr)
@@ -95,6 +100,9 @@ def Expr.render : Expr → String
   | .neg e => "(-" ++ e.render ++ ")"
   | .typeOf e => "(typeof " ++ e.render ++ ")"
   | .bin op lhs rhs => "(" ++ lhs.render ++ " " ++ op ++ " " ++ rhs.render ++ ")"
+  | .andAlso lhs rhs => "(" ++ lhs.render ++ " && " ++ rhs.render ++ ")"
+  | .orElse lhs rhs => "(" ++ lhs.render ++ " || " ++ rhs.render ++ ")"
+  | .isMap e => "(" ++ e.render ++ " instanceof Map)"
   | .cond c t e => "(" ++ c.render ++ " ? " ++ t.render ++ " : " ++ e.render ++ ")"
   | .call name args => name ++ "(" ++ Expr.renderList args ++ ")"
   | .prim name args => name ++ "(" ++ Expr.renderList args ++ ")"
@@ -180,350 +188,438 @@ def renderAll : List Def → String
 The operations where JavaScript and Lean split on the answer are confined to these definitions.
 -/
 
-private def x : Expr := .var "x"
-private def a : Expr := .var "a"
-private def b : Expr := .var "b"
-private def s : Expr := .var "s"
-private def t : Expr := .var "t"
-private def c : Expr := .var "c"
-private def d : Expr := .var "d"
-private def k : Expr := .var "k"
-private def i : Expr := .var "i"
-private def xs : Expr := .var "xs"
 
-private def divByZero : Expr := .call "__fail" [.str "divByZero"]
-private def outOfBounds : Expr := .call "__fail" [.str "indexOutOfBounds"]
+def divByZero : Expr := .call "__fail" [.str "divByZero"]
+def outOfBounds : Expr := .call "__fail" [.str "indexOutOfBounds"]
 
-private def and2 : List Expr → Expr
+def and2 : List Expr → Expr
   | [] => .bool true
   | [e] => e
-  | e :: rest => .bin "&&" e (and2 rest)
+  | e :: rest => .andAlso e (and2 rest)
 
-private def or2 : List Expr → Expr
+def or2 : List Expr → Expr
   | [] => .bool false
   | [e] => e
-  | e :: rest => .bin "||" e (or2 rest)
+  | e :: rest => .orElse e (or2 rest)
 
-private def lengthOf (e : Expr) : Expr := .field e "length"
+def lengthOf (e : Expr) : Expr := .field e "length"
 
-def defs : List Def := [
+def fail : Def :=
   { name := "__fail", params := ["code"], body := .block [
       .const "error" (.new_ "Error" [.var "code"]),
       .setField "error" "code" (.var "code"),
-      .throwErr (.var "error")] },
+      .throwErr (.var "error")] }
+
+def i53 : Def :=
 
   { name := "__i53", params := ["x"]
     doc := ["Int53 is a mathematical integer, so no -0 survives. In JS both 0 - 0 and -4 % 2 are -0."]
-    body := .expr (.cond (.prim "Number.isSafeInteger" [x])
-      (.cond (.bin "===" x (.num 0)) (.num 0) x)
-      (.call "__fail" [.str "int53Overflow"])) },
+    body := .expr (.cond (.prim "Number.isSafeInteger" [(.var "x")])
+      (.cond (.bin "===" (.var "x") (.num 0)) (.num 0) (.var "x"))
+      (.call "__fail" [.str "int53Overflow"])) }
+
+def i53div : Def :=
 
   { name := "__i53div", params := ["a", "b"]
     doc := ["Math.trunc(a / b) is off by one when a is near 2^53. Integer division avoids",
             "floating-point division."]
-    body := .expr (.cond (.bin "===" b (.num 0)) divByZero
-      (.prim "Number" [.bin "/" (.prim "BigInt" [a]) (.prim "BigInt" [b])])) },
+    body := .expr (.cond (.bin "===" (.var "b") (.num 0)) divByZero
+      (.prim "Number" [.bin "/" (.prim "BigInt" [(.var "a")]) (.prim "BigInt" [(.var "b")])])) }
+
+def i53mod : Def :=
 
   { name := "__i53mod", params := ["a", "b"]
-    body := .expr (.cond (.bin "===" b (.num 0)) divByZero (.call "__i53" [.bin "%" a b])) },
+    body := .expr (.cond (.bin "===" (.var "b") (.num 0)) divByZero (.call "__i53" [.bin "%" (.var "a") (.var "b")])) }
+
+def u32mul : Def :=
 
   { name := "__u32mul", params := ["a", "b"]
-    body := .expr (.bin ">>>" (.prim "Math.imul" [a, b]) (.num 0)) },
+    body := .expr (.bin ">>>" (.prim "Math.imul" [(.var "a"), (.var "b")]) (.num 0)) }
+
+def u32div : Def :=
 
   { name := "__u32div", params := ["a", "b"]
-    body := .expr (.cond (.bin "===" b (.num 0)) divByZero
-      (.bin ">>>" (.prim "Math.trunc" [.bin "/" a b]) (.num 0))) },
+    body := .expr (.cond (.bin "===" (.var "b") (.num 0)) divByZero
+      (.bin ">>>" (.prim "Math.trunc" [.bin "/" (.var "a") (.var "b")]) (.num 0))) }
+
+def u32mod : Def :=
 
   { name := "__u32mod", params := ["a", "b"]
-    body := .expr (.cond (.bin "===" b (.num 0)) divByZero
-      (.bin ">>>" (.bin "%" a b) (.num 0))) },
+    body := .expr (.cond (.bin "===" (.var "b") (.num 0)) divByZero
+      (.bin ">>>" (.bin "%" (.var "a") (.var "b")) (.num 0))) }
+
+def bigdiv : Def :=
 
   { name := "__bigdiv", params := ["a", "b"]
-    body := .expr (.cond (.bin "===" b (.big 0)) divByZero (.bin "/" a b)) },
+    body := .expr (.cond (.bin "===" (.var "b") (.big 0)) divByZero (.bin "/" (.var "a") (.var "b"))) }
+
+def bigmod : Def :=
 
   { name := "__bigmod", params := ["a", "b"]
-    body := .expr (.cond (.bin "===" b (.big 0)) divByZero (.bin "%" a b)) },
+    body := .expr (.cond (.bin "===" (.var "b") (.big 0)) divByZero (.bin "%" (.var "a") (.var "b"))) }
+
+def abs : Def :=
 
   { name := "__abs", params := ["x"]
     doc := ["Math.abs, Math.min and Math.max throw on a BigInt, so the comparisons are written out",
             "instead."]
-    body := .expr (.cond (.bin "<" x (.num 0)) (.neg x) x) },
+    body := .expr (.cond (.bin "<" (.var "x") (.num 0)) (.neg (.var "x")) (.var "x")) }
 
-  { name := "__min", params := ["a", "b"], body := .expr (.cond (.bin "<=" a b) a b) },
+def min : Def :=
 
-  { name := "__max", params := ["a", "b"], body := .expr (.cond (.bin "<=" a b) b a) },
+  { name := "__min", params := ["a", "b"], body := .expr (.cond (.bin "<=" (.var "a") (.var "b")) (.var "a") (.var "b")) }
+
+def max : Def :=
+
+  { name := "__max", params := ["a", "b"], body := .expr (.cond (.bin "<=" (.var "a") (.var "b")) (.var "b") (.var "a")) }
+
+def chars : Def :=
 
   { name := "__chars", params := ["s"]
     doc := ["Array.from splits by code point, where indexing a string splits by UTF-16 unit."]
-    body := .expr (.prim "Array.from" [s]) },
+    body := .expr (.prim "Array.from" [(.var "s")]) }
 
-  { name := "__cp", params := ["c"], body := .expr (.method c "codePointAt" [.num 0]) },
+def cp : Def :=
 
-  { name := "__strlen", params := ["s"], body := .expr (lengthOf (.call "__chars" [s])) },
+  { name := "__cp", params := ["c"], body := .expr (.method (.var "c") "codePointAt" [.num 0]) }
+
+def strlen : Def :=
+
+  { name := "__strlen", params := ["s"], body := .expr (lengthOf (.call "__chars" [(.var "s")])) }
+
+def strcmp : Def :=
 
   { name := "__strcmp", params := ["a", "b"], body := .block [
-      .const "x" (.call "__chars" [a]),
-      .const "y" (.call "__chars" [b]),
+      .const "x" (.call "__chars" [(.var "a")]),
+      .const "y" (.call "__chars" [(.var "b")]),
       .letMut "i" (.num 0),
-      .forOf "c" x [
-        .ifThen (.bin ">=" i (lengthOf (.var "y"))) [.ret (.num 1)],
-        .const "d" (.bin "-" (.call "__cp" [c]) (.call "__cp" [.index (.var "y") i])),
-        .ifThen (.bin "!==" d (.num 0)) [.ret (.cond (.bin "<" d (.num 0)) (.num (-1)) (.num 1))],
-        .setVar "i" (.bin "+" i (.num 1))],
-      .ret (.cond (.bin "===" (lengthOf x) (lengthOf (.var "y"))) (.num 0) (.num (-1)))] },
+      .forOf "c" (.var "x") [
+        .ifThen (.bin ">=" (.var "i") (lengthOf (.var "y"))) [.ret (.num 1)],
+        .const "d" (.bin "-" (.call "__cp" [(.var "c")]) (.call "__cp" [.index (.var "y") (.var "i")])),
+        .ifThen (.bin "!==" (.var "d") (.num 0)) [.ret (.cond (.bin "<" (.var "d") (.num 0)) (.num (-1)) (.num 1))],
+        .setVar "i" (.bin "+" (.var "i") (.num 1))],
+      .ret (.cond (.bin "===" (lengthOf (.var "x")) (lengthOf (.var "y"))) (.num 0) (.num (-1)))] }
+
+def ws : Def :=
 
   { name := "__ws", params := ["c"]
     doc := ["JS's own trim also strips NBSP, the BOM and the line separators; eval strips only these",
             "four."]
-    body := .expr (or2 [.bin "===" c (.str " "), .bin "===" c (.str "\t"),
-      .bin "===" c (.str "\n"), .bin "===" c (.str "\r")]) },
+    body := .expr (or2 [.bin "===" (.var "c") (.str " "), .bin "===" (.var "c") (.str "\t"),
+      .bin "===" (.var "c") (.str "\n"), .bin "===" (.var "c") (.str "\r")]) }
+
+def lead : Def :=
 
   { name := "__lead", params := ["xs"], body := .block [
       .letMut "n" (.num 0),
-      .forOf "c" xs [
-        .ifThen (.not (.call "__ws" [c])) [.brk],
+      .forOf "c" (.var "xs") [
+        .ifThen (.not (.call "__ws" [(.var "c")])) [.brk],
         .setVar "n" (.bin "+" (.var "n") (.num 1))],
-      .ret (.var "n")] },
+      .ret (.var "n")] }
+
+def trim : Def :=
 
   { name := "__trim", params := ["s"], body := .block [
-      .const "xs" (.call "__chars" [s]),
-      .const "lo" (.call "__lead" [xs]),
-      .const "hi" (.bin "-" (lengthOf xs) (.call "__lead" [.call "__areverse" [xs]])),
-      .ret (.method (.method xs "slice" [.var "lo", .var "hi"]) "join" [.str ""])] },
+      .const "xs" (.call "__chars" [(.var "s")]),
+      .const "lo" (.call "__lead" [(.var "xs")]),
+      .const "hi" (.bin "-" (lengthOf (.var "xs")) (.call "__lead" [.call "__areverse" [(.var "xs")]])),
+      .ret (.method (.method (.var "xs") "slice" [.var "lo", .var "hi"]) "join" [.str ""])] }
+
+def upper : Def :=
 
   { name := "__upper", params := ["s"]
     doc := ["toUpperCase is not ASCII: it maps \"ß\" to \"SS\", changing the length of the",
             "string."]
     body := .block [
       .letMut "out" (.str ""),
-      .forOf "c" (.call "__chars" [s]) [
+      .forOf "c" (.call "__chars" [(.var "s")]) [
         .setVar "out" (.bin "+" (.var "out")
-          (.cond (and2 [.bin ">=" c (.str "a"), .bin "<=" c (.str "z")])
-            (.method c "toUpperCase" []) c))],
-      .ret (.var "out")] },
+          (.cond (and2 [.bin ">=" (.var "c") (.str "a"), .bin "<=" (.var "c") (.str "z")])
+            (.method (.var "c") "toUpperCase" []) (.var "c")))],
+      .ret (.var "out")] }
+
+def lower : Def :=
 
   { name := "__lower", params := ["s"], body := .block [
       .letMut "out" (.str ""),
-      .forOf "c" (.call "__chars" [s]) [
+      .forOf "c" (.call "__chars" [(.var "s")]) [
         .setVar "out" (.bin "+" (.var "out")
-          (.cond (and2 [.bin ">=" c (.str "A"), .bin "<=" c (.str "Z")])
-            (.method c "toLowerCase" []) c))],
-      .ret (.var "out")] },
+          (.cond (and2 [.bin ">=" (.var "c") (.str "A"), .bin "<=" (.var "c") (.str "Z")])
+            (.method (.var "c") "toLowerCase" []) (.var "c")))],
+      .ret (.var "out")] }
+
+def startsWith : Def :=
 
   { name := "__startsWith", params := ["s", "t"]
     doc := ["Native, unlike the four above: UTF-16 preserves prefixes and suffixes and no argument can",
             "hold a lone surrogate, so a match on units is a match on code points."]
-    body := .expr (.method s "startsWith" [t]) },
+    body := .expr (.method (.var "s") "startsWith" [(.var "t")]) }
 
-  { name := "__endsWith", params := ["s", "t"], body := .expr (.method s "endsWith" [t]) },
+def endsWith : Def :=
 
-  { name := "__includes", params := ["s", "t"], body := .expr (.method s "includes" [t]) },
+  { name := "__endsWith", params := ["s", "t"], body := .expr (.method (.var "s") "endsWith" [(.var "t")]) }
+
+def includes : Def :=
+
+  { name := "__includes", params := ["s", "t"], body := .expr (.method (.var "s") "includes" [(.var "t")]) }
+
+def split : Def :=
 
   { name := "__split", params := ["s", "sep"]
     doc := ["split(\"\") returns the UTF-16 units, where eval returns the whole string."]
-    body := .expr (.cond (.bin "===" (.var "sep") (.str "")) (.arrayLit [s])
-      (.method s "split" [.var "sep"])) },
+    body := .expr (.cond (.bin "===" (.var "sep") (.str "")) (.arrayLit [(.var "s")])
+      (.method (.var "s") "split" [.var "sep"])) }
+
+def substring : Def :=
 
   { name := "__substring", params := ["s", "lo", "hi"]
     doc := ["Indices count code points, and one outside the string fails rather than being clamped."]
     body := .block [
-      .const "xs" (.call "__chars" [s]),
+      .const "xs" (.call "__chars" [(.var "s")]),
       .ret (.cond (and2 [
           .prim "Number.isSafeInteger" [.var "lo"], .prim "Number.isSafeInteger" [.var "hi"],
           .bin ">=" (.var "lo") (.num 0), .bin ">=" (.var "hi") (.var "lo"),
-          .bin "<=" (.var "hi") (lengthOf xs)])
-        (.method (.method xs "slice" [.var "lo", .var "hi"]) "join" [.str ""])
-        outOfBounds)] },
+          .bin "<=" (.var "hi") (lengthOf (.var "xs"))])
+        (.method (.method (.var "xs") "slice" [.var "lo", .var "hi"]) "join" [.str ""])
+        outOfBounds)] }
+
+def aslice : Def :=
 
   { name := "__aslice", params := ["xs", "lo", "hi"]
     doc := ["Bounds outside the array fail rather than being clamped, the way an index read does."]
     body := .expr (.cond (and2 [
         .prim "Number.isSafeInteger" [.var "lo"], .prim "Number.isSafeInteger" [.var "hi"],
         .bin ">=" (.var "lo") (.num 0), .bin ">=" (.var "hi") (.var "lo"),
-        .bin "<=" (.var "hi") (lengthOf xs)])
-      (.method xs "slice" [.var "lo", .var "hi"]) outOfBounds) },
+        .bin "<=" (.var "hi") (lengthOf (.var "xs"))])
+      (.method (.var "xs") "slice" [.var "lo", .var "hi"]) outOfBounds) }
+
+def aconcat : Def :=
 
   { name := "__aconcat", params := ["a", "b"], body := .block [
       .const "out" (.arrayLit []),
-      .forOf "v" a [.push "out" (.var "v")],
-      .forOf "v" b [.push "out" (.var "v")],
-      .ret (.var "out")] },
+      .forOf "v" (.var "a") [.push "out" (.var "v")],
+      .forOf "v" (.var "b") [.push "out" (.var "v")],
+      .ret (.var "out")] }
+
+def areverse : Def :=
 
   { name := "__areverse", params := ["xs"]
     doc := ["A fresh array: reverse() would otherwise write through to the caller's."]
     body := .block [
       .const "out" (.arrayLit []),
-      .letMut "i" (lengthOf xs),
-      .forOf "v" xs [
-        .setVar "i" (.bin "-" i (.num 1)),
-        .push "out" (.index xs i)],
-      .ret (.var "out")] },
+      .letMut "i" (lengthOf (.var "xs")),
+      .forOf "v" (.var "xs") [
+        .setVar "i" (.bin "-" (.var "i") (.num 1)),
+        .push "out" (.index (.var "xs") (.var "i"))],
+      .ret (.var "out")] }
+
+def atIdx : Def :=
 
   { name := "__at", params := ["xs", "i"]
     doc := ["An out-of-range index fails rather than yielding undefined. undefined does not exist in",
             "the subset."]
     body := .expr (.cond (and2 [
-        .prim "Number.isSafeInteger" [i], .bin ">=" i (.num 0), .bin "<" i (lengthOf xs)])
-      (.index xs i) outOfBounds) },
+        .prim "Number.isSafeInteger" [(.var "i")], .bin ">=" (.var "i") (.num 0), .bin "<" (.var "i") (lengthOf (.var "xs"))])
+      (.index (.var "xs") (.var "i")) outOfBounds) }
+
+def dget : Def :=
 
   { name := "__dget", params := ["d", "k"]
-    body := .expr (.cond (.method d "has" [k])
-      (.objLit [("tag", .str "some"), ("value", .method d "get" [k])])
-      (.objLit [("tag", .str "none")])) },
+    body := .expr (.cond (.method (.var "d") "has" [(.var "k")])
+      (.objLit [("tag", .str "some"), ("value", .method (.var "d") "get" [(.var "k")])])
+      (.objLit [("tag", .str "none")])) }
 
-  { name := "__dhas", params := ["d", "k"], body := .expr (.method d "has" [k]) },
+def dhas : Def :=
+
+  { name := "__dhas", params := ["d", "k"], body := .expr (.method (.var "d") "has" [(.var "k")]) }
+
+def dset : Def :=
 
   { name := "__dset", params := ["d", "k", "v"]
     doc := ["A fresh Map: values in the subset are immutable, so set cannot write through to the",
             "caller's."]
     body := .block [
-      .const "out" (.new_ "Map" [d]),
-      .setKey "out" k (.var "v"),
-      .ret (.var "out")] },
+      .const "out" (.new_ "Map" [(.var "d")]),
+      .setKey "out" (.var "k") (.var "v"),
+      .ret (.var "out")] }
 
-  { name := "__dkeys", params := ["d"], body := .expr (.prim "Array.from" [.method d "keys" []]) },
+def dkeys : Def :=
+
+  { name := "__dkeys", params := ["d"], body := .expr (.prim "Array.from" [.method (.var "d") "keys" []]) }
+
+def dvalues : Def :=
 
   { name := "__dvalues", params := ["d"]
-    body := .expr (.prim "Array.from" [.method d "values" []]) },
+    body := .expr (.prim "Array.from" [.method (.var "d") "values" []]) }
+
+def ddelete : Def :=
 
   { name := "__ddelete", params := ["d", "k"], body := .block [
       .const "out" (.new_ "Map" []),
-      .forOf "key" (.call "__dkeys" [d]) [
-        .ifThen (.bin "!==" (.var "key") k)
-          [.setKey "out" (.var "key") (.method d "get" [.var "key"])]],
-      .ret (.var "out")] },
+      .forOf "key" (.call "__dkeys" [(.var "d")]) [
+        .ifThen (.bin "!==" (.var "key") (.var "k"))
+          [.setKey "out" (.var "key") (.method (.var "d") "get" [.var "key"])]],
+      .ret (.var "out")] }
+
+def eq : Def :=
 
   { name := "__eq", params := ["a", "b"]
     doc := ["=== compares references, so it is unusable on constructor values and arrays."]
     body := .block [
-      .ifThen (.bin "===" a b) [.ret (.bool true)],
-      .ifThen (.bin "!==" (.typeOf a) (.typeOf b)) [.ret (.bool false)],
-      .ifThen (.bin "!==" (.typeOf a) (.str "object")) [.ret (.bool false)],
-      .ifThen (.bin "||" (.bin "===" a .null) (.bin "===" b .null)) [.ret (.bool false)],
-      .ifThen (.bin "||" (.bin "instanceof" a (.var "Map")) (.bin "instanceof" b (.var "Map"))) [
-        .ifThen (.not (and2 [.bin "instanceof" a (.var "Map"), .bin "instanceof" b (.var "Map")]))
+      .ifThen (.bin "===" (.var "a") (.var "b")) [.ret (.bool true)],
+      .ifThen (.bin "!==" (.typeOf (.var "a")) (.typeOf (.var "b"))) [.ret (.bool false)],
+      .ifThen (.bin "!==" (.typeOf (.var "a")) (.str "object")) [.ret (.bool false)],
+      .ifThen (.orElse (.bin "===" (.var "a") .null) (.bin "===" (.var "b") .null)) [.ret (.bool false)],
+      .ifThen (.orElse (.isMap (.var "a")) (.isMap (.var "b"))) [
+        .ifThen (.not (and2 [.isMap (.var "a"), .isMap (.var "b")]))
           [.ret (.bool false)],
-        .ifThen (.bin "!==" (.field a "size") (.field b "size")) [.ret (.bool false)],
-        .const "ks" (.call "__dkeys" [a]),
-        .const "ls" (.call "__dkeys" [b]),
+        .ifThen (.bin "!==" (.field (.var "a") "size") (.field (.var "b") "size")) [.ret (.bool false)],
+        .const "ks" (.call "__dkeys" [(.var "a")]),
+        .const "ls" (.call "__dkeys" [(.var "b")]),
         .letMut "i" (.num 0),
         .forOf "key" (.var "ks") [
-          .ifThen (.bin "!==" (.index (.var "ls") i) (.var "key")) [.ret (.bool false)],
-          .ifThen (.not (.call "__eq" [.method a "get" [.var "key"], .method b "get" [.var "key"]]))
+          .ifThen (.bin "!==" (.index (.var "ls") (.var "i")) (.var "key")) [.ret (.bool false)],
+          .ifThen (.not (.call "__eq" [.method (.var "a") "get" [.var "key"], .method (.var "b") "get" [.var "key"]]))
             [.ret (.bool false)],
-          .setVar "i" (.bin "+" i (.num 1))],
+          .setVar "i" (.bin "+" (.var "i") (.num 1))],
         .ret (.bool true)],
-      .ifThen (.bin "||" (.prim "Array.isArray" [a]) (.prim "Array.isArray" [b])) [
-        .ifThen (.not (and2 [.prim "Array.isArray" [a], .prim "Array.isArray" [b]]))
+      .ifThen (.orElse (.prim "Array.isArray" [(.var "a")]) (.prim "Array.isArray" [(.var "b")])) [
+        .ifThen (.not (and2 [.prim "Array.isArray" [(.var "a")], .prim "Array.isArray" [(.var "b")]]))
           [.ret (.bool false)],
-        .ifThen (.bin "!==" (lengthOf a) (lengthOf b)) [.ret (.bool false)],
+        .ifThen (.bin "!==" (lengthOf (.var "a")) (lengthOf (.var "b"))) [.ret (.bool false)],
         .letMut "i" (.num 0),
-        .forOf "v" a [
-          .ifThen (.not (.call "__eq" [.var "v", .index b i])) [.ret (.bool false)],
-          .setVar "i" (.bin "+" i (.num 1))],
+        .forOf "v" (.var "a") [
+          .ifThen (.not (.call "__eq" [.var "v", .index (.var "b") (.var "i")])) [.ret (.bool false)],
+          .setVar "i" (.bin "+" (.var "i") (.num 1))],
         .ret (.bool true)],
-      .const "keys" (.prim "Object.keys" [a]),
-      .ifThen (.bin "!==" (lengthOf (.var "keys")) (lengthOf (.prim "Object.keys" [b])))
+      .const "keys" (.prim "Object.keys" [(.var "a")]),
+      .ifThen (.bin "!==" (lengthOf (.var "keys")) (lengthOf (.prim "Object.keys" [(.var "b")])))
         [.ret (.bool false)],
       .forOf "key" (.var "keys") [
-        .ifThen (.not (.prim "Object.hasOwn" [b, .var "key"])) [.ret (.bool false)],
-        .ifThen (.not (.call "__eq" [.index a (.var "key"), .index b (.var "key")]))
+        .ifThen (.not (.prim "Object.hasOwn" [(.var "b"), .var "key"])) [.ret (.bool false)],
+        .ifThen (.not (.call "__eq" [.index (.var "a") (.var "key"), .index (.var "b") (.var "key")]))
           [.ret (.bool false)]],
-      .ret (.bool true)] },
+      .ret (.bool true)] }
+
+def map : Def :=
 
   { name := "__map", params := ["xs", "f"], body := .block [
       .const "out" (.arrayLit []),
-      .forOf "v" xs [.push "out" (.apply (.var "f") [.var "v"])],
-      .ret (.var "out")] },
+      .forOf "v" (.var "xs") [.push "out" (.apply (.var "f") [.var "v"])],
+      .ret (.var "out")] }
+
+def filter : Def :=
 
   { name := "__filter", params := ["xs", "f"], body := .block [
       .const "out" (.arrayLit []),
-      .forOf "v" xs [
+      .forOf "v" (.var "xs") [
         .ifThen (.apply (.var "f") [.var "v"]) [.push "out" (.var "v")]],
-      .ret (.var "out")] },
+      .ret (.var "out")] }
+
+def find : Def :=
 
   { name := "__find", params := ["xs", "f"]
     doc := ["Stops at the first element the predicate accepts, so a predicate that would trap later",
             "never runs."]
     body := .block [
-      .forOf "v" xs [
+      .forOf "v" (.var "xs") [
         .ifThen (.apply (.var "f") [.var "v"])
           [.ret (.objLit [("tag", .str "some"), ("value", .var "v")])]],
-      .ret (.objLit [("tag", .str "none")])] },
+      .ret (.objLit [("tag", .str "none")])] }
+
+def all : Def :=
 
   { name := "__all", params := ["xs", "f"], body := .block [
-      .forOf "v" xs [.ifThen (.not (.apply (.var "f") [.var "v"])) [.ret (.bool false)]],
-      .ret (.bool true)] },
+      .forOf "v" (.var "xs") [.ifThen (.not (.apply (.var "f") [.var "v"])) [.ret (.bool false)]],
+      .ret (.bool true)] }
+
+def any : Def :=
 
   { name := "__any", params := ["xs", "f"], body := .block [
-      .forOf "v" xs [.ifThen (.apply (.var "f") [.var "v"]) [.ret (.bool true)]],
-      .ret (.bool false)] },
+      .forOf "v" (.var "xs") [.ifThen (.apply (.var "f") [.var "v"]) [.ret (.bool true)]],
+      .ret (.bool false)] }
+
+def reduce : Def :=
 
   { name := "__reduce", params := ["xs", "init", "f"], body := .block [
       .letMut "acc" (.var "init"),
-      .forOf "v" xs [.setVar "acc" (.apply (.var "f") [.var "acc", .var "v"])],
-      .ret (.var "acc")] },
+      .forOf "v" (.var "xs") [.setVar "acc" (.apply (.var "f") [.var "acc", .var "v"])],
+      .ret (.var "acc")] }
+
+def isObj : Def :=
 
   { name := "__isObj", params := ["x"]
-    body := .expr (and2 [.bin "===" (.typeOf x) (.str "object"), .bin "!==" x .null,
-      .not (.prim "Array.isArray" [x])]) },
+    body := .expr (and2 [.bin "===" (.typeOf (.var "x")) (.str "object"), .bin "!==" (.var "x") .null,
+      .not (.prim "Array.isArray" [(.var "x")])]) }
+
+def hasFields : Def :=
 
   { name := "__hasFields", params := ["x", "fields"]
     doc := ["Fields are compared in order and by count, because eval compares them that way: a missing",
             "field, an extra one and a reordering are all type errors."]
     body := .block [
-      .const "keys" (.prim "Object.keys" [x]),
+      .const "keys" (.prim "Object.keys" [(.var "x")]),
       .ifThen (.bin "!==" (lengthOf (.var "keys"))
         (.bin "+" (lengthOf (.var "fields")) (.num 1))) [.ret (.bool false)],
       .letMut "i" (.num 0),
       .forOf "f" (.var "fields") [
-        .ifThen (.bin "!==" (.index (.var "keys") (.bin "+" i (.num 1)))
+        .ifThen (.bin "!==" (.index (.var "keys") (.bin "+" (.var "i") (.num 1)))
           (.index (.var "f") (.num 0))) [.ret (.bool false)],
-        .ifThen (.not (.call "__has" [.index x (.index (.var "f") (.num 0)),
+        .ifThen (.not (.call "__has" [.index (.var "x") (.index (.var "f") (.num 0)),
           .index (.var "f") (.num 1)])) [.ret (.bool false)],
-        .setVar "i" (.bin "+" i (.num 1))],
-      .ret (.bool true)] },
+        .setVar "i" (.bin "+" (.var "i") (.num 1))],
+      .ret (.bool true)] }
+
+def has : Def :=
 
   { name := "__has", params := ["x", "t"], body := .block [
-      .const "k" (.index t (.num 0)),
-      .ifThen (.bin "===" k (.str "bool")) [.ret (.bin "===" (.typeOf x) (.str "boolean"))],
-      .ifThen (.bin "===" k (.str "int53")) [.ret (and2 [
-        .bin "===" (.typeOf x) (.str "number"), .prim "Number.isSafeInteger" [x]])],
-      .ifThen (.bin "===" k (.str "uint32")) [.ret (and2 [
-        .bin "===" (.typeOf x) (.str "number"), .prim "Number.isInteger" [x],
-        .bin ">=" x (.num 0), .bin "<=" x (.num 4294967295)])],
-      .ifThen (.bin "===" k (.str "string")) [.ret (.bin "===" (.typeOf x) (.str "string"))],
-      .ifThen (.bin "===" k (.str "bigint")) [.ret (.bin "===" (.typeOf x) (.str "bigint"))],
-      .ifThen (.bin "===" k (.str "array")) [.ret (and2 [
-        .prim "Array.isArray" [x],
-        .call "__all" [x, .lam ["e"] (.call "__has" [.var "e", .index t (.num 1)])]])],
-      .ifThen (.bin "===" k (.str "dict")) [
-        .ifThen (.not (.bin "instanceof" x (.var "Map"))) [.ret (.bool false)],
-        .ifThen (.not (.call "__all" [.call "__dkeys" [x],
+      .const "k" (.index (.var "t") (.num 0)),
+      .ifThen (.bin "===" (.var "k") (.str "bool")) [.ret (.bin "===" (.typeOf (.var "x")) (.str "boolean"))],
+      .ifThen (.bin "===" (.var "k") (.str "int53")) [.ret (and2 [
+        .bin "===" (.typeOf (.var "x")) (.str "number"), .prim "Number.isSafeInteger" [(.var "x")]])],
+      .ifThen (.bin "===" (.var "k") (.str "uint32")) [.ret (and2 [
+        .bin "===" (.typeOf (.var "x")) (.str "number"), .prim "Number.isInteger" [(.var "x")],
+        .bin ">=" (.var "x") (.num 0), .bin "<=" (.var "x") (.num 4294967295)])],
+      .ifThen (.bin "===" (.var "k") (.str "string")) [.ret (.bin "===" (.typeOf (.var "x")) (.str "string"))],
+      .ifThen (.bin "===" (.var "k") (.str "bigint")) [.ret (.bin "===" (.typeOf (.var "x")) (.str "bigint"))],
+      .ifThen (.bin "===" (.var "k") (.str "array")) [.ret (and2 [
+        .prim "Array.isArray" [(.var "x")],
+        .call "__all" [(.var "x"), .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])]])],
+      .ifThen (.bin "===" (.var "k") (.str "dict")) [
+        .ifThen (.not (.isMap (.var "x"))) [.ret (.bool false)],
+        .ifThen (.not (.call "__all" [.call "__dkeys" [(.var "x")],
           .lam ["key"] (.bin "===" (.typeOf (.var "key")) (.str "string"))])) [.ret (.bool false)],
-        .ret (.call "__all" [.call "__dvalues" [x],
-          .lam ["e"] (.call "__has" [.var "e", .index t (.num 1)])])],
-      .ifThen (.not (.call "__isObj" [x])) [.ret (.bool false)],
-      .ifThen (.bin "===" k (.str "option")) [
-        .ifThen (.bin "===" (.field x "tag") (.str "none"))
-          [.ret (.call "__hasFields" [x, .arrayLit []])],
-        .ret (and2 [.bin "===" (.field x "tag") (.str "some"),
-          .call "__hasFields" [x, .arrayLit [.arrayLit [.str "value", .index t (.num 1)]]]])],
-      .ifThen (.bin "===" k (.str "result")) [
-        .ifThen (.bin "===" (.field x "tag") (.str "ok"))
-          [.ret (.call "__hasFields" [x, .arrayLit [.arrayLit [.str "value", .index t (.num 1)]]])],
-        .ret (and2 [.bin "===" (.field x "tag") (.str "error"),
-          .call "__hasFields" [x, .arrayLit [.arrayLit [.str "error", .index t (.num 2)]]]])],
-      .const "alt" (.call "__find" [.index t (.num 1),
-        .lam ["c"] (.bin "===" (.index (.var "c") (.num 0)) (.field x "tag"))]),
+        .ret (.call "__all" [.call "__dvalues" [(.var "x")],
+          .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])])],
+      .ifThen (.not (.call "__isObj" [(.var "x")])) [.ret (.bool false)],
+      .ifThen (.bin "===" (.var "k") (.str "option")) [
+        .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
+          [.ret (.call "__hasFields" [(.var "x"), .arrayLit []])],
+        .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "some"),
+          .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]]])],
+      .ifThen (.bin "===" (.var "k") (.str "result")) [
+        .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
+          [.ret (.call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
+        .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "error"),
+          .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]]])],
+      .const "alt" (.call "__find" [.index (.var "t") (.num 1),
+        .lam ["c"] (.bin "===" (.index (.var "c") (.num 0)) (.field (.var "x") "tag"))]),
       .ret (and2 [.bin "===" (.field (.var "alt") "tag") (.str "some"),
-        .call "__hasFields" [x, .index (.field (.var "alt") "value") (.num 1)]])] },
+        .call "__hasFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1)]])] }
+
+def ck : Def :=
 
   { name := "__ck", params := ["x", "t"]
     doc := ["Validates without normalising, unlike __i53. A -0 argument is a safe integer, and every",
             "answer built from it passes through __i53 or a comparison that already treats -0 and 0",
             "alike, so normalising here would change nothing a caller can observe."]
-    body := .expr (.cond (.call "__has" [x, t]) x (.call "__fail" [.str "typeError"])) }
+    body := .expr (.cond (.call "__has" [(.var "x"), (.var "t")]) (.var "x") (.call "__fail" [.str "typeError"])) }
+
+def defs : List Def := [
+  fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
+  strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split, substring,
+  aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues, ddelete, eq, map, filter,
+  find, all, any, reduce, isObj, hasFields, has, ck
 ]
 
 def runtime : String := renderAll defs

@@ -61,13 +61,15 @@ inductive Res (α : Type) where
   | ok (v : α)
   deriving Inhabited
 
+def Res.bind {α β} (r : Res α) (k : α → Res β) : Res β :=
+  match r with
+  | .stuck => .stuck
+  | .thrown c => .thrown c
+  | .ok a => k a
+
 instance : Monad Res where
   pure := .ok
-  bind r k :=
-    match r with
-    | .stuck => .stuck
-    | .thrown c => .thrown c
-    | .ok a => k a
+  bind := Res.bind
 
 /-! ## Values -/
 
@@ -119,21 +121,21 @@ def strictEq : Val → Val → Bool
 
 open LeanTs.Js.Runtime (safeMin safeMax wrap32 u32)
 
-private def toInt32 (i : Int) : Int :=
+def toInt32 (i : Int) : Int :=
   let m := u32 i
   if m < 2147483648 then m else m - wrap32
 
 /-- `Math.imul`: both arguments truncated to int32, multiplied, truncated again. -/
 def imul (a b : Int) : Int := toInt32 (toInt32 a * toInt32 b)
 
-private def keep : String → Ordering → Option Bool
+def keep : String → Ordering → Option Bool
   | "<", o => some (o == .lt)
   | "<=", o => some (o != .gt)
   | ">", o => some (o == .gt)
   | ">=", o => some (o != .lt)
   | _, _ => none
 
-private def numOf : Val → Option Int
+def numOf : Val → Option Int
   | .num i => some i
   | .bigint i => some i
   | _ => none
@@ -189,15 +191,15 @@ def prim (name : String) (args : List Val) : Res Val :=
   | "Object.hasOwn", [.obj fields, .str key] => .ok (.bool (fields.any (·.1 == key)))
   | _, _ => .stuck
 
-private def joinStrs : List Val → Option String
+def joinStrs : List Val → Option String
   | [] => some ""
   | .str s :: rest => (joinStrs rest).map (s ++ ·)
   | _ => none
 
-private def upperOne (c : Char) : Option Char :=
+def upperOne (c : Char) : Option Char :=
   if 'a' ≤ c && c ≤ 'z' then some (Char.ofNat (c.toNat - 32)) else none
 
-private def lowerOne (c : Char) : Option Char :=
+def lowerOne (c : Char) : Option Char :=
   if 'A' ≤ c && c ≤ 'Z' then some (Char.ofNat (c.toNat + 32)) else none
 
 /-- The methods the helpers call. `toUpperCase` and `toLowerCase` are defined only on the single ASCII
@@ -263,20 +265,20 @@ inductive Outcome where
   | brk (env : Env)
   | ret (v : Val)
 
-private def lookup (env : Env) (name : String) : Option Val :=
+def lookup (env : Env) (name : String) : Option Val :=
   (env.find? (·.1 == name)).map (·.2)
 
-private def update (env : Env) (name : String) (v : Val) : Env :=
+def update (env : Env) (name : String) (v : Val) : Env :=
   env.map fun e => if e.1 == name then (name, v) else e
 
-private def restore (outer inner : Env) : Env :=
+def restore (outer inner : Env) : Env :=
   outer.map fun e => (e.1, (lookup inner e.1).getD e.2)
 
-private def bindAll : List String → List Val → Env
+def bindAll : List String → List Val → Env
   | n :: ns, v :: vs => (n, v) :: bindAll ns vs
   | _, _ => []
 
-private def mapSet (es : List (String × Val)) (key : String) (v : Val) : List (String × Val) :=
+def mapSet (es : List (String × Val)) (key : String) (v : Val) : List (String × Val) :=
   if es.any (·.1 == key) then es.map (fun e => if e.1 == key then (key, v) else e)
   else es ++ [(key, v)]
 
@@ -311,18 +313,18 @@ def evalExpr (ext : Ext) (fuel : Nat) (env : Env) (e : Helper.Expr) : Res Val :=
       | .bigint i => .ok (.bigint (-i))
       | _ => .stuck
     | .typeOf x => do .ok (.str (typeOf (← evalExpr ext f env x)))
-    | .bin "&&" lhs rhs => do
+    | .andAlso lhs rhs => do
       match ← evalExpr ext f env lhs with
       | .bool false => .ok (.bool false)
       | .bool true => evalExpr ext f env rhs
       | _ => .stuck
-    | .bin "||" lhs rhs => do
+    | .orElse lhs rhs => do
       match ← evalExpr ext f env lhs with
       | .bool true => .ok (.bool true)
       | .bool false => evalExpr ext f env rhs
       | _ => .stuck
-    | .bin "instanceof" lhs (.var "Map") => do
-      match ← evalExpr ext f env lhs with
+    | .isMap e => do
+      match ← evalExpr ext f env e with
       | .dict _ => .ok (.bool true)
       | _ => .ok (.bool false)
     | .bin op lhs rhs => do
@@ -342,13 +344,15 @@ def evalExpr (ext : Ext) (fuel : Nat) (env : Env) (e : Helper.Expr) : Res Val :=
     | .apply g args => do
       let fn ← evalExpr ext f env g
       applyVal ext f fn (← evalArgs ext f env args)
-    | .new_ "Map" [] => .ok (.dict [])
-    | .new_ "Map" [src] => do
-      match ← evalExpr ext f env src with
-      | .dict es => .ok (.dict es)
-      | _ => .stuck
-    | .new_ "Error" [msg] => do .ok (.obj [("message", ← evalExpr ext f env msg)])
-    | .new_ _ _ => .stuck
+    | .new_ cls args =>
+      match cls, args with
+      | "Map", [] => .ok (.dict [])
+      | "Map", [src] => do
+        match ← evalExpr ext f env src with
+        | .dict es => .ok (.dict es)
+        | _ => .stuck
+      | "Error", [msg] => do .ok (.obj [("message", ← evalExpr ext f env msg)])
+      | _, _ => .stuck
     | .field recv name => do field (← evalExpr ext f env recv) name
     | .index recv idx => do
       let r ← evalExpr ext f env recv
