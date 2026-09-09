@@ -191,6 +191,12 @@ def prim (name : String) (args : List Val) : Res Val :=
   | "Object.hasOwn", [.obj fields, .str key] => .ok (.bool (fields.any (·.1 == key)))
   | _, _ => .stuck
 
+/-- Looking a key up in an object or a dictionary: the first entry that carries it, `undefined` when
+none does. Duplicate keys are the caller's problem, not this model's — `Object.keys` and `Map` both
+answer from the first match. -/
+def lookupV (es : List (String × Val)) (k : String) : Val :=
+  ((es.find? (·.1 == k)).map (·.2)).getD .undef
+
 def joinStrs : List Val → Option String
   | [] => some ""
   | .str s :: rest => (joinStrs rest).map (s ++ ·)
@@ -235,8 +241,7 @@ def method (recv : Val) (name : String) (args : List Val) : Res Val :=
     | some s => .ok (.str s)
     | none => .stuck
   | .dict es, "has", [.str key] => .ok (.bool (es.any (·.1 == key)))
-  | .dict es, "get", [.str key] =>
-    .ok (((es.find? (·.1 == key)).map (·.2)).getD .undef)
+  | .dict es, "get", [.str key] => .ok (lookupV es key)
   | .dict es, "keys", [] => .ok (.arr (es.map fun e => .str e.1))
   | .dict es, "values", [] => .ok (.arr (es.map (·.2)))
   | _, _, _ => .stuck
@@ -245,7 +250,7 @@ def field (recv : Val) (name : String) : Res Val :=
   match recv, name with
   | .arr xs, "length" => .ok (.num xs.length)
   | .dict es, "size" => .ok (.num es.length)
-  | .obj fs, n => .ok (((fs.find? (·.1 == n)).map (·.2)).getD .undef)
+  | .obj fs, n => .ok (lookupV fs n)
   | .arr _, _ => .ok .undef
   | .dict _, _ => .ok .undef
   | _, _ => .stuck
@@ -253,7 +258,7 @@ def field (recv : Val) (name : String) : Res Val :=
 def index (recv : Val) (i : Val) : Res Val :=
   match recv, i with
   | .arr xs, .num n => .ok (if 0 ≤ n then (xs[n.toNat]?).getD .undef else .undef)
-  | .obj fs, .str key => .ok (((fs.find? (·.1 == key)).map (·.2)).getD .undef)
+  | .obj fs, .str key => .ok (lookupV fs key)
   | _, _ => .stuck
 
 /-! ## The evaluator -/

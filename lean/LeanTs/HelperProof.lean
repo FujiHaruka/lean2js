@@ -418,7 +418,7 @@ theorem calls_dvalues (ext : Ext) (es : List (String × Val)) (f : Nat) :
 theorem calls_dget (ext : Ext) (es : List (String × Val)) (key : String) (f : Nat) :
     callDef ext (f + 10) "__dget" [.dict es, .str key] =
       .ok (if es.any (·.1 == key) then
-            .obj [("tag", .str "some"), ("value", ((es.find? (·.1 == key)).map (·.2)).getD .undef)]
+            .obj [("tag", .str "some"), ("value", lookupV es key)]
           else .obj [("tag", .str "none")]) := by
   rw [show f + 10 = (f + 9) + 1 from rfl, callDef_expr find_dget rfl rfl]
   simp only [Helper.dget]
@@ -1585,5 +1585,375 @@ theorem calls_reduce (ext : Ext) (i : Nat) (xs : List Val) (a : Val) (f : Nat) :
   | stuck => rfl
   | thrown c => rfl
   | ok r => walk
+
+/-! ## Structural equality
+
+`__eq` decides a notion of its own, stated below as `eqVal`, not `JsValue.beq`. Two divergences, both
+real and both about values the compiler can produce:
+
+- **objects** are walked key by key with `Object.hasOwn`, so `{a:1,b:2}` and `{b:2,a:1}` are equal
+  here and unequal under `beq`, which compares the field lists in order;
+- **functions** never reach the structural path — `typeof` says `"function"`, not `"object"` — so the
+  helper answers `false` where `beq` compares the names.
+
+Dictionaries, unlike objects, are compared **positionally**: the loop checks `__dkeys(b)[i]` against
+the key it is on. Both walks look their values up by key in *both* operands, so the recursion is on
+`lookupV`, which is not structurally smaller — hence the well-founded definitions, and the fuel a
+call needs is a function of the values rather than a constant.
+-/
+
+theorem sizeOf_lookupV (es : List (String × Val)) (k : String) :
+    sizeOf (lookupV es k) < sizeOf (Val.obj es) := by
+  induction es with
+  | nil => simp [lookupV]
+  | cons e rest ih =>
+    by_cases h : e.1 == k
+    · simp only [lookupV, List.find?, h, Option.map, Option.getD]
+      have : sizeOf e.2 < sizeOf e := by
+        cases e
+        simp
+        omega
+      simp only [Val.obj.sizeOf_spec, List.cons.sizeOf_spec]
+      omega
+    · simp only [lookupV, List.find?, h, Bool.false_eq_true] at *
+      simp only [Val.obj.sizeOf_spec, List.cons.sizeOf_spec] at *
+      omega
+
+theorem sizeOf_lookupV_pair (es fs : List (String × Val)) (k : String) :
+    sizeOf (lookupV es k) + sizeOf (lookupV fs k) < 1 + sizeOf es + (1 + sizeOf fs) := by
+  have h1 := sizeOf_lookupV es k
+  have h2 := sizeOf_lookupV fs k
+  simp only [Val.obj.sizeOf_spec] at h1 h2
+  omega
+
+mutual
+
+def eqVal : Val → Val → Bool
+  | .dict es, .dict fs => es.length == fs.length && eqKeys es fs (es.map (·.1)) (fs.map (·.1))
+  | .arr xs, .arr ys => xs.length == ys.length && eqList xs ys
+  | .obj es, .obj fs => es.length == fs.length && eqObj es fs (es.map (·.1))
+  | a, b => strictEq a b
+termination_by a b => (sizeOf a + sizeOf b, 1, 0)
+
+def eqList : List Val → List Val → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | x :: xs, y :: ys => eqVal x y && eqList xs ys
+termination_by xs ys => (sizeOf xs + sizeOf ys, 1, 0)
+
+def eqKeys (es fs : List (String × Val)) : List String → List String → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | k :: ks, l :: ls =>
+    have := sizeOf_lookupV_pair es fs k
+    l == k && eqVal (lookupV es k) (lookupV fs k) && eqKeys es fs ks ls
+termination_by ks _ => (sizeOf (Val.dict es) + sizeOf (Val.dict fs), 0, sizeOf ks)
+
+def eqObj (es fs : List (String × Val)) : List String → Bool
+  | [] => true
+  | k :: ks =>
+    have := sizeOf_lookupV_pair es fs k
+    fs.any (·.1 == k) && eqVal (lookupV es k) (lookupV fs k) && eqObj es fs ks
+termination_by ks => (sizeOf (Val.obj es) + sizeOf (Val.obj fs), 0, sizeOf ks)
+
+end
+
+mutual
+
+def eqFuel : Val → Val → Nat
+  | .dict es, .dict fs => eqFuelKeys es fs (es.map (·.1)) + 32
+  | .arr xs, .arr ys => eqFuelList xs ys + 32
+  | .obj es, .obj fs => eqFuelKeys es fs (es.map (·.1)) + 32
+  | _, _ => 16
+termination_by a b => (sizeOf a + sizeOf b, 1, 0)
+
+def eqFuelList : List Val → List Val → Nat
+  | [], _ => 0
+  | _ :: _, [] => 0
+  | x :: xs, y :: ys => eqFuel x y + 8 + eqFuelList xs ys
+termination_by xs ys => (sizeOf xs + sizeOf ys, 1, 0)
+
+def eqFuelKeys (es fs : List (String × Val)) : List String → Nat
+  | [] => 0
+  | k :: ks =>
+    have := sizeOf_lookupV_pair es fs k
+    eqFuel (lookupV es k) (lookupV fs k) + 8 + eqFuelKeys es fs ks
+termination_by ks => (sizeOf (Val.obj es) + sizeOf (Val.obj fs), 0, sizeOf ks)
+
+end
+
+private theorem getElem?_middle {α} (pre : List α) (x : α) (suf : List α) :
+    (pre ++ x :: suf)[pre.length]? = some x := by
+  simp
+
+theorem eq_dict_loop (ext : Ext) (es fs : List (String × Val)) (KS : Val)
+    (hsub : ∀ (k : String) (g : Nat),
+      callDef ext (g + eqFuel (lookupV es k) (lookupV fs k)) "__eq"
+        [lookupV es k, lookupV fs k] = .ok (.bool (eqVal (lookupV es k) (lookupV fs k)))) :
+    ∀ (ks pre ls : List String) (f : Nat),
+    evalFor ext (f + eqFuelKeys es fs ks + 8)
+      [("i", .num pre.length), ("ls", .arr ((pre ++ ls).map Val.str)), ("ks", KS),
+       ("a", Val.dict es), ("b", Val.dict fs)] "key" (ks.map Val.str)
+      [.ifThen (.bin "!==" (.index (.var "ls") (.var "i")) (.var "key")) [.ret (.bool false)],
+       .ifThen (.not (.call "__eq" [.method (.var "a") "get" [.var "key"],
+                                    .method (.var "b") "get" [.var "key"]])) [.ret (.bool false)],
+       .setVar "i" (.bin "+" (.var "i") (.num 1))]
+      = (if eqKeys es fs ks ls then
+          .ok (.next [("i", .num (pre.length + ks.length)), ("ls", .arr ((pre ++ ls).map Val.str)),
+            ("ks", KS), ("a", Val.dict es), ("b", Val.dict fs)])
+        else .ok (.ret (.bool false))) := by
+  intro ks
+  induction ks with
+  | nil => intro pre ls f; walk; simp [eqKeys]
+  | cons k rest ih =>
+    intro pre ls f
+    simp only [eqFuelKeys]
+    rw [show f + (eqFuel (lookupV es k) (lookupV fs k) + 8 + eqFuelKeys es fs rest) + 8
+      = (f + eqFuel (lookupV es k) (lookupV fs k) + eqFuelKeys es fs rest + 15) + 1 from by omega]
+    walk
+    rw [if_pos (by omega : (0:Int) ≤ ((pre.length : Nat) : Int)), Int.toNat_natCast,
+      List.getElem?_map]
+    cases ls with
+    | nil =>
+      simp only [List.append_nil, List.getElem?_eq_none (by simp : pre.length ≤ pre.length)]
+      walk
+      simp [eqKeys]
+    | cons l ls =>
+      rw [getElem?_middle]
+      simp only [Option.getD]
+      walk
+      simp only [eqKeys]
+      cases hl : (l == k) with
+      | false => walk; simp
+      | true =>
+        rw [show f + eqFuel (lookupV es k) (lookupV fs k) + eqFuelKeys es fs rest + 11
+          = (f + eqFuelKeys es fs rest + 11) + eqFuel (lookupV es k) (lookupV fs k) from by omega,
+          hsub]
+        cases hv : eqVal (lookupV es k) (lookupV fs k) with
+        | false => walk; simp
+        | true =>
+          walk
+          rw [show ((pre.length : Nat) : Int) + 1 = (((pre ++ [l]).length : Nat) : Int) from by simp,
+            show f + eqFuel (lookupV es k) (lookupV fs k) + eqFuelKeys es fs rest + 15
+              = (f + eqFuel (lookupV es k) (lookupV fs k) + 7) + eqFuelKeys es fs rest + 8 from by omega,
+            show pre ++ l :: ls = (pre ++ [l]) ++ ls from by simp,
+            ih]
+          rw [show (((pre ++ [l]).length : Nat) : Int) + ((rest.length : Nat) : Int)
+            = ((pre.length : Nat) : Int) + (((rest.length + 1 : Nat)) : Int) from by
+              simp only [List.length_append, List.length_cons, List.length_nil]; omega,
+            show pre ++ [l] ++ ls = pre ++ l :: ls from by simp]
+          simp
+
+
+theorem eq_arr_loop (ext : Ext) (A : Val) :
+    ∀ (xs ys pre : List Val) (f : Nat), xs.length = ys.length →
+    (∀ x ∈ xs, ∀ y ∈ ys, ∀ g, callDef ext (g + eqFuel x y) "__eq" [x, y]
+      = .ok (.bool (eqVal x y))) →
+    evalFor ext (f + eqFuelList xs ys + 8)
+      [("i", .num pre.length), ("a", A), ("b", .arr (pre ++ ys))] "v" xs
+      [.ifThen (.not (.call "__eq" [.var "v", .index (.var "b") (.var "i")])) [.ret (.bool false)],
+       .setVar "i" (.bin "+" (.var "i") (.num 1))]
+      = (if eqList xs ys then
+          .ok (.next [("i", .num (pre.length + xs.length)), ("a", A), ("b", .arr (pre ++ ys))])
+        else .ok (.ret (.bool false))) := by
+  intro xs
+  induction xs with
+  | nil => intro ys pre f _ _; walk; simp [eqList]
+  | cons x rest ih =>
+    intro ys pre f hlen hsub
+    cases ys with
+    | nil => simp at hlen
+    | cons y ys =>
+      simp only [eqFuelList]
+      rw [show f + (eqFuel x y + 8 + eqFuelList rest ys) + 8
+        = (f + eqFuel x y + eqFuelList rest ys + 15) + 1 from by omega]
+      walk
+      rw [if_pos (by omega : (0:Int) ≤ ((pre.length : Nat) : Int)), Int.toNat_natCast,
+        getElem?_middle]
+      simp only [Option.getD]
+      rw [show f + eqFuel x y + eqFuelList rest ys + 12
+        = (f + eqFuelList rest ys + 12) + eqFuel x y from by omega,
+        hsub x (by simp) y (by simp)]
+      simp only [eqList]
+      cases hv : eqVal x y with
+      | false => walk; simp
+      | true =>
+        walk
+        rw [show ((pre.length : Nat) : Int) + 1 = (((pre ++ [y]).length : Nat) : Int) from by simp,
+          show f + eqFuel x y + eqFuelList rest ys + 15
+            = (f + eqFuel x y + 7) + eqFuelList rest ys + 8 from by omega,
+          show pre ++ y :: ys = (pre ++ [y]) ++ ys from by simp,
+          ih ys (pre ++ [y]) (f + eqFuel x y + 7) (by simp at hlen; omega)
+            (fun u hu v hv => hsub u (by simp [hu]) v (by simp [hv])),
+          show (((pre ++ [y]).length : Nat) : Int) + ((rest.length : Nat) : Int)
+            = ((pre.length : Nat) : Int) + (((rest.length + 1 : Nat)) : Int) from by
+              simp only [List.length_append, List.length_cons, List.length_nil]; omega,
+          show pre ++ [y] ++ ys = pre ++ y :: ys from by simp]
+        simp
+
+
+theorem find_eq : Helper.defs.find? (·.name == "__eq") = some Helper.eq := rfl
+
+private theorem eqVal_of_strictEq {a b : Val} (h : strictEq a b = true) : eqVal a b = true := by
+  rw [eqVal.eq_def]; split <;> simp_all [strictEq]
+
+private theorem eqVal_of_guard {a b : Val}
+    (h : (typeOf a == typeOf b) = false ∨ (typeOf a == "object") = false
+      ∨ strictEq a .null = true ∨ strictEq b .null = true) :
+    eqVal a b = strictEq a b := by
+  rw [eqVal.eq_def]; split <;> simp_all [strictEq, typeOf]
+
+private theorem object_cases {a : Val} (h : (typeOf a == "object") = true)
+    (hn : strictEq a .null = false) :
+    (∃ es, a = .obj es) ∨ (∃ xs, a = .arr xs) ∨ (∃ es, a = .dict es) := by
+  cases a <;> simp_all [typeOf, strictEq]
+
+private theorem eqFuel_split (a b : Val) : ∃ m, eqFuel a b = m + 16 := by
+  refine ⟨eqFuel a b - 16, ?_⟩
+  have h : 16 ≤ eqFuel a b := by rw [eqFuel.eq_def]; split <;> omega
+  omega
+
+set_option maxHeartbeats 4000000 in
+private theorem calls_eq_aux (ext : Ext) : ∀ (n : Nat) (a b : Val), sizeOf a + sizeOf b < n →
+    ∀ (f : Nat), callDef ext (f + eqFuel a b) "__eq" [a, b] = .ok (.bool (eqVal a b)) := by
+  intro n
+  induction n with
+  | zero => intro a b h; exact absurd h (by omega)
+  | succ n ih =>
+    intro a b hlt f
+    obtain ⟨m, hm⟩ := eqFuel_split a b
+    rw [hm, show f + (m + 16) = (f + m + 15) + 1 from by omega,
+      callDef_block find_eq rfl rfl]
+    simp only [Helper.eq]
+    walk
+    simp only [← strictEq.eq_def, ← typeOf.eq_def]
+    cases hs : strictEq a b with
+    | true => rw [eqVal_of_strictEq hs]
+    | false =>
+      cases ht : (typeOf a == typeOf b) with
+      | false => rw [eqVal_of_guard (Or.inl ht), hs]; simp
+      | true =>
+        simp only []
+        cases hto : (typeOf a == "object") with
+        | false => rw [eqVal_of_guard (Or.inr (Or.inl hto)), hs]; simp
+        | true =>
+          simp only [Bool.not_true]
+          cases hna : strictEq a Val.null with
+          | true => rw [eqVal_of_guard (Or.inr (Or.inr (Or.inl hna))), hs]; simp
+          | false =>
+            cases hnb : strictEq b Val.null with
+            | true => rw [eqVal_of_guard (Or.inr (Or.inr (Or.inr hnb))), hs]; simp
+            | false =>
+              have htob : (typeOf b == "object") = true := by
+                simp only [beq_iff_eq] at ht hto ⊢
+                rw [← ht]; exact hto
+              rcases object_cases hto hna with ⟨es, rfl⟩ | ⟨xs, rfl⟩ | ⟨es, rfl⟩
+              · rcases object_cases htob hnb with ⟨fs, rfl⟩ | ⟨ys, rfl⟩ | ⟨fs, rfl⟩
+                · walk
+                  have hml : m = eqFuelKeys es fs (es.map (·.1)) + 16 := by
+                    simp only [eqFuel] at hm; omega
+                  subst hml
+                  have hsub : ∀ (k : String) (g : Nat),
+                      callDef ext (g + eqFuel (lookupV es k) (lookupV fs k)) "__eq"
+                        [lookupV es k, lookupV fs k]
+                        = .ok (.bool (eqVal (lookupV es k) (lookupV fs k))) := fun k g =>
+                    ih _ _ (by
+                      have h1 := sizeOf_lookupV_pair es fs k
+                      simp only [Val.obj.sizeOf_spec] at hlt
+                      omega) g
+                  rw [show (es.map fun e => Val.str e.fst) = (es.map (·.1)).map Val.str from by
+                      simp only [List.map_map]; rfl,
+                    show f + (eqFuelKeys es fs (es.map (·.1)) + 16) + 6
+                      = (f + 14) + eqFuelKeys es fs (es.map (·.1)) + 8 from by omega,
+                    eq_obj_loop ext es fs _ hsub]
+                  simp only [eqVal]
+                  by_cases hlen : es.length = fs.length
+                  · rw [hlen]
+                    simp only [beq_self_eq_true, Bool.not_true, Bool.true_and]
+                    cases heo : eqObj es fs (es.map (·.1)) <;> simp
+                  · rw [show (((es.length : Nat) : Int) == ((fs.length : Nat) : Int)) = false from by
+                        simp only [beq_eq_false_iff_ne, ne_eq]; omega,
+                      show (es.length == fs.length) = false from by simp [hlen]]
+                    simp
+                · walk; simp only [Helper.eqArrays]; walk; simp [eqVal, strictEq]
+                · walk; simp only [Helper.eqMaps]; walk; simp [eqVal, strictEq]
+              · rcases object_cases htob hnb with ⟨fs, rfl⟩ | ⟨ys, rfl⟩ | ⟨fs, rfl⟩
+                · walk; simp only [Helper.eqArrays]; walk; simp [eqVal, strictEq]
+                · walk
+                  simp only [Helper.eqArrays]
+                  walk
+                  have hml : m = eqFuelList xs ys + 16 := by simp only [eqFuel] at hm; omega
+                  subst hml
+                  simp only [eqVal]
+                  by_cases hlen : xs.length = ys.length
+                  · have hsub : ∀ x ∈ xs, ∀ y ∈ ys, ∀ g,
+                        callDef ext (g + eqFuel x y) "__eq" [x, y] = .ok (.bool (eqVal x y)) := by
+                      intro x hx y hy g
+                      refine ih _ _ ?_ g
+                      have h1 := List.sizeOf_lt_of_mem hx
+                      have h2 := List.sizeOf_lt_of_mem hy
+                      simp only [Val.arr.sizeOf_spec] at hlt
+                      omega
+                    have hloop := eq_arr_loop ext (Val.arr xs) xs ys [] (f + 13) hlen hsub
+                    simp only [List.nil_append, List.length_nil,
+                      show (((0 : Nat)) : Int) = 0 from rfl] at hloop
+                    rw [hlen]
+                    simp only [beq_self_eq_true, Bool.not_true, Bool.true_and]
+                    rw [show f + (eqFuelList xs ys + 16) + 5 = f + 13 + eqFuelList xs ys + 8 from by omega,
+                      hloop]
+                    cases heo : eqList xs ys <;> simp
+                  · rw [show (((xs.length : Nat) : Int) == ((ys.length : Nat) : Int)) = false from by
+                        simp only [beq_eq_false_iff_ne, ne_eq]; omega,
+                      show (xs.length == ys.length) = false from by simp [hlen]]
+                    simp
+                · walk; simp only [Helper.eqMaps]; walk; simp [eqVal, strictEq]
+              · rcases object_cases htob hnb with ⟨fs, rfl⟩ | ⟨ys, rfl⟩ | ⟨fs, rfl⟩
+                · walk; simp only [Helper.eqMaps]; walk; simp [eqVal, strictEq]
+                · walk; simp only [Helper.eqMaps]; walk; simp [eqVal, strictEq]
+                · walk
+                  simp only [Helper.eqMaps]
+                  walk
+                  have hml : m = eqFuelKeys es fs (es.map (·.1)) + 16 := by
+                    simp only [eqFuel] at hm; omega
+                  subst hml
+                  rw [show f + (eqFuelKeys es fs (es.map (·.1)) + 16) + 6
+                      = (f + eqFuelKeys es fs (es.map (·.1)) + 17) + 5 from by omega, calls_dkeys,
+                    show f + (eqFuelKeys es fs (es.map (·.1)) + 16) + 5
+                      = (f + eqFuelKeys es fs (es.map (·.1)) + 16) + 5 from rfl, calls_dkeys]
+                  walk
+                  simp only [eqVal]
+                  by_cases hlen : es.length = fs.length
+                  · have hsub : ∀ (k : String) (g : Nat),
+                        callDef ext (g + eqFuel (lookupV es k) (lookupV fs k)) "__eq"
+                          [lookupV es k, lookupV fs k]
+                          = .ok (.bool (eqVal (lookupV es k) (lookupV fs k))) := fun k g =>
+                      ih _ _ (by
+                        have h1 := sizeOf_lookupV_pair es fs k
+                        simp only [Val.dict.sizeOf_spec] at hlt
+                        omega) g
+                    have hloop := eq_dict_loop ext es fs
+                      (Val.arr ((es.map (·.1)).map Val.str)) hsub
+                      (es.map (·.1)) [] (fs.map (·.1)) (f + 12)
+                    simp only [List.nil_append, List.length_nil,
+                      show (((0 : Nat)) : Int) = 0 from rfl] at hloop
+                    rw [hlen]
+                    simp only [beq_self_eq_true, Bool.not_true, Bool.true_and]
+                    rw [show f + (eqFuelKeys es fs (es.map (·.1)) + 16) + 4
+                        = f + 12 + eqFuelKeys es fs (es.map (·.1)) + 8 from by omega,
+                      show (es.map fun e => Val.str e.fst) = (es.map (·.1)).map Val.str from by
+                        simp only [List.map_map]; rfl,
+                      show (fs.map fun e => Val.str e.fst) = (fs.map (·.1)).map Val.str from by
+                        simp only [List.map_map]; rfl,
+                      hloop]
+                    cases heo : eqKeys es fs (es.map (·.1)) (fs.map (·.1)) <;> simp
+                  · rw [show (((es.length : Nat) : Int) == ((fs.length : Nat) : Int)) = false from by
+                        simp only [beq_eq_false_iff_ne, ne_eq]; omega,
+                      show (es.length == fs.length) = false from by simp [hlen]]
+                    simp
+
+
+theorem calls_eq (ext : Ext) (a b : Val) (f : Nat) :
+    callDef ext (f + eqFuel a b) "__eq" [a, b] = .ok (.bool (eqVal a b)) :=
+  calls_eq_aux ext (sizeOf a + sizeOf b + 1) a b (by omega) f
 
 end LeanTs.HelperSem

@@ -461,6 +461,32 @@ def ddelete : Def :=
           [.setKey "out" (.var "key") (.method (.var "d") "get" [.var "key"])]],
       .ret (.var "out")] }
 
+/-- `__eq` on two `Map`s: same size, then the keys in the order the iterators hand them over. -/
+def eqMaps : List Stmt := [
+  .ifThen (.not (and2 [.isMap (.var "a"), .isMap (.var "b")]))
+    [.ret (.bool false)],
+  .ifThen (.bin "!==" (.field (.var "a") "size") (.field (.var "b") "size")) [.ret (.bool false)],
+  .const "ks" (.call "__dkeys" [(.var "a")]),
+  .const "ls" (.call "__dkeys" [(.var "b")]),
+  .letMut "i" (.num 0),
+  .forOf "key" (.var "ks") [
+    .ifThen (.bin "!==" (.index (.var "ls") (.var "i")) (.var "key")) [.ret (.bool false)],
+    .ifThen (.not (.call "__eq" [.method (.var "a") "get" [.var "key"], .method (.var "b") "get" [.var "key"]]))
+      [.ret (.bool false)],
+    .setVar "i" (.bin "+" (.var "i") (.num 1))],
+  .ret (.bool true)]
+
+/-- `__eq` on two arrays: same length, then element by element. -/
+def eqArrays : List Stmt := [
+  .ifThen (.not (and2 [.prim "Array.isArray" [(.var "a")], .prim "Array.isArray" [(.var "b")]]))
+    [.ret (.bool false)],
+  .ifThen (.bin "!==" (lengthOf (.var "a")) (lengthOf (.var "b"))) [.ret (.bool false)],
+  .letMut "i" (.num 0),
+  .forOf "v" (.var "a") [
+    .ifThen (.not (.call "__eq" [.var "v", .index (.var "b") (.var "i")])) [.ret (.bool false)],
+    .setVar "i" (.bin "+" (.var "i") (.num 1))],
+  .ret (.bool true)]
+
 def eq : Def :=
 
   { name := "__eq", params := ["a", "b"]
@@ -470,28 +496,8 @@ def eq : Def :=
       .ifThen (.bin "!==" (.typeOf (.var "a")) (.typeOf (.var "b"))) [.ret (.bool false)],
       .ifThen (.bin "!==" (.typeOf (.var "a")) (.str "object")) [.ret (.bool false)],
       .ifThen (.orElse (.bin "===" (.var "a") .null) (.bin "===" (.var "b") .null)) [.ret (.bool false)],
-      .ifThen (.orElse (.isMap (.var "a")) (.isMap (.var "b"))) [
-        .ifThen (.not (and2 [.isMap (.var "a"), .isMap (.var "b")]))
-          [.ret (.bool false)],
-        .ifThen (.bin "!==" (.field (.var "a") "size") (.field (.var "b") "size")) [.ret (.bool false)],
-        .const "ks" (.call "__dkeys" [(.var "a")]),
-        .const "ls" (.call "__dkeys" [(.var "b")]),
-        .letMut "i" (.num 0),
-        .forOf "key" (.var "ks") [
-          .ifThen (.bin "!==" (.index (.var "ls") (.var "i")) (.var "key")) [.ret (.bool false)],
-          .ifThen (.not (.call "__eq" [.method (.var "a") "get" [.var "key"], .method (.var "b") "get" [.var "key"]]))
-            [.ret (.bool false)],
-          .setVar "i" (.bin "+" (.var "i") (.num 1))],
-        .ret (.bool true)],
-      .ifThen (.orElse (.prim "Array.isArray" [(.var "a")]) (.prim "Array.isArray" [(.var "b")])) [
-        .ifThen (.not (and2 [.prim "Array.isArray" [(.var "a")], .prim "Array.isArray" [(.var "b")]]))
-          [.ret (.bool false)],
-        .ifThen (.bin "!==" (lengthOf (.var "a")) (lengthOf (.var "b"))) [.ret (.bool false)],
-        .letMut "i" (.num 0),
-        .forOf "v" (.var "a") [
-          .ifThen (.not (.call "__eq" [.var "v", .index (.var "b") (.var "i")])) [.ret (.bool false)],
-          .setVar "i" (.bin "+" (.var "i") (.num 1))],
-        .ret (.bool true)],
+      .ifThen (.orElse (.isMap (.var "a")) (.isMap (.var "b"))) eqMaps,
+      .ifThen (.orElse (.prim "Array.isArray" [(.var "a")]) (.prim "Array.isArray" [(.var "b")])) eqArrays,
       .const "keys" (.prim "Object.keys" [(.var "a")]),
       .ifThen (.bin "!==" (lengthOf (.var "keys")) (lengthOf (.prim "Object.keys" [(.var "b")])))
         [.ret (.bool false)],
