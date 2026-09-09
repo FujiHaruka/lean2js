@@ -333,6 +333,10 @@
     {
       "name": "file_reads_back",
       "statement": "the index.js shipped for this program reads back as the module the compiler built"
+    },
+    {
+      "name": "helpers_ship_as_modelled",
+      "statement": "every runtime helper the model of the generated code assumes is what the shipped source computes"
     }
   ]
 }

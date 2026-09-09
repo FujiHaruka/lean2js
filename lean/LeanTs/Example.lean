@@ -1,5 +1,6 @@
 import LeanTs.Decl
 import LeanTs.Eval
+import LeanTs.HelperAgree
 import LeanTs.Manifest
 import LeanTs.Renderable
 import LeanTs.Syntax
@@ -615,6 +616,17 @@ theorem file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = .
     Parse.parseModule (Js.Module.render m).toList = some m :=
   Compile.parseModule_render_of_compileProgram hm
 
+/-- The runtime helpers are the last hand-written JavaScript in the artifact, and the model of the
+generated code reaches them through one table. Every row of that table is what the source the compiler
+prints actually computes; `helperArgsOk` is all that is left assumed, and it asks only for the Int53
+range a type has already given, the distinct keys a `Map` cannot break, and the shapes on which `__eq`'s
+walk and the model's structural equality decide the same thing. -/
+theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : List Js.JsValue)
+    (r : Js.JsResult) (hok : HelperSem.helperArgsOk name args)
+    (h : Js.helper name args = some r) :
+    HelperSem.Helper.Calls ext name (args.map HelperSem.ofJs) (HelperSem.ofRes r) :=
+  HelperSem.helper_agrees ext name args r hok h
+
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
@@ -673,7 +685,11 @@ def manifest : Manifest := {
     { name := "file_reads_back"
       statement :=
         "the index.js shipped for this program reads back as the module the compiler built"
-      proof := file_reads_back }
+      proof := file_reads_back },
+    { name := "helpers_ship_as_modelled"
+      statement :=
+        "every runtime helper the model of the generated code assumes is what the shipped source computes"
+      proof := helpers_ship_as_modelled }
   ]
 }
 

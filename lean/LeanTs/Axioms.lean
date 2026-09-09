@@ -117,3 +117,11 @@ between the trees the proofs are about and the text that ships.
 /-- info: 'LeanTs.Compile.parseModule_render_of_compileProgram' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Compile.parseModule_render_of_compileProgram
+
+/-- info: 'LeanTs.Example.helpers_ship_as_modelled' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.helpers_ship_as_modelled
+
+/-- info: 'LeanTs.HelperSem.helper_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.HelperSem.helper_agrees
