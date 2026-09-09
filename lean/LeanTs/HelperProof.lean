@@ -39,12 +39,24 @@ theorem eventually_of_offset {ext : Ext} {name : String} {args : List Val} {r : 
 @[simp] theorem ofRes_ok (v : Js.JsValue) : ofRes (.ok v) = .ok (ofJs v) := rfl
 @[simp] theorem ofRes_error (c : String) : ofRes (.error c) = .thrown c := rfl
 
+/-- Applying a function the caller supplied. `walk` reduces this rather than `applyVal` itself, so that a
+call to a closure — which is what `__has` hands `__all` and `__find` — stays folded until a lemma about
+that closure is available. -/
+@[simp] theorem applyVal_ext (ext : Ext) (f i : Nat) (args : List Val) :
+    applyVal ext (f + 1) (.ext i) args = ext i args := by rw [applyVal]
+
+theorem applyVal_lam (ext : Ext) (f : Nat) (ps : List String) (body : Helper.Expr) (cenv : Env)
+    (args : List Val) (h : ps.length = args.length) :
+    applyVal ext (f + 1) (.lam ps body cenv) args = evalExpr ext f (bindAll ps args ++ cenv) body := by
+  rw [applyVal]
+  simp [h]
+
 /-- Walks the evaluator down a concrete tree. Everything it unfolds is either the evaluator itself or a
 table the evaluator consults; nothing about a helper's meaning is in here. -/
 syntax "walk" : tactic
 macro_rules
   | `(tactic| walk) =>
-    `(tactic| simp +decide only [evalExpr, evalArgs, evalStmts, evalFor, applyVal, prim, method, field, index,
+    `(tactic| simp +decide only [evalExpr, evalArgs, evalStmts, evalFor, applyVal_ext, prim, method, field, index,
         binOp, compareOp, strictEq, typeOf, keep, numOf, bindAll, lookup, update, restore, mapSet,
         Helper.lengthOf, Helper.and2, Helper.or2, Helper.divByZero, Helper.outOfBounds,
         List.find?, List.any, bindEq, bind_ok, bind_stuck, bind_thrown, Option.map,
@@ -1384,57 +1396,137 @@ theorem find_all : Helper.defs.find? (·.name == "__all") = some Helper.all := r
 theorem find_any : Helper.defs.find? (·.name == "__any") = some Helper.any := rfl
 theorem find_reduce : Helper.defs.find? (·.name == "__reduce") = some Helper.reduce := rfl
 
-def extFind (ext : Ext) (i : Nat) : List Val → Res (Option Val)
-  | [] => .ok none
+/-! ## Callbacks
+
+`__all` and `__find` take a function value. The generated code hands them a function it defined, and
+`__has` hands them a closure of its own; the loops below are stated for either, with the fuel a **sum over
+the elements** rather than a length, because a closure that recurses does not cost a constant.
+-/
+
+/-- The walk `__all` performs: the function value is applied to each element, and the first `false` stops
+it. An answer that is not a boolean is a shape the model declines to read. -/
+def valAll (P : Val → Res Val) : List Val → Res Bool
+  | [] => .ok true
   | x :: rest =>
-    (ext i [x]).bind fun v =>
+    (P x).bind fun v =>
       match v with
-      | .bool true => .ok (some x)
-      | .bool false => extFind ext i rest
+      | .bool true => valAll P rest
+      | .bool false => .ok false
       | _ => .stuck
 
-theorem find_loop (ext : Ext) (i : Nat) (xs : List Val) (X : Val) (f : Nat) :
-    evalFor ext (f + xs.length + 6) [("xs", X), ("f", .ext i)] "v" xs
+def valFind (P : Val → Res Val) : List Val → Res (Option Val)
+  | [] => .ok none
+  | x :: rest =>
+    (P x).bind fun v =>
+      match v with
+      | .bool true => .ok (some x)
+      | .bool false => valFind P rest
+      | _ => .stuck
+
+/-- One element's fuel, plus one for the step. -/
+def sumCost (cost : Val → Nat) : List Val → Nat
+  | [] => 0
+  | x :: rest => cost x + sumCost cost rest + 1
+
+/-- What a loop needs of the function value it was handed: on the elements it will actually see, past its
+cost there, applying it answers `P`. An inequality rather than an offset, because the loop applies it with
+whatever fuel it has left; restricted to the list because the closure `__has` builds only answers for
+values smaller than the one it was called on. -/
+def Answers (ext : Ext) (F : Val) (P : Val → Res Val) (cost : Val → Nat) (xs : List Val) : Prop :=
+  ∀ v ∈ xs, ∀ (g : Nat), cost v < g → applyVal ext g F [v] = P v
+
+def extAll (ext : Ext) (i : Nat) : List Val → Res Bool := valAll (fun v => ext i [v])
+
+def extFind (ext : Ext) (i : Nat) : List Val → Res (Option Val) := valFind (fun v => ext i [v])
+
+theorem answers_ext (ext : Ext) (i : Nat) (xs : List Val) :
+    Answers ext (.ext i) (fun v => ext i [v]) (fun _ => 0) xs := by
+  intro v _ g _
+  obtain ⟨m, rfl⟩ : ∃ m, g = m + 1 := ⟨g - 1, by omega⟩
+  rw [applyVal_ext]
+
+theorem sumCost_zero (xs : List Val) : sumCost (fun _ => 0) xs = xs.length := by
+  induction xs with
+  | nil => rfl
+  | cons x rest ih => simp [sumCost, ih]
+
+theorem find_loop (ext : Ext) (F : Val) (P : Val → Res Val) (cost : Val → Nat) (X : Val) :
+    ∀ (xs : List Val) (f : Nat), Answers ext F P cost xs →
+    evalFor ext (f + sumCost cost xs + 6) [("xs", X), ("f", F)] "v" xs
         [.ifThen (.apply (.var "f") [.var "v"])
           [.ret (.objLit [("tag", .str "some"), ("value", .var "v")])]]
-      = (extFind ext i xs).bind (fun r =>
+      = (valFind P xs).bind (fun r =>
           match r with
           | some v => .ok (.ret (.obj [("tag", .str "some"), ("value", v)]))
-          | none => .ok (.next [("xs", X), ("f", .ext i)])) := by
+          | none => .ok (.next [("xs", X), ("f", F)])) := by
+  intro xs
   induction xs with
-  | nil =>
-    walk
-    simp [extFind]
+  | nil => intro f _; walk; simp [valFind]
   | cons x rest ih =>
-    rw [show f + (x :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    intro f hF
+    simp only [sumCost]
+    rw [show f + (cost x + sumCost cost rest + 1) + 6
+      = (f + cost x + sumCost cost rest + 6) + 1 from by omega]
     walk
-    cases hx : ext i [x] with
-    | stuck => simp [extFind, hx]
-    | thrown c => simp [extFind, hx]
+    rw [hF x (by simp) _ (by omega)]
+    cases hx : P x with
+    | stuck => simp [valFind, hx]
+    | thrown c => simp [valFind, hx]
     | ok v =>
-      simp only [hx, bind_ok, extFind, bindEq]
+      simp only [hx, bind_ok, valFind, bindEq]
       cases v
       case bool b =>
         cases b
         case false =>
           walk
           simp only [Option.getD]
-          rw [ih]
-        case true =>
-          walk
+          rw [ih _ (fun w hw => hF w (by simp [hw]))]
+        case true => walk
       all_goals rfl
 
-theorem calls_find (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
-    callDef ext (f + xs.length + 8) "__find" [.arr xs, .ext i] =
-      (extFind ext i xs).bind (fun r => .ok (match r with
+theorem all_loop (ext : Ext) (F : Val) (P : Val → Res Val) (cost : Val → Nat) (X : Val) :
+    ∀ (xs : List Val) (f : Nat), Answers ext F P cost xs →
+    evalFor ext (f + sumCost cost xs + 6) [("xs", X), ("f", F)] "v" xs
+        [.ifThen (.not (.apply (.var "f") [.var "v"])) [.ret (.bool false)]]
+      = (valAll P xs).bind (fun r =>
+          if r then .ok (.next [("xs", X), ("f", F)]) else .ok (.ret (.bool false))) := by
+  intro xs
+  induction xs with
+  | nil => intro f _; walk; simp [valAll]
+  | cons x rest ih =>
+    intro f hF
+    simp only [sumCost]
+    rw [show f + (cost x + sumCost cost rest + 1) + 6
+      = (f + cost x + sumCost cost rest + 6) + 1 from by omega]
+    walk
+    rw [hF x (by simp) _ (by omega)]
+    cases hx : P x with
+    | stuck => simp [valAll, hx]
+    | thrown c => simp [valAll, hx]
+    | ok v =>
+      simp only [hx, bind_ok, valAll, bindEq]
+      cases v
+      case bool b =>
+        cases b
+        case false => walk
+        case true =>
+          walk
+          simp only [Option.getD]
+          rw [ih _ (fun w hw => hF w (by simp [hw]))]
+      all_goals rfl
+
+theorem calls_find_gen (ext : Ext) (F : Val) (P : Val → Res Val) (cost : Val → Nat)
+    (xs : List Val) (hF : Answers ext F P cost xs) (f : Nat) :
+    callDef ext (f + sumCost cost xs + 8) "__find" [.arr xs, F] =
+      (valFind P xs).bind (fun r => .ok (match r with
         | some v => .obj [("tag", .str "some"), ("value", v)]
         | none => .obj [("tag", .str "none")])) := by
-  rw [show f + xs.length + 8 = (f + xs.length + 7) + 1 from by omega,
+  rw [show f + sumCost cost xs + 8 = (f + sumCost cost xs + 7) + 1 from by omega,
     callDef_block find_find rfl rfl]
   simp only [Helper.find]
   walk
-  rw [show f + xs.length + 6 = f + xs.length + 6 from rfl, find_loop]
-  cases extFind ext i xs with
+  rw [show f + sumCost cost xs + 6 = f + sumCost cost xs + 6 from rfl, find_loop ext F P cost (.arr xs) xs _ hF]
+  cases valFind P xs with
   | stuck => rfl
   | thrown c => rfl
   | ok r =>
@@ -1442,58 +1534,36 @@ theorem calls_find (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
     | none => walk
     | some v => walk
 
-def extAll (ext : Ext) (i : Nat) : List Val → Res Bool
-  | [] => .ok true
-  | x :: rest =>
-    (ext i [x]).bind fun v =>
-      match v with
-      | .bool true => extAll ext i rest
-      | .bool false => .ok false
-      | _ => .stuck
-
-theorem all_loop (ext : Ext) (i : Nat) (xs : List Val) (X : Val) (f : Nat) :
-    evalFor ext (f + xs.length + 6) [("xs", X), ("f", .ext i)] "v" xs
-        [.ifThen (.not (.apply (.var "f") [.var "v"])) [.ret (.bool false)]]
-      = (extAll ext i xs).bind (fun r =>
-          if r then .ok (.next [("xs", X), ("f", .ext i)]) else .ok (.ret (.bool false))) := by
-  induction xs with
-  | nil =>
-    walk
-    simp [extAll]
-  | cons x rest ih =>
-    rw [show f + (x :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
-    walk
-    cases hx : ext i [x] with
-    | stuck => simp [extAll, hx]
-    | thrown c => simp [extAll, hx]
-    | ok v =>
-      simp only [hx, bind_ok, extAll, bindEq]
-      cases v
-      case bool b =>
-        cases b
-        case false =>
-          walk
-        case true =>
-          walk
-          simp only [Option.getD]
-          rw [ih]
-      all_goals rfl
-
-theorem calls_all (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
-    callDef ext (f + xs.length + 8) "__all" [.arr xs, .ext i] =
-      (extAll ext i xs).bind (fun r => .ok (.bool r)) := by
-  rw [show f + xs.length + 8 = (f + xs.length + 7) + 1 from by omega,
+theorem calls_all_gen (ext : Ext) (F : Val) (P : Val → Res Val) (cost : Val → Nat)
+    (xs : List Val) (hF : Answers ext F P cost xs) (f : Nat) :
+    callDef ext (f + sumCost cost xs + 8) "__all" [.arr xs, F] =
+      (valAll P xs).bind (fun r => .ok (.bool r)) := by
+  rw [show f + sumCost cost xs + 8 = (f + sumCost cost xs + 7) + 1 from by omega,
     callDef_block find_all rfl rfl]
   simp only [Helper.all]
   walk
-  rw [show f + xs.length + 6 = f + xs.length + 6 from rfl, all_loop]
-  cases extAll ext i xs with
+  rw [show f + sumCost cost xs + 6 = f + sumCost cost xs + 6 from rfl, all_loop ext F P cost (.arr xs) xs _ hF]
+  cases valAll P xs with
   | stuck => rfl
   | thrown c => rfl
   | ok r =>
     cases r with
     | false => walk
     | true => walk
+
+theorem calls_find (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 8) "__find" [.arr xs, .ext i] =
+      (extFind ext i xs).bind (fun r => .ok (match r with
+        | some v => .obj [("tag", .str "some"), ("value", v)]
+        | none => .obj [("tag", .str "none")])) := by
+  rw [extFind, ← sumCost_zero xs]
+  exact calls_find_gen ext (.ext i) _ _ xs (answers_ext ext i xs) f
+
+theorem calls_all (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 8) "__all" [.arr xs, .ext i] =
+      (extAll ext i xs).bind (fun r => .ok (.bool r)) := by
+  rw [extAll, ← sumCost_zero xs]
+  exact calls_all_gen ext (.ext i) _ _ xs (answers_ext ext i xs) f
 
 def extAny (ext : Ext) (i : Nat) : List Val → Res Bool
   | [] => .ok false
