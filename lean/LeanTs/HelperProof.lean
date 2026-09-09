@@ -2934,4 +2934,496 @@ theorem calls_ck (ext : Ext) (v : Val) (t : TyDesc) (f : Nat) :
     exact calls_fail ext "typeError" (f + 1 + hasFuel v t)
   · walk
 
+
+/-! ## The entry check the model runs
+
+`__has` reads an object's fields **by name**; `Js.checkTy` takes them **positionally**. The two are
+the same predicate exactly on descriptors whose constructor field names are distinct and none of them
+`tag` — which is what `Compile.lean` enforces and `Decl.lean` proves for a well-formed type.
+-/
+
+/-- Field names a constructor may carry: distinct, and none of them `tag`. `Compile.lean` rejects a field
+called `tag`, and `Decl.lean` proves the names distinct for a well-formed type; without both,
+`__hasFields` and `Js.checkFields` read different values out of the same object. -/
+def namesOk : List (String × TyDesc) → Bool
+  | [] => true
+  | (n, _) :: rest => n != "tag" && !rest.any (·.1 == n) && namesOk rest
+
+mutual
+
+def descOk : TyDesc → Bool
+  | .bool | .int53 | .uint32 | .string | .bigint => true
+  | .option t | .array t | .dict t => descOk t
+  | .result ok err => descOk ok && descOk err
+  | .ctors alts => altsOk alts
+termination_by d => sizeOf d
+
+def fieldsOk : List (String × TyDesc) → Bool
+  | [] => true
+  | (_, d) :: rest => descOk d && fieldsOk rest
+termination_by fs => sizeOf fs
+
+def altsOk : List (String × List (String × TyDesc)) → Bool
+  | [] => true
+  | (_, fields) :: rest => namesOk fields && fieldsOk fields && altsOk rest
+termination_by alts => sizeOf alts
+
+end
+
+theorem ofJsFields_length (fs : List (String × Js.JsValue)) :
+    (ofJsFields fs).length = fs.length := by
+  induction fs with
+  | nil => simp [ofJsFields]
+  | cons e rest ih => obtain ⟨k, v⟩ := e; simp [ofJsFields, ih]
+
+theorem lookupV_none (es : List (String × Val)) (k : String) (h : ∀ e ∈ es, e.1 ≠ k) :
+    lookupV es k = .undef := by
+  induction es with
+  | nil => rfl
+  | cons e rest ih =>
+    have hne : (e.1 == k) = false := by simp [h e (by simp)]
+    simp only [lookupV, List.find?, hne]
+    exact ih (fun x hx => h x (by simp [hx]))
+
+theorem lookupV_skip (pre suf : List (String × Val)) (k : String) (h : ∀ e ∈ pre, e.1 ≠ k) :
+    lookupV (pre ++ suf) k = lookupV suf k := by
+  induction pre with
+  | nil => rfl
+  | cons e rest ih =>
+    have hne : (e.1 == k) = false := by simp [h e (by simp)]
+    simp only [List.cons_append, lookupV, List.find?, hne]
+    exact ih (fun x hx => h x (by simp [hx]))
+
+theorem lookupV_head (k : String) (v : Val) (rest : List (String × Val)) :
+    lookupV ((k, v) :: rest) k = v := by simp [lookupV, List.find?]
+
+/-- Every key `__hasFields` walked past is one of the descriptor's field names. With `namesOk` that is
+what rules out a second `tag` further down the object. -/
+theorem hasFieldsAt_keys (es : List (String × Val)) :
+    ∀ (suf : List (String × Val)) (fields : List (String × TyDesc)),
+    hasFieldsAt es suf fields = true → suf.length = fields.length →
+    ∀ e ∈ suf, e.1 ∈ fields.map (·.1) := by
+  intro suf
+  induction suf with
+  | nil => intro _ _ _ e he; cases he
+  | cons e suf ih =>
+    intro fields h hlen w hw
+    cases fields with
+    | nil => simp at hlen
+    | cons fd fs =>
+      obtain ⟨name, d⟩ := fd
+      rw [hasFieldsAt] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨hk, _⟩, htail⟩ := h
+      rcases List.mem_cons.mp hw with rfl | hrest
+      · simp [beq_iff_eq.mp hk]
+      · have := ih fs htail (by simpa using hlen) w hrest
+        simp [this]
+
+/-- The two ways of reading a constructor's fields agree: `__hasFields` looks each one up **by name**
+while `Js.checkFields` takes them **positionally**. They meet because `namesOk` says no field name repeats
+and none is `tag`, so the first entry carrying a name is the one sitting in that position. -/
+theorem hasFieldsAt_check (N : Nat)
+    (hsub : ∀ (y : Js.JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d →
+      hasV (ofJs y) d = Js.checkTy y d)
+    (es : List (String × Val)) :
+    ∀ (fields : List (String × TyDesc)) (pre : List (String × Val))
+      (rest : List (String × Js.JsValue)),
+    es = pre ++ ofJsFields rest →
+    (∀ e ∈ pre, ∀ n ∈ fields.map (·.1), e.1 ≠ n) →
+    namesOk fields = true → fieldsOk fields = true →
+    (∀ y ∈ rest.map (·.2), sizeOf y < N) →
+    rest.length = fields.length →
+    hasFieldsAt es (ofJsFields rest) fields = Js.checkFields rest fields := by
+  intro fields
+  induction fields with
+  | nil =>
+    intro _ rest _ _ _ _ _ hlen
+    have : rest = [] := by cases rest <;> simp_all
+    subst this
+    simp [hasFieldsAt, Js.checkFields, ofJsFields]
+  | cons fd fs ih =>
+    obtain ⟨name, d⟩ := fd
+    intro pre rest hes hpre hn hf hsz hlen
+    cases rest with
+    | nil => simp at hlen
+    | cons r rest' =>
+      obtain ⟨key, value⟩ := r
+      simp only [namesOk, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hn
+      obtain ⟨⟨hntag, hnfs⟩, hnrest⟩ := hn
+      simp only [fieldsOk, Bool.and_eq_true] at hf
+      obtain ⟨hfd, hffs⟩ := hf
+      simp only [ofJsFields, hasFieldsAt, Js.checkFields]
+      cases hkey : (key == name) with
+      | false => simp
+      | true =>
+        have hname : key = name := beq_iff_eq.mp hkey
+        subst hname
+        have hlk : lookupV es key = ofJs value := by
+          rw [hes, ofJsFields, lookupV_skip _ _ _ (fun e he => hpre e he key (by simp)),
+            lookupV_head]
+        rw [hlk, hsub value (hsz value (by simp)) d hfd]
+        simp only [Bool.true_and, Bool.and_assoc]
+        cases Js.checkTy value d with
+        | false => simp
+        | true =>
+          simp only [Bool.true_and]
+          refine ih (pre ++ [(key, ofJs value)]) rest' (by rw [hes, ofJsFields]; simp) ?_
+            hnrest hffs (fun y hy => hsz y (by simp [hy])) (by simpa using hlen)
+          intro e he n hnm
+          rcases List.mem_append.mp he with hp | hlast
+          · exact hpre e hp n (by simp [hnm])
+          · simp only [List.mem_singleton] at hlast
+            subst hlast
+            show key ≠ n
+            intro hcontra
+            subst hcontra
+            obtain ⟨fe, hfe, hfeq⟩ := List.mem_map.mp hnm
+            obtain ⟨a, b⟩ := fe
+            exact (show ∀ (a : String) (b : TyDesc), (a, b) ∈ fs → ¬a = key by simpa using hnfs)
+              a b hfe hfeq
+
+theorem namesOk_ne_tag (fields : List (String × TyDesc)) (h : namesOk fields = true) :
+    ∀ n ∈ fields.map (·.1), n ≠ "tag" := by
+  induction fields with
+  | nil => intro n hn; cases hn
+  | cons fd fs ih =>
+    obtain ⟨name, d⟩ := fd
+    simp only [namesOk, Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+    intro n hn
+    simp only [List.map_cons, List.mem_cons] at hn
+    rcases hn with rfl | hrest
+    · exact h.1.1
+    · exact ih h.2 n hrest
+
+theorem checkFields_length_ne : ∀ (rest : List (String × Js.JsValue))
+    (fields : List (String × TyDesc)), rest.length ≠ fields.length →
+    Js.checkFields rest fields = false := by
+  intro rest
+  induction rest with
+  | nil =>
+    intro fields h
+    cases fields with
+    | nil => simp at h
+    | cons f fs => simp [Js.checkFields]
+  | cons r rest ih =>
+    intro fields h
+    cases fields with
+    | nil => simp [Js.checkFields]
+    | cons f fs =>
+      obtain ⟨k, v⟩ := r
+      obtain ⟨nm, d⟩ := f
+      simp [Js.checkFields, ih fs (by simpa using h)]
+
+/-- `__hasFields` walks the object from its second entry on, and every key it walks past is a field name.
+So an object it accepts carries `tag` at most in its first slot: if the first key is something else, the
+whole object has no `tag` at all, and every comparison `__has` makes against it is false. -/
+theorem hasFields_head_tag (k : String) (v : Val) (r : List (String × Val))
+    (fields : List (String × TyDesc)) (hn : namesOk fields = true) (hk : k ≠ "tag")
+    (h : hasFields ((k, v) :: r) fields = true) :
+    lookupV ((k, v) :: r) "tag" = .undef := by
+  simp only [hasFields, Bool.and_eq_true, beq_iff_eq, List.length_cons,
+    List.drop_succ_cons, List.drop_zero] at h
+  obtain ⟨hlen, hat⟩ := h
+  have hkeys := hasFieldsAt_keys _ r fields hat (by omega)
+  have hne : ∀ e ∈ r, e.1 ≠ "tag" := fun e he => namesOk_ne_tag fields hn e.1 (hkeys e he)
+  simp only [lookupV, List.find?, show (k == "tag") = false from by simp [hk]]
+  exact lookupV_none r "tag" hne
+
+/-- The tag-headed case, where the two readings line up entry for entry. -/
+theorem hasFields_check (N : Nat)
+    (hsub : ∀ (y : Js.JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d →
+      hasV (ofJs y) d = Js.checkTy y d)
+    (ctor : String) (rest : List (String × Js.JsValue)) (fields : List (String × TyDesc))
+    (hn : namesOk fields = true) (hf : fieldsOk fields = true)
+    (hsz : ∀ y ∈ rest.map (·.2), sizeOf y < N) :
+    hasFields (("tag", Val.str ctor) :: ofJsFields rest) fields = Js.checkFields rest fields := by
+  simp only [hasFields, List.length_cons, ofJsFields_length,
+    List.drop_succ_cons, List.drop_zero]
+  by_cases hlen : rest.length = fields.length
+  · rw [hasFieldsAt_check N hsub _ fields [("tag", Val.str ctor)] rest (by simp [ofJsFields])
+      (fun e he n hnm => by
+        simp only [List.mem_singleton] at he
+        subst he
+        exact fun hc => namesOk_ne_tag fields hn n hnm hc.symm)
+      hn hf hsz hlen]
+    simp [hlen, Js.checkFields]
+  · rw [checkFields_length_ne rest fields hlen]
+    simp [hlen]
+
+theorem hasList_check (N : Nat)
+    (hsub : ∀ (y : Js.JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d →
+      hasV (ofJs y) d = Js.checkTy y d)
+    (te : TyDesc) (hd : descOk te = true) :
+    ∀ (xs : List Js.JsValue), (∀ y ∈ xs, sizeOf y < N) →
+    hasList (ofJsList xs) te = Js.checkList xs te := by
+  intro xs
+  induction xs with
+  | nil => intro _; simp [ofJsList, hasList, Js.checkList]
+  | cons x rest ih =>
+    intro hsz
+    simp only [ofJsList, hasList, Js.checkList, hsub x (hsz x (by simp)) te hd,
+      ih (fun y hy => hsz y (by simp [hy]))]
+
+theorem hasEntries_check (N : Nat)
+    (hsub : ∀ (y : Js.JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d →
+      hasV (ofJs y) d = Js.checkTy y d)
+    (te : TyDesc) (hd : descOk te = true) :
+    ∀ (es : List (String × Js.JsValue)), (∀ y ∈ es.map (·.2), sizeOf y < N) →
+    hasEntries (ofJsFields es) te = Js.checkEntries es te := by
+  intro es
+  induction es with
+  | nil => intro _; simp [ofJsFields, hasEntries, Js.checkEntries]
+  | cons e rest ih =>
+    intro hsz
+    obtain ⟨k, v⟩ := e
+    simp only [ofJsFields, hasEntries, Js.checkEntries, hsub v (hsz v (by simp)) te hd,
+      ih (fun y hy => hsz y (by simp [hy]))]
+
+theorem sizeOf_snd_mem_js {es : List (String × Js.JsValue)} {w : Js.JsValue}
+    (h : w ∈ es.map (·.2)) : sizeOf w < sizeOf es := by
+  obtain ⟨e, he, rfl⟩ := List.mem_map.mp h
+  have h1 := List.sizeOf_lt_of_mem he
+  have h2 : sizeOf e.2 < sizeOf e := by cases e; simp; omega
+  omega
+
+/-- An object whose first key is not `tag` never satisfies `__hasFields` while also answering a tag
+comparison: the walk would have to find `tag` further down, and every key down there is a field name. -/
+theorem hasFields_false_of_tag (k : String) (v : Val) (r : List (String × Val)) (hk : k ≠ "tag")
+    (fields : List (String × TyDesc)) (hn : namesOk fields = true) (c : String)
+    (htag : strictEq (lookupV ((k, v) :: r) "tag") (.str c) = true) :
+    hasFields ((k, v) :: r) fields = false := by
+  cases h : hasFields ((k, v) :: r) fields with
+  | false => rfl
+  | true =>
+    rw [hasFields_head_tag k v r fields hn hk h] at htag
+    simp [strictEq] at htag
+
+
+theorem altsOk_mem : ∀ (alts : List (String × List (String × TyDesc))), altsOk alts = true →
+    ∀ alt ∈ alts, namesOk alt.2 = true ∧ fieldsOk alt.2 = true := by
+  intro alts
+  induction alts with
+  | nil => intro _ alt h; cases h
+  | cons a rest ih =>
+    intro h alt hm
+    obtain ⟨c, fields⟩ := a
+    simp only [altsOk, Bool.and_eq_true] at h
+    rcases List.mem_cons.mp hm with rfl | hrest
+    · exact ⟨h.1.1, h.1.2⟩
+    · exact ih h.2 alt hrest
+
+theorem find?_false {α} (l : List α) : l.find? (fun _ => false) = none := by
+  induction l with
+  | nil => rfl
+  | cons a rest ih => simp [List.find?, ih]
+
+theorem strictEq_str_eq {a : String} {v : Val} (h : strictEq (.str a) v = true) : v = .str a := by
+  cases v <;> simp only [strictEq] at h <;> simp_all
+
+
+theorem check_aux : ∀ (n : Nat) (x : Js.JsValue) (t : TyDesc), sizeOf x < n → descOk t = true →
+    hasV (ofJs x) t = Js.checkTy x t := by
+  intro n
+  induction n with
+  | zero => intro x t h; exact absurd h (by omega)
+  | succ n ih =>
+    intro x t hlt hd
+    cases t with
+    | bool => cases x <;> simp [ofJs, hasV, Js.checkTy]
+    | int53 => cases x <;> simp [ofJs, hasV, Js.checkTy]
+    | uint32 =>
+      cases x with
+      | num i =>
+        simp only [ofJs, hasV, Js.checkTy, Js.Runtime.wrap32]
+        by_cases hb : i ≤ 4294967295
+        · simp [hb, show i < 4294967296 from by omega]
+        · simp [hb, show ¬ i < 4294967296 from by omega]
+      | _ => simp [ofJs, hasV, Js.checkTy]
+    | string => cases x <;> simp [ofJs, hasV, Js.checkTy]
+    | bigint => cases x <;> simp [ofJs, hasV, Js.checkTy]
+    | array te =>
+      simp only [descOk] at hd
+      cases x with
+      | arr xs =>
+        simp only [ofJs, hasV, Js.checkTy]
+        exact hasList_check n (fun y hy d hdd => ih y d hy hdd) te hd xs (fun y hy => by
+          have := List.sizeOf_lt_of_mem hy
+          simp only [Js.JsValue.arr.sizeOf_spec] at hlt
+          omega)
+      | _ => simp [ofJs, hasV, Js.checkTy]
+    | dict te =>
+      simp only [descOk] at hd
+      cases x with
+      | dict es =>
+        simp only [ofJs, hasV, Js.checkTy]
+        exact hasEntries_check n (fun y hy d hdd => ih y d hy hdd) te hd es (fun y hy => by
+          have := sizeOf_snd_mem_js hy
+          simp only [Js.JsValue.dict.sizeOf_spec] at hlt
+          omega)
+      | _ => simp [ofJs, hasV, Js.checkTy]
+    | option te =>
+      simp only [descOk] at hd
+      cases x with
+      | obj esJ =>
+        cases esJ with
+        | nil => simp [ofJs, ofJsFields, hasV, Js.checkTy, lookupV, strictEq]
+        | cons e restJ =>
+          obtain ⟨k, vJ⟩ := e
+          by_cases hk : k = "tag"
+          · subst hk
+            cases vJ with
+            | str c =>
+              simp only [ofJs, ofJsFields, hasV, lookupV_head, strictEq]
+              by_cases h1 : c = "none"
+              · subst h1
+                rw [if_pos (by simp)]
+                rw [hasFields_check n (fun y hy d hdd => ih y d hy hdd) "none" restJ [] rfl (by simp [fieldsOk])
+                  (fun y hy => by
+                    have := sizeOf_snd_mem_js hy
+                    simp only [Js.JsValue.obj.sizeOf_spec, List.cons.sizeOf_spec] at hlt
+                    omega)]
+                cases restJ <;> simp [Js.checkTy, Js.checkFields]
+              · rw [if_neg (by simp [h1])]
+                by_cases h2 : c = "some"
+                · subst h2
+                  simp only [beq_self_eq_true, Bool.true_and]
+                  rw [hasFields_check n (fun y hy d hdd => ih y d hy hdd) "some" restJ
+                    [("value", te)] (by simp [namesOk]) (by simp [fieldsOk, hd])
+                    (fun y hy => by
+                      have := sizeOf_snd_mem_js hy
+                      simp only [Js.JsValue.obj.sizeOf_spec, List.cons.sizeOf_spec] at hlt
+                      omega)]
+                  simp [Js.checkTy]
+                · simp [h1, h2, Js.checkTy]
+            | _ => simp [ofJs, ofJsFields, hasV, Js.checkTy, lookupV_head, strictEq]
+          · simp only [ofJs, ofJsFields, hasV]
+            cases hnone : strictEq (lookupV ((k, ofJs vJ) :: ofJsFields restJ) "tag")
+                (Val.str "none") with
+            | true =>
+              simp only [reduceIte]
+              rw [hasFields_false_of_tag k _ _ hk [] rfl "none" hnone]
+              simp [Js.checkTy, hk]
+            | false =>
+              cases hsome : strictEq (lookupV ((k, ofJs vJ) :: ofJsFields restJ) "tag")
+                  (Val.str "some") with
+              | false => simp [Js.checkTy, hk]
+              | true =>
+                rw [hasFields_false_of_tag k _ _ hk [("value", te)] (by simp [namesOk]) "some" hsome]
+                simp [Js.checkTy, hk]
+      | _ => simp [ofJs, hasV, Js.checkTy]
+    | result okd errd =>
+      simp only [descOk, Bool.and_eq_true] at hd
+      obtain ⟨hok, herr⟩ := hd
+      cases x with
+      | obj esJ =>
+        cases esJ with
+        | nil => simp [ofJs, ofJsFields, hasV, Js.checkTy, lookupV, strictEq]
+        | cons e restJ =>
+          obtain ⟨k, vJ⟩ := e
+          have hszr : ∀ y ∈ restJ.map (·.2), sizeOf y < n := fun y hy => by
+            have := sizeOf_snd_mem_js hy
+            simp only [Js.JsValue.obj.sizeOf_spec, List.cons.sizeOf_spec] at hlt
+            omega
+          by_cases hk : k = "tag"
+          · subst hk
+            cases vJ with
+            | str c =>
+              simp only [ofJs, ofJsFields, hasV, lookupV_head, strictEq]
+              by_cases h1 : c = "ok"
+              · subst h1
+                rw [if_pos (by simp),
+                  hasFields_check n (fun y hy d hdd => ih y d hy hdd) "ok" restJ
+                    [("value", okd)] (by simp [namesOk]) (by simp [fieldsOk, hok]) hszr]
+                simp [Js.checkTy]
+              · rw [if_neg (by simp [h1])]
+                by_cases h2 : c = "error"
+                · subst h2
+                  simp only [beq_self_eq_true, Bool.true_and]
+                  rw [hasFields_check n (fun y hy d hdd => ih y d hy hdd) "error" restJ
+                    [("error", errd)] (by simp [namesOk]) (by simp [fieldsOk, herr]) hszr]
+                  simp [Js.checkTy]
+                · simp [h1, h2, Js.checkTy]
+            | _ => simp [ofJs, ofJsFields, hasV, Js.checkTy, lookupV_head, strictEq]
+          · simp only [ofJs, ofJsFields, hasV]
+            cases hokt : strictEq (lookupV ((k, ofJs vJ) :: ofJsFields restJ) "tag")
+                (Val.str "ok") with
+            | true =>
+              simp only [reduceIte]
+              rw [hasFields_false_of_tag k _ _ hk [("value", okd)] (by simp [namesOk]) "ok" hokt]
+              simp [Js.checkTy, hk]
+            | false =>
+              cases herrt : strictEq (lookupV ((k, ofJs vJ) :: ofJsFields restJ) "tag")
+                  (Val.str "error") with
+              | false => simp [Js.checkTy, hk]
+              | true =>
+                rw [hasFields_false_of_tag k _ _ hk [("error", errd)] (by simp [namesOk])
+                  "error" herrt]
+                simp [Js.checkTy, hk]
+      | _ => simp [ofJs, hasV, Js.checkTy]
+    | ctors alts =>
+      simp only [descOk] at hd
+      cases x with
+      | obj esJ =>
+        cases esJ with
+        | nil =>
+          simp [ofJs, ofJsFields, hasV, Js.checkTy, lookupV, strictEq, find?_false]
+        | cons e restJ =>
+          obtain ⟨k, vJ⟩ := e
+          have hszr : ∀ y ∈ restJ.map (·.2), sizeOf y < n := fun y hy => by
+            have := sizeOf_snd_mem_js hy
+            simp only [Js.JsValue.obj.sizeOf_spec, List.cons.sizeOf_spec] at hlt
+            omega
+          by_cases hk : k = "tag"
+          · subst hk
+            cases vJ with
+            | str ctor =>
+              simp only [ofJs, ofJsFields, hasV, lookupV_head]
+              rw [show (fun c : String × List (String × TyDesc) =>
+                    strictEq (Val.str c.1) (Val.str ctor)) = (fun c => c.1 == ctor) from by
+                funext c; simp [strictEq]]
+              cases hfind : alts.find? (fun c => c.1 == ctor) with
+              | none => simp [Js.checkTy, hfind]
+              | some alt =>
+                obtain ⟨hn, hf⟩ := altsOk_mem alts hd alt (List.mem_of_find?_eq_some hfind)
+                dsimp only
+                rw [hasFields_check n (fun y hy d hdd => ih y d hy hdd) ctor restJ alt.2 hn hf hszr]
+                obtain ⟨cn, fields⟩ := alt
+                simp [Js.checkTy, hfind]
+            | _ =>
+              simp [ofJs, ofJsFields, hasV, Js.checkTy, lookupV_head, strictEq, find?_false]
+          · simp only [ofJs, ofJsFields, hasV]
+            cases hfind : alts.find? (fun c => strictEq (Val.str c.1)
+                (lookupV ((k, ofJs vJ) :: ofJsFields restJ) "tag")) with
+            | none => simp [Js.checkTy, hk]
+            | some alt =>
+              have hp := List.find?_some hfind
+              have hv := strictEq_str_eq hp
+              obtain ⟨hn, hf⟩ := altsOk_mem alts hd alt (List.mem_of_find?_eq_some hfind)
+              dsimp only
+              rw [hasFields_false_of_tag k _ _ hk alt.2 hn alt.1 (by rw [hv]; simp [strictEq])]
+              simp [Js.checkTy, hk]
+      | _ => simp [ofJs, hasV, Js.checkTy]
+
+
+/-- The predicate `__has` decides and the model's entry check are the same, on every value and every
+descriptor a compiled type renders. `descOk` is what makes them meet: `__hasFields` reads a field **by
+name** where `Js.checkFields` takes it **positionally**, and the two part company exactly when a field
+name repeats or collides with `tag`. -/
+theorem has_checkTy (x : Js.JsValue) (t : TyDesc) (h : descOk t = true) :
+    hasV (ofJs x) t = Js.checkTy x t :=
+  check_aux (sizeOf x + 1) x t (by omega) h
+
+theorem calls_has_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk t = true) (f : Nat) :
+    callDef ext (f + hasFuel (ofJs x) t) "__has" [ofJs x, tyVal t]
+      = .ok (.bool (Js.checkTy x t)) := by
+  rw [calls_has, has_checkTy x t h]
+
+/-- What the generated code's entry check does to an argument: hand it back, or throw `typeError`. -/
+theorem calls_ck_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk t = true) (f : Nat) :
+    callDef ext (f + hasFuel (ofJs x) t + 9) "__ck" [ofJs x, tyVal t]
+      = ofRes (if Js.checkTy x t then .ok x else .error "typeError") := by
+  rw [calls_ck, has_checkTy x t h]
+  cases Js.checkTy x t <;> simp
+
 end LeanTs.HelperSem
