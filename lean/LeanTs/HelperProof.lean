@@ -870,4 +870,134 @@ theorem calls_substring (ext : Ext) (x : String) (lo hi : Int) (f : Nat) :
       if_neg (fun hc => h1 ⟨hc.1, hc.2.1⟩)]
     rfl
 
+private theorem compare_cons_ne {a b : Char} (l m : List Char) (h : a ≠ b) :
+    compare (a :: l) (b :: m) = compare a b := by
+  simp only [compare, List.compareLex, compareOfLessAndEq]
+  by_cases hlt : a < b
+  · rw [if_pos hlt]
+  · rw [if_neg hlt, if_neg h]
+
+private theorem compare_cons_self (a : Char) (l m : List Char) :
+    compare (a :: l) (a :: m) = compare l m := by
+  simp [compare, List.compareLex, compareOfLessAndEq]
+
+theorem strcmp_loop (ext : Ext) (bs cs : List Char) (i : Nat) (X A B : Val) (f : Nat) :
+    evalFor ext (f + cs.length + 12)
+        [("i", .num i), ("y", .arr (bs.map fun c => Val.str c.toString)), ("x", X), ("a", A), ("b", B)] "c" (cs.map fun c => Val.str c.toString)
+        [.ifThen (.bin ">=" (.var "i") (.field (.var "y") "length")) [.ret (.num 1)],
+         .const "d" (.bin "-" (.call "__cp" [.var "c"])
+           (.call "__cp" [.index (.var "y") (.var "i")])),
+         .ifThen (.bin "!==" (.var "d") (.num 0))
+           [.ret (.cond (.bin "<" (.var "d") (.num 0)) (.num (-1)) (.num 1))],
+         .setVar "i" (.bin "+" (.var "i") (.num 1))]
+      = (if cs.isPrefixOf (bs.drop i) then
+          .ok (.next [("i", .num (i + cs.length)), ("y", .arr (bs.map fun c => Val.str c.toString)), ("x", X),
+            ("a", A), ("b", B)])
+        else .ok (.ret (.num (if compare cs (bs.drop i) = Ordering.lt then -1 else 1)))) := by
+  induction cs generalizing i with
+  | nil =>
+    walk
+    simp
+  | cons c rest ih =>
+    rw [show f + (c :: rest).length + 12 = (f + rest.length + 12) + 1 from by simp; omega]
+    walk
+    by_cases hlen : i < bs.length
+    · rw [cmp_not_ge (by omega : ((i : Int)) < ((bs.length : Nat) : Int))]
+      walk
+      rw [if_pos (by omega : (0:Int) ≤ (i : Int)), Int.toNat_natCast, List.getElem?_map,
+        List.getElem?_eq_getElem hlen]
+      walk
+      rw [show f + rest.length + 8 = (f + rest.length + 3) + 5 from by omega, calls_cp]
+      simp only [Option.getD]
+      rw [calls_cp]
+      walk
+      rw [List.drop_eq_getElem_cons hlen]
+      by_cases hc : c = bs[i]
+      · rw [show ((c.toNat : Int) - (bs[i].toNat : Int) == 0) = true from by
+          simp [hc]]
+        walk
+        rw [show ((i : Int) + 1) = ((i + 1 : Nat) : Int) from by omega, ih (i + 1)]
+        simp only [List.isPrefixOf, hc, beq_self_eq_true, Bool.true_and, List.length_cons,
+          compare_cons_self]
+        rw [show (((i + 1 : Nat) : Int) + ((rest.length : Nat) : Int))
+            = ((i : Nat) : Int) + ((rest.length + 1 : Nat) : Int) from by omega]
+      · rw [show ((c.toNat : Int) - (bs[i].toNat : Int) == 0) = false from by
+          simp only [beq_eq_false_iff_ne, ne_eq]
+          intro h
+          exact hc (Char.toNat_inj.mp (by omega))]
+        walk
+        simp only [List.isPrefixOf, show (c == bs[i]) = false from by simp [hc],
+          Bool.false_and, Bool.false_eq_true, if_false, compare_cons_ne rest _ hc]
+        by_cases hlt : c < bs[i]
+        · have hn : c.toNat < bs[i].toNat := Char.lt_def.mp hlt
+          rw [cmp_lt (by omega : (c.toNat : Int) - (bs[i].toNat : Int) < 0)]
+          walk
+          rw [show compare c bs[i] = Ordering.lt from by
+            simp [compare, compareOfLessAndEq, hlt]]
+          simp
+        · have hn : bs[i].toNat ≤ c.toNat := Char.le_def.mp (Char.not_lt.mp hlt)
+          have hne : c.toNat ≠ bs[i].toNat := fun h => hc (Char.toNat_inj.mp h)
+          rw [cmp_not_lt (by omega : ¬ (c.toNat : Int) - (bs[i].toNat : Int) < 0)]
+          walk
+          rw [show compare c bs[i] = Ordering.gt from by
+            simp [compare, compareOfLessAndEq, hlt, hc]]
+          simp
+    · rw [cmp_ge (by omega : ¬ ((i : Nat) : Int) < ((bs.length : Nat) : Int))]
+      walk
+      rw [List.drop_eq_nil_of_le (by omega : bs.length ≤ i)]
+      simp [List.isPrefixOf, compare, List.compareLex]
+
+theorem find_strcmp : Helper.defs.find? (·.name == "__strcmp") = some Helper.strcmp := rfl
+
+private theorem compare_of_isPrefix : ∀ {l m : List Char}, l.isPrefixOf m = true →
+    compare l m = if l.length = m.length then Ordering.eq else Ordering.lt
+  | [], [], _ => by simp [compare, List.compareLex]
+  | [], _ :: _, _ => by simp [compare, List.compareLex]
+  | _ :: _, [], h => by simp [List.isPrefixOf] at h
+  | a :: l, b :: m, h => by
+    simp only [List.isPrefixOf, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨h1, h2⟩ := h
+    subst h1
+    rw [compare_cons_self, compare_of_isPrefix h2]
+    simp
+
+private theorem compare_ne_eq {l m : List Char} (h : l ≠ m) : compare l m ≠ Ordering.eq := by
+  intro he
+  exact h (Std.compare_eq_iff_eq.mp he)
+
+theorem calls_strcmp (ext : Ext) (x y : String) (f : Nat) :
+    callDef ext (f + x.toList.length + 17) "__strcmp" [.str x, .str y] =
+      .ok (.num (strcmp x y)) := by
+  simp only [strcmp]
+  rw [show f + x.toList.length + 17 = (f + x.toList.length + 16) + 1 from by omega,
+    callDef_block find_strcmp rfl rfl]
+  simp only [Helper.strcmp, Helper.lengthOf]
+  walk
+  rw [show f + x.toList.length + 14 = (f + x.toList.length + 9) + 5 from by omega, calls_chars]
+  walk
+  rw [show f + x.toList.length + 13 = (f + x.toList.length + 8) + 5 from by omega, calls_chars]
+  walk
+  rw [show (Val.num 0) = (Val.num (((0 : Nat)) : Int)) from rfl, strcmp_loop]
+  simp only [List.drop_zero]
+  by_cases hp : x.toList.isPrefixOf y.toList = true
+  · rw [if_pos hp, compare_of_isPrefix hp]
+    walk
+    by_cases hl : x.toList.length = y.toList.length
+    · rw [if_pos hl, show ((x.toList.length : Nat) : Int) = ((y.toList.length : Nat) : Int) from by
+        omega]
+      walk
+      rfl
+    · rw [if_neg hl, show (((x.toList.length : Nat) : Int) == ((y.toList.length : Nat) : Int))
+        = false from by simp; omega]
+      walk
+  · rw [if_neg hp]
+    walk
+    have hne : x.toList ≠ y.toList := by
+      intro he
+      exact hp (by simp [he])
+    cases hcmp : compare x.toList y.toList with
+    | lt => simp
+    | eq => exact absurd hcmp (compare_ne_eq hne)
+    | gt => simp
+
 end LeanTs.HelperSem
