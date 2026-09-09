@@ -1,5 +1,6 @@
 import LeanTs.Decl
 import LeanTs.Eval
+import LeanTs.Dts
 import LeanTs.HelperAgree
 import LeanTs.Manifest
 import LeanTs.Renderable
@@ -627,6 +628,14 @@ theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : L
     HelperSem.Helper.Calls ext name (args.map HelperSem.ofJs) (HelperSem.ofRes r) :=
   HelperSem.helper_agrees ext name args r hok h
 
+/-- Everything the entry check lets through is a value the published `.d.ts` type admits. The two are
+not the same set: the check reads an object's fields by position and reads a number's range, and a
+TypeScript type says neither, so a call the `.d.ts` accepts can still be refused at the boundary. -/
+theorem entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
+    (hd : Compile.tyDesc program b ty = .ok d) (hc : Js.checkTy jv d = true)
+    (hk : Js.dictKeysDistinct jv = true) : Dts.TsSat program ty jv :=
+  Dts.checkTy_tsSat program jv ty b d hd hc hk
+
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
@@ -689,7 +698,11 @@ def manifest : Manifest := {
     { name := "helpers_ship_as_modelled"
       statement :=
         "every runtime helper the model of the generated code assumes is what the shipped source computes"
-      proof := helpers_ship_as_modelled }
+      proof := helpers_ship_as_modelled },
+    { name := "entry_check_fits_dts"
+      statement :=
+        "every argument the entry check lets through is a value the published .d.ts type admits"
+      proof := entry_check_fits_dts }
   ]
 }
 

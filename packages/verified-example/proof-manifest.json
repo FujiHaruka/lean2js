@@ -337,6 +337,10 @@
     {
       "name": "helpers_ship_as_modelled",
       "statement": "every runtime helper the model of the generated code assumes is what the shipped source computes"
+    },
+    {
+      "name": "entry_check_fits_dts",
+      "statement": "every argument the entry check lets through is a value the published .d.ts type admits"
     }
   ]
 }
