@@ -1262,4 +1262,328 @@ theorem calls_trim (ext : Ext) (x : String) (f : Nat) :
   rw [joinStrs_chars, trim_slice]
   rfl
 
+/-! ## Traversals
+
+The callback is `ext`, so what these compute is stated as a walk of the list that calls it once per
+element and stops at the first `thrown`. That is the shape `JsSem`'s `evalMapJs` and its siblings
+already have, which is what lets the two be put side by side.
+-/
+
+theorem find_map : Helper.defs.find? (·.name == "__map") = some Helper.map := rfl
+
+def extMap (ext : Ext) (i : Nat) : List Val → Res (List Val)
+  | [] => .ok []
+  | x :: rest => do
+    let v ← ext i [x]
+    let vs ← extMap ext i rest
+    .ok (v :: vs)
+
+theorem map_loop (ext : Ext) (i : Nat) (xs acc : List Val) (X : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 4) [("out", .arr acc), ("xs", X), ("f", .ext i)] "v" xs
+        [.push "out" (.apply (.var "f") [.var "v"])]
+      = (extMap ext i xs).bind (fun ys =>
+          .ok (.next [("out", .arr (acc ++ ys)), ("xs", X), ("f", .ext i)])) := by
+  induction xs generalizing acc with
+  | nil =>
+    walk
+    simp [extMap]
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 4 = (f + rest.length + 4) + 1 from by simp; omega]
+    walk
+    cases hx : ext i [x] with
+    | stuck => simp [extMap, hx]
+    | thrown c => simp [extMap, hx]
+    | ok v =>
+      simp only [hx, bind_ok]
+      walk
+      simp only [Option.getD]
+      rw [ih]
+      simp only [extMap, hx, bindEq, bind_ok]
+      cases extMap ext i rest with
+      | stuck => rfl
+      | thrown c => rfl
+      | ok ys => simp
+
+theorem calls_map (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 9) "__map" [.arr xs, .ext i] =
+      (extMap ext i xs).bind (fun ys => .ok (.arr ys)) := by
+  rw [show f + xs.length + 9 = (f + xs.length + 8) + 1 from by omega,
+    callDef_block find_map rfl rfl]
+  simp only [Helper.map]
+  walk
+  rw [show f + xs.length + 6 = (f + 2) + xs.length + 4 from by omega, map_loop]
+  cases extMap ext i xs with
+  | stuck => rfl
+  | thrown c => rfl
+  | ok ys =>
+    walk
+    simp
+
+theorem find_filter : Helper.defs.find? (·.name == "__filter") = some Helper.filter := rfl
+
+def extFilter (ext : Ext) (i : Nat) : List Val → Res (List Val)
+  | [] => .ok []
+  | x :: rest =>
+    (ext i [x]).bind fun v =>
+      match v with
+      | .bool true => (extFilter ext i rest).bind fun vs => .ok (x :: vs)
+      | .bool false => extFilter ext i rest
+      | _ => .stuck
+
+theorem filter_loop (ext : Ext) (i : Nat) (xs acc : List Val) (X : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 5) [("out", .arr acc), ("xs", X), ("f", .ext i)] "v" xs
+        [.ifThen (.apply (.var "f") [.var "v"]) [.push "out" (.var "v")]]
+      = (extFilter ext i xs).bind (fun ys =>
+          .ok (.next [("out", .arr (acc ++ ys)), ("xs", X), ("f", .ext i)])) := by
+  induction xs generalizing acc with
+  | nil =>
+    walk
+    simp [extFilter]
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 5 = (f + rest.length + 5) + 1 from by simp; omega]
+    walk
+    cases hx : ext i [x] with
+    | stuck => simp [extFilter, hx]
+    | thrown c => simp [extFilter, hx]
+    | ok v =>
+      simp only [hx, bind_ok, extFilter, bindEq]
+      cases v
+      case bool b =>
+        cases b
+        case false =>
+          walk
+          simp only [Option.getD]
+          rw [ih]
+        case true =>
+          walk
+          simp only [Option.getD]
+          rw [ih]
+          cases extFilter ext i rest with
+          | stuck => rfl
+          | thrown c => rfl
+          | ok ys => simp
+      all_goals rfl
+
+theorem calls_filter (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 10) "__filter" [.arr xs, .ext i] =
+      (extFilter ext i xs).bind (fun ys => .ok (.arr ys)) := by
+  rw [show f + xs.length + 10 = (f + xs.length + 9) + 1 from by omega,
+    callDef_block find_filter rfl rfl]
+  simp only [Helper.filter]
+  walk
+  rw [show f + xs.length + 7 = (f + 2) + xs.length + 5 from by omega, filter_loop]
+  cases extFilter ext i xs with
+  | stuck => rfl
+  | thrown c => rfl
+  | ok ys =>
+    walk
+    simp
+
+theorem find_find : Helper.defs.find? (·.name == "__find") = some Helper.find := rfl
+theorem find_all : Helper.defs.find? (·.name == "__all") = some Helper.all := rfl
+theorem find_any : Helper.defs.find? (·.name == "__any") = some Helper.any := rfl
+theorem find_reduce : Helper.defs.find? (·.name == "__reduce") = some Helper.reduce := rfl
+
+def extFind (ext : Ext) (i : Nat) : List Val → Res (Option Val)
+  | [] => .ok none
+  | x :: rest =>
+    (ext i [x]).bind fun v =>
+      match v with
+      | .bool true => .ok (some x)
+      | .bool false => extFind ext i rest
+      | _ => .stuck
+
+theorem find_loop (ext : Ext) (i : Nat) (xs : List Val) (X : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 6) [("xs", X), ("f", .ext i)] "v" xs
+        [.ifThen (.apply (.var "f") [.var "v"])
+          [.ret (.objLit [("tag", .str "some"), ("value", .var "v")])]]
+      = (extFind ext i xs).bind (fun r =>
+          match r with
+          | some v => .ok (.ret (.obj [("tag", .str "some"), ("value", v)]))
+          | none => .ok (.next [("xs", X), ("f", .ext i)])) := by
+  induction xs with
+  | nil =>
+    walk
+    simp [extFind]
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    cases hx : ext i [x] with
+    | stuck => simp [extFind, hx]
+    | thrown c => simp [extFind, hx]
+    | ok v =>
+      simp only [hx, bind_ok, extFind, bindEq]
+      cases v
+      case bool b =>
+        cases b
+        case false =>
+          walk
+          simp only [Option.getD]
+          rw [ih]
+        case true =>
+          walk
+      all_goals rfl
+
+theorem calls_find (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 8) "__find" [.arr xs, .ext i] =
+      (extFind ext i xs).bind (fun r => .ok (match r with
+        | some v => .obj [("tag", .str "some"), ("value", v)]
+        | none => .obj [("tag", .str "none")])) := by
+  rw [show f + xs.length + 8 = (f + xs.length + 7) + 1 from by omega,
+    callDef_block find_find rfl rfl]
+  simp only [Helper.find]
+  walk
+  rw [show f + xs.length + 6 = f + xs.length + 6 from rfl, find_loop]
+  cases extFind ext i xs with
+  | stuck => rfl
+  | thrown c => rfl
+  | ok r =>
+    cases r with
+    | none => walk
+    | some v => walk
+
+def extAll (ext : Ext) (i : Nat) : List Val → Res Bool
+  | [] => .ok true
+  | x :: rest =>
+    (ext i [x]).bind fun v =>
+      match v with
+      | .bool true => extAll ext i rest
+      | .bool false => .ok false
+      | _ => .stuck
+
+theorem all_loop (ext : Ext) (i : Nat) (xs : List Val) (X : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 6) [("xs", X), ("f", .ext i)] "v" xs
+        [.ifThen (.not (.apply (.var "f") [.var "v"])) [.ret (.bool false)]]
+      = (extAll ext i xs).bind (fun r =>
+          if r then .ok (.next [("xs", X), ("f", .ext i)]) else .ok (.ret (.bool false))) := by
+  induction xs with
+  | nil =>
+    walk
+    simp [extAll]
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    cases hx : ext i [x] with
+    | stuck => simp [extAll, hx]
+    | thrown c => simp [extAll, hx]
+    | ok v =>
+      simp only [hx, bind_ok, extAll, bindEq]
+      cases v
+      case bool b =>
+        cases b
+        case false =>
+          walk
+        case true =>
+          walk
+          simp only [Option.getD]
+          rw [ih]
+      all_goals rfl
+
+theorem calls_all (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 8) "__all" [.arr xs, .ext i] =
+      (extAll ext i xs).bind (fun r => .ok (.bool r)) := by
+  rw [show f + xs.length + 8 = (f + xs.length + 7) + 1 from by omega,
+    callDef_block find_all rfl rfl]
+  simp only [Helper.all]
+  walk
+  rw [show f + xs.length + 6 = f + xs.length + 6 from rfl, all_loop]
+  cases extAll ext i xs with
+  | stuck => rfl
+  | thrown c => rfl
+  | ok r =>
+    cases r with
+    | false => walk
+    | true => walk
+
+def extAny (ext : Ext) (i : Nat) : List Val → Res Bool
+  | [] => .ok false
+  | x :: rest =>
+    (ext i [x]).bind fun v =>
+      match v with
+      | .bool true => .ok true
+      | .bool false => extAny ext i rest
+      | _ => .stuck
+
+theorem any_loop (ext : Ext) (i : Nat) (xs : List Val) (X : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 6) [("xs", X), ("f", .ext i)] "v" xs
+        [.ifThen (.apply (.var "f") [.var "v"]) [.ret (.bool true)]]
+      = (extAny ext i xs).bind (fun r =>
+          if r then .ok (.ret (.bool true)) else .ok (.next [("xs", X), ("f", .ext i)])) := by
+  induction xs with
+  | nil =>
+    walk
+    simp [extAny]
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    cases hx : ext i [x] with
+    | stuck => simp [extAny, hx]
+    | thrown c => simp [extAny, hx]
+    | ok v =>
+      simp only [hx, bind_ok, extAny, bindEq]
+      cases v
+      case bool b =>
+        cases b
+        case false =>
+          walk
+          simp only [Option.getD]
+          rw [ih]
+        case true =>
+          walk
+      all_goals rfl
+
+theorem calls_any (ext : Ext) (i : Nat) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 8) "__any" [.arr xs, .ext i] =
+      (extAny ext i xs).bind (fun r => .ok (.bool r)) := by
+  rw [show f + xs.length + 8 = (f + xs.length + 7) + 1 from by omega,
+    callDef_block find_any rfl rfl]
+  simp only [Helper.any]
+  walk
+  rw [show f + xs.length + 6 = f + xs.length + 6 from rfl, any_loop]
+  cases extAny ext i xs with
+  | stuck => rfl
+  | thrown c => rfl
+  | ok r =>
+    cases r with
+    | false => walk
+    | true => walk
+
+def extReduce (ext : Ext) (i : Nat) : Val → List Val → Res Val
+  | a, [] => .ok a
+  | a, x :: rest => (ext i [a, x]).bind fun r => extReduce ext i r rest
+
+theorem reduce_loop (ext : Ext) (i : Nat) (xs : List Val) (a X I : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 5) [("acc", a), ("xs", X), ("init", I), ("f", .ext i)] "v" xs
+        [.setVar "acc" (.apply (.var "f") [.var "acc", .var "v"])]
+      = (extReduce ext i a xs).bind (fun r =>
+          .ok (.next [("acc", r), ("xs", X), ("init", I), ("f", .ext i)])) := by
+  induction xs generalizing a with
+  | nil =>
+    walk
+    simp [extReduce]
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 5 = (f + rest.length + 5) + 1 from by simp; omega]
+    walk
+    cases hx : ext i [a, x] with
+    | stuck => simp [extReduce, hx]
+    | thrown c => simp [extReduce, hx]
+    | ok v =>
+      simp only [hx, bind_ok, extReduce, bindEq]
+      walk
+      simp only [Option.getD]
+      rw [ih]
+
+theorem calls_reduce (ext : Ext) (i : Nat) (xs : List Val) (a : Val) (f : Nat) :
+    callDef ext (f + xs.length + 8) "__reduce" [.arr xs, a, .ext i] =
+      (extReduce ext i a xs).bind (fun r => .ok r) := by
+  rw [show f + xs.length + 8 = (f + xs.length + 7) + 1 from by omega,
+    callDef_block find_reduce rfl rfl]
+  simp only [Helper.reduce]
+  walk
+  rw [show f + xs.length + 5 = f + xs.length + 5 from rfl, reduce_loop]
+  cases extReduce ext i a xs with
+  | stuck => rfl
+  | thrown c => rfl
+  | ok r => walk
+
 end LeanTs.HelperSem
