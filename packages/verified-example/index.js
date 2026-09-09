@@ -2,7 +2,7 @@
 
 const __fail = (code) => {
   const error = new Error(code);
-  (error).code = code;
+  error.code = code;
   throw error;
 };
 
@@ -61,23 +61,22 @@ const __strcmp = (a, b) => {
 // four.
 const __ws = (c) => ((c === " ") || ((c === "\t") || ((c === "\n") || (c === "\r"))));
 
-const __trim = (s) => {
-  const xs = __chars(s);
-  let lo = 0;
+const __lead = (xs) => {
+  let n = 0;
   for (const c of xs) {
     if ((!__ws(c))) {
       break;
     }
-    lo = (lo + 1);
+    n = (n + 1);
   }
-  let drop = 0;
-  for (const c of ((xs).slice(lo)).reverse()) {
-    if ((!__ws(c))) {
-      break;
-    }
-    drop = (drop + 1);
-  }
-  return ((xs).slice(lo, ((xs).length - drop))).join("");
+  return n;
+};
+
+const __trim = (s) => {
+  const xs = __chars(s);
+  const lo = __lead(xs);
+  const hi = ((xs).length - __lead(__areverse(xs)));
+  return ((xs).slice(lo, hi)).join("");
 };
 
 // toUpperCase is not ASCII: it maps "ß" to "SS", changing the length of the
@@ -121,10 +120,10 @@ const __aslice = (xs, lo, hi) => ((Number.isSafeInteger(lo) && (Number.isSafeInt
 const __aconcat = (a, b) => {
   const out = [];
   for (const v of a) {
-    (out).push(v);
+    out.push(v);
   }
   for (const v of b) {
-    (out).push(v);
+    out.push(v);
   }
   return out;
 };
@@ -132,10 +131,12 @@ const __aconcat = (a, b) => {
 // A fresh array: reverse() would otherwise write through to the caller's.
 const __areverse = (xs) => {
   const out = [];
+  let i = (xs).length;
   for (const v of xs) {
-    (out).push(v);
+    i = (i - 1);
+    out.push((xs)[i]);
   }
-  return (out).reverse();
+  return out;
 };
 
 // An out-of-range index fails rather than yielding undefined. undefined does not exist in
@@ -148,7 +149,11 @@ const __dhas = (d, k) => (d).has(k);
 
 // A fresh Map: values in the subset are immutable, so set cannot write through to the
 // caller's.
-const __dset = (d, k, v) => (new Map(d)).set(k, v);
+const __dset = (d, k, v) => {
+  const out = new Map(d);
+  out.set(k, v);
+  return out;
+};
 
 const __dkeys = (d) => Array.from((d).keys());
 
@@ -158,7 +163,7 @@ const __ddelete = (d, k) => {
   const out = new Map();
   for (const key of __dkeys(d)) {
     if ((key !== k)) {
-      (out).set(key, (d).get(key));
+      out.set(key, (d).get(key));
     }
   }
   return out;
@@ -233,7 +238,7 @@ const __eq = (a, b) => {
 const __map = (xs, f) => {
   const out = [];
   for (const v of xs) {
-    (out).push((f)(v));
+    out.push((f)(v));
   }
   return out;
 };
@@ -242,7 +247,7 @@ const __filter = (xs, f) => {
   const out = [];
   for (const v of xs) {
     if ((f)(v)) {
-      (out).push(v);
+      out.push(v);
     }
   }
   return out;

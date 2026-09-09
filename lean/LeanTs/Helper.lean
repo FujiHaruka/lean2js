@@ -48,13 +48,16 @@ inductive Stmt where
   | const (name : String) (val : Expr)
   | letMut (name : String) (val : Expr)
   | setVar (name : String) (val : Expr)
-  | setField (recv : Expr) (name : String) (val : Expr)
+  /-- Mutation names a local, never an arbitrary expression: every object a helper writes to is one it
+  has just built, so a rebinding is the whole of what the write can be seen to do. -/
+  | setField (name : String) (field : String) (val : Expr)
+  | push (name : String) (val : Expr)
+  | setKey (name : String) (key val : Expr)
   | ifThen (c : Expr) (yes : List Stmt)
   | forOf (binder : String) (arr : Expr) (body : List Stmt)
   | ret (e : Expr)
   | brk
   | throwErr (e : Expr)
-  | eval (e : Expr)
   deriving Inhabited, BEq
 
 inductive Body where
@@ -130,8 +133,11 @@ def Stmt.render (depth : Nat) : Stmt → String
   | .const name val => indentOf depth ++ "const " ++ name ++ " = " ++ val.render ++ ";"
   | .letMut name val => indentOf depth ++ "let " ++ name ++ " = " ++ val.render ++ ";"
   | .setVar name val => indentOf depth ++ name ++ " = " ++ val.render ++ ";"
-  | .setField recv name val =>
-    indentOf depth ++ "(" ++ recv.render ++ ")." ++ name ++ " = " ++ val.render ++ ";"
+  | .setField name field val =>
+    indentOf depth ++ name ++ "." ++ field ++ " = " ++ val.render ++ ";"
+  | .push name val => indentOf depth ++ name ++ ".push(" ++ val.render ++ ");"
+  | .setKey name key val =>
+    indentOf depth ++ name ++ ".set(" ++ key.render ++ ", " ++ val.render ++ ");"
   | .ifThen c yes =>
     indentOf depth ++ "if (" ++ c.render ++ ") {\n"
       ++ Stmt.renderAll (depth + 1) yes ++ "\n" ++ indentOf depth ++ "}"
@@ -141,7 +147,6 @@ def Stmt.render (depth : Nat) : Stmt → String
   | .ret e => indentOf depth ++ "return " ++ e.render ++ ";"
   | .brk => indentOf depth ++ "break;"
   | .throwErr e => indentOf depth ++ "throw " ++ e.render ++ ";"
-  | .eval e => indentOf depth ++ e.render ++ ";"
 termination_by s => sizeOf s
 
 def Stmt.renderAll (depth : Nat) : List Stmt → String
@@ -204,7 +209,7 @@ private def lengthOf (e : Expr) : Expr := .field e "length"
 def defs : List Def := [
   { name := "__fail", params := ["code"], body := .block [
       .const "error" (.new_ "Error" [.var "code"]),
-      .setField (.var "error") "code" (.var "code"),
+      .setField "error" "code" (.var "code"),
       .throwErr (.var "error")] },
 
   { name := "__i53", params := ["x"]
@@ -273,18 +278,18 @@ def defs : List Def := [
     body := .expr (or2 [.bin "===" c (.str " "), .bin "===" c (.str "\t"),
       .bin "===" c (.str "\n"), .bin "===" c (.str "\r")]) },
 
-  { name := "__trim", params := ["s"], body := .block [
-      .const "xs" (.call "__chars" [s]),
-      .letMut "lo" (.num 0),
+  { name := "__lead", params := ["xs"], body := .block [
+      .letMut "n" (.num 0),
       .forOf "c" xs [
         .ifThen (.not (.call "__ws" [c])) [.brk],
-        .setVar "lo" (.bin "+" (.var "lo") (.num 1))],
-      .letMut "drop" (.num 0),
-      .forOf "c" (.method (.method xs "slice" [.var "lo"]) "reverse" []) [
-        .ifThen (.not (.call "__ws" [c])) [.brk],
-        .setVar "drop" (.bin "+" (.var "drop") (.num 1))],
-      .ret (.method (.method xs "slice"
-        [.var "lo", .bin "-" (lengthOf xs) (.var "drop")]) "join" [.str ""])] },
+        .setVar "n" (.bin "+" (.var "n") (.num 1))],
+      .ret (.var "n")] },
+
+  { name := "__trim", params := ["s"], body := .block [
+      .const "xs" (.call "__chars" [s]),
+      .const "lo" (.call "__lead" [xs]),
+      .const "hi" (.bin "-" (lengthOf xs) (.call "__lead" [.call "__areverse" [xs]])),
+      .ret (.method (.method xs "slice" [.var "lo", .var "hi"]) "join" [.str ""])] },
 
   { name := "__upper", params := ["s"]
     doc := ["toUpperCase is not ASCII: it maps \"ß\" to \"SS\", changing the length of the",
@@ -340,16 +345,19 @@ def defs : List Def := [
 
   { name := "__aconcat", params := ["a", "b"], body := .block [
       .const "out" (.arrayLit []),
-      .forOf "v" a [.eval (.method (.var "out") "push" [.var "v"])],
-      .forOf "v" b [.eval (.method (.var "out") "push" [.var "v"])],
+      .forOf "v" a [.push "out" (.var "v")],
+      .forOf "v" b [.push "out" (.var "v")],
       .ret (.var "out")] },
 
   { name := "__areverse", params := ["xs"]
     doc := ["A fresh array: reverse() would otherwise write through to the caller's."]
     body := .block [
       .const "out" (.arrayLit []),
-      .forOf "v" xs [.eval (.method (.var "out") "push" [.var "v"])],
-      .ret (.method (.var "out") "reverse" [])] },
+      .letMut "i" (lengthOf xs),
+      .forOf "v" xs [
+        .setVar "i" (.bin "-" i (.num 1)),
+        .push "out" (.index xs i)],
+      .ret (.var "out")] },
 
   { name := "__at", params := ["xs", "i"]
     doc := ["An out-of-range index fails rather than yielding undefined. undefined does not exist in",
@@ -368,7 +376,10 @@ def defs : List Def := [
   { name := "__dset", params := ["d", "k", "v"]
     doc := ["A fresh Map: values in the subset are immutable, so set cannot write through to the",
             "caller's."]
-    body := .expr (.method (.new_ "Map" [d]) "set" [k, .var "v"]) },
+    body := .block [
+      .const "out" (.new_ "Map" [d]),
+      .setKey "out" k (.var "v"),
+      .ret (.var "out")] },
 
   { name := "__dkeys", params := ["d"], body := .expr (.prim "Array.from" [.method d "keys" []]) },
 
@@ -379,7 +390,7 @@ def defs : List Def := [
       .const "out" (.new_ "Map" []),
       .forOf "key" (.call "__dkeys" [d]) [
         .ifThen (.bin "!==" (.var "key") k)
-          [.eval (.method (.var "out") "set" [.var "key", .method d "get" [.var "key"]])]],
+          [.setKey "out" (.var "key") (.method d "get" [.var "key"])]],
       .ret (.var "out")] },
 
   { name := "__eq", params := ["a", "b"]
@@ -422,13 +433,13 @@ def defs : List Def := [
 
   { name := "__map", params := ["xs", "f"], body := .block [
       .const "out" (.arrayLit []),
-      .forOf "v" xs [.eval (.method (.var "out") "push" [.apply (.var "f") [.var "v"]])],
+      .forOf "v" xs [.push "out" (.apply (.var "f") [.var "v"])],
       .ret (.var "out")] },
 
   { name := "__filter", params := ["xs", "f"], body := .block [
       .const "out" (.arrayLit []),
       .forOf "v" xs [
-        .ifThen (.apply (.var "f") [.var "v"]) [.eval (.method (.var "out") "push" [.var "v"])]],
+        .ifThen (.apply (.var "f") [.var "v"]) [.push "out" (.var "v")]],
       .ret (.var "out")] },
 
   { name := "__find", params := ["xs", "f"]
