@@ -1,5 +1,6 @@
 import LeanTs.Text
 import LeanTs.Helper
+import LeanTs.HelperSem
 import LeanTs.Core
 import LeanTs.Value
 import LeanTs.Eval
