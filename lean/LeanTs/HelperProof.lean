@@ -1792,6 +1792,46 @@ theorem eq_arr_loop (ext : Ext) (A : Val) :
         simp
 
 
+theorem eq_obj_loop (ext : Ext) (es fs : List (String × Val)) (KS : Val)
+    (hsub : ∀ (k : String) (g : Nat),
+      callDef ext (g + eqFuel (lookupV es k) (lookupV fs k)) "__eq"
+        [lookupV es k, lookupV fs k] = .ok (.bool (eqVal (lookupV es k) (lookupV fs k)))) :
+    ∀ (ks : List String) (f : Nat),
+    evalFor ext (f + eqFuelKeys es fs ks + 8)
+      [("keys", KS), ("a", Val.obj es), ("b", Val.obj fs)] "key" (ks.map Val.str)
+      [.ifThen (.not (.prim "Object.hasOwn" [(.var "b"), .var "key"])) [.ret (.bool false)],
+       .ifThen (.not (.call "__eq" [.index (.var "a") (.var "key"), .index (.var "b") (.var "key")]))
+         [.ret (.bool false)]]
+      = (if eqObj es fs ks then
+          .ok (.next [("keys", KS), ("a", Val.obj es), ("b", Val.obj fs)])
+        else .ok (.ret (.bool false))) := by
+  intro ks
+  induction ks with
+  | nil => intro f; walk; simp [eqObj]
+  | cons k rest ih =>
+    intro f
+    simp only [eqFuelKeys, List.map_cons]
+    rw [show f + (eqFuel (lookupV es k) (lookupV fs k) + 8 + eqFuelKeys es fs rest) + 8
+      = (f + eqFuel (lookupV es k) (lookupV fs k) + eqFuelKeys es fs rest + 15) + 1 from by omega]
+    walk
+    simp only [eqObj]
+    cases hany : fs.any (fun x => x.fst == k) with
+    | false => walk; simp
+    | true =>
+      rw [show f + eqFuel (lookupV es k) (lookupV fs k) + eqFuelKeys es fs rest + 11
+        = (f + eqFuelKeys es fs rest + 11) + eqFuel (lookupV es k) (lookupV fs k) from by omega,
+        hsub]
+      cases hv : eqVal (lookupV es k) (lookupV fs k) with
+      | false => walk; simp
+      | true =>
+        walk
+        simp only [Option.getD]
+        rw [show f + eqFuel (lookupV es k) (lookupV fs k) + eqFuelKeys es fs rest + 15
+          = (f + eqFuel (lookupV es k) (lookupV fs k) + 7) + eqFuelKeys es fs rest + 8 from by omega,
+          ih]
+        simp
+
+
 theorem find_eq : Helper.defs.find? (·.name == "__eq") = some Helper.eq := rfl
 
 private theorem eqVal_of_strictEq {a b : Val} (h : strictEq a b = true) : eqVal a b = true := by
