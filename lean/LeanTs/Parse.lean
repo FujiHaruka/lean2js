@@ -829,9 +829,10 @@ end
 
 /-! ## Statements, functions and the module
 
-The runtime helpers are matched as the one literal block the printer writes them as. Turning that block
-into an AST is a separate step; until then the reader accepting it verbatim is what "reads back exactly
-what this printer writes" means.
+The runtime helpers are matched as the one literal block the printer writes them as. The block is what
+`Helper`'s own printer makes of the definitions the helper proofs are stated over, so it is an AST on
+the way out; the reader does not take it back apart, and accepting it verbatim is what "reads back
+exactly what this printer writes" means for that part.
 -/
 
 def takeUntil (lit : List Char) : List Char → Option (List Char × List Char)
