@@ -1000,4 +1000,139 @@ theorem calls_strcmp (ext : Ext) (x y : String) (f : Nat) :
     | eq => exact absurd hcmp (compare_ne_eq hne)
     | gt => simp
 
+/-! ## Deleting a key
+
+The loop is stated as the `foldl` it runs, with no hypothesis about the dictionary. That it agrees with
+dropping the key — `JsSem`'s `filter` — needs the keys to be distinct, which is a fact about the values
+the generated code hands over rather than about this helper, so it is a separate lemma.
+-/
+
+theorem find_ddelete : Helper.defs.find? (·.name == "__ddelete") = some Helper.ddelete := rfl
+
+def dropStep (es : List (String × Val)) (k : String) (a : List (String × Val)) (key : String) :
+    List (String × Val) :=
+  if key == k then a else mapSet a key (((es.find? (·.1 == key)).map (·.2)).getD .undef)
+
+theorem ddelete_loop (ext : Ext) (es acc : List (String × Val)) (k : String) (ks : List String)
+    (f : Nat) :
+    evalFor ext (f + ks.length + 6)
+        [("out", .dict acc), ("d", .dict es), ("k", .str k)] "key" (ks.map Val.str)
+        [.ifThen (.bin "!==" (.var "key") (.var "k"))
+          [.setKey "out" (.var "key") (.method (.var "d") "get" [.var "key"])]]
+      = .ok (.next [("out", .dict (ks.foldl (dropStep es k) acc)), ("d", .dict es),
+          ("k", .str k)]) := by
+  induction ks generalizing acc with
+  | nil =>
+    walk
+    simp
+  | cons key rest ih =>
+    rw [show f + (key :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    by_cases hk : key = k
+    · rw [show (key == k) = true from by simp [hk]]
+      walk
+      simp only [Option.getD]
+      rw [ih]
+      simp only [List.foldl_cons, dropStep, show (key == k) = true from by simp [hk], if_true]
+    · rw [show (key == k) = false from by simp [hk]]
+      walk
+      simp only [Option.getD]
+      rw [ih]
+      simp only [List.foldl_cons, dropStep, show (key == k) = false from by simp [hk],
+        Bool.false_eq_true, if_false]
+      rfl
+
+theorem calls_ddelete (ext : Ext) (es : List (String × Val)) (k : String) (f : Nat) :
+    callDef ext (f + es.length + 12) "__ddelete" [.dict es, .str k] =
+      .ok (.dict ((es.map (·.1)).foldl (dropStep es k) [])) := by
+  rw [show f + es.length + 12 = (f + es.length + 11) + 1 from by omega,
+    callDef_block find_ddelete rfl rfl]
+  simp only [Helper.ddelete]
+  walk
+  rw [show f + es.length + 8 = (f + es.length + 3) + 5 from by omega, calls_dkeys]
+  walk
+  rw [show (es.map fun e => Val.str e.1) = ((es.map (·.1)).map Val.str) from by simp,
+    show f + es.length + 9 = (f + 3) + (es.map (·.1)).length + 6 from by simp; omega,
+    ddelete_loop]
+  walk
+
+private theorem find?_append_of_absent {key : String} :
+    ∀ {pre : List (String × Val)}, (pre.any (·.1 == key)) = false →
+      ∀ suf : List (String × Val), (pre ++ suf).find? (·.1 == key) = suf.find? (·.1 == key)
+  | [], _, _ => rfl
+  | e :: pre, h, suf => by
+    simp only [List.any_cons, Bool.or_eq_false_iff] at h
+    simp only [List.cons_append, List.find?_cons, h.1, Bool.false_eq_true, if_false]
+    exact find?_append_of_absent h.2 suf
+
+private theorem any_filter_of_absent {key : String} {p : String × Val → Bool} :
+    ∀ {pre : List (String × Val)}, (pre.any (·.1 == key)) = false →
+      ((pre.filter p).any (·.1 == key)) = false
+  | [], _ => rfl
+  | e :: pre, h => by
+    simp only [List.any_cons, Bool.or_eq_false_iff] at h
+    by_cases hp : p e
+    · simp only [List.filter_cons, hp, if_true, List.any_cons, h.1, Bool.false_or]
+      exact any_filter_of_absent h.2
+    · simp only [List.filter_cons, hp, Bool.false_eq_true, if_false]
+      exact any_filter_of_absent h.2
+
+private theorem absent_of_keysDistinct {key : String} :
+    ∀ {ks rest : List String}, Js.keysDistinct (ks ++ key :: rest) = true →
+      ks.any (· == key) = false
+  | [], _, _ => rfl
+  | a :: ks, rest, h => by
+    rw [List.cons_append, Js.keysDistinct, Bool.and_eq_true, Bool.not_eq_true'] at h
+    have hne : (a == key) = false := by
+      cases hc : (a == key) with
+      | false => rfl
+      | true =>
+        rw [beq_iff_eq] at hc
+        subst hc
+        have hin : (ks ++ a :: rest).contains a = true := by simp
+        rw [h.1] at hin
+        exact hin.symm
+    simp only [List.any_cons, hne, Bool.false_or]
+    exact absent_of_keysDistinct h.2
+
+private theorem any_map_fst (l : List (String × Val)) (key : String) :
+    l.any (·.1 == key) = (l.map (·.1)).any (· == key) := by
+  induction l with
+  | nil => rfl
+  | cons e rest ih => simp only [List.any_cons, List.map_cons, ih]
+
+private theorem ddelete_fold_aux (k : String) :
+    ∀ (suf pre : List (String × Val)), Js.keysDistinct ((pre ++ suf).map (·.1)) = true →
+      (suf.map (·.1)).foldl (dropStep (pre ++ suf) k) (pre.filter (·.1 != k))
+        = (pre ++ suf).filter (·.1 != k)
+  | [], pre, _ => by simp
+  | e :: rest, pre, h => by
+    have hpre : (pre.any (·.1 == e.1)) = false := by
+      rw [any_map_fst]
+      exact absent_of_keysDistinct (ks := pre.map (·.1)) (rest := rest.map (·.1)) (by simpa using h)
+    have hstep : dropStep (pre ++ e :: rest) k (pre.filter (·.1 != k)) e.1
+        = (pre ++ [e]).filter (·.1 != k) := by
+      by_cases hk : e.1 = k
+      · simp [dropStep, hk]
+      · rw [dropStep, show (e.1 == k) = false from by simp [hk],
+          find?_append_of_absent hpre, mapSet, show
+            ((pre.filter (·.1 != k)).any (·.1 == e.1)) = false from any_filter_of_absent hpre]
+        simp [hk]
+    have hassoc : pre ++ e :: rest = (pre ++ [e]) ++ rest := by simp
+    rw [List.map_cons, List.foldl_cons, hstep, hassoc]
+    exact ddelete_fold_aux k rest (pre ++ [e]) (by rw [← hassoc]; exact h)
+
+theorem ddelete_fold (es : List (String × Val)) (k : String)
+    (h : Js.keysDistinct (es.map (·.1)) = true) :
+    (es.map (·.1)).foldl (dropStep es k) [] = es.filter (·.1 != k) := by
+  have := ddelete_fold_aux k es [] (by simpa using h)
+  simpa using this
+
+/-- What `JsSem.helper` says, for the dictionaries a `Map` can actually hold. -/
+theorem calls_ddelete_distinct (ext : Ext) (es : List (String × Val)) (k : String) (f : Nat)
+    (h : Js.keysDistinct (es.map (·.1)) = true) :
+    callDef ext (f + es.length + 12) "__ddelete" [.dict es, .str k] =
+      .ok (.dict (es.filter (·.1 != k))) := by
+  rw [calls_ddelete, ddelete_fold es k h]
+
 end LeanTs.HelperSem
