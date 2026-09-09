@@ -28,3 +28,4 @@ import LeanTs.Decl
 import LeanTs.HelperAgree
 import LeanTs.Dts
 import LeanTs.Fuel
+import LeanTs.Cost
