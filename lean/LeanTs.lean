@@ -27,3 +27,4 @@ import LeanTs.Step
 import LeanTs.Decl
 import LeanTs.HelperAgree
 import LeanTs.Dts
+import LeanTs.Fuel
