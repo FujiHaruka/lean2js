@@ -24,7 +24,9 @@ Two of them are worth stating out loud.
 
 `===` on objects, arrays and maps is `false`, matching `JsSem.arith`: this model has no references. The
 one helper that compares non-scalars with `===` is `__eq`, whose structural path returns the same answer
-the reference path would.
+the reference path would. Functions are the exception: a value of a function type is a reference to a
+top-level function, so `===` on two of them is decided by the name, and `__eq` has no structural path to
+fall back on.
 -/
 
 namespace LeanTs.HelperSem
@@ -107,7 +109,9 @@ def typeOf : Val → String
   | .fnRef _ | .lam _ _ _ | .ext _ => "function"
   | .undef => "undefined"
 
-/-- `===`. Across two types it is always false, so a number never equals a bigint. -/
+/-- `===`. Across two types it is always false, so a number never equals a bigint. Two references to
+the same top-level function are the same object, so those compare by name; the model has no other
+references, and the values that carry one compare as unequal here. -/
 def strictEq : Val → Val → Bool
   | .num a, .num b => a == b
   | .bigint a, .bigint b => a == b
@@ -115,6 +119,7 @@ def strictEq : Val → Val → Bool
   | .bool a, .bool b => a == b
   | .null, .null => true
   | .undef, .undef => true
+  | .fnRef a, .fnRef b => a == b
   | _, _ => false
 
 /-! ## What the fragment borrows from JavaScript -/
