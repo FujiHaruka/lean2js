@@ -443,4 +443,267 @@ theorem calls_isObj (ext : Ext) (v : Val) (f : Nat) :
   simp only [Helper.isObj, Helper.and2]
   cases v <;> walk <;> rfl
 
+
+/-! ## Loops
+
+A loop's fuel is one per element plus a constant, so a claim about a `forOf` is stated at
+`f + xs.length + k` and proved by induction on the list. The environment is written out rather than left
+generic: `restore` reads every name the enclosing scope binds, and only a concrete list of names lets it
+reduce.
+-/
+
+theorem find_aconcat : Helper.defs.find? (·.name == "__aconcat") = some Helper.aconcat := rfl
+theorem find_areverse : Helper.defs.find? (·.name == "__areverse") = some Helper.areverse := rfl
+theorem find_lead : Helper.defs.find? (·.name == "__lead") = some Helper.lead := rfl
+
+theorem aconcat_loop (ext : Ext) (xs acc : List Val) (A B : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 3) [("out", .arr acc), ("a", A), ("b", B)] "v" xs
+        [.push "out" (.var "v")]
+      = .ok (.next [("out", .arr (acc ++ xs)), ("a", A), ("b", B)]) := by
+  induction xs generalizing acc with
+  | nil =>
+    walk
+    simp
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 3 = (f + rest.length + 3) + 1 from by simp; omega]
+    walk
+    simp only [Option.getD]
+    rw [ih]
+    simp
+
+theorem calls_aconcat (ext : Ext) (a b : List Val) (f : Nat) :
+    callDef ext (f + a.length + b.length + 8) "__aconcat" [.arr a, .arr b] = .ok (.arr (a ++ b)) := by
+  rw [show f + a.length + b.length + 8 = (f + a.length + b.length + 7) + 1 from by omega,
+    callDef_block find_aconcat rfl rfl]
+  simp only [Helper.aconcat]
+  walk
+  rw [show f + a.length + b.length + 5 = (f + b.length + 2) + a.length + 3 from by omega,
+    aconcat_loop]
+  walk
+  rw [show f + a.length + b.length + 4 = (f + a.length + 1) + b.length + 3 from by omega,
+    aconcat_loop]
+  walk
+  simp
+
+/-- The loop reads `xs[i - 1]` while iterating over `xs` itself, so the induction runs on a second list
+that only carries the count still to go, and `ys.length ≤ xs.length` is what keeps that index in range. -/
+theorem areverse_loop (ext : Ext) (xs ys acc : List Val) (f : Nat) (h : ys.length ≤ xs.length) :
+    evalFor ext (f + ys.length + 4) [("i", .num ys.length), ("out", .arr acc), ("xs", .arr xs)] "v" ys
+        [.setVar "i" (.bin "-" (.var "i") (.num 1)), .push "out" (.index (.var "xs") (.var "i"))]
+      = .ok (.next [("i", .num 0), ("out", .arr (acc ++ (xs.take ys.length).reverse)),
+          ("xs", .arr xs)]) := by
+  induction ys generalizing acc with
+  | nil =>
+    walk
+    simp
+  | cons y rest ih =>
+    have hlt : rest.length < xs.length := by simp at h; omega
+    rw [show f + (y :: rest).length + 4 = (f + rest.length + 4) + 1 from by simp; omega]
+    walk
+    simp only [Option.getD, List.length_cons]
+    rw [show ((↑(rest.length + 1) : Int) - 1) = (↑rest.length : Int) from by omega,
+      if_pos (by omega : (0:Int) ≤ (↑rest.length : Int)), Int.toNat_natCast,
+      List.getElem?_eq_getElem hlt]
+    have hrev : (List.take (rest.length + 1) xs).reverse
+        = xs[rest.length] :: (List.take rest.length xs).reverse := by
+      rw [List.take_add_one, List.getElem?_eq_getElem hlt]
+      simp
+    rw [ih _ (by omega)]
+    simp [hrev]
+
+theorem calls_areverse (ext : Ext) (xs : List Val) (f : Nat) :
+    callDef ext (f + xs.length + 9) "__areverse" [.arr xs] = .ok (.arr xs.reverse) := by
+  rw [show f + xs.length + 9 = (f + xs.length + 8) + 1 from by omega,
+    callDef_block find_areverse rfl rfl]
+  simp only [Helper.areverse, Helper.lengthOf]
+  walk
+  rw [show f + xs.length + 5 = (f + 1) + xs.length + 4 from by omega,
+    areverse_loop _ _ _ _ _ (Nat.le_refl _)]
+  walk
+  simp
+
+/-- The four strings `__ws` accepts. `__lead` counts them off the front of an array of strings; that the
+array is one string per code point is what `__chars` supplies, and `calls_trim` is where the two meet. -/
+def isSpaceStr (s : String) : Bool := s == " " || s == "\t" || s == "\n" || s == "\r"
+
+theorem lead_loop (ext : Ext) (ss : List String) (k : Int) (A : Val) (f : Nat) :
+    evalFor ext (f + ss.length + 14) [("n", .num k), ("xs", A)] "c" (ss.map Val.str)
+        [.ifThen (.not (.call "__ws" [.var "c"])) [.brk],
+         .setVar "n" (.bin "+" (.var "n") (.num 1))]
+      = .ok (.next [("n", .num (k + (ss.takeWhile isSpaceStr).length)), ("xs", A)]) := by
+  induction ss generalizing k with
+  | nil =>
+    walk
+    simp
+  | cons s rest ih =>
+    rw [show f + (s :: rest).length + 14 = (f + rest.length + 14) + 1 from by simp; omega]
+    walk
+    rw [show f + rest.length + 11 = (f + rest.length + 3) + 8 from by omega, calls_ws]
+    walk
+    by_cases hb : (s == " " || s == "\t" || s == "\n" || s == "\r") = true
+    · simp only [hb, Bool.not_true]
+      walk
+      simp only [Option.getD]
+      rw [ih]
+      simp only [isSpaceStr, List.takeWhile_cons, hb, if_true, List.length_cons]
+      have harith : k + 1 + ((List.takeWhile isSpaceStr rest).length : Int)
+          = k + (((List.takeWhile isSpaceStr rest).length + 1 : Nat) : Int) := by omega
+      rw [harith]
+    · rw [Bool.not_eq_true] at hb
+      simp only [hb, Bool.not_false]
+      walk
+      simp only [isSpaceStr, List.takeWhile_cons, hb, Bool.false_eq_true, if_false, List.length_nil]
+      simp
+
+theorem calls_lead (ext : Ext) (ss : List String) (f : Nat) :
+    callDef ext (f + ss.length + 18) "__lead" [.arr (ss.map Val.str)]
+      = .ok (.num (ss.takeWhile isSpaceStr).length) := by
+  rw [show f + ss.length + 18 = (f + ss.length + 17) + 1 from by omega,
+    callDef_block find_lead rfl rfl]
+  simp only [Helper.lead]
+  walk
+  rw [show f + ss.length + 15 = (f + 1) + ss.length + 14 from by omega, lead_loop]
+  walk
+  simp
+
+theorem compare_singleton (c d : Char) : compare [c] [d] = compare c d := by
+  simp only [compare, List.compareLex, compareOfLessAndEq]
+  cases h : (if c < d then Ordering.lt else if c = d then Ordering.eq else Ordering.gt) <;> rfl
+
+theorem cmp_char_ge (c d : Char) : (compare [c] [d] != Ordering.lt) = decide (d ≤ c) := by
+  rw [compare_singleton]
+  simp only [compare, compareOfLessAndEq]
+  by_cases h : c < d
+  · rw [if_pos h]
+    simp [Char.not_le.mpr h]
+  · rw [if_neg h]
+    have hle : d ≤ c := Char.not_lt.mp h
+    by_cases he : c = d
+    · rw [if_pos he]; simp [hle]
+    · rw [if_neg he]; simp [hle]
+
+theorem cmp_char_le (c d : Char) : (compare [c] [d] != Ordering.gt) = decide (c ≤ d) := by
+  rw [compare_singleton]
+  simp only [compare, compareOfLessAndEq]
+  by_cases h : c < d
+  · rw [if_pos h]
+    simp [Std.le_of_lt h]
+  · rw [if_neg h]
+    by_cases he : c = d
+    · rw [if_pos he]; subst he; simp
+    · rw [if_neg he]
+      simp
+      exact Std.lt_of_le_of_ne (Char.not_lt.mp h) (Ne.symm he)
+
+theorem append_ofList_cons (a : String) (x : Char) (l : List Char) :
+    a ++ x.toString ++ String.ofList l = a ++ String.ofList (x :: l) := by
+  apply String.toList_inj.mp
+  simp [Char.toString]
+
+theorem find_upper : Helper.defs.find? (·.name == "__upper") = some Helper.upper := rfl
+
+theorem upper_loop (ext : Ext) (cs : List Char) (acc : String) (S : Val) (f : Nat) :
+    evalFor ext (f + cs.length + 6) [("out", .str acc), ("s", S)] "c"
+        (cs.map fun c => Val.str c.toString)
+        [.setVar "out" (.bin "+" (.var "out")
+          (.cond (.andAlso (.bin ">=" (.var "c") (.str "a")) (.bin "<=" (.var "c") (.str "z")))
+            (.method (.var "c") "toUpperCase" []) (.var "c")))]
+      = .ok (.next [("out", .str (acc ++ String.ofList (cs.map fun c =>
+          if 'a' ≤ c && c ≤ 'z' then Char.ofNat (c.toNat - 32) else c))), ("s", S)]) := by
+  induction cs generalizing acc with
+  | nil =>
+    walk
+    simp
+  | cons c rest ih =>
+    rw [show f + (c :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    rw [show c.toString.toList = [c] from by simp [Char.toString],
+      show "a".toList = ['a'] from rfl, show "z".toList = ['z'] from rfl,
+      cmp_char_ge, cmp_char_le]
+    by_cases h1 : 'a' ≤ c
+    · rw [show decide ('a' ≤ c) = true from by simp [h1]]
+      walk
+      by_cases h2 : c ≤ 'z'
+      · rw [show decide (c ≤ 'z') = true from by simp [h2]]
+        walk
+        rw [show upperOne c = some (Char.ofNat (c.toNat - 32)) from by
+          simp [upperOne, h1, h2]]
+        walk
+        simp only [Option.getD]
+        rw [ih, append_ofList_cons]
+      · rw [show decide (c ≤ 'z') = false from by simp [h2]]
+        walk
+        simp only [Option.getD]
+        rw [ih, append_ofList_cons]
+    · rw [show decide ('a' ≤ c) = false from by simp [h1]]
+      walk
+      simp only [Option.getD]
+      rw [ih, append_ofList_cons]
+      simp
+
+theorem calls_upper (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + x.toList.length + 9) "__upper" [.str x] = .ok (.str (strUpper x)) := by
+  rw [show f + x.toList.length + 9 = (f + x.toList.length + 8) + 1 from by omega,
+    callDef_block find_upper rfl rfl]
+  simp only [Helper.upper, Helper.and2]
+  walk
+  rw [show f + x.toList.length + 5 = (f + x.toList.length) + 5 from by omega, calls_chars]
+  walk
+  rw [show f + x.toList.length + 6 = f + x.toList.length + 6 from rfl, upper_loop]
+  walk
+  simp [strUpper]
+
+theorem find_lower : Helper.defs.find? (·.name == "__lower") = some Helper.lower := rfl
+
+theorem lower_loop (ext : Ext) (cs : List Char) (acc : String) (S : Val) (f : Nat) :
+    evalFor ext (f + cs.length + 6) [("out", .str acc), ("s", S)] "c"
+        (cs.map fun c => Val.str c.toString)
+        [.setVar "out" (.bin "+" (.var "out")
+          (.cond (.andAlso (.bin ">=" (.var "c") (.str "A")) (.bin "<=" (.var "c") (.str "Z")))
+            (.method (.var "c") "toLowerCase" []) (.var "c")))]
+      = .ok (.next [("out", .str (acc ++ String.ofList (cs.map fun c =>
+          if 'A' ≤ c && c ≤ 'Z' then Char.ofNat (c.toNat + 32) else c))), ("s", S)]) := by
+  induction cs generalizing acc with
+  | nil =>
+    walk
+    simp
+  | cons c rest ih =>
+    rw [show f + (c :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    rw [show c.toString.toList = [c] from by simp [Char.toString],
+      show "A".toList = ['A'] from rfl, show "Z".toList = ['Z'] from rfl,
+      cmp_char_ge, cmp_char_le]
+    by_cases h1 : 'A' ≤ c
+    · rw [show decide ('A' ≤ c) = true from by simp [h1]]
+      walk
+      by_cases h2 : c ≤ 'Z'
+      · rw [show decide (c ≤ 'Z') = true from by simp [h2]]
+        walk
+        rw [show lowerOne c = some (Char.ofNat (c.toNat + 32)) from by
+          simp [lowerOne, h1, h2]]
+        walk
+        simp only [Option.getD]
+        rw [ih, append_ofList_cons]
+      · rw [show decide (c ≤ 'Z') = false from by simp [h2]]
+        walk
+        simp only [Option.getD]
+        rw [ih, append_ofList_cons]
+    · rw [show decide ('A' ≤ c) = false from by simp [h1]]
+      walk
+      simp only [Option.getD]
+      rw [ih, append_ofList_cons]
+      simp
+
+theorem calls_lower (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + x.toList.length + 9) "__lower" [.str x] = .ok (.str (strLower x)) := by
+  rw [show f + x.toList.length + 9 = (f + x.toList.length + 8) + 1 from by omega,
+    callDef_block find_lower rfl rfl]
+  simp only [Helper.lower, Helper.and2]
+  walk
+  rw [show f + x.toList.length + 5 = (f + x.toList.length) + 5 from by omega, calls_chars]
+  walk
+  rw [lower_loop]
+  walk
+  simp [strLower]
+
 end LeanTs.HelperSem
