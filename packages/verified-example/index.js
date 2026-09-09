@@ -2,248 +2,362 @@
 
 const __fail = (code) => {
   const error = new Error(code);
-  error.code = code;
+  (error).code = code;
   throw error;
 };
 
 // Int53 is a mathematical integer, so no -0 survives. In JS both 0 - 0 and -4 % 2 are -0.
-const __i53 = (x) =>
-  Number.isSafeInteger(x) ? (x === 0 ? 0 : x) : __fail("int53Overflow");
+const __i53 = (x) => (Number.isSafeInteger(x) ? ((x === 0) ? 0 : x) : __fail("int53Overflow"));
 
-// Math.trunc(a / b) is off by one when a is near 2^53. Integer division avoids floating-point division.
-const __i53div = (a, b) =>
-  b === 0 ? __fail("divByZero") : Number(BigInt(a) / BigInt(b));
+// Math.trunc(a / b) is off by one when a is near 2^53. Integer division avoids
+// floating-point division.
+const __i53div = (a, b) => ((b === 0) ? __fail("divByZero") : Number((BigInt(a) / BigInt(b))));
 
-const __i53mod = (a, b) => (b === 0 ? __fail("divByZero") : __i53(a % b));
+const __i53mod = (a, b) => ((b === 0) ? __fail("divByZero") : __i53((a % b)));
 
-const __u32mul = (a, b) => Math.imul(a, b) >>> 0;
+const __u32mul = (a, b) => (Math.imul(a, b) >>> 0);
 
-const __u32div = (a, b) => (b === 0 ? __fail("divByZero") : Math.trunc(a / b) >>> 0);
+const __u32div = (a, b) => ((b === 0) ? __fail("divByZero") : (Math.trunc((a / b)) >>> 0));
 
-const __u32mod = (a, b) => (b === 0 ? __fail("divByZero") : a % b >>> 0);
+const __u32mod = (a, b) => ((b === 0) ? __fail("divByZero") : ((a % b) >>> 0));
 
-const __bigdiv = (a, b) => (b === 0n ? __fail("divByZero") : a / b);
+const __bigdiv = (a, b) => ((b === 0n) ? __fail("divByZero") : (a / b));
 
-const __bigmod = (a, b) => (b === 0n ? __fail("divByZero") : a % b);
+const __bigmod = (a, b) => ((b === 0n) ? __fail("divByZero") : (a % b));
 
-// Math.abs, Math.min and Math.max throw on a BigInt, so the comparisons are written out instead.
-const __abs = (x) => (x < 0 ? -x : x);
+// Math.abs, Math.min and Math.max throw on a BigInt, so the comparisons are written out
+// instead.
+const __abs = (x) => ((x < 0) ? (-x) : x);
 
-const __min = (a, b) => (a <= b ? a : b);
+const __min = (a, b) => ((a <= b) ? a : b);
 
-const __max = (a, b) => (a <= b ? b : a);
+const __max = (a, b) => ((a <= b) ? b : a);
 
-const __strcmp = (a, b) => {
-  const x = Array.from(a);
-  const y = Array.from(b);
-  const n = Math.min(x.length, y.length);
-  for (let i = 0; i < n; i++) {
-    const d = x[i].codePointAt(0) - y[i].codePointAt(0);
-    if (d !== 0) return d < 0 ? -1 : 1;
-  }
-  return x.length === y.length ? 0 : x.length < y.length ? -1 : 1;
-};
-
+// Array.from splits by code point, where indexing a string splits by UTF-16 unit.
 const __chars = (s) => Array.from(s);
 
-const __strlen = (s) => __chars(s).length;
+const __cp = (c) => (c).codePointAt(0);
 
-// JS's own trim also strips NBSP, the BOM and the line separators; eval strips only these four.
-const __trim = (s) => {
-  const xs = __chars(s);
-  const ws = (c) => c === " " || c === "\t" || c === "\n" || c === "\r";
+const __strlen = (s) => (__chars(s)).length;
+
+const __strcmp = (a, b) => {
+  const x = __chars(a);
+  const y = __chars(b);
   let i = 0;
-  let j = xs.length;
-  while (i < j && ws(xs[i])) i++;
-  while (j > i && ws(xs[j - 1])) j--;
-  return xs.slice(i, j).join("");
+  for (const c of x) {
+    if ((i >= (y).length)) {
+      return 1;
+    }
+    const d = (__cp(c) - __cp((y)[i]));
+    if ((d !== 0)) {
+      return ((d < 0) ? -1 : 1);
+    }
+    i = (i + 1);
+  }
+  return (((x).length === (y).length) ? 0 : -1);
 };
 
-// toUpperCase is not ASCII: it maps "ß" to "SS", changing the length of the string.
-const __upper = (s) =>
-  __chars(s)
-    .map((c) => (c >= "a" && c <= "z" ? c.toUpperCase() : c))
-    .join("");
+// JS's own trim also strips NBSP, the BOM and the line separators; eval strips only these
+// four.
+const __ws = (c) => ((c === " ") || ((c === "\t") || ((c === "\n") || (c === "\r"))));
 
-const __lower = (s) =>
-  __chars(s)
-    .map((c) => (c >= "A" && c <= "Z" ? c.toLowerCase() : c))
-    .join("");
+const __trim = (s) => {
+  const xs = __chars(s);
+  let lo = 0;
+  for (const c of xs) {
+    if ((!__ws(c))) {
+      break;
+    }
+    lo = (lo + 1);
+  }
+  let drop = 0;
+  for (const c of ((xs).slice(lo)).reverse()) {
+    if ((!__ws(c))) {
+      break;
+    }
+    drop = (drop + 1);
+  }
+  return ((xs).slice(lo, ((xs).length - drop))).join("");
+};
 
-// Native, unlike the four above: UTF-16 preserves prefixes and suffixes and no argument can hold a lone
-// surrogate, so a match on units is a match on code points.
-const __startsWith = (s, t) => s.startsWith(t);
+// toUpperCase is not ASCII: it maps "ß" to "SS", changing the length of the
+// string.
+const __upper = (s) => {
+  let out = "";
+  for (const c of __chars(s)) {
+    out = (out + (((c >= "a") && (c <= "z")) ? (c).toUpperCase() : c));
+  }
+  return out;
+};
 
-const __endsWith = (s, t) => s.endsWith(t);
+const __lower = (s) => {
+  let out = "";
+  for (const c of __chars(s)) {
+    out = (out + (((c >= "A") && (c <= "Z")) ? (c).toLowerCase() : c));
+  }
+  return out;
+};
 
-const __includes = (s, t) => s.includes(t);
+// Native, unlike the four above: UTF-16 preserves prefixes and suffixes and no argument can
+// hold a lone surrogate, so a match on units is a match on code points.
+const __startsWith = (s, t) => (s).startsWith(t);
+
+const __endsWith = (s, t) => (s).endsWith(t);
+
+const __includes = (s, t) => (s).includes(t);
 
 // split("") returns the UTF-16 units, where eval returns the whole string.
-const __split = (s, sep) => (sep === "" ? [s] : s.split(sep));
+const __split = (s, sep) => ((sep === "") ? [s] : (s).split(sep));
 
 // Indices count code points, and one outside the string fails rather than being clamped.
 const __substring = (s, lo, hi) => {
   const xs = __chars(s);
-  return Number.isSafeInteger(lo) &&
-    Number.isSafeInteger(hi) &&
-    lo >= 0 &&
-    hi >= lo &&
-    hi <= xs.length
-    ? xs.slice(lo, hi).join("")
-    : __fail("indexOutOfBounds");
+  return ((Number.isSafeInteger(lo) && (Number.isSafeInteger(hi) && ((lo >= 0) && ((hi >= lo) && (hi <= (xs).length))))) ? ((xs).slice(lo, hi)).join("") : __fail("indexOutOfBounds"));
 };
 
 // Bounds outside the array fail rather than being clamped, the way an index read does.
-const __aslice = (xs, lo, hi) =>
-  Number.isSafeInteger(lo) &&
-  Number.isSafeInteger(hi) &&
-  lo >= 0 &&
-  hi >= lo &&
-  hi <= xs.length
-    ? xs.slice(lo, hi)
-    : __fail("indexOutOfBounds");
+const __aslice = (xs, lo, hi) => ((Number.isSafeInteger(lo) && (Number.isSafeInteger(hi) && ((lo >= 0) && ((hi >= lo) && (hi <= (xs).length))))) ? (xs).slice(lo, hi) : __fail("indexOutOfBounds"));
 
-const __aconcat = (a, b) => [...a, ...b];
+const __aconcat = (a, b) => {
+  const out = [];
+  for (const v of a) {
+    (out).push(v);
+  }
+  for (const v of b) {
+    (out).push(v);
+  }
+  return out;
+};
 
 // A fresh array: reverse() would otherwise write through to the caller's.
-const __areverse = (xs) => [...xs].reverse();
+const __areverse = (xs) => {
+  const out = [];
+  for (const v of xs) {
+    (out).push(v);
+  }
+  return (out).reverse();
+};
 
-const __dget = (d, k) => (d.has(k) ? { tag: "some", value: d.get(k) } : { tag: "none" });
+// An out-of-range index fails rather than yielding undefined. undefined does not exist in
+// the subset.
+const __at = (xs, i) => ((Number.isSafeInteger(i) && ((i >= 0) && (i < (xs).length))) ? (xs)[i] : __fail("indexOutOfBounds"));
 
-const __dhas = (d, k) => d.has(k);
+const __dget = (d, k) => ((d).has(k) ? { tag: "some", value: (d).get(k) } : { tag: "none" });
 
-// A fresh Map: values in the subset are immutable, so set cannot write through to the caller's.
-const __dset = (d, k, v) => new Map(d).set(k, v);
+const __dhas = (d, k) => (d).has(k);
 
-const __dkeys = (d) => Array.from(d.keys());
+// A fresh Map: values in the subset are immutable, so set cannot write through to the
+// caller's.
+const __dset = (d, k, v) => (new Map(d)).set(k, v);
 
-const __dvalues = (d) => Array.from(d.values());
+const __dkeys = (d) => Array.from((d).keys());
 
-const __ddelete = (d, k) => new Map([...d].filter(([key]) => key !== k));
+const __dvalues = (d) => Array.from((d).values());
+
+const __ddelete = (d, k) => {
+  const out = new Map();
+  for (const key of __dkeys(d)) {
+    if ((key !== k)) {
+      (out).set(key, (d).get(key));
+    }
+  }
+  return out;
+};
 
 // === compares references, so it is unusable on constructor values and arrays.
 const __eq = (a, b) => {
-  if (a === b) return true;
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-  if (a instanceof Map || b instanceof Map) {
-    if (!(a instanceof Map) || !(b instanceof Map) || a.size !== b.size) return false;
-    const xs = Array.from(a);
-    const ys = Array.from(b);
-    return xs.every(([k, v], i) => ys[i][0] === k && __eq(v, ys[i][1]));
+  if ((a === b)) {
+    return true;
   }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return (
-      Array.isArray(a) &&
-      Array.isArray(b) &&
-      a.length === b.length &&
-      a.every((x, i) => __eq(x, b[i]))
-    );
+  if (((typeof a) !== (typeof b))) {
+    return false;
+  }
+  if (((typeof a) !== "object")) {
+    return false;
+  }
+  if (((a === null) || (b === null))) {
+    return false;
+  }
+  if (((a instanceof Map) || (b instanceof Map))) {
+    if ((!((a instanceof Map) && (b instanceof Map)))) {
+      return false;
+    }
+    if (((a).size !== (b).size)) {
+      return false;
+    }
+    const ks = __dkeys(a);
+    const ls = __dkeys(b);
+    let i = 0;
+    for (const key of ks) {
+      if (((ls)[i] !== key)) {
+        return false;
+      }
+      if ((!__eq((a).get(key), (b).get(key)))) {
+        return false;
+      }
+      i = (i + 1);
+    }
+    return true;
+  }
+  if ((Array.isArray(a) || Array.isArray(b))) {
+    if ((!(Array.isArray(a) && Array.isArray(b)))) {
+      return false;
+    }
+    if (((a).length !== (b).length)) {
+      return false;
+    }
+    let i = 0;
+    for (const v of a) {
+      if ((!__eq(v, (b)[i]))) {
+        return false;
+      }
+      i = (i + 1);
+    }
+    return true;
   }
   const keys = Object.keys(a);
-  return (
-    keys.length === Object.keys(b).length &&
-    keys.every((k) => Object.hasOwn(b, k) && __eq(a[k], b[k]))
-  );
+  if (((keys).length !== (Object.keys(b)).length)) {
+    return false;
+  }
+  for (const key of keys) {
+    if ((!Object.hasOwn(b, key))) {
+      return false;
+    }
+    if ((!__eq((a)[key], (b)[key]))) {
+      return false;
+    }
+  }
+  return true;
 };
-
-// An out-of-range index fails rather than yielding undefined. undefined does not exist in the subset.
-const __at = (xs, i) =>
-  Number.isSafeInteger(i) && i >= 0 && i < xs.length
-    ? xs[i]
-    : __fail("indexOutOfBounds");
 
 const __map = (xs, f) => {
   const out = [];
-  for (let i = 0; i < xs.length; i++) out.push(f(xs[i]));
+  for (const v of xs) {
+    (out).push((f)(v));
+  }
   return out;
 };
 
 const __filter = (xs, f) => {
   const out = [];
-  for (let i = 0; i < xs.length; i++) if (f(xs[i])) out.push(xs[i]);
+  for (const v of xs) {
+    if ((f)(v)) {
+      (out).push(v);
+    }
+  }
   return out;
 };
 
-// Stops at the first element the predicate accepts, so a predicate that would trap later never runs.
+// Stops at the first element the predicate accepts, so a predicate that would trap later
+// never runs.
 const __find = (xs, f) => {
-  for (let i = 0; i < xs.length; i++) if (f(xs[i])) return { tag: "some", value: xs[i] };
+  for (const v of xs) {
+    if ((f)(v)) {
+      return { tag: "some", value: v };
+    }
+  }
   return { tag: "none" };
 };
 
 const __all = (xs, f) => {
-  for (let i = 0; i < xs.length; i++) if (!f(xs[i])) return false;
+  for (const v of xs) {
+    if ((!(f)(v))) {
+      return false;
+    }
+  }
   return true;
 };
 
 const __any = (xs, f) => {
-  for (let i = 0; i < xs.length; i++) if (f(xs[i])) return true;
+  for (const v of xs) {
+    if ((f)(v)) {
+      return true;
+    }
+  }
   return false;
 };
 
 const __reduce = (xs, init, f) => {
   let acc = init;
-  for (let i = 0; i < xs.length; i++) acc = f(acc, xs[i]);
+  for (const v of xs) {
+    acc = (f)(acc, v);
+  }
   return acc;
 };
 
-const __isObj = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+const __isObj = (x) => (((typeof x) === "object") && ((x !== null) && (!Array.isArray(x))));
 
-// Fields are compared in order and by count, because eval compares them that way: a missing field, an
-// extra one and a reordering are all type errors.
+// Fields are compared in order and by count, because eval compares them that way: a missing
+// field, an extra one and a reordering are all type errors.
 const __hasFields = (x, fields) => {
   const keys = Object.keys(x);
-  if (keys.length !== fields.length + 1) return false;
-  for (let i = 0; i < fields.length; i++) {
-    if (keys[i + 1] !== fields[i][0] || !__has(x[fields[i][0]], fields[i][1])) return false;
+  if (((keys).length !== ((fields).length + 1))) {
+    return false;
+  }
+  let i = 0;
+  for (const f of fields) {
+    if (((keys)[(i + 1)] !== (f)[0])) {
+      return false;
+    }
+    if ((!__has((x)[(f)[0]], (f)[1]))) {
+      return false;
+    }
+    i = (i + 1);
   }
   return true;
 };
 
 const __has = (x, t) => {
-  switch (t[0]) {
-    case "bool":
-      return typeof x === "boolean";
-    case "int53":
-      return typeof x === "number" && Number.isSafeInteger(x);
-    case "uint32":
-      return typeof x === "number" && Number.isInteger(x) && x >= 0 && x <= 4294967295;
-    case "string":
-      return typeof x === "string";
-    case "bigint":
-      return typeof x === "bigint";
-    case "array":
-      return Array.isArray(x) && x.every((e) => __has(e, t[1]));
-    case "dict":
-      return (
-        x instanceof Map &&
-        Array.from(x.keys()).every((k) => typeof k === "string") &&
-        Array.from(x.values()).every((e) => __has(e, t[1]))
-      );
-    case "option":
-      return (
-        __isObj(x) &&
-        (x.tag === "none"
-          ? __hasFields(x, [])
-          : x.tag === "some" && __hasFields(x, [["value", t[1]]]))
-      );
-    case "result":
-      return (
-        __isObj(x) &&
-        (x.tag === "ok"
-          ? __hasFields(x, [["value", t[1]]])
-          : x.tag === "error" && __hasFields(x, [["error", t[2]]]))
-      );
-    default: {
-      if (!__isObj(x)) return false;
-      const alt = t[1].find((a) => a[0] === x.tag);
-      return alt !== undefined && __hasFields(x, alt[1]);
-    }
+  const k = (t)[0];
+  if ((k === "bool")) {
+    return ((typeof x) === "boolean");
   }
+  if ((k === "int53")) {
+    return (((typeof x) === "number") && Number.isSafeInteger(x));
+  }
+  if ((k === "uint32")) {
+    return (((typeof x) === "number") && (Number.isInteger(x) && ((x >= 0) && (x <= 4294967295))));
+  }
+  if ((k === "string")) {
+    return ((typeof x) === "string");
+  }
+  if ((k === "bigint")) {
+    return ((typeof x) === "bigint");
+  }
+  if ((k === "array")) {
+    return (Array.isArray(x) && __all(x, ((e) => __has(e, (t)[1]))));
+  }
+  if ((k === "dict")) {
+    if ((!(x instanceof Map))) {
+      return false;
+    }
+    if ((!__all(__dkeys(x), ((key) => ((typeof key) === "string"))))) {
+      return false;
+    }
+    return __all(__dvalues(x), ((e) => __has(e, (t)[1])));
+  }
+  if ((!__isObj(x))) {
+    return false;
+  }
+  if ((k === "option")) {
+    if (((x).tag === "none")) {
+      return __hasFields(x, []);
+    }
+    return (((x).tag === "some") && __hasFields(x, [["value", (t)[1]]]));
+  }
+  if ((k === "result")) {
+    if (((x).tag === "ok")) {
+      return __hasFields(x, [["value", (t)[1]]]);
+    }
+    return (((x).tag === "error") && __hasFields(x, [["error", (t)[2]]]));
+  }
+  const alt = __find((t)[1], ((c) => ((c)[0] === (x).tag)));
+  return (((alt).tag === "some") && __hasFields(x, ((alt).value)[1]));
 };
 
-// Validates without normalising, unlike __i53. A -0 argument is a safe integer, and every answer built
-// from it passes through __i53 or a comparison that already treats -0 and 0 alike, so normalising here
-// would change nothing a caller can observe.
+// Validates without normalising, unlike __i53. A -0 argument is a safe integer, and every
+// answer built from it passes through __i53 or a comparison that already treats -0 and 0
+// alike, so normalising here would change nothing a caller can observe.
 const __ck = (x, t) => (__has(x, t) ? x : __fail("typeError"));
 
 /** add : (a : Int53, b : Int53) → Int53 */
