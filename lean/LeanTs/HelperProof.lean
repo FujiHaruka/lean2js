@@ -706,4 +706,168 @@ theorem calls_lower (ext : Ext) (x : String) (f : Nat) :
   walk
   simp [strLower]
 
+/-! ## Indices and slices
+
+The guard each of these writes out is what stands between the model's `index` and `slice` — both of
+which have a shape they decline to answer for — and the answer the helper returns.
+-/
+
+private theorem cmp_ge {a b : Int} (h : ¬a < b) : (compare a b != Ordering.lt) = true := by
+  simp only [compare, compareOfLessAndEq, if_neg h]
+  split <;> rfl
+
+private theorem cmp_not_ge {a b : Int} (h : a < b) : (compare a b != Ordering.lt) = false := by
+  simp [compare, compareOfLessAndEq, h]
+
+theorem calls_atIdx (ext : Ext) (xs : List Val) (i : Int) (f : Nat) :
+    callDef ext (f + 8) "__at" [.arr xs, .num i] =
+      (if safeMin ≤ i ∧ i ≤ safeMax ∧ 0 ≤ i ∧ i < xs.length
+       then .ok ((xs[i.toNat]?).getD .undef) else .thrown "indexOutOfBounds") := by
+  rw [show f + 8 = (f + 7) + 1 from rfl, callDef_expr find_atIdx rfl rfl]
+  simp only [Helper.atIdx, Helper.and2, Helper.lengthOf]
+  walk
+  by_cases h1 : safeMin ≤ i ∧ i ≤ safeMax
+  · rw [show (decide (safeMin ≤ i) && decide (i ≤ safeMax)) = true from by simp [h1.1, h1.2]]
+    walk
+    by_cases h2 : (0 : Int) ≤ i
+    · rw [cmp_ge (by omega : ¬ i < 0)]
+      walk
+      by_cases h3 : i < (xs.length : Int)
+      · rw [cmp_lt h3]
+        walk
+        rw [if_pos h2, if_pos ⟨h1.1, h1.2, h2, h3⟩]
+      · rw [cmp_not_lt h3]
+        walk
+        rw [calls_fail, if_neg (fun hc => h3 hc.2.2.2)]
+    · rw [cmp_not_ge (by omega : i < 0)]
+      walk
+      rw [calls_fail, if_neg (fun hc => h2 hc.2.2.1)]
+  · rw [show (decide (safeMin ≤ i) && decide (i ≤ safeMax)) = false from by
+      simp at h1 ⊢; omega]
+    walk
+    rw [calls_fail, if_neg (fun hc => h1 ⟨hc.1, hc.2.1⟩)]
+
+theorem calls_aslice (ext : Ext) (xs : List Val) (lo hi : Int) (f : Nat) :
+    callDef ext (f + 9) "__aslice" [.arr xs, .num lo, .num hi] =
+      (if safeMin ≤ lo ∧ lo ≤ safeMax ∧ safeMin ≤ hi ∧ hi ≤ safeMax ∧ 0 ≤ lo ∧ lo ≤ hi
+            ∧ hi ≤ xs.length
+       then .ok (.arr ((xs.drop lo.toNat).take (hi - lo).toNat))
+       else .thrown "indexOutOfBounds") := by
+  rw [show f + 9 = (f + 8) + 1 from rfl, callDef_expr find_aslice rfl rfl]
+  simp only [Helper.aslice, Helper.and2, Helper.lengthOf]
+  walk
+  by_cases h1 : safeMin ≤ lo ∧ lo ≤ safeMax
+  · rw [show (decide (safeMin ≤ lo) && decide (lo ≤ safeMax)) = true from by simp [h1.1, h1.2]]
+    walk
+    by_cases h2 : safeMin ≤ hi ∧ hi ≤ safeMax
+    · rw [show (decide (safeMin ≤ hi) && decide (hi ≤ safeMax)) = true from by simp [h2.1, h2.2]]
+      walk
+      by_cases h3 : (0 : Int) ≤ lo
+      · rw [cmp_ge (by omega : ¬ lo < 0)]
+        walk
+        by_cases h4 : lo ≤ hi
+        · rw [cmp_ge (by omega : ¬ hi < lo)]
+          walk
+          by_cases h5 : hi ≤ (xs.length : Int)
+          · rw [cmp_le h5]
+            walk
+            rw [show (decide (lo < 0) || decide (hi < 0)) = false from by simp; omega]
+            simp [h1.1, h1.2, h2.1, h2.2, h3, h4, h5]
+          · rw [cmp_not_le h5]
+            walk
+            rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+              if_neg (fun hc => h5 hc.2.2.2.2.2.2)]
+        · rw [cmp_not_ge (by omega : hi < lo)]
+          walk
+          rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+            if_neg (fun hc => h4 hc.2.2.2.2.2.1)]
+      · rw [cmp_not_ge (by omega : lo < 0)]
+        walk
+        rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+          if_neg (fun hc => h3 hc.2.2.2.2.1)]
+    · rw [show (decide (safeMin ≤ hi) && decide (hi ≤ safeMax)) = false from by
+        simp at h2 ⊢; omega]
+      walk
+      rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+        if_neg (fun hc => h2 ⟨hc.2.2.1, hc.2.2.2.1⟩)]
+  · rw [show (decide (safeMin ≤ lo) && decide (lo ≤ safeMax)) = false from by
+      simp at h1 ⊢; omega]
+    walk
+    rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+      if_neg (fun hc => h1 ⟨hc.1, hc.2.1⟩)]
+
+theorem ofList_cons (x : Char) (l : List Char) :
+    x.toString ++ String.ofList l = String.ofList (x :: l) := by
+  apply String.toList_inj.mp
+  simp [Char.toString]
+
+theorem joinStrs_chars (cs : List Char) :
+    joinStrs (cs.map fun c => Val.str c.toString) = some (String.ofList cs) := by
+  induction cs with
+  | nil => rfl
+  | cons c rest ih => simp only [List.map_cons, joinStrs, ih, Option.map_some, ofList_cons]
+
+theorem calls_substring (ext : Ext) (x : String) (lo hi : Int) (f : Nat) :
+    callDef ext (f + 11) "__substring" [.str x, .num lo, .num hi] =
+      (if safeMin ≤ lo ∧ lo ≤ safeMax ∧ safeMin ≤ hi ∧ hi ≤ safeMax ∧ 0 ≤ lo ∧ lo ≤ hi
+            ∧ hi ≤ x.toList.length
+       then .ok (.str (String.ofList ((x.toList.drop lo.toNat).take (hi - lo).toNat)))
+       else .thrown "indexOutOfBounds") := by
+  rw [show f + 11 = (f + 10) + 1 from rfl, callDef_block find_substring rfl rfl]
+  simp only [Helper.substring, Helper.and2, Helper.lengthOf]
+  walk
+  rw [show f + 8 = (f + 3) + 5 from rfl, calls_chars]
+  walk
+  by_cases h1 : safeMin ≤ lo ∧ lo ≤ safeMax
+  · rw [show (decide (safeMin ≤ lo) && decide (lo ≤ safeMax)) = true from by simp [h1.1, h1.2]]
+    walk
+    by_cases h2 : safeMin ≤ hi ∧ hi ≤ safeMax
+    · rw [show (decide (safeMin ≤ hi) && decide (hi ≤ safeMax)) = true from by simp [h2.1, h2.2]]
+      walk
+      by_cases h3 : (0 : Int) ≤ lo
+      · rw [cmp_ge (by omega : ¬ lo < 0)]
+        walk
+        by_cases h4 : lo ≤ hi
+        · rw [cmp_ge (by omega : ¬ hi < lo)]
+          walk
+          by_cases h5 : hi ≤ (x.toList.length : Int)
+          · rw [cmp_le h5]
+            walk
+            rw [show (decide (lo < 0) || decide (hi < 0)) = false from by simp; omega]
+            simp only [Bool.false_eq_true, if_false]
+            rw [show List.take (hi - lo).toNat
+                  (List.drop lo.toNat (x.toList.map fun c => Val.str c.toString))
+                = (List.take (hi - lo).toNat (List.drop lo.toNat x.toList)).map
+                  (fun c => Val.str c.toString) from by simp]
+            walk
+            rw [joinStrs_chars]
+            simp [h1.1, h1.2, h2.1, h2.2, h3, h4, h5]
+          · rw [cmp_not_le h5]
+            walk
+            rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+              if_neg (fun hc => h5 hc.2.2.2.2.2.2)]
+            rfl
+        · rw [cmp_not_ge (by omega : hi < lo)]
+          walk
+          rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+            if_neg (fun hc => h4 hc.2.2.2.2.2.1)]
+          rfl
+      · rw [cmp_not_ge (by omega : lo < 0)]
+        walk
+        rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+          if_neg (fun hc => h3 hc.2.2.2.2.1)]
+        rfl
+    · rw [show (decide (safeMin ≤ hi) && decide (hi ≤ safeMax)) = false from by
+        simp at h2 ⊢; omega]
+      walk
+      rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+        if_neg (fun hc => h2 ⟨hc.2.2.1, hc.2.2.2.1⟩)]
+      rfl
+  · rw [show (decide (safeMin ≤ lo) && decide (lo ≤ safeMax)) = false from by
+      simp at h1 ⊢; omega]
+    walk
+    rw [show f + 6 = (f + 1) + 5 from rfl, calls_fail,
+      if_neg (fun hc => h1 ⟨hc.1, hc.2.1⟩)]
+    rfl
+
 end LeanTs.HelperSem
