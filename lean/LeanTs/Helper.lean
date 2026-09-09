@@ -576,42 +576,70 @@ def hasFields : Def :=
         .setVar "i" (.bin "+" (.var "i") (.num 1))],
       .ret (.bool true)] }
 
+/-! `__has` dispatches on the head of the descriptor, and every branch below is named so that a proof
+walking one of them does not pay for expanding the ten it did not take. -/
+
+def hasBool : List Stmt := [.ret (.bin "===" (.typeOf (.var "x")) (.str "boolean"))]
+
+def hasInt53 : List Stmt := [.ret (and2 [
+  .bin "===" (.typeOf (.var "x")) (.str "number"), .prim "Number.isSafeInteger" [(.var "x")]])]
+
+def hasUint32 : List Stmt := [.ret (and2 [
+  .bin "===" (.typeOf (.var "x")) (.str "number"), .prim "Number.isInteger" [(.var "x")],
+  .bin ">=" (.var "x") (.num 0), .bin "<=" (.var "x") (.num 4294967295)])]
+
+def hasString : List Stmt := [.ret (.bin "===" (.typeOf (.var "x")) (.str "string"))]
+
+def hasBigint : List Stmt := [.ret (.bin "===" (.typeOf (.var "x")) (.str "bigint"))]
+
+def hasArray : List Stmt := [.ret (and2 [
+  .prim "Array.isArray" [(.var "x")],
+  .call "__all" [(.var "x"), .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])]])]
+
+def hasDict : List Stmt := [
+  .ifThen (.not (.isMap (.var "x"))) [.ret (.bool false)],
+  .ifThen (.not (.call "__all" [.call "__dkeys" [(.var "x")],
+    .lam ["key"] (.bin "===" (.typeOf (.var "key")) (.str "string"))])) [.ret (.bool false)],
+  .ret (.call "__all" [.call "__dvalues" [(.var "x")],
+    .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])])]
+
+def hasOption : List Stmt := [
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
+    [.ret (.call "__hasFields" [(.var "x"), .arrayLit []])],
+  .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "some"),
+    .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]]])]
+
+def hasResult : List Stmt := [
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
+    [.ret (.call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
+  .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "error"),
+    .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]]])]
+
+def hasCtors : List Stmt := [
+  .const "alt" (.call "__find" [.index (.var "t") (.num 1),
+    .lam ["c"] (.bin "===" (.index (.var "c") (.num 0)) (.field (.var "x") "tag"))]),
+  .ret (and2 [.bin "===" (.field (.var "alt") "tag") (.str "some"),
+    .call "__hasFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1)]])]
+
+/-- The tail after the object guard, named for the same reason the branches are: a proof that takes an
+earlier branch never expands it. -/
+def hasObjKinds : List Stmt :=
+  .ifThen (.bin "===" (.var "k") (.str "option")) hasOption ::
+  .ifThen (.bin "===" (.var "k") (.str "result")) hasResult :: hasCtors
+
 def has : Def :=
 
-  { name := "__has", params := ["x", "t"], body := .block [
-      .const "k" (.index (.var "t") (.num 0)),
-      .ifThen (.bin "===" (.var "k") (.str "bool")) [.ret (.bin "===" (.typeOf (.var "x")) (.str "boolean"))],
-      .ifThen (.bin "===" (.var "k") (.str "int53")) [.ret (and2 [
-        .bin "===" (.typeOf (.var "x")) (.str "number"), .prim "Number.isSafeInteger" [(.var "x")]])],
-      .ifThen (.bin "===" (.var "k") (.str "uint32")) [.ret (and2 [
-        .bin "===" (.typeOf (.var "x")) (.str "number"), .prim "Number.isInteger" [(.var "x")],
-        .bin ">=" (.var "x") (.num 0), .bin "<=" (.var "x") (.num 4294967295)])],
-      .ifThen (.bin "===" (.var "k") (.str "string")) [.ret (.bin "===" (.typeOf (.var "x")) (.str "string"))],
-      .ifThen (.bin "===" (.var "k") (.str "bigint")) [.ret (.bin "===" (.typeOf (.var "x")) (.str "bigint"))],
-      .ifThen (.bin "===" (.var "k") (.str "array")) [.ret (and2 [
-        .prim "Array.isArray" [(.var "x")],
-        .call "__all" [(.var "x"), .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])]])],
-      .ifThen (.bin "===" (.var "k") (.str "dict")) [
-        .ifThen (.not (.isMap (.var "x"))) [.ret (.bool false)],
-        .ifThen (.not (.call "__all" [.call "__dkeys" [(.var "x")],
-          .lam ["key"] (.bin "===" (.typeOf (.var "key")) (.str "string"))])) [.ret (.bool false)],
-        .ret (.call "__all" [.call "__dvalues" [(.var "x")],
-          .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])])],
-      .ifThen (.not (.call "__isObj" [(.var "x")])) [.ret (.bool false)],
-      .ifThen (.bin "===" (.var "k") (.str "option")) [
-        .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
-          [.ret (.call "__hasFields" [(.var "x"), .arrayLit []])],
-        .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "some"),
-          .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]]])],
-      .ifThen (.bin "===" (.var "k") (.str "result")) [
-        .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
-          [.ret (.call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
-        .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "error"),
-          .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]]])],
-      .const "alt" (.call "__find" [.index (.var "t") (.num 1),
-        .lam ["c"] (.bin "===" (.index (.var "c") (.num 0)) (.field (.var "x") "tag"))]),
-      .ret (and2 [.bin "===" (.field (.var "alt") "tag") (.str "some"),
-        .call "__hasFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1)]])] }
+  { name := "__has", params := ["x", "t"], body := .block (
+      .const "k" (.index (.var "t") (.num 0)) ::
+      .ifThen (.bin "===" (.var "k") (.str "bool")) hasBool ::
+      .ifThen (.bin "===" (.var "k") (.str "int53")) hasInt53 ::
+      .ifThen (.bin "===" (.var "k") (.str "uint32")) hasUint32 ::
+      .ifThen (.bin "===" (.var "k") (.str "string")) hasString ::
+      .ifThen (.bin "===" (.var "k") (.str "bigint")) hasBigint ::
+      .ifThen (.bin "===" (.var "k") (.str "array")) hasArray ::
+      .ifThen (.bin "===" (.var "k") (.str "dict")) hasDict ::
+      .ifThen (.not (.call "__isObj" [(.var "x")])) [.ret (.bool false)] ::
+      hasObjKinds) }
 
 def ck : Def :=
 
