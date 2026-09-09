@@ -49,7 +49,9 @@ macro_rules
         Helper.lengthOf, Helper.and2, Helper.or2, Helper.divByZero, Helper.outOfBounds,
         List.find?, List.any, bindEq, bind_ok, bind_stuck, bind_thrown, Option.map,
         beq_self_eq_true, if_true, ofRes_ok, ofRes_error, ofJs_num, ofJs_bigint, ofJs_str, ofJs_bool,
-        String.reduceBEq, Int.reduceBEq, Nat.reduceAdd, reduceIte, Bool.false_eq_true, if_false])
+        String.reduceBEq, Int.reduceBEq, Nat.reduceAdd, reduceIte, Bool.false_eq_true, if_false,
+        List.map_cons, List.map_nil, List.zip, List.zipWith, Bool.not_false, Bool.not_true,
+        List.length_map])
 
 theorem callDef_expr {ext : Ext} {f : Nat} {name : String} {args : List Val} {d : Helper.Def}
     {e : Helper.Expr} (hd : Helper.defs.find? (·.name == name) = some d) (hb : d.body = .expr e)
@@ -294,5 +296,151 @@ theorem calls_max_big (ext : Ext) (a b : Int) (f : Nat) :
     simp [h]
   · rw [cmp_not_le h]
     simp [h]
+
+
+/-! ## Strings, arrays and dictionaries without a loop -/
+
+theorem find_chars : Helper.defs.find? (·.name == "__chars") = some Helper.chars := rfl
+theorem find_cp : Helper.defs.find? (·.name == "__cp") = some Helper.cp := rfl
+theorem find_strlen : Helper.defs.find? (·.name == "__strlen") = some Helper.strlen := rfl
+theorem find_ws : Helper.defs.find? (·.name == "__ws") = some Helper.ws := rfl
+theorem find_startsWith : Helper.defs.find? (·.name == "__startsWith") = some Helper.startsWith := rfl
+theorem find_endsWith : Helper.defs.find? (·.name == "__endsWith") = some Helper.endsWith := rfl
+theorem find_includes : Helper.defs.find? (·.name == "__includes") = some Helper.includes := rfl
+theorem find_split : Helper.defs.find? (·.name == "__split") = some Helper.split := rfl
+theorem find_substring : Helper.defs.find? (·.name == "__substring") = some Helper.substring := rfl
+theorem find_aslice : Helper.defs.find? (·.name == "__aslice") = some Helper.aslice := rfl
+theorem find_atIdx : Helper.defs.find? (·.name == "__at") = some Helper.atIdx := rfl
+theorem find_dget : Helper.defs.find? (·.name == "__dget") = some Helper.dget := rfl
+theorem find_dhas : Helper.defs.find? (·.name == "__dhas") = some Helper.dhas := rfl
+theorem find_dset : Helper.defs.find? (·.name == "__dset") = some Helper.dset := rfl
+theorem find_dkeys : Helper.defs.find? (·.name == "__dkeys") = some Helper.dkeys := rfl
+theorem find_dvalues : Helper.defs.find? (·.name == "__dvalues") = some Helper.dvalues := rfl
+theorem find_isObj : Helper.defs.find? (·.name == "__isObj") = some Helper.isObj := rfl
+
+theorem calls_chars (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + 5) "__chars" [.str x] =
+      .ok (.arr (x.toList.map fun c => .str c.toString)) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_chars rfl rfl]
+  simp only [Helper.chars]
+  walk
+
+theorem calls_cp (ext : Ext) (c : Char) (f : Nat) :
+    callDef ext (f + 5) "__cp" [.str c.toString] = .ok (.num c.toNat) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_cp rfl rfl]
+  simp only [Helper.cp]
+  walk
+  rw [show c.toString.toList = [c] from by simp [Char.toString]]
+
+theorem calls_strlen (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + 9) "__strlen" [.str x] = .ok (.num x.toList.length) := by
+  rw [show f + 9 = (f + 8) + 1 from rfl, callDef_expr find_strlen rfl rfl]
+  simp only [Helper.strlen]
+  walk
+  rw [show f + 6 = (f + 1) + 5 from rfl, calls_chars]
+  walk
+
+theorem calls_ws (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + 8) "__ws" [.str x] =
+      .ok (.bool (x == " " || x == "\t" || x == "\n" || x == "\r")) := by
+  rw [show f + 8 = (f + 7) + 1 from rfl, callDef_expr find_ws rfl rfl]
+  simp only [Helper.ws, Helper.or2]
+  walk
+  by_cases h1 : x = " "
+  · subst h1; walk; simp
+  · rw [show (x == " ") = false from by simp [h1]]
+    walk
+    by_cases h2 : x = "\t"
+    · subst h2; walk; simp
+    · rw [show (x == "\t") = false from by simp [h2]]
+      walk
+      by_cases h3 : x = "\n"
+      · subst h3; walk; simp
+      · rw [show (x == "\n") = false from by simp [h3]]
+        walk
+        by_cases h4 : x = "\r"
+        · subst h4; walk; simp
+        · rw [show (x == "\r") = false from by simp [h4]]
+          simp
+
+theorem calls_startsWith (ext : Ext) (x t : String) (f : Nat) :
+    callDef ext (f + 5) "__startsWith" [.str x, .str t] =
+      .ok (.bool (t.toList.isPrefixOf x.toList)) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_startsWith rfl rfl]
+  simp only [Helper.startsWith]
+  walk
+
+theorem calls_endsWith (ext : Ext) (x t : String) (f : Nat) :
+    callDef ext (f + 5) "__endsWith" [.str x, .str t] =
+      .ok (.bool (t.toList.reverse.isPrefixOf x.toList.reverse)) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_endsWith rfl rfl]
+  simp only [Helper.endsWith]
+  walk
+
+theorem calls_includes (ext : Ext) (x t : String) (f : Nat) :
+    callDef ext (f + 5) "__includes" [.str x, .str t] =
+      .ok (.bool (strIncludes t.toList x.toList)) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_includes rfl rfl]
+  simp only [Helper.includes]
+  walk
+
+theorem calls_split (ext : Ext) (x sep : String) (f : Nat) :
+    callDef ext (f + 6) "__split" [.str x, .str sep] =
+      .ok (.arr ((if sep.isEmpty then [x] else x.splitOn sep).map Val.str)) := by
+  rw [show f + 6 = (f + 5) + 1 from rfl, callDef_expr find_split rfl rfl]
+  simp only [Helper.split]
+  walk
+  by_cases h : sep = ""
+  · subst h
+    walk
+  · rw [show (sep == "") = false from by simp [h]]
+    walk
+    simp [String.isEmpty, h]
+
+theorem calls_dhas (ext : Ext) (es : List (String × Val)) (key : String) (f : Nat) :
+    callDef ext (f + 5) "__dhas" [.dict es, .str key] = .ok (.bool (es.any (·.1 == key))) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_dhas rfl rfl]
+  simp only [Helper.dhas]
+  walk
+
+theorem calls_dkeys (ext : Ext) (es : List (String × Val)) (f : Nat) :
+    callDef ext (f + 5) "__dkeys" [.dict es] = .ok (.arr (es.map fun e => .str e.1)) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_dkeys rfl rfl]
+  simp only [Helper.dkeys]
+  walk
+
+theorem calls_dvalues (ext : Ext) (es : List (String × Val)) (f : Nat) :
+    callDef ext (f + 5) "__dvalues" [.dict es] = .ok (.arr (es.map (·.2))) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_dvalues rfl rfl]
+  simp only [Helper.dvalues]
+  walk
+
+theorem calls_dget (ext : Ext) (es : List (String × Val)) (key : String) (f : Nat) :
+    callDef ext (f + 10) "__dget" [.dict es, .str key] =
+      .ok (if es.any (·.1 == key) then
+            .obj [("tag", .str "some"), ("value", ((es.find? (·.1 == key)).map (·.2)).getD .undef)]
+          else .obj [("tag", .str "none")]) := by
+  rw [show f + 10 = (f + 9) + 1 from rfl, callDef_expr find_dget rfl rfl]
+  simp only [Helper.dget]
+  walk
+  by_cases h : es.any (·.1 == key)
+  · rw [h]
+    walk
+  · simp only [Bool.not_eq_true] at h
+    rw [h]
+    walk
+
+theorem calls_dset (ext : Ext) (es : List (String × Val)) (key : String) (v : Val) (f : Nat) :
+    callDef ext (f + 8) "__dset" [.dict es, .str key, v] = .ok (.dict (mapSet es key v)) := by
+  rw [show f + 8 = (f + 7) + 1 from rfl, callDef_block find_dset rfl rfl]
+  simp only [Helper.dset]
+  walk
+
+theorem calls_isObj (ext : Ext) (v : Val) (f : Nat) :
+    callDef ext (f + 8) "__isObj" [v] =
+      .ok (.bool (match v with | .obj _ => true | .dict _ => true | _ => false)) := by
+  rw [show f + 8 = (f + 7) + 1 from rfl, callDef_expr find_isObj rfl rfl]
+  simp only [Helper.isObj, Helper.and2]
+  cases v <;> walk <;> rfl
 
 end LeanTs.HelperSem

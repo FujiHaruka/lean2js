@@ -227,18 +227,28 @@ Float）に加えて、このマイルストーンで新たに外すもの。
   対象は `JsSem.helper` の 32 本だけではない。`.mapJs` ほか走査 6 つと `.check` は AST の構成子で、
   その意味論が `__map` / `__ck` の振る舞いを仮定している。**`__fail` から `__ck` まで 47 本**が届く範囲。
 
-  - **D-6-1 断片と印字器。** `LeanTs/Helper.lean` に AST と印字器、44 本の定義。`Js.runtime` を
-    そこから作り、生成物を作り直す。意味論はまだ無く、差分テストが振る舞いの検査
-  - **D-6-2 断片の意味論。** `LeanTs/HelperSem.lean`。値は `JsValue` に `null` / `undefined` を
-    足したもの —— `__ck` は利用者が渡した何でも受けるので、`typeof x === "object" && x !== null` を
-    書けない値の領域では意味論が嘘になる。ループは配列に対する構造帰納で回すので燃料は要らない。
-    燃料が要るのはヘルパ間の呼び出しだけ（`__eq` と `__has` が再帰する）
-  - **D-6-3 算術。** `__fail` / `__i53` / `__i53div` / `__i53mod` / `__u32mul` / `__u32div` /
-    `__u32mod` / `__bigdiv` / `__bigmod` / `__abs` / `__min` / `__max`
-  - **D-6-4 文字列。** `__chars` / `__strlen` / `__strcmp` / `__trim` / `__upper` / `__lower` /
-    `__startsWith` / `__endsWith` / `__includes` / `__split` / `__substring`
-  - **D-6-5 配列と辞書。** `__at` / `__aslice` / `__aconcat` / `__areverse` / `__dget` / `__dhas` /
-    `__dset` / `__dkeys` / `__dvalues` / `__ddelete` / `__eq`
+  - **D-6-1 断片と印字器 — 完了。** `LeanTs/Helper.lean` に AST と印字器、47 本の定義。
+    `Js.runtime` はそこから出る。**書き込みはローカル変数を名指しする文** —— `push` / `set` /
+    フィールド代入は式ではなく文で、書き込む相手が「たった今作ったもの」であることが構文から
+    出る。だから意味論は環境の再束縛だけで済み、別名付けを追う必要がない。
+    **短絡演算子と `instanceof` は独自の構成子。** `bin` の綴りにすると意味論も証明も
+    op の文字列で分岐することになる
+  - **D-6-2 断片の意味論 — 完了。** `LeanTs/HelperSem.lean`。値は `JsValue` に `null` /
+    `undefined` / 関数 / 商を足した `Val`。**JS について仮定していることは `prim` / `method` /
+    `binOp` / `field` / `index` の 5 つの表だけ**で、どれもヘルパが実際に使う形でしか定義されて
+    いない —— 使わない仮定を紛れ込ませられない。燃料は 1 ノード 1 で、主張は `f + k` の形。
+    `#eval` で `JsSem.helper` と 70 件、`checkTy` と 23 件突き合わせて一致を確認済み
+  - **D-6-3 算術 — 完了。** `LeanTs/HelperProof.lean`。`__fail` / `__i53` / `__i53div` /
+    `__i53mod` / `__u32mul` / `__u32div` / `__u32mod` / `__bigdiv` / `__bigmod` / `__abs` /
+    `__min` / `__max`。**主張は「そのヘルパが何を計算するか」を素の Lean で書く。**
+    `JsSem.helper` と結ぶのは別の段 —— 模型は商を範囲検査するがヘルパはしないので、
+    2 つが一致するのは生成コードが実際に作れる数の上だけ
+  - **D-6-4 文字列。** ループの無いもの（`__chars` / `__cp` / `__strlen` / `__ws` /
+    `__startsWith` / `__endsWith` / `__includes` / `__split`）は完了。残りは `__strcmp` /
+    `__lead` / `__trim` / `__upper` / `__lower` / `__substring`
+  - **D-6-5 配列と辞書。** ループの無いもの（`__dget` / `__dhas` / `__dset` / `__dkeys` /
+    `__dvalues` / `__isObj`）は完了。残りは `__at` / `__aslice` / `__aconcat` / `__areverse` /
+    `__ddelete` / `__eq`
   - **D-6-6 走査。** `__map` / `__filter` / `__find` / `__all` / `__any` / `__reduce` を
     `JsSem` の `.mapJs` ほかの意味論に繋ぐ
   - **D-6-7 入口検査。** `__isObj` / `__hasFields` / `__has` / `__ck` を `checkTy` に繋ぐ
