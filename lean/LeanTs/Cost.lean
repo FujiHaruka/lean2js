@@ -91,12 +91,21 @@ a `fnRef` may only stand as an argument, and a function-typed parameter may only
 The parameter it stands in for has to be function-typed, which is what makes the callee's environment
 say which of its names can hold a function at all. -/
 
+/-- Whether an argument is anything but a function reference. A function reference is the only shape a
+function-typed parameter may be given, and the only expression that answers with a function. -/
+def notFnRef : Expr → Bool
+  | .fnRef _ => false
+  | _ => true
+
+/-- The condition on one argument of a call to the declaration at index `j`: a function reference has to
+stand at a function-typed parameter and name a declaration before `j`. -/
+def argFnOk (p : Program) (j : Nat) (pm : Param) : Expr → Bool
+  | .fnRef g => pm.ty.isFn && fnBefore p j g
+  | _ => true
+
 def fnRefArgsOk (p : Program) (j : Nat) : List Param → List Expr → Bool
   | [], [] => true
-  | pm :: ps, a :: rest =>
-    (match a with
-      | .fnRef g => pm.ty.isFn && fnBefore p j g
-      | _ => true) && fnRefArgsOk p j ps rest
+  | pm :: ps, a :: rest => argFnOk p j pm a && fnRefArgsOk p j ps rest
   | _, _ => false
 
 mutual
@@ -132,10 +141,7 @@ def bodyOkList (p : Program) (i : Nat) (fns : List String) : List Expr → Bool
 
 def bodyOkArgs (p : Program) (i : Nat) (fns : List String) : List Expr → Bool
   | [] => true
-  | e :: rest =>
-    (match e with
-      | .fnRef _ => true
-      | _ => bodyOk p i fns e) && bodyOkArgs p i fns rest
+  | e :: rest => (!notFnRef e || bodyOk p i fns e) && bodyOkArgs p i fns rest
 
 def bodyOkAlts (p : Program) (i : Nat) (fns : List String) : List Alt → Bool
   | [] => true
@@ -812,6 +818,21 @@ theorem bindParams_nil_left (vs : List Value) : bindParams [] vs = [] := rfl
 theorem bindParams_nil_right (ps : List Param) : bindParams ps [] = [] := by
   cases ps <;> rfl
 
+theorem fnRefArgsOk_nil_cons (p : Program) (j : Nat) (a : Expr) (rest : List Expr) :
+    fnRefArgsOk p j [] (a :: rest) = false := rfl
+
+theorem fnRefArgsOk_cons (p : Program) (j : Nat) (pm : Param) (ps : List Param) (a : Expr)
+    (rest : List Expr) :
+    fnRefArgsOk p j (pm :: ps) (a :: rest) = (argFnOk p j pm a && fnRefArgsOk p j ps rest) := rfl
+
+theorem bodyOkArgs_cons (p : Program) (i : Nat) (fns : List String) (a : Expr)
+    (rest : List Expr) :
+    bodyOkArgs p i fns (a :: rest) =
+      ((!notFnRef a || bodyOk p i fns a) && bodyOkArgs p i fns rest) := rfl
+
+theorem argsVals_nil_right (p : Program) (j : Nat) (ps : List Param) : ArgsVals p j ps [] := by
+  cases ps <;> exact True.intro
+
 theorem envOk_bindParams (p : Program) (j : Nat) (fns : List String) :
     ∀ (ps : List Param) (vs : List Value), ArgsVals p j ps vs →
       (∀ pm ∈ ps, pm.ty.isFn = true → fns.contains pm.name = true) →
@@ -877,5 +898,532 @@ theorem calleeOf_cases (env : Env) (fn : String) :
     cases w
     case fn g => exact Or.inl ⟨g, rfl, by rw [calleeOf.eq_def, hl]⟩
     all_goals exact Or.inr (by rw [calleeOf.eq_def, hl])
+
+
+theorem safe_typeError {α : Type} {P : α → Prop} (msg : String) :
+    Safe (Except.error (Err.typeError msg) : Except Err α) P := Safe.err (by simp)
+
+theorem safe_unknownVar {α : Type} {P : α → Prop} (name : String) :
+    Safe (Except.error (Err.unknownVar name) : Except Err α) P := Safe.err (by simp)
+
+theorem safe_unknownFn {α : Type} {P : α → Prop} (name : String) :
+    Safe (Except.error (Err.unknownFn name) : Except Err α) P := Safe.err (by simp)
+
+theorem safe_arity {α : Type} {P : α → Prop} (name : String) :
+    Safe (Except.error (Err.arity name) : Except Err α) P := Safe.err (by simp)
+
+theorem safe_indexOutOfBounds {α : Type} {P : α → Prop} :
+    Safe (Except.error Err.indexOutOfBounds : Except Err α) P := Safe.err (by simp)
+
+theorem safe_noMatch {α : Type} {P : α → Prop} :
+    Safe (Except.error Err.noMatchingAlternative : Except Err α) P := Safe.err (by simp)
+
+theorem noFn_wrap {c k : String} {v : Value} (h : noFn v = true) :
+    noFn (.obj c [(k, v)]) = true :=
+  noFn_obj (by intro e he; rcases List.mem_singleton.mp he with rfl; exact h)
+
+theorem zip_snd_mem {α β : Type} : ∀ (as : List α) (bs : List β) (e : α × β),
+    e ∈ as.zip bs → e.2 ∈ bs
+  | [], bs, e, h => by simp at h
+  | a :: as, [], e, h => by simp at h
+  | a :: as, b :: bs, e, h => by
+    rw [List.zip_cons_cons] at h
+    rcases List.mem_cons.mp h with rfl | h
+    · exact List.mem_cons_self ..
+    · exact List.mem_cons_of_mem _ (zip_snd_mem as bs e h)
+
+theorem getElem?_mem {α : Type} : ∀ (l : List α) (k : Nat) (a : α), l[k]? = some a → a ∈ l
+  | [], _, _, h => by simp at h
+  | x :: rest, 0, a, h => by
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+    subst h
+    exact List.mem_cons_self ..
+  | x :: rest, k + 1, a, h => by
+    rw [List.getElem?_cons_succ] at h
+    exact List.mem_cons_of_mem _ (getElem?_mem rest k a h)
+
+theorem bodyOkEntries_map {p : Program} {i : Nat} {fns : List String} :
+    ∀ {es : List (String × Expr)}, bodyOkEntries p i fns es = true →
+      bodyOkList p i fns (es.map (·.2)) = true
+  | [], _ => by rw [List.map_nil, bodyOkList]
+  | e :: rest, h => by
+    rw [bodyOkEntries, Bool.and_eq_true] at h
+    rw [List.map_cons, bodyOkList, Bool.and_eq_true]
+    exact ⟨h.1, bodyOkEntries_map h.2⟩
+
+theorem exprDepthEntries_map : ∀ (es : List (String × Expr)),
+    exprDepthList (es.map (·.2)) = exprDepthEntries es
+  | [] => by rw [List.map_nil, exprDepthList, exprDepthEntries]
+  | e :: rest => by
+    rw [List.map_cons, exprDepthList, exprDepthEntries, exprDepthEntries_map rest]
+
+theorem bodyOkArg_not_fnRef {p : Program} {i : Nat} {fns : List String} {a : Expr}
+    (h : (!notFnRef a || bodyOk p i fns a) = true) (hnf : notFnRef a = true) :
+    bodyOk p i fns a = true := by
+  rw [hnf] at h
+  simpa using h
+
+theorem safe_arg {p : Program} {j n : Nat} {env : Env} {pm : Param} {a : Expr}
+    (hok : argFnOk p j pm a = true)
+    (hsafe : notFnRef a = true → Safe (evalExpr p n env a) (fun v => noFn v = true))
+    (hn : 0 < n) :
+    Safe (evalExpr p n env a) (fun v => ArgVal p j pm.ty.isFn v) := by
+  cases a
+  case fnRef g =>
+    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
+    rw [argFnOk, Bool.and_eq_true] at hok
+    obtain ⟨k, d, hda, hk⟩ := fnBefore_inv hok.2
+    have hsome : (p.find? g).isSome = true := by rw [declAt?_find hda]; rfl
+    rw [evalExpr_fnRef, if_pos hsome]
+    exact Safe.ok' (Or.inr ⟨g, k, d, rfl, hok.1, hda, hk⟩)
+  all_goals exact Safe.weaken (hsafe rfl) (fun v hv => Or.inl hv)
+
+
+/-- Enough fuel and the reference semantics never runs out of it, and the answer it gives holds no
+function value. The induction is on the fuel, so a call is reached at a strictly smaller one; what makes
+that terminate is the index of the declaration being entered, which `bodyOk` keeps going down. -/
+theorem eval_safe (p : Program) (hp : declsOk p 0 p.decls = true) :
+    ∀ (f i : Nat) (fns : List String) (env : Env) (e : Expr),
+      bodyOk p i fns e = true → EnvOk p i fns env → exprDepth e + i * callStep p ≤ f →
+      Safe (evalExpr p f env e) (fun v => noFn v = true) := by
+  intro f
+  induction f with
+  | zero =>
+    intro i fns env e _ _ hf
+    exact absurd hf (by have := exprDepth_pos e; omega)
+  | succ n ih =>
+    intro i fns env e hb henv hf
+    have hargs : ∀ (env' : Env) (es : List Expr), EnvOk p i fns env' →
+        bodyOkList p i fns es = true → exprDepthList es + i * callStep p ≤ n →
+        Safe (evalArgs p n env' es) (fun vs => ∀ v ∈ vs, noFn v = true) := by
+      intro env' es henv'
+      induction es with
+      | nil => intro _ _; rw [evalArgs_nil]; exact Safe.ok' (by simp)
+      | cons a rest ihe =>
+        intro hbl hfl
+        rw [bodyOkList, Bool.and_eq_true] at hbl
+        rw [exprDepthList] at hfl
+        rw [evalArgs_cons]
+        refine Safe.bind' (ih i fns env' a hbl.1 henv' (by omega)) (fun v hv => ?_)
+        refine Safe.bind' (ihe hbl.2 (by omega)) (fun vs hvs => ?_)
+        refine Safe.ok' (fun w hw => ?_)
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact hv
+        · exact hvs w hw
+    have hargsC : ∀ (env' : Env) (j : Nat) (ps : List Param) (es : List Expr),
+        EnvOk p i fns env' → fnRefArgsOk p j ps es = true → bodyOkArgs p i fns es = true →
+        exprDepthList es + i * callStep p ≤ n →
+        Safe (evalArgs p n env' es) (fun vs => ArgsVals p j ps vs) := by
+      intro env' j ps es henv'
+      induction es generalizing ps with
+      | nil =>
+        intro _ _ _
+        rw [evalArgs_nil]
+        exact Safe.ok' (argsVals_nil_right p j ps)
+      | cons a rest ihe =>
+        intro hfr hba hfl
+        cases ps with
+        | nil => rw [fnRefArgsOk_nil_cons] at hfr; exact absurd hfr (by simp)
+        | cons pm ps' =>
+          rw [fnRefArgsOk_cons, Bool.and_eq_true] at hfr
+          rw [bodyOkArgs_cons, Bool.and_eq_true] at hba
+          rw [exprDepthList] at hfl
+          rw [evalArgs_cons]
+          refine Safe.bind' (safe_arg hfr.1
+            (fun hnf => ih i fns env' a (bodyOkArg_not_fnRef hba.1 hnf) henv' (by omega))
+            (by have := exprDepth_pos a; omega)) (fun v hv => ?_)
+          refine Safe.bind' (ihe ps' hfr.2 hba.2 (by omega)) (fun vs hvs => ?_)
+          exact Safe.ok' ⟨hv, hvs⟩
+    have hmapI : ∀ (env' : Env) (bnd : String) (body : Expr), EnvOk p i fns env' →
+        bodyOk p i fns body = true → exprDepth body + i * callStep p ≤ n →
+        ∀ (xs : List Value), (∀ x ∈ xs, noFn x = true) →
+          Safe (evalMapItems p n env' bnd body xs) (fun vs => ∀ v ∈ vs, noFn v = true) := by
+      intro env' bnd body henv' hbb hfb xs
+      induction xs with
+      | nil => intro _; rw [evalMapItems_nil]; exact Safe.ok' (by simp)
+      | cons x rest ihx =>
+        intro hxs
+        rw [evalMapItems_cons]
+        refine Safe.bind' (ih i fns ((bnd, x) :: env') body hbb
+          (envOk_cons (hxs x (List.mem_cons_self ..)) henv') hfb) (fun v hv => ?_)
+        refine Safe.bind' (ihx (fun w hw => hxs w (List.mem_cons_of_mem _ hw))) (fun vs hvs => ?_)
+        refine Safe.ok' (fun w hw => ?_)
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact hv
+        · exact hvs w hw
+    have hfilterI : ∀ (env' : Env) (bnd : String) (body : Expr), EnvOk p i fns env' →
+        bodyOk p i fns body = true → exprDepth body + i * callStep p ≤ n →
+        ∀ (xs : List Value), (∀ x ∈ xs, noFn x = true) →
+          Safe (evalFilterItems p n env' bnd body xs) (fun vs => ∀ v ∈ vs, noFn v = true) := by
+      intro env' bnd body henv' hbb hfb xs
+      induction xs with
+      | nil => intro _; rw [evalFilterItems_nil]; exact Safe.ok' (by simp)
+      | cons x rest ihx =>
+        intro hxs
+        rw [evalFilterItems_cons]
+        refine Safe.bind' (ih i fns ((bnd, x) :: env') body hbb
+          (envOk_cons (hxs x (List.mem_cons_self ..)) henv') hfb) (fun v hv => ?_)
+        cases v <;> try exact safe_typeError _
+        case bool c =>
+          cases c
+          · exact ihx (fun w hw => hxs w (List.mem_cons_of_mem _ hw))
+          · refine Safe.bind' (ihx (fun w hw => hxs w (List.mem_cons_of_mem _ hw)))
+              (fun vs hvs => ?_)
+            refine Safe.ok' (fun w hw => ?_)
+            rcases List.mem_cons.mp hw with rfl | hw
+            · exact hxs _ (List.mem_cons_self ..)
+            · exact hvs w hw
+    have hfindI : ∀ (env' : Env) (bnd : String) (body : Expr), EnvOk p i fns env' →
+        bodyOk p i fns body = true → exprDepth body + i * callStep p ≤ n →
+        ∀ (xs : List Value), (∀ x ∈ xs, noFn x = true) →
+          Safe (evalFindItems p n env' bnd body xs) (fun v => noFn v = true) := by
+      intro env' bnd body henv' hbb hfb xs
+      induction xs with
+      | nil => intro _; rw [evalFindItems_nil]; exact Safe.ok' (noFn_obj (by simp))
+      | cons x rest ihx =>
+        intro hxs
+        rw [evalFindItems_cons]
+        refine Safe.bind' (ih i fns ((bnd, x) :: env') body hbb
+          (envOk_cons (hxs x (List.mem_cons_self ..)) henv') hfb) (fun v hv => ?_)
+        cases v <;> try exact safe_typeError _
+        case bool c =>
+          cases c
+          · exact ihx (fun w hw => hxs w (List.mem_cons_of_mem _ hw))
+          · exact Safe.ok' (noFn_wrap (hxs x (List.mem_cons_self ..)))
+    have hquantI : ∀ (env' : Env) (op : QuantOp) (bnd : String) (body : Expr),
+        EnvOk p i fns env' → bodyOk p i fns body = true →
+        exprDepth body + i * callStep p ≤ n →
+        ∀ (xs : List Value), (∀ x ∈ xs, noFn x = true) →
+          Safe (evalQuantItems p n env' op bnd body xs) (fun v => noFn v = true) := by
+      intro env' op bnd body henv' hbb hfb xs
+      induction xs with
+      | nil => intro _; rw [evalQuantItems_nil]; exact Safe.ok' rfl
+      | cons x rest ihx =>
+        intro hxs
+        rw [evalQuantItems_cons]
+        refine Safe.bind' (ih i fns ((bnd, x) :: env') body hbb
+          (envOk_cons (hxs x (List.mem_cons_self ..)) henv') hfb) (fun v hv => ?_)
+        cases v <;> try exact safe_typeError _
+        case bool c =>
+          cases op <;> cases c <;>
+            first
+              | exact ihx (fun w hw => hxs w (List.mem_cons_of_mem _ hw))
+              | exact Safe.ok' rfl
+    have hreduceI : ∀ (env' : Env) (an bn : String) (body : Expr), EnvOk p i fns env' →
+        bodyOk p i fns body = true → exprDepth body + i * callStep p ≤ n →
+        ∀ (xs : List Value) (acc : Value), (∀ x ∈ xs, noFn x = true) → noFn acc = true →
+          Safe (evalReduceItems p n env' an bn body acc xs) (fun v => noFn v = true) := by
+      intro env' an bn body henv' hbb hfb xs
+      induction xs with
+      | nil => intro acc _ hacc; rw [evalReduceItems_nil]; exact Safe.ok' hacc
+      | cons x rest ihx =>
+        intro acc hxs hacc
+        rw [evalReduceItems_cons]
+        refine Safe.bind' (ih i fns ((bn, x) :: (an, acc) :: env') body hbb
+          (envOk_cons (hxs x (List.mem_cons_self ..)) (envOk_cons hacc henv')) hfb) (fun v hv => ?_)
+        exact ihx v (fun w hw => hxs w (List.mem_cons_of_mem _ hw)) hv
+    cases e with
+    | lit l => rw [evalExpr_lit]; exact Safe.ok' (noFn_litValue l)
+    | var name =>
+      rw [bodyOk] at hb
+      rw [evalExpr_var]
+      cases hl : Env.lookup? env name with
+      | none => exact safe_unknownVar _
+      | some w =>
+        rcases henv name w hl with h1 | ⟨g, k, d, rfl, hcont, _, _⟩
+        · exact Safe.ok' h1
+        · exact absurd hcont (by simp at hb; simp [hb])
+    | fnRef name => rw [bodyOk] at hb; exact absurd hb (by simp)
+    | un op x =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_un]
+      exact Safe.bind' (ih i fns env x hb henv (by omega)) (fun v _ => safe_applyUn op v)
+    | bin op lhs rhs =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      by_cases hand : op = .and
+      · subst hand
+        rw [evalExpr_and]
+        refine Safe.bind' (ih i fns env lhs hb.1 henv (by omega)) (fun v hv => ?_)
+        cases v <;> try exact safe_typeError _
+        case bool c =>
+          cases c
+          · exact Safe.ok' rfl
+          · exact Safe.bind' (ih i fns env rhs hb.2 henv (by omega)) (fun w _ => safe_asBool w)
+      · by_cases hor : op = .or
+        · subst hor
+          rw [evalExpr_or]
+          refine Safe.bind' (ih i fns env lhs hb.1 henv (by omega)) (fun v hv => ?_)
+          cases v <;> try exact safe_typeError _
+          case bool c =>
+            cases c
+            · exact Safe.bind' (ih i fns env rhs hb.2 henv (by omega)) (fun w _ => safe_asBool w)
+            · exact Safe.ok' rfl
+        · rw [evalExpr_bin _ _ _ _ _ _ hand hor]
+          refine Safe.bind' (ih i fns env lhs hb.1 henv (by omega)) (fun a ha => ?_)
+          refine Safe.bind' (ih i fns env rhs hb.2 henv (by omega)) (fun b hbv => ?_)
+          exact safe_applyBin op a b ha hbv
+    | cond c t els =>
+      simp only [bodyOk, Bool.and_eq_true] at hb
+      rw [exprDepth] at hf
+      rw [evalExpr_cond]
+      refine Safe.bind' (ih i fns env c hb.1.1 henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case bool bl =>
+        cases bl
+        · exact ih i fns env els hb.2 henv (by omega)
+        · exact ih i fns env t hb.1.2 henv (by omega)
+    | letE name ty val body =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_letE]
+      refine Safe.bind' (ih i fns env val hb.1 henv (by omega)) (fun v hv => ?_)
+      exact ih i fns ((name, v) :: env) body hb.2 (envOk_cons hv henv) (by omega)
+    | call fn args =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_call]
+      rcases calleeOf_cases env fn with ⟨g, hlk, htgt⟩ | htgt
+      · rcases henv fn (.fn g) hlk with hno | ⟨g', k, d, heq, hcont, hda, hk⟩
+        · exact absurd hno (by rw [noFn]; simp)
+        · injection heq with hgg
+          subst hgg
+          have hdnone : declAt? p fn = none := by
+            cases hdfn : declAt? p fn with
+            | none => rfl
+            | some jd =>
+              rw [hdfn] at hb
+              simp only [Bool.and_eq_true] at hb
+              rw [hcont] at hb
+              exact absurd hb.1.1.1 (by simp)
+          rw [hdnone] at hb
+          refine Safe.bind' (hargs env args henv hb (by omega)) (fun vs hvs => ?_)
+          simp only [htgt, declAt?_find hda]
+          split
+          · exact safe_arity _
+          · refine ih k (declFns d) (bindParams d.params vs) d.body (declAt?_bodyOk hp hda)
+              (envOk_of_noFn (fun ent hent => hvs ent.2 (bindParams_mem _ _ _ hent))) ?_
+            have h1 := declAt?_depth hda
+            have h2 : k * callStep p + callStep p ≤ i * callStep p := by
+              rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right _ hk
+            have h3 : callStep p = maxBodyDepth p.decls + 1 := rfl
+            omega
+      · cases hdfn : declAt? p fn with
+        | none =>
+          rw [hdfn] at hb
+          refine Safe.bind' (hargs env args henv hb (by omega)) (fun vs hvs => ?_)
+          simp only [htgt, declAt?_none hdfn]
+          exact safe_unknownFn _
+        | some jd =>
+          obtain ⟨j, d⟩ := jd
+          rw [hdfn] at hb
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at hb
+          obtain ⟨⟨⟨_, hji⟩, hfr⟩, hba⟩ := hb
+          refine Safe.bind' (hargsC env j d.params args henv hfr hba (by omega)) (fun vs hvs => ?_)
+          simp only [htgt, declAt?_find hdfn]
+          split
+          · exact safe_arity _
+          · refine ih j (declFns d) (bindParams d.params vs) d.body (declAt?_bodyOk hp hdfn)
+              (envOk_bindParams p j (declFns d) d.params vs hvs declFns_mem) ?_
+            have h1 := declAt?_depth hdfn
+            have h2 : j * callStep p + callStep p ≤ i * callStep p := by
+              rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right _ hji
+            have h3 : callStep p = maxBodyDepth p.decls + 1 := rfl
+            omega
+    | ctor typeName tyArgs ctorName args =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_ctor]
+      refine Safe.bind' (hargs env args henv hb (by omega)) (fun vs hvs => ?_)
+      repeat' split
+      all_goals first
+        | exact safe_typeError _
+        | exact safe_arity _
+        | exact Safe.ok' (noFn_obj (fun e he => hvs e.2 (zip_snd_mem _ _ e he)))
+    | proj x field =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_proj]
+      refine Safe.bind' (ih i fns env x hb henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case obj c fields =>
+        dsimp only
+        cases hfd : (fields.find? (·.1 == field)).map (·.2) with
+        | none => exact safe_typeError _
+        | some w =>
+          refine Safe.ok' ?_
+          rcases Option.map_eq_some_iff.mp hfd with ⟨ent, hfound, rfl⟩
+          exact obj_noFn hv ent (List.mem_of_find?_eq_some hfound)
+    | matchE scrut alts =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_matchE]
+      refine Safe.bind' (ih i fns env scrut hb.1 henv (by omega)) (fun sv hsv => ?_)
+      cases hfm : firstMatch alts sv with
+      | none => exact safe_noMatch
+      | some bb =>
+        obtain ⟨binds, body⟩ := bb
+        obtain ⟨alt, halt, rfl⟩ := firstMatch_body hfm
+        exact ih i fns (binds ++ env) alt.2 (bodyOkAlts_mem hb.2 halt)
+          (envOk_append (firstMatch_noFn hsv hfm) henv)
+          (by have := exprDepthAlts_mem halt; omega)
+    | noneE elem => rw [evalExpr_noneE]; exact Safe.ok' (noFn_obj (by simp))
+    | someE x =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_someE]
+      exact Safe.bind' (ih i fns env x hb henv (by omega)) (fun v hv => Safe.ok' (noFn_wrap hv))
+    | okE err x =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_okE]
+      exact Safe.bind' (ih i fns env x hb henv (by omega)) (fun v hv => Safe.ok' (noFn_wrap hv))
+    | errorE ok x =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_errorE]
+      exact Safe.bind' (ih i fns env x hb henv (by omega)) (fun v hv => Safe.ok' (noFn_wrap hv))
+    | arrayLit elem items =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_arrayLit]
+      exact Safe.bind' (hargs env items henv hb (by omega))
+        (fun vs hvs => Safe.ok' (noFn_arr hvs))
+    | index arr idx =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_index]
+      refine Safe.bind' (ih i fns env arr hb.1 henv (by omega)) (fun a ha => ?_)
+      refine Safe.bind' (ih i fns env idx hb.2 henv (by omega)) (fun w hw => ?_)
+      cases a <;> try exact safe_typeError _
+      case arr xs =>
+        cases w <;> try exact safe_typeError _
+        case int53 m =>
+          dsimp only
+          split
+          · exact safe_indexOutOfBounds
+          · cases hg : xs[m.toNat]? with
+            | none => exact safe_indexOutOfBounds
+            | some u => exact Safe.ok' (arr_noFn ha u (getElem?_mem _ _ _ hg))
+    | length arr =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_length]
+      refine Safe.bind' (ih i fns env arr hb henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      all_goals exact safe_mkInt53 _
+    | arraySlice arr lo hi =>
+      simp only [bodyOk, Bool.and_eq_true] at hb
+      rw [exprDepth] at hf
+      rw [evalExpr_arraySlice]
+      refine Safe.bind' (ih i fns env arr hb.1.1 henv (by omega)) (fun a ha => ?_)
+      refine Safe.bind' (ih i fns env lo hb.1.2 henv (by omega)) (fun u hu => ?_)
+      refine Safe.bind' (ih i fns env hi hb.2 henv (by omega)) (fun w hw => ?_)
+      exact safe_sliceArr a u w ha
+    | arrayReverse arr =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_arrayReverse]
+      refine Safe.bind' (ih i fns env arr hb henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      exact Safe.ok' (noFn_arr (fun w hw => arr_noFn hv w (List.mem_reverse.mp hw)))
+    | mapE arr binder body =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_mapE]
+      refine Safe.bind' (ih i fns env arr hb.1 henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case arr xs =>
+        exact Safe.bind' (hmapI env binder body henv hb.2 (by omega) xs (arr_noFn hv))
+          (fun vs hvs => Safe.ok' (noFn_arr hvs))
+    | filterE arr binder body =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_filterE]
+      refine Safe.bind' (ih i fns env arr hb.1 henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case arr xs =>
+        exact Safe.bind' (hfilterI env binder body henv hb.2 (by omega) xs (arr_noFn hv))
+          (fun vs hvs => Safe.ok' (noFn_arr hvs))
+    | findE arr binder body =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_findE]
+      refine Safe.bind' (ih i fns env arr hb.1 henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case arr xs => exact hfindI env binder body henv hb.2 (by omega) xs (arr_noFn hv)
+    | quantE op arr binder body =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_quantE]
+      refine Safe.bind' (ih i fns env arr hb.1 henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case arr xs => exact hquantI env op binder body henv hb.2 (by omega) xs (arr_noFn hv)
+    | reduceE arr init accName elemName body =>
+      simp only [bodyOk, Bool.and_eq_true] at hb
+      rw [exprDepth] at hf
+      rw [evalExpr_reduceE]
+      refine Safe.bind' (ih i fns env arr hb.1.1 henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case arr xs =>
+        refine Safe.bind' (ih i fns env init hb.1.2 henv (by omega)) (fun acc hacc => ?_)
+        exact hreduceI env accName elemName body henv hb.2 (by omega) xs acc (arr_noFn hv) hacc
+    | dictLit value entries =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_dictLit]
+      refine Safe.bind' (hargs env (entries.map (·.2)) henv (bodyOkEntries_map hb)
+        (by rw [exprDepthEntries_map]; omega)) (fun vs hvs => ?_)
+      exact Safe.ok' (noFn_dict (fun e he => hvs e.2 (zip_snd_mem _ _ e he)))
+    | dictGet d key =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_dictGet]
+      refine Safe.bind' (ih i fns env d hb.1 henv (by omega)) (fun dv hdv => ?_)
+      refine Safe.bind' (ih i fns env key hb.2 henv (by omega)) (fun kv hkv => ?_)
+      cases dv <;> try exact safe_typeError _
+      cases kv <;> try exact safe_typeError _
+      exact Safe.ok' (noFn_dictLookup (dict_noFn hdv))
+    | dictHas d key =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_dictHas]
+      refine Safe.bind' (ih i fns env d hb.1 henv (by omega)) (fun dv hdv => ?_)
+      refine Safe.bind' (ih i fns env key hb.2 henv (by omega)) (fun kv hkv => ?_)
+      cases dv <;> try exact safe_typeError _
+      cases kv <;> try exact safe_typeError _
+      exact Safe.ok' rfl
+    | dictSet d key val =>
+      simp only [bodyOk, Bool.and_eq_true] at hb
+      rw [exprDepth] at hf
+      rw [evalExpr_dictSet]
+      refine Safe.bind' (ih i fns env d hb.1.1 henv (by omega)) (fun dv hdv => ?_)
+      refine Safe.bind' (ih i fns env key hb.1.2 henv (by omega)) (fun kv hkv => ?_)
+      refine Safe.bind' (ih i fns env val hb.2 henv (by omega)) (fun vv hvv => ?_)
+      cases dv <;> try exact safe_typeError _
+      cases kv <;> try exact safe_typeError _
+      exact Safe.ok' (noFn_dict (noFn_dictWith (dict_noFn hdv) hvv))
+    | dictKeys d =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_dictKeys]
+      refine Safe.bind' (ih i fns env d hb henv (by omega)) (fun dv hdv => ?_)
+      cases dv <;> try exact safe_typeError _
+      refine Safe.ok' (noFn_arr (fun w hw => ?_))
+      rcases List.mem_map.mp hw with ⟨ent, _, rfl⟩
+      rfl
+    | dictValues d =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_dictValues]
+      refine Safe.bind' (ih i fns env d hb henv (by omega)) (fun dv hdv => ?_)
+      cases dv <;> try exact safe_typeError _
+      refine Safe.ok' (noFn_arr (fun w hw => ?_))
+      rcases List.mem_map.mp hw with ⟨ent, hent, rfl⟩
+      exact dict_noFn hdv ent hent
+    | dictDelete d key =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_dictDelete]
+      refine Safe.bind' (ih i fns env d hb.1 henv (by omega)) (fun dv hdv => ?_)
+      refine Safe.bind' (ih i fns env key hb.2 henv (by omega)) (fun kv hkv => ?_)
+      cases dv <;> try exact safe_typeError _
+      cases kv <;> try exact safe_typeError _
+      exact Safe.ok' (noFn_dict (fun e he => dict_noFn hdv e (List.mem_filter.mp he).1))
+    | strUn op x =>
+      rw [bodyOk] at hb; rw [exprDepth] at hf
+      rw [evalExpr_strUn]
+      exact Safe.bind' (ih i fns env x hb henv (by omega)) (fun v _ => safe_applyStrUn op v)
+    | strBin op lhs rhs =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_strBin]
+      refine Safe.bind' (ih i fns env lhs hb.1 henv (by omega)) (fun a ha => ?_)
+      refine Safe.bind' (ih i fns env rhs hb.2 henv (by omega)) (fun b hb => ?_)
+      exact safe_applyStrBin op a b
+    | substring s lo hi =>
+      simp only [bodyOk, Bool.and_eq_true] at hb
+      rw [exprDepth] at hf
+      rw [evalExpr_substring]
+      refine Safe.bind' (ih i fns env s hb.1.1 henv (by omega)) (fun a ha => ?_)
+      refine Safe.bind' (ih i fns env lo hb.1.2 henv (by omega)) (fun u hu => ?_)
+      refine Safe.bind' (ih i fns env hi hb.2 henv (by omega)) (fun w hw => ?_)
+      exact safe_sliceStr a u w
 
 end LeanTs.Cost
