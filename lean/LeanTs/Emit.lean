@@ -1,4 +1,5 @@
 import LeanTs.Agree
+import LeanTs.Cost
 import LeanTs.Compile
 import LeanTs.Manifest
 import LeanTs.Parse
@@ -35,8 +36,17 @@ private def packageJson (m : Manifest) : Json :=
 
 /-- Checks before it writes. Every shipped vector has to agree between `eval`, the model of the generated
 JS and the small-step machine, and the text of the module has to read back as the module it was compiled
-from, so a disagreement fails the build rather than reaching the package. -/
+from, so a disagreement fails the build rather than reaching the package.
+
+The fuel check is not per vector but per program: `Cost.cost` is decided from the syntax alone, so one
+comparison covers every call any caller can make. -/
 def emit (outDir : System.FilePath) (m : Manifest) : IO Unit := do
+  unless Cost.progOk m.program do
+    throw (IO.userError
+      "a call in this program does not go backwards, so no fuel bound covers it")
+  if defaultFuel < Cost.cost m.program then
+    throw (IO.userError
+      s!"this program can need {Cost.cost m.program} fuel, past the {defaultFuel} the artifact runs at")
   match checkAgreement m.program 400 200 with
   | .error e => throw (IO.userError s!"the compiled module disagrees with eval: {e}")
   | .ok () =>

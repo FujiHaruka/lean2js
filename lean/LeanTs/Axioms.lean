@@ -7,8 +7,8 @@ import LeanTs.Renderable
 # Axioms
 
 Pins down that the theorems the artifact is sold on do not depend on `sorry`: the claims carried by the
-manifest, plus the six the guarantee itself rests on: `typeSound`, `fragment_correct`,
-`fragment_traps_in`, `decl_correct`, `decl_refuses` and `decl_traps`.
+manifest, plus the seven the guarantee itself rests on: `typeSound`, `fragment_correct`,
+`fragment_traps_in`, `decl_correct`, `decl_refuses`, `decl_traps` and `decl_traps_at_cost`.
 
 `Claim` demands a proof term, so a missing theorem is caught by a failing `lake build`; a proof plugged
 with `sorry`, however, still goes through as a term. Pinning the axiom set makes this fail the moment
@@ -133,3 +133,11 @@ between the trees the proofs are about and the text that ships.
 /-- info: 'LeanTs.Dts.checkTy_tsSat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Dts.checkTy_tsSat
+
+/-- info: 'LeanTs.Decl.decl_traps_at_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Decl.decl_traps_at_cost
+
+/-- info: 'LeanTs.Cost.evalCall_ne_outOfFuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Cost.evalCall_ne_outOfFuel

@@ -1,4 +1,5 @@
 import LeanTs.Correct
+import LeanTs.Cost
 
 /-!
 # Decl
@@ -1952,6 +1953,24 @@ theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args 
   rw [evalCall_body hd hlen htyped] at he
   exact decl_traps_at p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
     (fun g _ => (levels p m hm g g (Nat.le_refl g)).2) fn d args err hd hlen htyped he hne
+
+/-- The same claim with no fuel disclaimer. `Cost.progOk` and the fuel bound are decided from the program
+alone, once, by the emitter -- so what could not be discharged from the result is now discharged from the
+input, and `outOfFuel` is simply not among the answers `eval` can give. -/
+theorem decl_traps_at_cost (p : Program) (m : Js.Module) (fn : String) (d : Decl)
+    (args : List Value) (err : Err)
+    (hm : compileProgram p = .ok m)
+    (hd : p.find? fn = some d)
+    (hpub : d.isPublic = true)
+    (hok : Cost.progOk p = true)
+    (hfuel : Cost.cost p ≤ defaultFuel)
+    (hlen : d.params.length = args.length)
+    (htyped : ParamsTyped p d.params args)
+    (he : evalCall p fn args = .error err) :
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code :=
+  decl_traps p m fn d args err hm hd hlen htyped he
+    (fun hc => Cost.evalCall_ne_outOfFuel hok hfuel hd hpub (hc ▸ he))
 
 /-! ## One public function refuses
 

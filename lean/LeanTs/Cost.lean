@@ -177,6 +177,11 @@ def tyFirstOrderList : List Ty → Bool
 
 end
 
+/-- The declared field types the entry check walks into. A function value can only be turned away where
+the type it is checked against cannot hide one. -/
+def typesFirstOrder (p : Program) : Bool :=
+  p.types.all fun t => t.ctors.all fun c => c.fields.all fun f => tyFirstOrder f.ty
+
 /-- A function type is allowed on a parameter and nowhere inside one, which is `Compile.wfParamTy`. -/
 def paramTyOk (ty : Ty) : Bool :=
   match ty with
@@ -187,7 +192,7 @@ def declParamsOk (d : Decl) : Bool := d.params.all fun pm => paramTyOk pm.ty
 
 /-- Everything the fuel bound rests on, as one `Bool` the emitter runs once per program. -/
 def progOk (p : Program) : Bool :=
-  declsOk p 0 p.decls && p.decls.all declParamsOk
+  declsOk p 0 p.decls && p.decls.all declParamsOk && typesFirstOrder p
 
 /-! ## Function values
 
@@ -1425,5 +1430,280 @@ theorem eval_safe (p : Program) (hp : declsOk p 0 p.decls = true) :
       refine Safe.bind' (ih i fns env lo hb.1.2 henv (by omega)) (fun u hu => ?_)
       refine Safe.bind' (ih i fns env hi hb.2 henv (by omega)) (fun w hw => ?_)
       exact safe_sliceStr a u w
+
+
+/-! ## The arguments a public function starts with
+
+`evalCall` lets a value into the body only if it has the declared type. That is what rules a function
+value out at the entry -- but only where the type cannot hide one, which is why `progOk` asks the
+declared field types to be first order too. -/
+
+mutual
+
+theorem tyFirstOrder_subst (sigma : List (String × Ty))
+    (hs : ∀ e ∈ sigma, tyFirstOrder e.2 = true) :
+    ∀ (t : Ty), tyFirstOrder t = true → tyFirstOrder (Ty.subst sigma t) = true
+  | .bool, _ => rfl
+  | .int53, _ => rfl
+  | .uint32, _ => rfl
+  | .string, _ => rfl
+  | .bigint, _ => rfl
+  | .var n, _ => by
+    rw [Ty.subst]
+    cases hf : (sigma.find? (·.1 == n)).map (·.2) with
+    | none => rfl
+    | some u =>
+      rcases Option.map_eq_some_iff.mp hf with ⟨e, hfound, rfl⟩
+      exact hs e (List.mem_of_find?_eq_some hfound)
+  | .option t, h => by
+    rw [Ty.subst, tyFirstOrder]; rw [tyFirstOrder] at h
+    exact tyFirstOrder_subst sigma hs t h
+  | .array t, h => by
+    rw [Ty.subst, tyFirstOrder]; rw [tyFirstOrder] at h
+    exact tyFirstOrder_subst sigma hs t h
+  | .dict t, h => by
+    rw [Ty.subst, tyFirstOrder]; rw [tyFirstOrder] at h
+    exact tyFirstOrder_subst sigma hs t h
+  | .result a b, h => by
+    rw [Ty.subst, tyFirstOrder, Bool.and_eq_true]
+    rw [tyFirstOrder, Bool.and_eq_true] at h
+    exact ⟨tyFirstOrder_subst sigma hs a h.1, tyFirstOrder_subst sigma hs b h.2⟩
+  | .named n args, h => by
+    rw [Ty.subst, tyFirstOrder]; rw [tyFirstOrder] at h
+    exact tyFirstOrderList_subst sigma hs args h
+  | .fn _ _, h => by rw [tyFirstOrder] at h; exact absurd h (by simp)
+
+theorem tyFirstOrderList_subst (sigma : List (String × Ty))
+    (hs : ∀ e ∈ sigma, tyFirstOrder e.2 = true) :
+    ∀ (ts : List Ty), tyFirstOrderList ts = true → tyFirstOrderList (Ty.substArgs sigma ts) = true
+  | [], _ => rfl
+  | t :: rest, h => by
+    rw [Ty.substArgs, tyFirstOrderList, Bool.and_eq_true]
+    rw [tyFirstOrderList, Bool.and_eq_true] at h
+    exact ⟨tyFirstOrder_subst sigma hs t h.1, tyFirstOrderList_subst sigma hs rest h.2⟩
+
+end
+
+theorem tyFirstOrderList_mem : ∀ {ts : List Ty} {t : Ty}, tyFirstOrderList ts = true → t ∈ ts →
+    tyFirstOrder t = true
+  | u :: rest, t, h, hm => by
+    rw [tyFirstOrderList, Bool.and_eq_true] at h
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact h.1
+    · exact tyFirstOrderList_mem h.2 hm
+
+theorem ctorAt_field_firstOrder {p : Program} {t : TypeDef} {args : List Ty} {ctor : String}
+    {c : CtorDef} {f : Field} (ht : typesFirstOrder p = true) (hty : p.findType? n = some t)
+    (hargs : tyFirstOrderList args = true) (hc : t.findAt? args ctor = some c) (hf : f ∈ c.fields) :
+    tyFirstOrder f.ty = true := by
+  have htm : t ∈ p.types := List.mem_of_find?_eq_some hty
+  have hts : ∀ c0 ∈ t.ctors, ∀ f0 ∈ c0.fields, tyFirstOrder f0.ty = true := by
+    have := List.all_eq_true.mp ht t htm
+    intro c0 hc0 f0 hf0
+    have := List.all_eq_true.mp this c0 hc0
+    exact List.all_eq_true.mp this f0 hf0
+  rw [TypeDef.findAt?] at hc
+  have hcm := List.mem_of_find?_eq_some hc
+  rw [TypeDef.ctorsAt] at hcm
+  rcases List.mem_map.mp hcm with ⟨c0, hc0, rfl⟩
+  rcases List.mem_map.mp hf with ⟨f0, hf0, rfl⟩
+  refine tyFirstOrder_subst _ (fun e he => ?_) f0.ty (hts c0 hc0 f0 hf0)
+  exact tyFirstOrderList_mem hargs (zip_snd_mem _ _ e he)
+
+mutual
+
+theorem hasTy_noFn {p : Program} (ht : typesFirstOrder p = true) :
+    ∀ (v : Value) (ty : Ty), tyFirstOrder ty = true → Value.hasTy p v ty = true → noFn v = true
+  | .bool _, _, _, _ => rfl
+  | .int53 _, _, _, _ => rfl
+  | .uint32 _, _, _, _ => rfl
+  | .str _, _, _, _ => rfl
+  | .bigint _, _, _, _ => rfl
+  | .fn g, ty, hfo, h => by
+    cases ty
+    case fn ps r => rw [tyFirstOrder] at hfo; exact absurd hfo (by simp)
+    all_goals (exfalso; simp [Value.hasTy.eq_def] at h)
+  | .arr xs, ty, hfo, h => by
+    cases ty
+    case array elem =>
+      rw [hasTy_array] at h
+      rw [tyFirstOrder] at hfo
+      exact noFn_arr (hasElemTy_noFn ht xs elem hfo h)
+    all_goals (exfalso; simp [Value.hasTy.eq_def] at h)
+  | .dict es, ty, hfo, h => by
+    cases ty
+    case dict elem =>
+      rw [hasTy_dict, Bool.and_eq_true] at h
+      rw [tyFirstOrder] at hfo
+      exact noFn_dict (hasEntryTys_noFn ht es elem hfo h.2)
+    all_goals (exfalso; simp [Value.hasTy.eq_def] at h)
+  | .obj ctor fields, ty, hfo, h => by
+    cases ty
+    case named n args =>
+      cases hft : p.findType? n with
+      | none => exfalso; simp [Value.hasTy.eq_def, hft] at h
+      | some t =>
+        cases hc : t.findAt? args ctor with
+        | none => exfalso; simp [Value.hasTy.eq_def, hft, hc] at h
+        | some c =>
+          rw [hasTy_named p ctor fields n args t c hft hc] at h
+          rw [tyFirstOrder] at hfo
+          refine noFn_obj (hasFieldTys_noFn ht fields _ (fun e he => ?_) h)
+          rcases List.mem_map.mp he with ⟨f, hf, rfl⟩
+          exact ctorAt_field_firstOrder ht hft hfo hc hf
+    case option elem =>
+      rw [tyFirstOrder] at hfo
+      simp only [Value.hasTy.eq_def] at h
+      split at h
+      · refine noFn_obj (fun e he => ?_)
+        cases fields with
+        | nil => exact absurd he (by simp)
+        | cons a rest => exact absurd h (by simp)
+      · exact noFn_obj (hasFieldTys_noFn ht fields _ (by
+          intro e he
+          rcases List.mem_singleton.mp he with rfl
+          exact hfo) h)
+      · exfalso; simp at h
+    case result okT errT =>
+      rw [tyFirstOrder, Bool.and_eq_true] at hfo
+      simp only [Value.hasTy.eq_def] at h
+      split at h
+      · exact noFn_obj (hasFieldTys_noFn ht fields _ (by
+          intro e he
+          rcases List.mem_singleton.mp he with rfl
+          exact hfo.1) h)
+      · exact noFn_obj (hasFieldTys_noFn ht fields _ (by
+          intro e he
+          rcases List.mem_singleton.mp he with rfl
+          exact hfo.2) h)
+      · exfalso; simp at h
+    all_goals (exfalso; simp [Value.hasTy.eq_def] at h)
+termination_by v => sizeOf v
+
+theorem hasFieldTys_noFn {p : Program} (ht : typesFirstOrder p = true) :
+    ∀ (fields : List (String × Value)) (tys : List (String × Ty)),
+      (∀ e ∈ tys, tyFirstOrder e.2 = true) → Value.hasFieldTys p fields tys = true →
+      ∀ e ∈ fields, noFn e.2 = true
+  | [], _, _, _ => by intro e he; exact absurd he (by simp)
+  | (k, v) :: rest, [], _, h => by
+    exfalso; simp [Value.hasFieldTys.eq_def] at h
+  | (k, v) :: rest, (nm, ty) :: tys, hts, h => by
+    rw [hasFieldTys_cons, Bool.and_eq_true, Bool.and_eq_true] at h
+    intro e he
+    rcases List.mem_cons.mp he with heq | he
+    · rw [heq]
+      exact hasTy_noFn ht v ty (hts (nm, ty) (List.mem_cons_self ..)) h.1.2
+    · exact hasFieldTys_noFn ht rest tys (fun u hu => hts u (List.mem_cons_of_mem _ hu)) h.2 e he
+termination_by fields => sizeOf fields
+
+theorem hasElemTy_noFn {p : Program} (ht : typesFirstOrder p = true) :
+    ∀ (xs : List Value) (elem : Ty), tyFirstOrder elem = true →
+      Value.hasElemTy p xs elem = true → ∀ w ∈ xs, noFn w = true
+  | [], _, _, _ => by intro w hw; exact absurd hw (by simp)
+  | x :: rest, elem, hfo, h => by
+    rw [hasElemTy_cons, Bool.and_eq_true] at h
+    intro w hw
+    rcases List.mem_cons.mp hw with heq | hw
+    · rw [heq]
+      exact hasTy_noFn ht x elem hfo h.1
+    · exact hasElemTy_noFn ht rest elem hfo h.2 w hw
+termination_by xs => sizeOf xs
+
+theorem hasEntryTys_noFn {p : Program} (ht : typesFirstOrder p = true) :
+    ∀ (es : List (String × Value)) (elem : Ty), tyFirstOrder elem = true →
+      Value.hasEntryTys p es elem = true → ∀ e ∈ es, noFn e.2 = true
+  | [], _, _, _ => by intro e he; exact absurd he (by simp)
+  | (k, v) :: rest, elem, hfo, h => by
+    rw [hasEntryTys_cons, Bool.and_eq_true] at h
+    intro e he
+    rcases List.mem_cons.mp he with heq | he
+    · rw [heq]
+      exact hasTy_noFn ht v elem hfo h.1
+    · exact hasEntryTys_noFn ht rest elem hfo h.2 e he
+termination_by es => sizeOf es
+
+end
+
+
+/-! ## What the shipped fuel buys -/
+
+theorem declAtFrom_of_find (name : String) : ∀ (ds : List Decl) (k : Nat) (d : Decl),
+    ds.find? (·.name == name) = some d → ∃ j, declAtFrom k ds name = some (j, d) := by
+  intro ds
+  induction ds with
+  | nil => intro k d h; exact absurd h (by simp)
+  | cons e rest ih =>
+    intro k d h
+    rw [declAtFrom]
+    by_cases he : e.name == name
+    · rw [if_pos he]
+      have : List.find? (fun x : Decl => x.name == name) (e :: rest) = some e := by simp [he]
+      rw [this] at h
+      simp only [Option.some.injEq] at h
+      exact ⟨k, by rw [h]⟩
+    · rw [if_neg he]
+      simp only [Bool.not_eq_true] at he
+      have : List.find? (fun x : Decl => x.name == name) (e :: rest)
+          = List.find? (fun x : Decl => x.name == name) rest := by simp [he]
+      rw [this] at h
+      exact ih (k + 1) d h
+
+theorem declAt?_of_find {p : Program} {name : String} {d : Decl} (h : p.find? name = some d) :
+    ∃ j, declAt? p name = some (j, d) :=
+  declAtFrom_of_find name p.decls 0 d h
+
+theorem paramTyOk_firstOrder {ty : Ty} (h : paramTyOk ty = true) (hn : ty.isFn = false) :
+    tyFirstOrder ty = true := by
+  cases ty <;> first | exact h | (rw [Ty.isFn] at hn; exact absurd hn (by simp))
+
+theorem bindParams_noFn {p : Program} (ht : typesFirstOrder p = true) :
+    ∀ (ps : List Param) (vs : List Value), (∀ pm ∈ ps, tyFirstOrder pm.ty = true) →
+      ((ps.zip vs).all fun (param, v) => Value.hasTy p v param.ty) = true →
+      ∀ e ∈ bindParams ps vs, noFn e.2 = true
+  | [], vs, _, _, e, he => by rw [bindParams_nil_left] at he; exact absurd he (by simp)
+  | pm :: ps, [], _, _, e, he => by rw [bindParams_nil_right] at he; exact absurd he (by simp)
+  | pm :: ps, v :: vs, hfo, hall, e, he => by
+    rw [List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at hall
+    rw [bindParams] at he
+    rcases List.mem_cons.mp he with heq | he
+    · rw [heq]
+      exact hasTy_noFn ht v pm.ty (hfo pm (List.mem_cons_self ..)) hall.1
+    · exact bindParams_noFn ht ps vs (fun q hq => hfo q (List.mem_cons_of_mem _ hq)) hall.2 e he
+
+/-- The fuel the artifact runs at is enough for every call the program can make: a program that passes
+`progOk` and whose `cost` fits in `defaultFuel` never answers a public call with `outOfFuel`. -/
+theorem evalCall_ne_outOfFuel {p : Program} {fn : String} {d : Decl} {args : List Value}
+    (hp : progOk p = true) (hfuel : cost p ≤ defaultFuel)
+    (hd : p.find? fn = some d) (hpub : d.isPublic = true) :
+    evalCall p fn args ≠ .error .outOfFuel := by
+  rw [progOk] at hp
+  simp only [Bool.and_eq_true] at hp
+  obtain ⟨j, hda⟩ := declAt?_of_find hd
+  simp only [evalCall, hd]
+  split
+  · simp
+  · split
+    · simp
+    · rename_i hty
+      have hall : ((d.params.zip args).all fun (param, v) => Value.hasTy p v param.ty) = true := by
+        revert hty
+        cases h : ((d.params.zip args).all fun (param, v) => Value.hasTy p v param.ty) <;> simp
+      have hfirst : ∀ pm ∈ d.params, tyFirstOrder pm.ty = true := by
+        intro pm hpm
+        have hdp : declParamsOk d = true :=
+          List.all_eq_true.mp hp.1.2 d (List.mem_of_find?_eq_some hd)
+        have hnf : (!pm.ty.isFn) = true := by
+          rw [Decl.isPublic] at hpub
+          exact List.all_eq_true.mp hpub pm hpm
+        exact paramTyOk_firstOrder (List.all_eq_true.mp hdp pm hpm) (by simpa using hnf)
+      refine (eval_safe p hp.1.1 defaultFuel j (declFns d) (bindParams d.params args) d.body
+        (declAt?_bodyOk hp.1.1 hda)
+        (envOk_of_noFn (bindParams_noFn hp.2 d.params args hfirst hall)) ?_).1
+      have hdep := declAt?_depth hda
+      have hlt := declAt?_lt hda
+      have hmul : j * callStep p ≤ p.decls.length * callStep p :=
+        Nat.mul_le_mul_right _ (Nat.le_of_lt hlt)
+      rw [cost] at hfuel
+      omega
 
 end LeanTs.Cost

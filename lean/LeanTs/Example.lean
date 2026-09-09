@@ -514,16 +514,25 @@ theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
 `Decl.decl_traps` is the other half of `decl_correct`: for arguments the entry accepts, a body that
 throws is matched by a generated function that throws the same code. -/
 
+/-- The two checks the emitter runs on a program before it writes anything: every call goes backwards,
+and the fuel the artifact runs at covers the deepest call this program can make. -/
+theorem program_progOk : Cost.progOk program = true := rfl
+
+set_option maxRecDepth 8000 in
+theorem program_cost_fits : Cost.cost program ≤ defaultFuel := Nat.le_of_ble_eq_true rfl
+
 /-- Whenever `eval` refuses to return a value for `add`, the generated function throws the code `eval`
-threw. Its body can reach `int53Overflow`. -/
+threw. Its body can reach `int53Overflow`. Running out of fuel is not among the answers: the two checks
+above rule it out for this program. -/
 theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
     (hlen : add.params.length = args.length)
     (htyped : ParamsTyped program add.params args)
-    (he : evalCall program "add" args = .error err) (hne : Correct.Mirrorable err) :
+    (he : evalCall program "add" args = .error err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps program m "add" add args err hm find_add hlen htyped he hne
+  Decl.decl_traps_at_cost program m "add" add args err hm find_add rfl program_progOk
+    program_cost_fits hlen htyped he
 
 /-- The trap is reachable, and reached the same way on both sides: one past the top of `Int53` throws
 `int53Overflow` out of the generated function. -/
@@ -537,7 +546,7 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
       Value.hasTy program (.int53 1) .int53 = true := by
     constructor <;> (rw [hasTy_int53]; simp [int53Min, int53Max])
   have h := add_traps m hm [.int53 int53Max, .int53 1] .int53Overflow rfl
-    ⟨hty.1, hty.2, trivial⟩ hcall (by intro h; exact Err.noConfusion h)
+    ⟨hty.1, hty.2, trivial⟩ hcall
   simpa [encodeValue, Err.code] using h
 
 /-- The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
@@ -569,10 +578,11 @@ theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .
     (args : List Value) (err : Err)
     (hlen : cartTotal.params.length = args.length)
     (htyped : ParamsTyped program cartTotal.params args)
-    (he : evalCall program "cartTotal" args = .error err) (hne : Correct.Mirrorable err) :
+    (he : evalCall program "cartTotal" args = .error err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps program m "cartTotal" cartTotal args err hm find_cartTotal hlen htyped he hne
+  Decl.decl_traps_at_cost program m "cartTotal" cartTotal args err hm find_cartTotal rfl
+    program_progOk program_cost_fits hlen htyped he
 
 /-! ### Refusing what the reference semantics refuses
 
@@ -605,10 +615,11 @@ theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .o
     (args : List Value) (err : Err)
     (hlen : addMoney.params.length = args.length)
     (htyped : ParamsTyped program addMoney.params args)
-    (he : evalCall program "addMoney" args = .error err) (hne : Correct.Mirrorable err) :
+    (he : evalCall program "addMoney" args = .error err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps program m "addMoney" addMoney args err hm find_addMoney hlen htyped he hne
+  Decl.decl_traps_at_cost program m "addMoney" addMoney args err hm find_addMoney rfl
+    program_progOk program_cost_fits hlen htyped he
 
 /-- The text `leants` writes for this program reads back as the module the compiler built. Nothing in
 between is assumed: the roundtrip holds of whatever `compileProgram` produces, so the claim carries no
@@ -665,7 +676,7 @@ def manifest : Manifest := {
       proof := add_refuses },
     { name := "add_traps"
       statement :=
-        "for any arguments eval accepts, if eval throws — out of fuel aside — the generated add throws the same code"
+        "for any arguments eval accepts, if eval throws the generated add throws the same code"
       proof := add_traps },
     { name := "addMoney_calls_agree"
       statement :=
@@ -673,7 +684,7 @@ def manifest : Manifest := {
       proof := addMoney_calls_agree },
     { name := "addMoney_traps"
       statement :=
-        "for any arguments eval accepts, if eval throws — out of fuel aside — the generated addMoney throws the same code"
+        "for any arguments eval accepts, if eval throws the generated addMoney throws the same code"
       proof := addMoney_traps },
     { name := "ship_calls_agree"
       statement :=
@@ -689,7 +700,7 @@ def manifest : Manifest := {
       proof := memberPrice_calls_agree },
     { name := "cartTotal_traps"
       statement :=
-        "for any arguments eval accepts, if the fold throws — out of fuel aside — the generated cartTotal throws the same code"
+        "for any arguments eval accepts, if the fold throws the generated cartTotal throws the same code"
       proof := cartTotal_traps },
     { name := "file_reads_back"
       statement :=
