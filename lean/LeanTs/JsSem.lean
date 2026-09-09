@@ -165,8 +165,12 @@ end Runtime
 
 open _root_.LeanTs.Js.Runtime
 
+set_option maxHeartbeats 1000000 in
 /-- The runtime helpers the generated code calls. Guarded by the reserved prefix every helper name
-carries, which is what tells a call to a declaration apart from a call to a helper. -/
+carries, which is what tells a call to a declaration apart from a call to a helper.
+
+The raised budget is what lets a proof case-split on this table: `split` builds the splitter with the
+options this declaration was elaborated under, not the ones in force where it is called. -/
 def helper (name : String) (args : List JsValue) : Option JsResult :=
   if !isReserved name then none else
   match name, args with
@@ -212,6 +216,54 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__substring", [.str s, .num a, .num b] => some (strSlice s a b)
   | _, _ => none
 
+/-- The calls the table above answers. Stated as an inductive rather than read off `helper` at the use
+site because `split` builds its splitter in whatever module asks, under options that module cannot
+raise, and this table is past what they allow; here the matcher is at hand. A row added to `helper`
+without a constructor here fails `helper_row`. -/
+inductive HelperRow : String → List JsValue → Prop where
+  | i53 (a : Int) : HelperRow "__i53" [.num a]
+  | i53div (a b : Int) : HelperRow "__i53div" [.num a, .num b]
+  | i53mod (a b : Int) : HelperRow "__i53mod" [.num a, .num b]
+  | u32mul (a b : Int) : HelperRow "__u32mul" [.num a, .num b]
+  | u32div (a b : Int) : HelperRow "__u32div" [.num a, .num b]
+  | u32mod (a b : Int) : HelperRow "__u32mod" [.num a, .num b]
+  | bigdiv (a b : Int) : HelperRow "__bigdiv" [.bigint a, .bigint b]
+  | bigmod (a b : Int) : HelperRow "__bigmod" [.bigint a, .bigint b]
+  | absNum (a : Int) : HelperRow "__abs" [.num a]
+  | absBig (a : Int) : HelperRow "__abs" [.bigint a]
+  | minNum (a b : Int) : HelperRow "__min" [.num a, .num b]
+  | minBig (a b : Int) : HelperRow "__min" [.bigint a, .bigint b]
+  | maxNum (a b : Int) : HelperRow "__max" [.num a, .num b]
+  | maxBig (a b : Int) : HelperRow "__max" [.bigint a, .bigint b]
+  | strcmp (a b : String) : HelperRow "__strcmp" [.str a, .str b]
+  | eq (a b : JsValue) : HelperRow "__eq" [a, b]
+  | at (xs : List JsValue) (i : Int) : HelperRow "__at" [.arr xs, .num i]
+  | aslice (xs : List JsValue) (a b : Int) : HelperRow "__aslice" [.arr xs, .num a, .num b]
+  | aconcat (a b : List JsValue) : HelperRow "__aconcat" [.arr a, .arr b]
+  | areverse (xs : List JsValue) : HelperRow "__areverse" [.arr xs]
+  | dget (es : List (String × JsValue)) (k : String) : HelperRow "__dget" [.dict es, .str k]
+  | dhas (es : List (String × JsValue)) (k : String) : HelperRow "__dhas" [.dict es, .str k]
+  | dset (es : List (String × JsValue)) (k : String) (v : JsValue) :
+      HelperRow "__dset" [.dict es, .str k, v]
+  | dkeys (es : List (String × JsValue)) : HelperRow "__dkeys" [.dict es]
+  | dvalues (es : List (String × JsValue)) : HelperRow "__dvalues" [.dict es]
+  | ddelete (es : List (String × JsValue)) (k : String) : HelperRow "__ddelete" [.dict es, .str k]
+  | strlen (s : String) : HelperRow "__strlen" [.str s]
+  | trim (s : String) : HelperRow "__trim" [.str s]
+  | upper (s : String) : HelperRow "__upper" [.str s]
+  | lower (s : String) : HelperRow "__lower" [.str s]
+  | startsWith (s t : String) : HelperRow "__startsWith" [.str s, .str t]
+  | endsWith (s t : String) : HelperRow "__endsWith" [.str s, .str t]
+  | includes (s t : String) : HelperRow "__includes" [.str s, .str t]
+  | split (s sep : String) : HelperRow "__split" [.str s, .str sep]
+  | substring (s : String) (a b : Int) : HelperRow "__substring" [.str s, .num a, .num b]
+
+theorem helper_row {name : String} {args : List JsValue} {r : JsResult}
+    (h : helper name args = some r) : HelperRow name args := by
+  rw [helper.eq_def] at h
+  split at h
+  · exact absurd h (by simp)
+  split at h <;> first | constructor | exact absurd h (by simp)
 def arith (op : String) (a b : JsValue) : JsResult :=
   match op, a, b with
   | "+", .num x, .num y => .ok (.num (x + y))
