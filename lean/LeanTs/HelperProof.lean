@@ -1135,4 +1135,131 @@ theorem calls_ddelete_distinct (ext : Ext) (es : List (String × Val)) (k : Stri
       .ok (.dict (es.filter (·.1 != k))) := by
   rw [calls_ddelete, ddelete_fold es k h]
 
+/-! ## Trimming
+
+`__trim` slices between two counts, where `strTrim` drops from both ends. The two agree, and the only
+place they could come apart is a string that is whitespace throughout: there the slice is empty because
+its bounds cross, not because the counts line up, so the proof splits that case off first.
+-/
+
+theorem find_trim : Helper.defs.find? (·.name == "__trim") = some Helper.trim := rfl
+
+private theorem drop_takeWhile_length {α} (p : α → Bool) (l : List α) :
+    l.drop (l.takeWhile p).length = l.dropWhile p := by
+  have h := List.drop_left (l₁ := l.takeWhile p) (l₂ := l.dropWhile p)
+  rwa [List.takeWhile_append_dropWhile] at h
+
+private theorem trim_slice (p : Char → Bool) (l : List Char) :
+    (l.drop (l.takeWhile p).length).take
+        (((l.length : Int) - ((l.reverse.takeWhile p).length : Int)
+          - ((l.takeWhile p).length : Int)).toNat)
+      = ((l.dropWhile p).reverse.dropWhile p).reverse := by
+  rw [drop_takeWhile_length, ← drop_takeWhile_length p (l.dropWhile p).reverse,
+    List.reverse_drop, List.reverse_reverse, List.length_reverse]
+  by_cases hnil : l.dropWhile p = []
+  · rw [hnil]
+    simp
+  · have hlen : (l.takeWhile p).length + (l.dropWhile p).length = l.length := by
+      have h : (l.takeWhile p ++ l.dropWhile p).length = l.length := by
+        rw [List.takeWhile_append_dropWhile]
+      rw [List.length_append] at h
+      exact h
+    have hshort : ((l.dropWhile p).reverse.takeWhile p).length
+        ≠ (l.dropWhile p).reverse.length := by
+      intro heq
+      have hall : (l.dropWhile p).reverse.all p = true := by
+        rw [← (List.takeWhile_prefix (l := (l.dropWhile p).reverse) p).eq_of_length heq]
+        exact List.all_takeWhile
+      rw [List.all_reverse] at hall
+      cases hcons : l.dropWhile p with
+      | nil => exact hnil hcons
+      | cons c rest =>
+        have hpc : p c = false := by
+          have h := List.head?_dropWhile_not p l
+          rw [hcons] at h
+          simpa using h
+        rw [hcons] at hall
+        simp [hpc] at hall
+    have hrev : l.reverse = (l.dropWhile p).reverse ++ (l.takeWhile p).reverse := by
+      rw [← List.reverse_append, List.takeWhile_append_dropWhile]
+    have ht : (l.reverse.takeWhile p).length
+        = ((l.dropWhile p).reverse.takeWhile p).length := by
+      rw [hrev, List.takeWhile_append, if_neg hshort]
+    have htle : ((l.dropWhile p).reverse.takeWhile p).length ≤ (l.dropWhile p).length := by
+      have := (List.takeWhile_prefix (l := (l.dropWhile p).reverse) p).length_le
+      rwa [List.length_reverse] at this
+    congr 1
+    omega
+
+private theorem toString_inj {c d : Char} (h : c.toString = d.toString) : c = d := by
+  have h2 := congrArg String.toList h
+  simp [Char.toString] at h2
+  exact h2
+
+private theorem toString_beq (c d : Char) : (c.toString == d.toString) = (c == d) := by
+  by_cases h : c = d
+  · subst h
+    simp
+  · rw [show (c == d) = false from by simp [h]]
+    simp only [beq_eq_false_iff_ne, ne_eq]
+    exact fun hc => h (toString_inj hc)
+
+private theorem isSpaceStr_toString (c : Char) : isSpaceStr c.toString = isSpace c := by
+  simp only [isSpaceStr, isSpace, show (" " : String) = ' '.toString from rfl,
+    show ("\t" : String) = '\t'.toString from rfl,
+    show ("\n" : String) = '\n'.toString from rfl,
+    show ("\r" : String) = '\r'.toString from rfl, toString_beq]
+
+theorem calls_lead_chars (ext : Ext) (cs : List Char) (f : Nat) :
+    callDef ext (f + cs.length + 18) "__lead" [.arr (cs.map fun c => Val.str c.toString)]
+      = .ok (.num (cs.takeWhile isSpace).length) := by
+  have hmap : (cs.map Char.toString).map Val.str = cs.map fun c => Val.str c.toString := by simp
+  have hlen : (cs.map Char.toString).length = cs.length := by simp
+  have hpred : (isSpaceStr ∘ Char.toString) = isSpace := funext isSpaceStr_toString
+  have htw : ((cs.map Char.toString).takeWhile isSpaceStr).length
+      = (cs.takeWhile isSpace).length := by
+    rw [List.takeWhile_map, List.length_map, hpred]
+  rw [← hmap, ← hlen, calls_lead, htw]
+
+theorem calls_trim (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + x.toList.length + 26) "__trim" [.str x] = .ok (.str (strTrim x)) := by
+  rw [show f + x.toList.length + 26 = (f + x.toList.length + 25) + 1 from by omega,
+    callDef_block find_trim rfl rfl]
+  simp only [Helper.trim, Helper.lengthOf]
+  walk
+  rw [show f + x.toList.length + 23 = (f + x.toList.length + 18) + 5 from by omega, calls_chars]
+  walk
+  rw [show f + x.toList.length + 22 = (f + 4) + x.toList.length + 18 from by omega,
+    calls_lead_chars]
+  walk
+  rw [show f + x.toList.length + 18
+      = (f + 9) + (x.toList.map fun c => Val.str c.toString).length + 9 from by simp; omega,
+    calls_areverse]
+  walk
+  rw [← List.map_reverse,
+    show f + x.toList.length + 20 = (f + 2) + x.toList.reverse.length + 18 from by simp; omega,
+    calls_lead_chars]
+  walk
+  have htle : (x.toList.reverse.takeWhile isSpace).length ≤ x.toList.length := by
+    have := (List.takeWhile_prefix (l := x.toList.reverse) isSpace).length_le
+    rwa [List.length_reverse] at this
+  rw [show (decide ((((x.toList.takeWhile isSpace).length : Nat) : Int) < 0)
+      || decide (((x.toList.length : Nat) : Int)
+        - (((x.toList.reverse.takeWhile isSpace).length : Nat) : Int) < 0)) = false from by
+    simp; omega]
+  simp only [Bool.false_eq_true, if_false, Int.toNat_natCast]
+  rw [show List.take
+        (((x.toList.length : Nat) : Int) - ((x.toList.reverse.takeWhile isSpace).length : Nat)
+          - ((x.toList.takeWhile isSpace).length : Nat)).toNat
+        (List.drop (x.toList.takeWhile isSpace).length
+          (x.toList.map fun c => Val.str c.toString))
+      = (List.take
+          (((x.toList.length : Nat) : Int) - ((x.toList.reverse.takeWhile isSpace).length : Nat)
+            - ((x.toList.takeWhile isSpace).length : Nat)).toNat
+          (List.drop (x.toList.takeWhile isSpace).length x.toList)).map
+        (fun c => Val.str c.toString) from by simp]
+  walk
+  rw [joinStrs_chars, trim_slice]
+  rfl
+
 end LeanTs.HelperSem
