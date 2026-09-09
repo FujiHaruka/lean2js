@@ -107,7 +107,7 @@ When the context is running short, in this order:
    `[a-z][a-z0-9_-]{0,31}`, unique among `herdr agent list`.
    ```bash
    herdr pane split --current --direction right --cwd "$PWD" --no-focus   # → .result.pane.pane_id
-   herdr pane run <pane-id> 'safe-claude --name <goal>-r<N+1>'
+   herdr pane run <pane-id> 'claude --dangerously-skip-permissions --name <goal>-r<N+1>'
    herdr agent list          # re-run until the pane appears; the detector takes a few seconds
    herdr agent rename <pane-id> <goal>-r<N+1>
    herdr agent prompt <goal>-r<N+1> "/relay"
@@ -116,7 +116,9 @@ When the context is running short, in this order:
    `--cwd "$PWD"` is not optional: the handoff path is keyed by the working directory, and a
    successor started elsewhere derives a different path and finds nothing. The prompt is
    `/relay`, not `/carryon` — `/carryon` alone would restore the work and then stop at the
-   next context ceiling, ending the chain.
+   next context ceiling, ending the chain. Use `safe-claude` in place of `claude` where that
+   sandbox wrapper is installed; it is not on this machine, and an unattended successor that
+   stops at a permission prompt stalls the chain silently, so the skip is not optional either.
 7. **Confirm it took the baton.** `agent prompt` returns before the successor paints
    anything, so read it: `herdr agent read <goal>-r<N+1> --source recent-unwrapped --lines 40`.
    If it will not start after a couple of attempts, stop and notify. A handoff file nobody
