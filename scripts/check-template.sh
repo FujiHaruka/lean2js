@@ -37,4 +37,10 @@ done
 
 grep -q 'export declare function orderTotal' dist/index.d.ts
 grep -q 'nothing_charged_below_one' dist/proof-manifest.json
+
+# `LeanTs.compilerVersion` is written down separately from the lakefile's, and a manifest naming a
+# version the package was not built at is worse than one naming none.
+lakefile_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo/lean/lakefile.toml")"
+sed -n '/"compiler"/,/}/p' dist/proof-manifest.json | grep -q "\"version\": \"$lakefile_version\"" \
+  || { echo "the emitted manifest does not name the version in lean/lakefile.toml ($lakefile_version)"; exit 1; }
 echo "template check passed: $(grep -c '^export function ' dist/index.js) export(s) written"

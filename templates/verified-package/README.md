@@ -35,6 +35,8 @@ lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出�
 - 定理を書き、`manifest` の `claims` に `proof` ごと載せる。`claims` は証明項を要求するので、
   定理を消すと `lake build` が落ちる
 - `manifest` の `package` / `version` が、生成される `package.json` にそのまま入る
+- `compiler` / `lean` / `source` は書かない —— `leants` が入れる。手書きだと、成果物が何で
+  ビルドされたかについて事実と違うことを言えてしまう
 
 ## 定理の書き方
 

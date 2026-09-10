@@ -11,7 +11,7 @@
 2. `cp -R templates/verified-package my-logic`
 3. `lakefile.toml` の `name` / `[[lean_lib]]` を自分の名前に書き換える
 4. `MyLogic.lean` の例題を消して自分のロジックと定理を書く
-5. `manifest` の 7 フィールドを埋める（うち 4 つは処理系が知っているもの）
+5. `manifest` の 4 フィールドを埋める
 6. `lake build && lake exe leants MyLogic --out dist`
 7. 出た `dist/` を自分の npm ワークスペースに置く
 
@@ -23,14 +23,9 @@
 **雛形が配布物ではない。** 入口が「clone してディレクトリをコピー」なので、`require` で始まる
 Lean の普通の作法に乗れない。コピーした瞬間に処理系との縁が切れ、処理系が直っても手元は直らない。
 
-**`rev = "main"` を指している。** 利用者のビルドが main の更新で足元から変わる。`manifest` の
-`compiler := "0.1.0"` は手書きなので、何でビルドしたかを成果物が正しく述べない。
+**`rev = "main"` を指している。** 利用者のビルドが main の更新で足元から変わる。
 
 **`lean-toolchain` は利用者の仕事ではない。** `lake update` が依存から書ける（下記）。
-
-**`manifest` の 4 フィールドは処理系が知っている。** `compiler` / `leanToolchain` / `source` は
-手書きで、しかも間違えても誰も気づかない。証明 manifest が事実と違うことを言えてしまうのは、
-この成果物の売り物そのものを損なう。
 
 **依存すると 149 MB の olean を全部ビルドする。** `import LeanTs` は全 38 モジュールを引く。
 実測で olean 合計 149 MB、うち利用者が emit と定理記述に必要な閉包は 55 MB、**残り 93 MB は
@@ -151,12 +146,13 @@ leants <Module> [--manifest <const>] [--out <dir>]
 これは保証の境界を動かすので、`README.md` の「保証の組み立て」と `docs/mvp-plan.md` の到達点を
 同じコミットで直す。
 
-### 3. `manifest` から手書きを削る
+### 3. `manifest` から手書きを削る — 完了
 
-`Manifest` から `compiler` / `leanToolchain` / `source` を落とし、`leants` が入れる ——
-`compiler` は `LeanTs.version`（lakefile と同じ版を持つ定数を 1 つ置く）、`leanToolchain` は
-`Lean.versionString` と `Lean.githash`、`source` は読んだモジュール名。
-利用者が書くのは `package` / `version` / `program` / `claims` の 4 つになる。
+`Manifest` から `compiler` / `leanToolchain` / `source` が落ちた。`compiler` は
+`LeanTs.compilerVersion`、`lean` は `Lean.versionString` と `Lean.githash`、`source` は `leants` が
+読んだモジュール名。`compilerVersion` と lakefile の `version` が割れていないことは
+`scripts/check-template.sh` が見る。利用者が書くのは `package` / `version` / `program` / `claims`
+の 4 つ。
 
 ### 4. 生成物を利用者のものにする
 

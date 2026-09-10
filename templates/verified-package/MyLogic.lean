@@ -42,9 +42,6 @@ theorem nothing_charged_below_one (unitPrice quantity : Int)
 def manifest : Manifest := {
   package := "@example/my-logic"
   version := "0.1.0"
-  compiler := "0.1.0"
-  leanToolchain := "leanprover/lean4:v4.33.1"
-  source := "MyLogic.lean"
   program := program
   claims := [
     { name := "nothing_charged_below_one"

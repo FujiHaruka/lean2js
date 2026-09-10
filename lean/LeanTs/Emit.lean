@@ -40,7 +40,7 @@ from, so a disagreement fails the build rather than reaching the package.
 
 The fuel check is not per vector but per program: `Cost.cost` is decided from the syntax alone, so one
 comparison covers every call any caller can make. -/
-def emit (outDir : System.FilePath) (m : Manifest) (axioms : List String) : IO Unit := do
+def emit (outDir : System.FilePath) (m : Manifest) (source : String) (axioms : List String) : IO Unit := do
   unless Cost.progOk m.program do
     throw (IO.userError
       "a call in this program does not go backwards, so no fuel bound covers it")
@@ -62,7 +62,7 @@ def emit (outDir : System.FilePath) (m : Manifest) (axioms : List String) : IO U
     IO.FS.writeFile (outDir / "index.js.map")
       ((sourceMapFor m.program emitted "example.leants").renderPretty ++ "\n")
     IO.FS.writeFile (outDir / "index.d.ts") (Js.renderDts m.program)
-    IO.FS.writeFile (outDir / "proof-manifest.json") ((m.toJson axioms).renderPretty ++ "\n")
+    IO.FS.writeFile (outDir / "proof-manifest.json") ((m.toJson source axioms).renderPretty ++ "\n")
     IO.FS.writeFile (outDir / "package.json") ((packageJson m).renderPretty ++ "\n")
     match renderVectors m.program 400 200 with
     | .error e => throw (IO.userError s!"vector generation failed: {e}")

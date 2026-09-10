@@ -72,7 +72,7 @@ private unsafe def run (inv : Invocation) : IO UInt32 := do
       IO.eprintln s!"a claim ships only when its proof reaches no further than \
         {String.intercalate ", " allowed}"
       return 1
-    emit inv.outDir manifest axioms
+    emit inv.outDir manifest (toString inv.module) axioms
     return 0
 
 unsafe def main (args : List String) : IO UInt32 := do

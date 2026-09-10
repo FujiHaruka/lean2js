@@ -671,9 +671,6 @@ theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram prog
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
-  compiler := "0.1.0"
-  leanToolchain := "leanprover/lean4:v4.33.1"
-  source := "lean/LeanTs/Example.lean"
   program := program
   claims := [
     { name := "add_comm", statement := "∀ a b, add a b = add b a", proof := add_comm },
