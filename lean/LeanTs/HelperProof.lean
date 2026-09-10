@@ -2920,20 +2920,905 @@ theorem calls_has (ext : Ext) (v : Val) (t : TyDesc) (f : Nat) :
     callDef ext (f + hasFuel v t) "__has" [v, tyVal t] = .ok (.bool (hasV v t)) :=
   calls_has_aux ext (sizeOf v + 1) v t (by omega) f
 
-/-- `__ck` is `__has` with a throw: it hands the value back unchanged, or raises `typeError`. -/
-theorem calls_ck (ext : Ext) (v : Val) (t : TyDesc) (f : Nat) :
-    callDef ext (f + hasFuel v t + 9) "__ck" [v, tyVal t]
-      = if hasV v t then .ok v else .thrown "typeError" := by
-  rw [show f + hasFuel v t + 9 = (f + hasFuel v t + 8) + 1 from rfl,
+theorem find_norm : Helper.defs.find? (·.name == "__norm") = some Helper.norm := rfl
+theorem find_normFields : Helper.defs.find? (·.name == "__normFields") = some Helper.normFields :=
+  rfl
+
+mutual
+
+/-- What `__norm` builds. The tag keeps the slot the object handed it; the constructor's fields follow in
+the order the descriptor names them, and a name the object does not carry is dropped. -/
+def normV : Val → TyDesc → Val
+  | .arr xs, .array t => .arr (normVList xs t)
+  | .dict es, .dict t => .dict (normVEntries es t)
+  | .obj es, .option t =>
+    if strictEq (lookupV es "tag") (.str "none") then .obj [("tag", lookupV es "tag")]
+    else if strictEq (lookupV es "tag") (.str "some") then
+      .obj (("tag", lookupV es "tag") :: normVFields es [("value", t)])
+    else .obj es
+  | .obj es, .result ok err =>
+    if strictEq (lookupV es "tag") (.str "ok") then
+      .obj (("tag", lookupV es "tag") :: normVFields es [("value", ok)])
+    else if strictEq (lookupV es "tag") (.str "error") then
+      .obj (("tag", lookupV es "tag") :: normVFields es [("error", err)])
+    else .obj es
+  | .obj es, .ctors alts =>
+    match alts.find? (fun c => strictEq (.str c.1) (lookupV es "tag")) with
+    | some alt => .obj (("tag", lookupV es "tag") :: normVFields es alt.2)
+    | none => .obj es
+  | v, _ => v
+termination_by v => (sizeOf v, 1, 0)
+
+def normVList : List Val → TyDesc → List Val
+  | [], _ => []
+  | x :: rest, t => normV x t :: normVList rest t
+termination_by xs => (sizeOf xs, 1, 0)
+
+def normVEntries : List (String × Val) → TyDesc → List (String × Val)
+  | [], _ => []
+  | (k, v) :: rest, t => (k, normV v t) :: normVEntries rest t
+termination_by es => (sizeOf es, 1, 0)
+
+def normVFields (es : List (String × Val)) : List (String × TyDesc) → List (String × Val)
+  | [] => []
+  | (n, d) :: rest =>
+    have := sizeOf_lookupV_lt es n
+    if es.any (·.1 == n) then (n, normV (lookupV es n) d) :: normVFields es rest
+    else normVFields es rest
+termination_by fields => (sizeOf (Val.obj es), 0, sizeOf fields)
+
+end
+
+
+mutual
+
+/-- Enough fuel for `__norm`, by the same recursion as `normV` and for the reason `hasFuel` is generous:
+the claims are stated for every larger amount. -/
+def normFuel : Val → TyDesc → Nat
+  | .arr xs, .array t => normFuelList xs t + 4 * xs.length + 64
+  | .dict es, .dict t => normFuelEntries es t + 8 * es.length + 64
+  | .obj es, .option t => normFuelFields es [("value", t)] + 64
+  | .obj es, .result ok err =>
+    normFuelFields es [("value", ok)] + normFuelFields es [("error", err)] + 64
+  | .obj es, .ctors alts => normFuelAlts es alts + 4 * alts.length + 64
+  | _, .ctors alts => 4 * alts.length + 64
+  | _, _ => 64
+termination_by v => (sizeOf v, 2, 0)
+
+def normFuelList : List Val → TyDesc → Nat
+  | [], _ => 0
+  | x :: rest, t => normFuel x t + normFuelList rest t + 8
+termination_by xs => (sizeOf xs, 2, 0)
+
+def normFuelEntries : List (String × Val) → TyDesc → Nat
+  | [], _ => 0
+  | (_, v) :: rest, t => normFuel v t + normFuelEntries rest t + 8
+termination_by es => (sizeOf es, 2, 0)
+
+def normFuelAlts (es : List (String × Val)) :
+    List (String × List (String × TyDesc)) → Nat
+  | [] => 0
+  | (_, fields) :: rest => normFuelFields es fields + normFuelAlts es rest + 8
+termination_by alts => (sizeOf (Val.obj es), 1, sizeOf alts)
+
+def normFuelFields (es : List (String × Val)) : List (String × TyDesc) → Nat
+  | [] => 0
+  | (name, d) :: rest =>
+    have := sizeOf_lookupV_lt es name
+    normFuel (lookupV es name) d + normFuelFields es rest + 16
+termination_by fields => (sizeOf (Val.obj es), 0, sizeOf fields)
+
+end
+
+/-- The pairs `__normFields` pushes, in the order it pushes them. -/
+def normPairs (es : List (String × Val)) : List (String × TyDesc) → List Val
+  | [] => []
+  | (n, d) :: rest =>
+    if es.any (·.1 == n) then .arr [.str n, normV (lookupV es n) d] :: normPairs es rest
+    else normPairs es rest
+
+/-- `Object.fromEntries` over what the loop pushed. It appends rather than replaces because the names are
+distinct and none of them is the tag the accumulator already carries. -/
+theorem fromPairs_normPairs (es : List (String × Val)) :
+    ∀ (fields : List (String × TyDesc)) (acc : List (String × Val)),
+    namesOk fields = true →
+    (∀ n ∈ fields.map (·.1), acc.any (·.1 == n) = false) →
+    fromPairs acc (normPairs es fields) = acc ++ normVFields es fields := by
+  intro fields
+  induction fields with
+  | nil => intro acc _ _; simp [normPairs, fromPairs, normVFields]
+  | cons fd rest ih =>
+    obtain ⟨n, d⟩ := fd
+    intro acc hnames hacc
+    obtain ⟨hnotin, hrest⟩ := Js.namesOk_head hnames
+    rw [normPairs, normVFields]
+    by_cases hhas : es.any (·.1 == n) = true
+    · simp only [hhas, if_true, fromPairs]
+      have hfresh : acc.any (·.1 == n) = false := hacc n (by simp)
+      have hset : mapSet acc n (normV (lookupV es n) d) = acc ++ [(n, normV (lookupV es n) d)] := by
+        rw [mapSet, if_neg (by simp [hfresh])]
+      rw [hset, ih (acc ++ [(n, normV (lookupV es n) d)]) hrest ?_]
+      · simp
+      · intro m hm
+        simp only [List.any_append, Bool.or_eq_false_iff]
+        refine ⟨hacc m (by simp [hm]), ?_⟩
+        simp only [List.any_cons, List.any_nil, Bool.or_false, beq_eq_false_iff_ne, ne_eq]
+        exact fun hcontra => hnotin m hm hcontra.symm
+    · simp only [Bool.not_eq_true] at hhas
+      simp only [hhas, Bool.false_eq_true, if_false]
+      exact ih acc hrest (fun m hm => hacc m (by simp [hm]))
+
+theorem normFields_loop (ext : Ext) (es : List (String × Val)) (F : Val) :
+    ∀ (fields : List (String × TyDesc)) (acc : List Val) (f : Nat),
+    (∀ (name : String) (d : TyDesc), (name, d) ∈ fields → ∀ (g : Nat),
+      callDef ext (g + normFuel (lookupV es name) d) "__norm" [lookupV es name, tyVal d]
+        = .ok (normV (lookupV es name) d)) →
+    evalFor ext (f + normFuelFields es fields + 8)
+      [("out", .arr acc), ("x", Val.obj es), ("fields", F)] "f" (tyValFields fields)
+      [.ifThen (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)])
+        [.push "out" (.arrayLit [.index (.var "f") (.num 0),
+          .call "__norm" [.index (.var "x") (.index (.var "f") (.num 0)),
+            .index (.var "f") (.num 1)]])]]
+      = .ok (.next [("out", .arr (acc ++ normPairs es fields)), ("x", Val.obj es),
+        ("fields", F)]) := by
+  intro fields
+  induction fields with
+  | nil => intro acc f _; simp only [tyValFields, normFuelFields]; walk; simp [normPairs]
+  | cons fd rest ih =>
+    obtain ⟨n, d⟩ := fd
+    intro acc f hsub
+    simp only [tyValFields, normFuelFields]
+    rw [show f + (normFuel (lookupV es n) d + normFuelFields es rest + 16) + 8
+      = (f + normFuel (lookupV es n) d + normFuelFields es rest + 23) + 1 from by omega]
+    walk
+    simp only [show ((0:Int).toNat) = 0 from rfl, show ((1:Int).toNat) = 1 from rfl,
+      List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD]
+    rw [normPairs]
+    by_cases hhas : es.any (·.1 == n) = true
+    · simp only [hhas, if_true]
+      walk
+      rw [show f + normFuel (lookupV es n) d + normFuelFields es rest + 17
+        = (f + normFuelFields es rest + 17) + normFuel (lookupV es n) d from by omega,
+        hsub n d (by simp)]
+      walk
+      rw [show f + normFuel (lookupV es n) d + normFuelFields es rest + 23
+        = (f + normFuel (lookupV es n) d + 15) + normFuelFields es rest + 8 from by omega,
+        ih _ _ (fun m e hmem g => hsub m e (by simp [hmem]) g)]
+      simp
+    · simp only [Bool.not_eq_true] at hhas
+      simp only [hhas, Bool.false_eq_true, if_false]
+      walk
+      rw [show f + normFuel (lookupV es n) d + normFuelFields es rest + 23
+        = (f + normFuel (lookupV es n) d + 15) + normFuelFields es rest + 8 from by omega,
+        ih _ _ (fun m e hmem g => hsub m e (by simp [hmem]) g)]
+
+theorem calls_normFields (ext : Ext) (es : List (String × Val))
+    (fields : List (String × TyDesc))
+    (hsub : ∀ (name : String) (d : TyDesc), (name, d) ∈ fields → ∀ (g : Nat),
+      callDef ext (g + normFuel (lookupV es name) d) "__norm" [lookupV es name, tyVal d]
+        = .ok (normV (lookupV es name) d))
+    (hnames : namesOk fields = true) (f : Nat) :
+    callDef ext (f + normFuelFields es fields + 16) "__normFields"
+      [.obj es, .arr (tyValFields fields)]
+      = .ok (.obj (("tag", lookupV es "tag") :: normVFields es fields)) := by
+  rw [show f + normFuelFields es fields + 16 = (f + normFuelFields es fields + 15) + 1 from by omega,
+    callDef_block find_normFields rfl rfl]
+  simp only [Helper.normFields]
+  walk
+  rw [show f + normFuelFields es fields + 13 = (f + 5) + normFuelFields es fields + 8 from by omega,
+    normFields_loop ext es (Val.arr (tyValFields fields)) fields
+      [Val.arr [Val.str "tag", lookupV es "tag"]] _ hsub]
+  walk
+  rw [List.cons_append, List.nil_append, fromPairs, mapSet]
+  simp only [List.any_nil, Bool.false_eq_true, if_false, List.nil_append]
+  rw [fromPairs_normPairs es fields [("tag", lookupV es "tag")] hnames ?_]
+  · simp
+  · intro n hn
+    simp only [List.any_cons, List.any_nil, Bool.or_false, beq_eq_false_iff_ne, ne_eq]
+    exact fun heq => Js.namesOk_not_tag hnames n hn heq.symm
+
+theorem normArray_loop (ext : Ext) (te : TyDesc) (K : Val) :
+    ∀ (xs : List Val) (X : Val) (acc : List Val) (f : Nat),
+    (∀ y ∈ xs, ∀ (g : Nat),
+      callDef ext (g + normFuel y te) "__norm" [y, tyVal te] = .ok (normV y te)) →
+    evalFor ext (f + normFuelList xs te + 8)
+      [("out", .arr acc), ("k", K), ("x", X), ("t", Val.arr [Val.str "array", tyVal te])] "e" xs
+      [.push "out" (.call "__norm" [.var "e", .index (.var "t") (.num 1)])]
+      = .ok (.next [("out", .arr (acc ++ normVList xs te)), ("k", K), ("x", X),
+        ("t", Val.arr [Val.str "array", tyVal te])]) := by
+  intro xs
+  induction xs with
+  | nil => intro X acc f _; simp only [normFuelList]; walk; simp [normVList]
+  | cons y rest ih =>
+    intro X acc f hsub
+    simp only [normFuelList]
+    rw [show f + (normFuel y te + normFuelList rest te + 8) + 8
+      = (f + normFuel y te + normFuelList rest te + 15) + 1 from by omega]
+    walk
+    simp only [show ((1:Int).toNat) = 1 from rfl, List.getElem?_cons_zero,
+      List.getElem?_cons_succ, Option.getD]
+    rw [show f + normFuel y te + normFuelList rest te + 13
+      = (f + normFuelList rest te + 13) + normFuel y te from by omega, hsub y (by simp)]
+    walk
+    rw [show f + normFuel y te + normFuelList rest te + 15
+      = (f + normFuel y te + 7) + normFuelList rest te + 8 from by omega,
+      ih _ _ _ (fun z hz g => hsub z (by simp [hz]) g)]
+    simp [normVList]
+
+/-- What no `Map` can hold: the same key twice. `Js.dictKeysDistinct` says this of a `JsValue`; the
+source semantics needs it of the `Val` the helper is handed, because `__norm` rebuilds a dictionary by
+walking its keys. -/
+def keysDistinctV : List String → Bool
+  | [] => true
+  | k :: rest => !rest.contains k && keysDistinctV rest
+
+mutual
+
+def mapsOk : Val → Bool
+  | .obj es => mapsOkFields es
+  | .arr xs => mapsOkList xs
+  | .dict es => keysDistinctV (es.map (·.1)) && mapsOkFields es
+  | _ => true
+termination_by v => sizeOf v
+
+def mapsOkFields : List (String × Val) → Bool
+  | [] => true
+  | (_, v) :: rest => mapsOk v && mapsOkFields rest
+termination_by es => sizeOf es
+
+def mapsOkList : List Val → Bool
+  | [] => true
+  | x :: rest => mapsOk x && mapsOkList rest
+termination_by xs => sizeOf xs
+
+end
+
+/-- What the dictionary loop leaves in `out`: each key set, in the order `__dkeys` hands them over. -/
+def normSet (es : List (String × Val)) (t : TyDesc) :
+    List (String × Val) → List String → List (String × Val)
+  | acc, [] => acc
+  | acc, k :: ks => normSet es t (mapSet acc k (normV (lookupV es k) t)) ks
+
+def normFuelKeys (es : List (String × Val)) (t : TyDesc) : List String → Nat
+  | [] => 0
+  | k :: ks =>
+    have := sizeOf_lookupV_lt es k
+    normFuel (lookupV es k) t + normFuelKeys es t ks + 12
+
+theorem normDict_loop (ext : Ext) (te : TyDesc) (es : List (String × Val)) (K : Val) :
+    ∀ (ks : List String) (acc : List (String × Val)) (f : Nat),
+    (∀ k ∈ ks, ∀ (g : Nat), callDef ext (g + normFuel (lookupV es k) te) "__norm"
+      [lookupV es k, tyVal te] = .ok (normV (lookupV es k) te)) →
+    evalFor ext (f + normFuelKeys es te ks + 8)
+      [("out", .dict acc), ("k", K), ("x", .dict es), ("t", Val.arr [Val.str "dict", tyVal te])]
+      "key" (ks.map Val.str)
+      [.setKey "out" (.var "key")
+        (.call "__norm" [.method (.var "x") "get" [.var "key"], .index (.var "t") (.num 1)])]
+      = .ok (.next [("out", .dict (normSet es te acc ks)), ("k", K), ("x", .dict es),
+        ("t", Val.arr [Val.str "dict", tyVal te])]) := by
+  intro ks
+  induction ks with
+  | nil => intro acc f _; simp only [normFuelKeys]; walk; simp [normSet]
+  | cons k rest ih =>
+    intro acc f hsub
+    simp only [normFuelKeys]
+    rw [show f + (normFuel (lookupV es k) te + normFuelKeys es te rest + 12) + 8
+      = (f + normFuel (lookupV es k) te + normFuelKeys es te rest + 19) + 1 from by omega]
+    walk
+    simp only [show ((1:Int).toNat) = 1 from rfl, List.getElem?_cons_zero,
+      List.getElem?_cons_succ, Option.getD]
+    rw [show f + normFuel (lookupV es k) te + normFuelKeys es te rest + 17
+      = (f + normFuelKeys es te rest + 17) + normFuel (lookupV es k) te from by omega,
+      hsub k (by simp)]
+    walk
+    rw [show f + normFuel (lookupV es k) te + normFuelKeys es te rest + 19
+      = (f + normFuel (lookupV es k) te + 11) + normFuelKeys es te rest + 8 from by omega,
+      ih _ _ (fun j hj g => hsub j (by simp [hj]) g)]
+    simp [normSet, mapSet]
+
+theorem mapsOkList_mem : ∀ {xs : List Val} {y : Val}, mapsOkList xs = true → y ∈ xs →
+    mapsOk y = true := by
+  intro xs
+  induction xs with
+  | nil => intro y _ hy; cases hy
+  | cons x rest ih =>
+    intro y h hy
+    rw [mapsOkList] at h
+    simp only [Bool.and_eq_true] at h
+    rcases List.mem_cons.mp hy with rfl | hrest
+    · exact h.1
+    · exact ih h.2 hrest
+
+theorem mapsOkFields_mem : ∀ {es : List (String × Val)} {y : Val}, mapsOkFields es = true →
+    y ∈ es.map (·.2) → mapsOk y = true := by
+  intro es
+  induction es with
+  | nil => intro y _ hy; simp at hy
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro y h hy
+    rw [mapsOkFields] at h
+    simp only [Bool.and_eq_true] at h
+    simp only [List.map_cons, List.mem_cons] at hy
+    rcases hy with rfl | hrest
+    · exact h.1
+    · exact ih h.2 hrest
+
+theorem mapsOk_lookupV {es : List (String × Val)} (h : mapsOkFields es = true) (k : String)
+    (hmem : es.any (·.1 == k) = true) : mapsOk (lookupV es k) = true := by
+  induction es with
+  | nil => simp at hmem
+  | cons e rest ih =>
+    obtain ⟨n, v⟩ := e
+    rw [mapsOkFields] at h
+    simp only [Bool.and_eq_true] at h
+    by_cases hk : (n == k) = true
+    · simp only [lookupV, List.find?, hk, Option.map, Option.getD]
+      exact h.1
+    · simp only [Bool.not_eq_true] at hk
+      simp only [lookupV, List.find?, hk]
+      simp only [List.any_cons, hk, Bool.false_or] at hmem
+      exact ih h.2 hmem
+
+theorem hasList_mem : ∀ {xs : List Val} {te : TyDesc} {y : Val}, hasList xs te = true → y ∈ xs →
+    hasV y te = true := by
+  intro xs
+  induction xs with
+  | nil => intro te y _ hy; cases hy
+  | cons x rest ih =>
+    intro te y h hy
+    rw [hasList.eq_def] at h
+    simp only [Bool.and_eq_true] at h
+    rcases List.mem_cons.mp hy with rfl | hrest
+    · exact h.1
+    · exact ih h.2 hrest
+
+theorem hasEntries_mem : ∀ {es : List (String × Val)} {te : TyDesc} {y : Val},
+    hasEntries es te = true → y ∈ es.map (·.2) → hasV y te = true := by
+  intro es
+  induction es with
+  | nil => intro te y _ hy; simp at hy
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro te y h hy
+    rw [hasEntries.eq_def] at h
+    simp only [Bool.and_eq_true] at h
+    simp only [List.map_cons, List.mem_cons] at hy
+    rcases hy with rfl | hrest
+    · exact h.1
+    · exact ih h.2 hrest
+
+theorem lookupV_skipV (pre suf : List (String × Val)) (k : String)
+    (h : ∀ e ∈ pre, e.1 ≠ k) : lookupV (pre ++ suf) k = lookupV suf k := by
+  induction pre with
+  | nil => rfl
+  | cons e rest ih =>
+    have hne : (e.1 == k) = false := by simp [h e (by simp)]
+    simp only [List.cons_append, lookupV, List.find?, hne]
+    exact ih (fun x hx => h x (by simp [hx]))
+
+theorem keysDistinctV_append {pre suf : List (String × Val)}
+    (h : keysDistinctV ((pre ++ suf).map (·.1)) = true) :
+    (∀ k ∈ suf.map (·.1), ∀ e ∈ pre, e.1 ≠ k) ∧ keysDistinctV (suf.map (·.1)) = true := by
+  induction pre with
+  | nil =>
+    refine ⟨fun _ _ e he => absurd he (by simp), ?_⟩
+    simpa using h
+  | cons e rest ih =>
+    simp only [List.cons_append, List.map_cons, keysDistinctV, Bool.and_eq_true,
+      Bool.not_eq_true', List.contains_eq_mem, decide_eq_false_iff_not] at h
+    obtain ⟨hfresh, htail⟩ := ih h.2
+    refine ⟨fun k hk x hx => ?_, htail⟩
+    rcases List.mem_cons.mp hx with rfl | hrest
+    · intro hcontra
+      exact h.1 (hcontra ▸ (by simp [hk] : k ∈ (rest ++ suf).map (·.1)))
+    · exact hfresh k hk x hrest
+
+/-- Walking a dictionary's keys and looking each one up hands back the entries in order, because a `Map`
+cannot carry the same key twice. -/
+theorem normSet_split (full : List (String × Val)) (t : TyDesc) :
+    ∀ (pre suf : List (String × Val)) (acc : List (String × Val)),
+    full = pre ++ suf → keysDistinctV (full.map (·.1)) = true →
+    (∀ k ∈ suf.map (·.1), acc.any (·.1 == k) = false) →
+    normSet full t acc (suf.map (·.1)) = acc ++ normVEntries suf t := by
+  intro pre suf
+  induction suf generalizing pre with
+  | nil => intro acc _ _ _; simp [normSet, normVEntries]
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro acc hfull hdist hacc
+    subst hfull
+    obtain ⟨hpre, hdist'⟩ := keysDistinctV_append hdist
+    have hlook : lookupV (pre ++ (k, v) :: rest) k = v := by
+      rw [lookupV_skipV pre _ k (fun x hx => hpre k (by simp) x hx)]
+      simp [lookupV, List.find?]
+    have hfresh : acc.any (·.1 == k) = false := hacc k (by simp)
+    have hset : mapSet acc k (normV v t) = acc ++ [(k, normV v t)] := by
+      rw [mapSet, if_neg (by simp [hfresh])]
+    simp only [List.map_cons, normSet, hlook, hset]
+    rw [ih (pre ++ [(k, v)]) (acc ++ [(k, normV v t)]) (by simp) (by simpa using hdist) ?_]
+    · simp [normVEntries]
+    · intro n hn
+      simp only [List.any_append, Bool.or_eq_false_iff]
+      refine ⟨hacc n (by simp [hn]), ?_⟩
+      simp only [List.any_cons, List.any_nil, Bool.or_false, beq_eq_false_iff_ne, ne_eq]
+      simp only [List.map_cons, keysDistinctV, Bool.and_eq_true, Bool.not_eq_true',
+        List.contains_eq_mem, decide_eq_false_iff_not] at hdist'
+      exact fun hcontra => hdist'.1 (hcontra ▸ hn)
+
+theorem normFuelKeys_split (full : List (String × Val)) (t : TyDesc) :
+    ∀ (pre suf : List (String × Val)),
+    full = pre ++ suf → keysDistinctV (full.map (·.1)) = true →
+    normFuelKeys full t (suf.map (·.1)) = normFuelEntries suf t + 4 * suf.length := by
+  intro pre suf
+  induction suf generalizing pre with
+  | nil => intro _ _; simp [normFuelKeys, normFuelEntries]
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro hfull hdist
+    subst hfull
+    obtain ⟨hpre, hdist'⟩ := keysDistinctV_append hdist
+    have hlook : lookupV (pre ++ (k, v) :: rest) k = v := by
+      rw [lookupV_skipV pre _ k (fun x hx => hpre k (by simp) x hx)]
+      simp [lookupV, List.find?]
+    simp only [List.map_cons, normFuelKeys, hlook, normFuelEntries, List.length_cons]
+    rw [ih (pre ++ [(k, v)]) (by simp) (by simpa using hdist)]
+    omega
+
+theorem lookupV_mem : ∀ {es : List (String × Val)} {k : String}, es.any (·.1 == k) = true →
+    lookupV es k ∈ es.map (·.2) := by
+  intro es
+  induction es with
+  | nil => intro k h; simp at h
+  | cons e rest ih =>
+    intro k h
+    by_cases hk : (e.1 == k) = true
+    · simp only [lookupV, List.find?, hk, Option.map, Option.getD, List.map_cons]
+      exact List.mem_cons_self
+    · simp only [Bool.not_eq_true] at hk
+      simp only [lookupV, List.find?, hk, List.map_cons]
+      simp only [List.any_cons, hk, Bool.false_or] at h
+      exact List.mem_cons_of_mem _ (ih h)
+
+theorem mapsOk_lookupV' : ∀ {es : List (String × Val)}, mapsOkFields es = true →
+    ∀ k, mapsOk (lookupV es k) = true := by
+  intro es
+  induction es with
+  | nil =>
+    intro _ k
+    simp only [lookupV, List.find?, Option.map, Option.getD]
+    rw [mapsOk] <;> simp
+  | cons e rest ih =>
+    obtain ⟨n, v⟩ := e
+    intro h k
+    rw [mapsOkFields] at h
+    simp only [Bool.and_eq_true] at h
+    by_cases hk : (n == k) = true
+    · simp only [lookupV, List.find?, hk, Option.map, Option.getD]
+      exact h.1
+    · simp only [Bool.not_eq_true] at hk
+      simp only [lookupV, List.find?, hk]
+      exact ih h.2 k
+
+theorem hasFieldsAt_field : ∀ (fields : List (String × TyDesc)) (es suf : List (String × Val)),
+    hasFieldsAt es suf fields = true → ∀ n d, (n, d) ∈ fields → hasV (lookupV es n) d = true := by
+  intro fields
+  induction fields with
+  | nil => intro _ _ _ n d hmem; cases hmem
+  | cons fd rest ih =>
+    obtain ⟨name, dd⟩ := fd
+    intro es suf h n d hmem
+    cases suf with
+    | nil => rw [hasFieldsAt] at h; simp at h
+    | cons e suf' =>
+      rw [hasFieldsAt] at h
+      simp only [Bool.and_eq_true] at h
+      rcases List.mem_cons.mp hmem with heq | hrest
+      · obtain ⟨rfl, rfl⟩ : n = name ∧ d = dd := by simpa [Prod.mk.injEq] using heq
+        exact h.1.2
+      · exact ih es suf' h.2 n d hrest
+
+theorem hasFields_field {es : List (String × Val)} {fields : List (String × TyDesc)}
+    (h : hasFields es fields = true) {n : String} {d : TyDesc} (hmem : (n, d) ∈ fields) :
+    hasV (lookupV es n) d = true := by
+  rw [hasFields] at h
+  simp only [Bool.and_eq_true] at h
+  exact hasFieldsAt_field fields es (es.drop 1) h.2 n d hmem
+
+theorem altsOk_findV {alts : List (String × List (String × TyDesc))} {tag : Val}
+    {alt : String × List (String × TyDesc)} (h : altsOk alts = true)
+    (hf : alts.find? (fun c => strictEq (.str c.1) tag) = some alt) :
+    namesOk alt.2 = true ∧ fieldsOk alt.2 = true := by
+  induction alts with
+  | nil => simp [List.find?] at hf
+  | cons a rest ih =>
+    rw [altsOk] at h
+    simp only [Bool.and_eq_true] at h
+    by_cases hk : strictEq (Val.str a.1) tag = true
+    · rw [List.find?, hk] at hf
+      simp only [Option.some.injEq] at hf
+      subst hf
+      exact ⟨h.1.1, h.1.2⟩
+    · simp only [Bool.not_eq_true] at hk
+      rw [List.find?, hk] at hf
+      exact ih h.2 hf
+
+theorem normFuelFields_le_alts (es : List (String × Val))
+    (alts : List (String × List (String × TyDesc)))
+    (alt : String × List (String × TyDesc)) (h : alt ∈ alts) :
+    normFuelFields es alt.2 ≤ normFuelAlts es alts := by
+  induction alts with
+  | nil => cases h
+  | cons a rest ih =>
+    obtain ⟨c, fields⟩ := a
+    simp only [normFuelAlts]
+    rcases List.mem_cons.mp h with rfl | hrest
+    · simp only; omega
+    · have := ih hrest; omega
+
+theorem fieldsOk_mem : ∀ {fields : List (String × TyDesc)} {n : String} {d : TyDesc},
+    fieldsOk fields = true → (n, d) ∈ fields → descOk d = true := by
+  intro fields
+  induction fields with
+  | nil => intro n d _ hmem; cases hmem
+  | cons fd rest ih =>
+    obtain ⟨m, e⟩ := fd
+    intro n d h hmem
+    rw [fieldsOk] at h
+    simp only [Bool.and_eq_true] at h
+    rcases List.mem_cons.mp hmem with heq | hrest
+    · obtain ⟨rfl, rfl⟩ : n = m ∧ d = e := by simpa [Prod.mk.injEq] using heq
+      exact h.1
+    · exact ih h.2 hrest
+
+private theorem normFuel_split (v : Val) (t : TyDesc) : ∃ m, normFuel v t = m + 64 := by
+  refine ⟨normFuel v t - 64, ?_⟩
+  have h : 64 ≤ normFuel v t := by rw [normFuel.eq_def]; split <;> omega
+  omega
+
+/-- The state `__norm` is in once it has read the head: the guards still to try, and an environment that
+answers `k`, `x` and `t`. Every branch proof starts here. -/
+private theorem norm_entered (ext : Ext) (v : Val) (t : TyDesc) (f m : Nat) (r : Val)
+    (h : evalStmts ext (f + m + 62)
+      [("k", .str (headName t)), ("x", v), ("t", tyVal t)]
+      (.ifThen (.bin "===" (.var "k") (.str "array")) Helper.normArray ::
+       .ifThen (.bin "===" (.var "k") (.str "dict")) Helper.normDict ::
+       .ifThen (.bin "===" (.var "k") (.str "option")) Helper.normOption ::
+       .ifThen (.bin "===" (.var "k") (.str "result")) Helper.normResult ::
+       .ifThen (.bin "===" (.var "k") (.str "ctors")) Helper.normCtors ::
+       [.ret (.var "x")]) = .ok (.ret r))
+    (hm : normFuel v t = m + 64) :
+    callDef ext (f + normFuel v t) "__norm" [v, tyVal t] = .ok r := by
+  rw [hm, show f + (m + 64) = ((f + m + 62) + 1) + 1 from by omega, callDef_block find_norm rfl rfl]
+  simp only [Helper.norm, bindAll]
+  have hhead : evalExpr ext (f + m + 62) [("x", v), ("t", tyVal t)]
+      (.index (.var "t") (.num 0)) = .ok (.str (headName t)) := by
+    rw [show f + m + 62 = (f + m + 59) + 3 from by omega]
+    exact has_head ext (f + m + 59) v t
+  rw [evalStmts_const ext (f + m + 62) _ _ _ _ _ hhead, h]
+
+theorem lookup_k_norm (t : TyDesc) (v : Val) :
+    lookup [("k", Val.str (headName t)), ("x", v), ("t", tyVal t)] "k"
+      = some (.str (headName t)) := rfl
+
+theorem normV_scalar (v : Val) (t : TyDesc) (h : headName t = "bool" ∨ headName t = "int53" ∨
+    headName t = "uint32" ∨ headName t = "string" ∨ headName t = "bigint") : normV v t = v := by
+  cases t <;> simp only [headName] at h <;> first
+    | (rw [normV.eq_def]; cases v <;> rfl)
+    | simp at h
+
+private theorem calls_norm_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc), sizeOf v < n →
+    descOk t = true → mapsOk v = true → hasV v t = true →
+    ∀ (f : Nat), callDef ext (f + normFuel v t) "__norm" [v, tyVal t] = .ok (normV v t) := by
+  intro n
+  induction n with
+  | zero => intro v t h; exact absurd h (by omega)
+  | succ n ih =>
+    intro v t hlt hd hmo hh f
+    obtain ⟨m, hm⟩ := normFuel_split v t
+    refine norm_entered ext v t f m (normV v t) ?_ hm
+    have hk := lookup_k_norm t v
+    cases t with
+    | bool | int53 | uint32 | string | bigint =>
+      simp only [headName] at hk ⊢
+      rw [show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl]
+      walk
+      rw [normV_scalar v _ (by simp [headName])]
+    | array te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | arr xs =>
+        rw [show f + m + 62 = (f + m + 59) + 3 from by omega,
+          has_take _ _ _ _ _ _ (normV (.arr xs) (.array te)) hk ?_]
+        simp only [Helper.normArray]
+        walk
+        have hml : m = normFuelList xs te + 4 * xs.length := by
+          simp only [normFuel] at hm; omega
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        have hsub : ∀ y ∈ xs, ∀ (g : Nat),
+            callDef ext (g + normFuel y te) "__norm" [y, tyVal te] = .ok (normV y te) := by
+          intro y hy g
+          refine ih y te ?_ hd (mapsOkList_mem hmo hy) (hasList_mem hh hy) g
+          have := List.sizeOf_lt_of_mem hy
+          simp only [Val.arr.sizeOf_spec] at hlt
+          omega
+        rw [show f + m + 59 = (f + 4 * xs.length + 51) + normFuelList xs te + 8 from by omega,
+          normArray_loop ext te (.str "array") xs (.arr xs) [] (f + 4 * xs.length + 51) hsub]
+        walk
+        rw [normV.eq_def]
+        simp
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | dict te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | dict es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        simp only [Bool.and_eq_true] at hmo
+        have hsub : ∀ k ∈ es.map (·.1), ∀ (g : Nat),
+            callDef ext (g + normFuel (lookupV es k) te) "__norm" [lookupV es k, tyVal te]
+              = .ok (normV (lookupV es k) te) := by
+          intro k hk' g
+          have hany : es.any (·.1 == k) = true := by
+            obtain ⟨e, he, rfl⟩ := List.mem_map.mp hk'
+            exact List.any_eq_true.mpr ⟨e, he, by simp⟩
+          have hmem := lookupV_mem hany
+          refine ih _ te ?_ hd (mapsOkFields_mem hmo.2 hmem) (hasEntries_mem hh hmem) g
+          have hsz := sizeOf_lookupV es k
+          simp only [Val.obj.sizeOf_spec] at hsz
+          simp only [Val.dict.sizeOf_spec] at hlt
+          omega
+        have hml : m = normFuelEntries es te + 8 * es.length := by
+          simp only [normFuel] at hm; omega
+        have hkeys := normFuelKeys_split es te [] es rfl hmo.1
+        rw [show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega,
+          has_take _ _ _ _ _ _ (normV (.dict es) (.dict te)) hk ?_]
+        simp only [Helper.normDict]
+        walk
+        rw [show f + m + 57 = (f + m + 52) + 5 from by omega, calls_dkeys]
+        walk
+        rw [show (es.map fun e => Val.str e.fst) = (es.map (·.1)).map Val.str from by
+              simp only [List.map_map]; rfl,
+          show f + m + 58 = (f + 4 * es.length + 50) + normFuelKeys es te (es.map (·.1)) + 8 from
+            by rw [hkeys]; omega,
+          normDict_loop ext te es (.str "dict") (es.map (·.1)) [] (f + 4 * es.length + 50) hsub,
+          normSet_split es te [] es [] rfl hmo.1 (by simp)]
+        walk
+        rw [normV.eq_def]
+        simp
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | option te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        have hgen : ∀ (name : String) (d : TyDesc), descOk d = true →
+            hasV (lookupV es name) d = true → ∀ (g : Nat),
+            callDef ext (g + normFuel (lookupV es name) d) "__norm" [lookupV es name, tyVal d]
+              = .ok (normV (lookupV es name) d) := by
+          intro name d hdd hhh g
+          refine ih _ d ?_ hdd (mapsOk_lookupV' hmo name) hhh g
+          have hsz := sizeOf_lookupV es name
+          simp only [Val.obj.sizeOf_spec] at hsz hlt
+          omega
+        have hml : m = normFuelFields es [("value", te)] := by
+          simp only [normFuel] at hm; omega
+        rw [show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega,
+          has_take _ _ _ _ _ _ (normV (.obj es) (.option te)) hk ?_]
+        simp only [Helper.normOption]
+        walk
+        simp only [← strictEq.eq_def]
+        cases hnone : strictEq (lookupV es "tag") (.str "none") with
+        | true =>
+          walk
+          have hf := calls_normFields ext es [] (by intro n d hmem; cases hmem) rfl (f + m + 40)
+          simp only [tyValFields, normFuelFields] at hf
+          rw [hf, normV.eq_def]
+          simp [hnone, normVFields]
+        | false =>
+          cases hsome : strictEq (lookupV es "tag") (.str "some") with
+          | false => walk; rw [normV.eq_def]; simp [hnone, hsome]
+          | true =>
+            walk
+            have hvalue : hasV (lookupV es "value") te = true := by
+              simp only [hnone, hsome, Bool.true_and] at hh
+              exact hasFields_field hh (by simp)
+            have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ [("value", te)] →
+                ∀ (g : Nat), callDef ext (g + normFuel (lookupV es name) d) "__norm"
+                  [lookupV es name, tyVal d] = .ok (normV (lookupV es name) d) := by
+              intro n d hmem g
+              obtain ⟨rfl, rfl⟩ : n = "value" ∧ d = te := by simpa [Prod.mk.injEq] using hmem
+              exact hgen "value" _ hd hvalue g
+            have hf := calls_normFields ext es [("value", te)] hsubv rfl (f + 39)
+            simp only [tyValFields] at hf
+            rw [show (([Val.str "option", tyVal te][Int.toNat 1]?).getD Val.undef) = tyVal te from rfl,
+              show f + m + 55 = (f + 39) + normFuelFields es [("value", te)] + 16 from by omega,
+              hf, normV.eq_def]
+            simp [hnone, hsome]
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | result okd errd =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        simp only [Bool.and_eq_true] at hd
+        rw [mapsOk] at hmo
+        have hgen : ∀ (name : String) (d : TyDesc), descOk d = true →
+            hasV (lookupV es name) d = true → ∀ (g : Nat),
+            callDef ext (g + normFuel (lookupV es name) d) "__norm" [lookupV es name, tyVal d]
+              = .ok (normV (lookupV es name) d) := by
+          intro name d hdd hhh g
+          refine ih _ d ?_ hdd (mapsOk_lookupV' hmo name) hhh g
+          have hsz := sizeOf_lookupV es name
+          simp only [Val.obj.sizeOf_spec] at hsz hlt
+          omega
+        have hml : m = normFuelFields es [("value", okd)] + normFuelFields es [("error", errd)] := by
+          simp only [normFuel] at hm; omega
+        rw [show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega,
+          has_take _ _ _ _ _ _ (normV (.obj es) (.result okd errd)) hk ?_]
+        simp only [Helper.normResult]
+        walk
+        simp only [← strictEq.eq_def]
+        cases hok : strictEq (lookupV es "tag") (.str "ok") with
+        | true =>
+          walk
+          have hvalue : hasV (lookupV es "value") okd = true := by
+            simp only [hok, if_true] at hh
+            exact hasFields_field hh (by simp)
+          have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ [("value", okd)] →
+              ∀ (g : Nat), callDef ext (g + normFuel (lookupV es name) d) "__norm"
+                [lookupV es name, tyVal d] = .ok (normV (lookupV es name) d) := by
+            intro n d hmem g
+            obtain ⟨rfl, rfl⟩ : n = "value" ∧ d = okd := by simpa [Prod.mk.injEq] using hmem
+            exact hgen "value" _ hd.1 hvalue g
+          have hf := calls_normFields ext es [("value", okd)] hsubv rfl
+            (f + normFuelFields es [("error", errd)] + 39)
+          simp only [tyValFields] at hf
+          rw [show (([Val.str "result", tyVal okd, tyVal errd][Int.toNat 1]?).getD Val.undef)
+                = tyVal okd from rfl,
+            show f + m + 55 = (f + normFuelFields es [("error", errd)] + 39)
+              + normFuelFields es [("value", okd)] + 16 from by omega,
+            hf, normV.eq_def]
+          simp [hok]
+        | false =>
+          cases herr : strictEq (lookupV es "tag") (.str "error") with
+          | false => walk; rw [normV.eq_def]; simp [hok, herr]
+          | true =>
+            walk
+            have hvalue : hasV (lookupV es "error") errd = true := by
+              simp only [hok, herr, Bool.true_and] at hh
+              exact hasFields_field hh (by simp)
+            have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ [("error", errd)] →
+                ∀ (g : Nat), callDef ext (g + normFuel (lookupV es name) d) "__norm"
+                  [lookupV es name, tyVal d] = .ok (normV (lookupV es name) d) := by
+              intro n d hmem g
+              obtain ⟨rfl, rfl⟩ : n = "error" ∧ d = errd := by simpa [Prod.mk.injEq] using hmem
+              exact hgen "error" _ hd.2 hvalue g
+            have hf := calls_normFields ext es [("error", errd)] hsubv rfl
+              (f + normFuelFields es [("value", okd)] + 38)
+            simp only [tyValFields] at hf
+            rw [show (([Val.str "result", tyVal okd, tyVal errd][Int.toNat 2]?).getD Val.undef)
+                  = tyVal errd from rfl,
+              show f + m + 54 = (f + normFuelFields es [("value", okd)] + 38)
+                + normFuelFields es [("error", errd)] + 16 from by omega,
+              hf, normV.eq_def]
+            simp [hok, herr]
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | ctors alts =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        have hgen : ∀ (name : String) (d : TyDesc), descOk d = true →
+            hasV (lookupV es name) d = true → ∀ (g : Nat),
+            callDef ext (g + normFuel (lookupV es name) d) "__norm" [lookupV es name, tyVal d]
+              = .ok (normV (lookupV es name) d) := by
+          intro name d hdd hhh g
+          refine ih _ d ?_ hdd (mapsOk_lookupV' hmo name) hhh g
+          have hsz := sizeOf_lookupV es name
+          simp only [Val.obj.sizeOf_spec] at hsz hlt
+          omega
+        have hml : m = normFuelAlts es alts + 4 * alts.length := by
+          simp only [normFuel] at hm; omega
+        rw [show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 56 + 2 = (f + m + 55) + 3 from by omega,
+          has_take _ _ _ _ _ _ (normV (.obj es) (.ctors alts)) hk ?_]
+        simp only [Helper.normCtors]
+        walk
+        rw [show ([Val.str "ctors", Val.arr (tyValAlts alts)][Int.toNat 1]?).getD Val.undef
+              = Val.arr (tyValAlts alts) from rfl,
+          tyValAlts_eq,
+          show f + m + 55 = (f + normFuelAlts es alts + 47)
+              + sumCost (fun _ => 3) (alts.map altVal) + 8 from by
+            rw [sumCost_three, List.length_map]; omega,
+          calls_find_gen ext _ _ _ _
+            (answers_alt ext (.obj es) (lookupV es "tag") _ _ rfl)
+            (f + normFuelAlts es alts + 47),
+          valFind_alts]
+        walk
+        simp only [← strictEq.eq_def]
+        cases hfind : alts.find? (fun c => strictEq (.str c.1) (lookupV es "tag")) with
+        | none => simp only [hfind] at hh; exact absurd hh (by simp)
+        | some alt =>
+          walk
+          rw [show lookupV [("tag", Val.str "some"), ("value", altVal alt)] "tag"
+                = Val.str "some" from rfl,
+            show lookupV [("tag", Val.str "some"), ("value", altVal alt)] "value"
+                = altVal alt from rfl]
+          simp only [altVal]
+          walk
+          obtain ⟨hnames, hfields⟩ := altsOk_findV hd hfind
+          have hhf : hasFields es alt.2 = true := by simp only [hfind] at hh; exact hh
+          have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ alt.2 →
+              ∀ (g : Nat), callDef ext (g + normFuel (lookupV es name) d) "__norm"
+                [lookupV es name, tyVal d] = .ok (normV (lookupV es name) d) := by
+            intro n d hmem g
+            exact hgen n d (fieldsOk_mem hfields hmem) (hasFields_field hhf hmem) g
+          have hle := normFuelFields_le_alts es alts alt (List.mem_of_find?_eq_some hfind)
+          rw [show ([Val.str alt.1, Val.arr (tyValFields alt.2)][Int.toNat 1]?).getD Val.undef
+                = Val.arr (tyValFields alt.2) from rfl,
+            show f + m + 53
+                = (f + m + 37 - normFuelFields es alt.2) + normFuelFields es alt.2 + 16 from by
+              omega,
+            calls_normFields ext es alt.2 hsubv hnames (f + m + 37 - normFuelFields es alt.2),
+            normV.eq_def]
+          simp [hfind]
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+
+/-- What `__norm` builds, for every value the entry check accepts and every descriptor the compiler
+renders. -/
+theorem calls_norm (ext : Ext) (v : Val) (t : TyDesc) (hd : descOk t = true) (hmo : mapsOk v = true)
+    (hh : hasV v t = true) (f : Nat) :
+    callDef ext (f + normFuel v t) "__norm" [v, tyVal t] = .ok (normV v t) :=
+  calls_norm_aux ext (sizeOf v + 1) v t (by omega) hd hmo hh f
+
+/-- `__ck` is `__has` with a throw: what the check accepts comes back rebuilt in the shape the
+descriptor names, and what it refuses raises `typeError`. -/
+theorem calls_ck (ext : Ext) (v : Val) (t : TyDesc) (hd : descOk t = true) (hmo : mapsOk v = true)
+    (f : Nat) :
+    callDef ext (f + hasFuel v t + normFuel v t + 9) "__ck" [v, tyVal t]
+      = if hasV v t then .ok (normV v t) else .thrown "typeError" := by
+  rw [show f + hasFuel v t + normFuel v t + 9 = (f + hasFuel v t + normFuel v t + 8) + 1 from rfl,
     callDef_expr find_ck rfl rfl]
   simp only [Helper.ck, bindAll]
   walk
-  rw [show f + hasFuel v t + 6 = (f + 6) + hasFuel v t from by omega, calls_has]
+  rw [show f + hasFuel v t + normFuel v t + 6 = (f + normFuel v t + 6) + hasFuel v t from by omega,
+    calls_has]
   cases hv : hasV v t
   · walk
-    rw [show f + 6 + hasFuel v t = (f + 1 + hasFuel v t) + 5 from by omega]
-    exact calls_fail ext "typeError" (f + 1 + hasFuel v t)
+    rw [show f + normFuel v t + 6 + hasFuel v t
+          = (f + normFuel v t + 1 + hasFuel v t) + 5 from by omega]
+    exact calls_fail ext "typeError" (f + normFuel v t + 1 + hasFuel v t)
   · walk
+    rw [show f + normFuel v t + 6 + hasFuel v t
+          = (f + 6 + hasFuel v t) + normFuel v t from by omega,
+      calls_norm ext v t hd hmo hv]
 
 
 /-! ## The entry check the model runs
@@ -3392,15 +4277,220 @@ theorem calls_has_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk 
       = .ok (.bool (Js.checkTy x t)) := by
   rw [calls_has, has_checkTy x t h]
 
+/-! ### The model of the generated code, read off the source semantics -/
+
+theorem ofJsFields_any (es : List (String × Js.JsValue)) (n : String) :
+    (ofJsFields es).any (·.1 == n) = (Js.lookupField es n).isSome := by
+  induction es with
+  | nil => simp [ofJsFields, Js.lookupField, List.find?]
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    by_cases hk : (k == n) = true
+    · simp [ofJsFields, Js.lookupField, List.find?, hk]
+    · simp only [Bool.not_eq_true] at hk
+      simp only [ofJsFields, List.any_cons, hk, Bool.false_or, Js.lookupField, List.find?]
+      exact ih
+
+theorem lookupV_ofJsFields {es : List (String × Js.JsValue)} {n : String} {v : Js.JsValue}
+    (h : Js.lookupField es n = some v) : lookupV (ofJsFields es) n = ofJs v := by
+  induction es with
+  | nil => simp [Js.lookupField, List.find?] at h
+  | cons e rest ih =>
+    obtain ⟨k, w⟩ := e
+    by_cases hk : (k == n) = true
+    · simp only [Js.lookupField, List.find?, hk, Option.map, Option.some.injEq] at h
+      subst h
+      simp [ofJsFields, lookupV, hk]
+    · simp only [Bool.not_eq_true] at hk
+      simp only [Js.lookupField, List.find?, hk] at h
+      simp only [ofJsFields, lookupV, List.find?, hk]
+      exact ih h
+
+theorem lookupV_ofJsFields_none {es : List (String × Js.JsValue)} {n : String}
+    (h : Js.lookupField es n = none) : lookupV (ofJsFields es) n = .undef := by
+  induction es with
+  | nil => simp [ofJsFields, lookupV]
+  | cons e rest ih =>
+    obtain ⟨k, w⟩ := e
+    by_cases hk : (k == n) = true
+    · simp [Js.lookupField, List.find?, hk] at h
+    · simp only [Bool.not_eq_true] at hk
+      simp only [Js.lookupField, List.find?, hk] at h
+      simp only [ofJsFields, lookupV, List.find?, hk]
+      exact ih h
+
+theorem ofJsFields_keys : ∀ (es : List (String × Js.JsValue)),
+    (ofJsFields es).map (·.1) = es.map (·.1) := by
+  intro es
+  induction es with
+  | nil => simp [ofJsFields]
+  | cons e rest ih => obtain ⟨k, v⟩ := e; simp [ofJsFields, ih]
+
+theorem keysDistinctV_eq : ∀ (ks : List String), keysDistinctV ks = Js.keysDistinct ks := by
+  intro ks
+  induction ks with
+  | nil => rfl
+  | cons k rest ih => simp [keysDistinctV, Js.keysDistinct, ih]
+
+theorem mapsOk_ofJs : ∀ (x : Js.JsValue), mapsOk (ofJs x) = Js.dictKeysDistinct x := by
+  intro x
+  induction x using Js.dictKeysDistinct.induct
+    (motive2 := fun xs => mapsOkList (ofJsList xs) = Js.dictKeysDistinctList xs)
+    (motive3 := fun es => mapsOkFields (ofJsFields es) = Js.dictKeysDistinctFields es) with
+  | case1 es ih => rw [ofJs, mapsOk, Js.dictKeysDistinct]; exact ih
+  | case2 xs ih => rw [ofJs, mapsOk, Js.dictKeysDistinct]; exact ih
+  | case3 es ih =>
+    rw [ofJs, mapsOk, Js.dictKeysDistinct, ofJsFields_keys, keysDistinctV_eq, ih]
+  | case4 x h1 h2 h3 =>
+    cases x <;> simp_all [ofJs, mapsOk, Js.dictKeysDistinct]
+  | case5 => simp only [ofJsList, mapsOkList, Js.dictKeysDistinctList]
+  | case6 x rest ihx ihr =>
+    simp only [ofJsList, mapsOkList, Js.dictKeysDistinctList, ihx, ihr]
+  | case7 => simp only [ofJsFields, mapsOkFields, Js.dictKeysDistinctFields]
+  | case8 k v rest ihv ihr =>
+    simp only [ofJsFields, mapsOkFields, Js.dictKeysDistinctFields, ihv, ihr]
+
+theorem lookupV_ofJsFields_str {es : List (String × Js.JsValue)} {n s : String}
+    (h : Js.lookupField es n = some (.str s)) : lookupV (ofJsFields es) n = .str s := by
+  rw [lookupV_ofJsFields h, ofJs]
+
+theorem strictEq_lookupV_str_false {es : List (String × Js.JsValue)} {n s : String}
+    (h : Js.lookupField es n = some (.str s) → False) :
+    strictEq (lookupV (ofJsFields es) n) (.str s) = false := by
+  cases hf : Js.lookupField es n with
+  | none => rw [lookupV_ofJsFields_none hf]; rfl
+  | some v =>
+    rw [lookupV_ofJsFields hf]
+    match v with
+    | .str s' =>
+      rw [ofJs]
+      simp only [strictEq, beq_eq_false_iff_ne, ne_eq]
+      intro hs
+      subst hs
+      exact h hf
+    | .num _ => rw [ofJs]; rfl
+    | .bigint _ => rw [ofJs]; rfl
+    | .bool _ => rw [ofJs]; rfl
+    | .obj _ => rw [ofJs]; rfl
+    | .arr _ => rw [ofJs]; rfl
+    | .dict _ => rw [ofJs]; rfl
+    | .fn _ => rw [ofJs]; rfl
+
+theorem normTy_option_unmatched {fields : List (String × Js.JsValue)} {t : TyDesc}
+    (h1 : Js.lookupField fields "tag" = some (.str "none") → False)
+    (h2 : Js.lookupField fields "tag" = some (.str "some") → False) :
+    Js.normTy (Js.JsValue.obj fields) (.option t) = .obj fields := by
+  rw [Js.normTy.eq_3]
+  split
+  · next hf => exact absurd hf h1
+  · next hf => exact absurd hf h2
+  · rfl
+
+theorem normTy_result_unmatched {fields : List (String × Js.JsValue)} {ok err : TyDesc}
+    (h1 : Js.lookupField fields "tag" = some (.str "ok") → False)
+    (h2 : Js.lookupField fields "tag" = some (.str "error") → False) :
+    Js.normTy (Js.JsValue.obj fields) (.result ok err) = .obj fields := by
+  rw [Js.normTy.eq_4]
+  split
+  · next hf => exact absurd hf h1
+  · next hf => exact absurd hf h2
+  · rfl
+
+theorem strictEq_str_lookupV_false {fields : List (String × Js.JsValue)}
+    (h : ∀ ctor : String, Js.lookupField fields "tag" = some (.str ctor) → False) (s : String) :
+    strictEq (Val.str s) (lookupV (ofJsFields fields) "tag") = false := by
+  cases hf : Js.lookupField fields "tag" with
+  | none => rw [lookupV_ofJsFields_none hf]; rfl
+  | some v =>
+    rw [lookupV_ofJsFields hf]
+    match v with
+    | .str s' => exact absurd hf (h s')
+    | .num _ => rw [ofJs]; rfl
+    | .bigint _ => rw [ofJs]; rfl
+    | .bool _ => rw [ofJs]; rfl
+    | .obj _ => rw [ofJs]; rfl
+    | .arr _ => rw [ofJs]; rfl
+    | .dict _ => rw [ofJs]; rfl
+    | .fn _ => rw [ofJs]; rfl
+
+theorem normTy_ctors_unmatched {fields : List (String × Js.JsValue)}
+    {alts : List (String × List (String × TyDesc))}
+    (h : ∀ ctor : String, Js.lookupField fields "tag" = some (.str ctor) → False) :
+    Js.normTy (Js.JsValue.obj fields) (.ctors alts) = .obj fields := by
+  rw [Js.normTy.eq_5]
+  split
+  · next ctor hf => exact absurd hf (h ctor)
+  · rfl
+
+theorem normV_ofJs (x : Js.JsValue) (t : TyDesc) : normV (ofJs x) t = ofJs (Js.normTy x t) := by
+  induction x, t using Js.normTy.induct
+    (motive2 := fun fields fs =>
+      normVFields (ofJsFields fields) fs = ofJsFields (Js.normFields fields fs))
+    (motive3 := fun entries t =>
+      normVEntries (ofJsFields entries) t = ofJsFields (Js.normEntries entries t))
+    (motive4 := fun xs t => normVList (ofJsList xs) t = ofJsList (Js.normList xs t)) with
+  | case1 xs t ih => rw [ofJs, normV, Js.normTy, ofJs, ih]
+  | case2 entries t ih => rw [ofJs, normV, Js.normTy, ofJs, ih]
+  | case3 fields t htag =>
+    rw [ofJs, normV.eq_3, lookupV_ofJsFields_str htag, Js.normTy.eq_3, htag]
+    simp [ofJs, ofJsFields, strictEq]
+  | case4 fields t htag ih =>
+    rw [ofJs, normV.eq_3, lookupV_ofJsFields_str htag, Js.normTy.eq_3, htag]
+    simp [ofJs, ofJsFields, strictEq, ih]
+  | case5 fields t h1 h2 =>
+    rw [ofJs, normV.eq_3, strictEq_lookupV_str_false h1, strictEq_lookupV_str_false h2, normTy_option_unmatched h1 h2, ofJs]
+    simp
+  | case6 fields ok err htag ih =>
+    rw [ofJs, normV.eq_4, lookupV_ofJsFields_str htag, Js.normTy.eq_4, htag]
+    simp [ofJs, ofJsFields, strictEq, ih]
+  | case7 fields ok err htag ih =>
+    rw [ofJs, normV.eq_4, lookupV_ofJsFields_str htag, Js.normTy.eq_4, htag]
+    simp [ofJs, ofJsFields, strictEq, ih]
+  | case8 fields ok err h1 h2 =>
+    rw [ofJs, normV.eq_4, strictEq_lookupV_str_false h1, strictEq_lookupV_str_false h2, normTy_result_unmatched h1 h2, ofJs]
+    simp
+  | case9 fields alts ctor htag alt hfind ih =>
+    rw [ofJs, normV.eq_5, lookupV_ofJsFields_str htag, Js.normTy.eq_5, htag]
+    dsimp only
+    simp only [strictEq, hfind, ih, ofJs, ofJsFields]
+  | case10 fields alts ctor htag hfind =>
+    rw [ofJs, normV.eq_5, lookupV_ofJsFields_str htag, Js.normTy.eq_5, htag]
+    dsimp only
+    simp only [strictEq, hfind, ofJs]
+  | case11 fields alts h =>
+    rw [ofJs, normV.eq_5, List.find?_eq_none.mpr (fun c _ => by
+        simp only [strictEq_str_lookupV_false h c.1, Bool.false_eq_true, not_false_eq_true]),
+      normTy_ctors_unmatched h, ofJs]
+  | case12 v d h1 h2 h3 h4 h5 => cases v <;> cases d <;> simp_all [ofJs, normV, Js.normTy]
+  | case13 fields => rw [normVFields, Js.normFields, ofJsFields]
+  | case14 fields n d rest v hlk hsz ih1 ih2 =>
+    rw [normVFields.eq_2, ofJsFields_any, hlk, if_pos (by simp),
+      lookupV_ofJsFields hlk, ih1, ih2, Js.normFields.eq_2]
+    split
+    · next v' hlk' => rw [hlk] at hlk'; cases hlk'; rw [ofJsFields]
+    · next hlk' => rw [hlk] at hlk'; exact absurd hlk' (by simp)
+  | case15 fields n d rest hlk ih =>
+    rw [normVFields.eq_2, ofJsFields_any, hlk, if_neg (by simp), ih, Js.normFields.eq_2]
+    split
+    · next v' hlk' => rw [hlk] at hlk'; exact absurd hlk' (by simp)
+    · rfl
+  | case16 d => rw [ofJsFields, normVEntries, Js.normEntries, ofJsFields]
+  | case17 k v rest t ih1 ih2 =>
+    rw [ofJsFields, normVEntries.eq_2, ih1, ih2, Js.normEntries.eq_2, ofJsFields]
+  | case18 d => rw [ofJsList, normVList, Js.normList, ofJsList]
+  | case19 x rest t ih1 ih2 =>
+    rw [ofJsList, normVList, ih1, ih2, Js.normList, ofJsList]
+
 /-- What the generated code's entry check does to an argument: hand back the value the model's check
 normalises to, or throw `typeError`. The shipped source hands the argument back untouched, which is the
 same thing while the check reads a constructor's fields by position. -/
-theorem calls_ck_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk t = true) (f : Nat) :
-    callDef ext (f + hasFuel (ofJs x) t + 9) "__ck" [ofJs x, tyVal t]
+theorem calls_ck_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk t = true)
+    (hk : Js.dictKeysDistinct x = true) (f : Nat) :
+    callDef ext (f + hasFuel (ofJs x) t + normFuel (ofJs x) t + 9) "__ck" [ofJs x, tyVal t]
       = ofRes (if Js.checkTy x t then .ok (Js.normTy x t) else .error "typeError") := by
-  rw [calls_ck, has_checkTy x t h]
+  rw [calls_ck ext (ofJs x) t h (by rw [mapsOk_ofJs]; exact hk), has_checkTy x t h]
   cases hc : Js.checkTy x t
   · simp
-  · rw [Js.normTy_of_checkTy x t h hc]; simp
+  · rw [normV_ofJs]; simp
 
 end LeanTs.HelperSem

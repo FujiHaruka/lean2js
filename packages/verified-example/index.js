@@ -360,10 +360,64 @@ const __has = (x, t) => {
   return (((alt).tag === "some") && __hasFields(x, ((alt).value)[1]));
 };
 
-// Validates without normalising, unlike __i53. A -0 argument is a safe integer, and every
-// answer built from it passes through __i53 or a comparison that already treats -0 and 0
-// alike, so normalising here would change nothing a caller can observe.
-const __ck = (x, t) => (__has(x, t) ? x : __fail("typeError"));
+const __normFields = (x, fields) => {
+  const out = [["tag", (x).tag]];
+  for (const f of fields) {
+    if (Object.hasOwn(x, (f)[0])) {
+      out.push([(f)[0], __norm((x)[(f)[0]], (f)[1])]);
+    }
+  }
+  return Object.fromEntries(out);
+};
+
+const __norm = (x, t) => {
+  const k = (t)[0];
+  if ((k === "array")) {
+    const out = [];
+    for (const e of x) {
+      out.push(__norm(e, (t)[1]));
+    }
+    return out;
+  }
+  if ((k === "dict")) {
+    const out = new Map();
+    for (const key of __dkeys(x)) {
+      out.set(key, __norm((x).get(key), (t)[1]));
+    }
+    return out;
+  }
+  if ((k === "option")) {
+    if (((x).tag === "none")) {
+      return __normFields(x, []);
+    }
+    if (((x).tag === "some")) {
+      return __normFields(x, [["value", (t)[1]]]);
+    }
+    return x;
+  }
+  if ((k === "result")) {
+    if (((x).tag === "ok")) {
+      return __normFields(x, [["value", (t)[1]]]);
+    }
+    if (((x).tag === "error")) {
+      return __normFields(x, [["error", (t)[2]]]);
+    }
+    return x;
+  }
+  if ((k === "ctors")) {
+    const alt = __find((t)[1], ((c) => ((c)[0] === (x).tag)));
+    if (((alt).tag === "some")) {
+      return __normFields(x, ((alt).value)[1]);
+    }
+    return x;
+  }
+  return x;
+};
+
+// Numbers are handed back as they came, unlike __i53: a -0 argument is a safe integer, and
+// every answer built from it passes through __i53 or a comparison that already treats -0
+// and 0 alike, so normalising one here would change nothing a caller can observe.
+const __ck = (x, t) => (__has(x, t) ? __norm(x, t) : __fail("typeError"));
 
 /** add : (a : Int53, b : Int53) → Int53 */
 export function add(__p0, __p1) {

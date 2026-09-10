@@ -641,19 +641,84 @@ def has : Def :=
       .ifThen (.not (.call "__isObj" [(.var "x")])) [.ret (.bool false)] ::
       hasObjKinds) }
 
+/-! `__norm` rebuilds a value the entry check accepted in the shape `encodeValue` writes: `tag` first,
+then the constructor's fields in the order the descriptor names them. Keys the descriptor does not name
+are dropped. Branches are named for the reason `__has`'s are. -/
+
+def normFields : Def :=
+
+  { name := "__normFields", params := ["x", "fields"]
+    body := .block [
+      .const "out" (.arrayLit [.arrayLit [.str "tag", .field (.var "x") "tag"]]),
+      .forOf "f" (.var "fields") [
+        .ifThen (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)]) [
+          .push "out" (.arrayLit [.index (.var "f") (.num 0),
+            .call "__norm" [.index (.var "x") (.index (.var "f") (.num 0)),
+              .index (.var "f") (.num 1)]])]],
+      .ret (.prim "Object.fromEntries" [(.var "out")]) ] }
+
+def normArray : List Stmt := [
+  .const "out" (.arrayLit []),
+  .forOf "e" (.var "x") [
+    .push "out" (.call "__norm" [.var "e", .index (.var "t") (.num 1)])],
+  .ret (.var "out")]
+
+def normDict : List Stmt := [
+  .const "out" (.new_ "Map" []),
+  .forOf "key" (.call "__dkeys" [(.var "x")]) [
+    .setKey "out" (.var "key")
+      (.call "__norm" [.method (.var "x") "get" [.var "key"], .index (.var "t") (.num 1)])],
+  .ret (.var "out")]
+
+def normOption : List Stmt := [
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
+    [.ret (.call "__normFields" [(.var "x"), .arrayLit []])],
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "some"))
+    [.ret (.call "__normFields" [(.var "x"),
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
+  .ret (.var "x")]
+
+def normResult : List Stmt := [
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
+    [.ret (.call "__normFields" [(.var "x"),
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "error"))
+    [.ret (.call "__normFields" [(.var "x"),
+      .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]])],
+  .ret (.var "x")]
+
+def normCtors : List Stmt := [
+  .const "alt" (.call "__find" [.index (.var "t") (.num 1),
+    .lam ["c"] (.bin "===" (.index (.var "c") (.num 0)) (.field (.var "x") "tag"))]),
+  .ifThen (.bin "===" (.field (.var "alt") "tag") (.str "some"))
+    [.ret (.call "__normFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1)])],
+  .ret (.var "x")]
+
+def norm : Def :=
+
+  { name := "__norm", params := ["x", "t"], body := .block (
+      .const "k" (.index (.var "t") (.num 0)) ::
+      .ifThen (.bin "===" (.var "k") (.str "array")) normArray ::
+      .ifThen (.bin "===" (.var "k") (.str "dict")) normDict ::
+      .ifThen (.bin "===" (.var "k") (.str "option")) normOption ::
+      .ifThen (.bin "===" (.var "k") (.str "result")) normResult ::
+      .ifThen (.bin "===" (.var "k") (.str "ctors")) normCtors ::
+      [.ret (.var "x")]) }
+
 def ck : Def :=
 
   { name := "__ck", params := ["x", "t"]
-    doc := ["Validates without normalising, unlike __i53. A -0 argument is a safe integer, and every",
-            "answer built from it passes through __i53 or a comparison that already treats -0 and 0",
-            "alike, so normalising here would change nothing a caller can observe."]
-    body := .expr (.cond (.call "__has" [(.var "x"), (.var "t")]) (.var "x") (.call "__fail" [.str "typeError"])) }
+    doc := ["Numbers are handed back as they came, unlike __i53: a -0 argument is a safe integer, and",
+            "every answer built from it passes through __i53 or a comparison that already treats -0",
+            "and 0 alike, so normalising one here would change nothing a caller can observe."]
+    body := .expr (.cond (.call "__has" [(.var "x"), (.var "t")])
+      (.call "__norm" [(.var "x"), (.var "t")]) (.call "__fail" [.str "typeError"])) }
 
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
   strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split, substring,
   aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues, ddelete, eq, map, filter,
-  find, all, any, reduce, isObj, hasFields, has, ck
+  find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
 ]
 
 def runtime : String := renderAll defs

@@ -177,6 +177,17 @@ def binOp (op : String) (a b : Val) : Res Val :=
     | ">>>", .num x, .num 0 => .ok (.num (u32 x))
     | _, _, _ => .stuck
 
+def mapSet (es : List (String × Val)) (key : String) (v : Val) : List (String × Val) :=
+  if es.any (·.1 == key) then es.map (fun e => if e.1 == key then (key, v) else e)
+  else es ++ [(key, v)]
+
+/-- What `Object.fromEntries` builds: the pairs written in order, a later one replacing an earlier one
+that carries the same key, which is where it parts company with a plain `List`. -/
+def fromPairs (acc : List (String × Val)) : List Val → Option (List (String × Val))
+  | [] => some acc
+  | .arr [.str k, v] :: rest => fromPairs (mapSet acc k v) rest
+  | _ :: _ => none
+
 def prim (name : String) (args : List Val) : Res Val :=
   match name, args with
   | "Number.isSafeInteger", [.num i] => .ok (.bool (safeMin ≤ i && i ≤ safeMax))
@@ -194,6 +205,10 @@ def prim (name : String) (args : List Val) : Res Val :=
   | "Array.isArray", [_] => .ok (.bool false)
   | "Object.keys", [.obj fields] => .ok (.arr (fields.map fun e => .str e.1))
   | "Object.hasOwn", [.obj fields, .str key] => .ok (.bool (fields.any (·.1 == key)))
+  | "Object.fromEntries", [.arr pairs] =>
+    match fromPairs [] pairs with
+    | some fields => .ok (.obj fields)
+    | none => .stuck
   | _, _ => .stuck
 
 /-- Looking a key up in an object or a dictionary: the first entry that carries it, `undefined` when
@@ -287,10 +302,6 @@ def restore (outer inner : Env) : Env :=
 def bindAll : List String → List Val → Env
   | n :: ns, v :: vs => (n, v) :: bindAll ns vs
   | _, _ => []
-
-def mapSet (es : List (String × Val)) (key : String) (v : Val) : List (String × Val) :=
-  if es.any (·.1 == key) then es.map (fun e => if e.1 == key then (key, v) else e)
-  else es ++ [(key, v)]
 
 /-- `ext` is how a function the generated code passed in gets called: `__map` is handed one, and the
 model of the generated code decides what it does. -/
