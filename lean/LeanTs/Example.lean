@@ -650,6 +650,24 @@ theorem entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDes
     Dts.TsSat program ty jv :=
   Dts.checkTy_tsSat program jv ty b d hd hc
 
+/-- The other direction, and the one a caller feels: an argument the published `.d.ts` type admits is one
+the entry check accepts. `Dts.inRange` is the whole of what is assumed about the value — the `Int53` and
+`UInt32` ranges the check reads, which a TypeScript type cannot express. The order the keys arrive in is
+not read, and neither are keys the type does not declare. -/
+theorem dts_fits_entry_check (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
+    (hd : Compile.tyDesc program b ty = .ok d) (hts : Dts.TsSat program ty jv)
+    (hr : Dts.inRange jv d = true) : Js.checkTy jv d = true :=
+  Dts.tsSat_checkTy program (Decl.typesNamesOk_of_compileProgram hm) jv ty b d hd hts hr
+
+/-- What comes back, rather than what goes in: a value the reference semantics gives a declared type to
+encodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration
+returns, and `decl_correct` says the generated function returns its encoding. -/
+theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
+    (v : Value) (ty : Ty) (hv : Value.hasTy program v ty = true) :
+    Dts.TsSat program ty (encodeValue v) :=
+  Dts.hasTy_tsSat program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
+
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
@@ -716,7 +734,15 @@ def manifest : Manifest := {
     { name := "entry_check_fits_dts"
       statement :=
         "every argument the entry check lets through is a value the published .d.ts type admits"
-      proof := entry_check_fits_dts }
+      proof := entry_check_fits_dts },
+    { name := "dts_fits_entry_check"
+      statement :=
+        "every argument the published .d.ts type admits passes the entry check, given only that its numbers lie in the Int53 and UInt32 ranges"
+      proof := dts_fits_entry_check },
+    { name := "encoded_values_fit_dts"
+      statement :=
+        "every value the reference semantics gives a declared type to encodes to one the published .d.ts type admits"
+      proof := encoded_values_fit_dts }
   ]
 }
 

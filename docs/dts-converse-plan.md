@@ -67,7 +67,9 @@ Float、JS 全体の字句・構文、TypeScript の型検査器のモデル化�
 
 **逆向きは仮定を 1 つに絞って述べる。** 「`.d.ts` の型を満たす」から「入口検査を通る」を導くのに
 本当に要るのは数値の範囲だけにする —— 並びは正規化が吸収し、余分なキーは正規化が落とす。
-仮定が 2 つ以上残るなら、それは設計がまだ穴を残しているということ。
+仮定が 2 つ以上残るなら、それは設計がまだ穴を残しているということ。数えているのは**値についての
+仮定**で、プログラムが検証を通っていること（`tyDesc` が成功したこと、`TypesNamesOk`）は前向きの
+主張も取っている前提なので、ここには数えない。
 
 ## Step 1. 正規化を模型に足す — 完了
 
@@ -151,15 +153,32 @@ Float、JS 全体の字句・構文、TypeScript の型検査器のモデル化�
 弾くと、逆向きの主張に「余分なキーが無いこと」という 2 つ目の仮定が付く。落としても生成コードは
 そのキーを読まないし、`__eq` はオブジェクトを名前で比べるので、観測できる違いは受理か `typeError` かだけ。
 
-## Step 5. 逆向きを述べて manifest に載せる
+## Step 5. 逆向きを述べて manifest に載せる — 完了
 
-1. `Dts.lean` に `tsSat_checkTy`:
-   `TsSat p ty jv → InRange jv d → Js.checkTy jv d = true`。
-   `InRange` は「`.num` が `Int53` / `UInt32` の記述子に当たる位置で、その範囲に収まっている」だけを
-   言う述語。これ以外の仮定を置かない
-2. `Example.lean` に利用者向けの形で書き、`Claim` を 1 本足す（16 → 17 本）
-3. `Axioms.lean` に `#print axioms` の行を足す
-4. `Dts.lean` の冒頭の「The converse fails」を書き直す
+`Dts.tsSat_checkTy` —— `.d.ts` の型を満たす値は、`inRange` の言う範囲に数値が収まっているかぎり
+入口検査を通る。**値について置いた仮定はこの 1 つだけ。** 並びは読まないし、宣言に無いキーも読まない。
+
+`inRange` は `Js.checkTy` の形の判定を全部通したもの、つまり数値の範囲だけを残したもの。どこにも
+走らない定義で、逆向きが仮定として置くためだけにある。
+
+`TsSat` はメンバシップから名前引きになった。`TsSatFields.cons` も `.some` / `.ok` / `.error` も
+`Js.lookupField jfs n = some x` を取る。TypeScript のプロパティの読み方がこれなので、`.d.ts` の読み
+としてはこちらのほうが忠実で、前向きの `checkTy_tsSat` は逆に短くなった（`lookupField_mem` で
+membership に落とす手間が消えた）。
+
+**プログラムについての仮定が 1 つ増えた** —— `Decl.TypesNamesOk` に「コンストラクタ名が相異なる」が
+入った。`Js.checkTy` は `alts.find?` で先頭のアームを取り、`TsSat.named` は「どれかのアーム」を言う
+ので、両者が同じアームを指すことに要る。`Compile.validateType` の `validateDistinct "constructor"` が
+既に見ているので、`typesNamesOk_of_compileProgram` から出る。
+
+`hasTy_tsSat` は Step 4 で `Dts.lean` の外から参照されなくなっていた。名前引きへの変更で
+`TypesNamesOk` を取るようになり、**`encoded_values_fit_dts` として manifest に載せた** ——
+`Value.hasTy` と `.d.ts` を繋ぐ主張はこれだけで、`typeSound` と合わせると入口ではなく**出口**、
+返ってくる値が `.d.ts` どおりであることになる。
+
+`Claim` は 16 → 18 本。`Axioms.lean` に 4 行（`dts_fits_entry_check` / `tsSat_checkTy` /
+`encoded_values_fit_dts` / `hasTy_tsSat`、いずれも `[propext, Classical.choice, Quot.sound]`）。
+出荷される JS と `.d.ts` は 1 バイトも動いていない —— 動いたのは `proof-manifest.json` だけ。
 
 ## Step 6. 実地で確かめて、文書を合わせる
 

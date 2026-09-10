@@ -134,6 +134,22 @@ between the trees the proofs are about and the text that ships.
 #guard_msgs in
 #print axioms LeanTs.Dts.checkTy_tsSat
 
+/-- info: 'LeanTs.Example.dts_fits_entry_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.dts_fits_entry_check
+
+/-- info: 'LeanTs.Dts.tsSat_checkTy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Dts.tsSat_checkTy
+
+/-- info: 'LeanTs.Example.encoded_values_fit_dts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.encoded_values_fit_dts
+
+/-- info: 'LeanTs.Dts.hasTy_tsSat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Dts.hasTy_tsSat
+
 /-- info: 'LeanTs.Decl.decl_traps_at_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Decl.decl_traps_at_cost

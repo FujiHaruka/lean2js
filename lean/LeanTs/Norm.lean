@@ -24,6 +24,11 @@ theorem lookupField_skip (pre suf : List (String × JsValue)) (k : String)
 theorem lookupField_head (k : String) (v : JsValue) (rest : List (String × JsValue)) :
     lookupField ((k, v) :: rest) k = some v := by simp [lookupField, List.find?]
 
+theorem lookupField_cons_ne {e : String × JsValue} {rest : List (String × JsValue)} {k : String}
+    (h : e.1 ≠ k) : lookupField (e :: rest) k = lookupField rest k := by
+  have hne : (e.1 == k) = false := by simp [h]
+  simp only [lookupField, List.find?, hne]
+
 /-! `normTy` and its companions are well-founded recursions, so each shape is unfolded once here rather
 than by `simp` at every use. -/
 

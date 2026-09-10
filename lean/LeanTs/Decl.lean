@@ -1117,12 +1117,13 @@ The entry check reads a constructor's fields by name; `encodeValue` writes them 
 proof about the entry has to know the two are the same reading, which is `Js.descOk`, and for a
 descriptor the compiler rendered it comes from the program having been validated. -/
 
-/-- Every constructor a declared type can produce names its fields apart from each other and from `tag`.
-`Compile.validateType` checks both, and `compileProgram` runs it over every declared type. -/
+/-- A declared type names its constructors apart from each other, and every constructor names its fields
+apart from each other and from `tag`. `Compile.validateType` checks all three, and `compileProgram` runs
+it over every declared type. -/
 def TypesNamesOk (p : Program) : Prop :=
-  ∀ (n : String) (args : List Ty) (t : TypeDef) (c : CtorDef),
-    p.findType? n = some t → c ∈ t.ctorsAt args →
-      (∀ f ∈ c.fields, f.name ≠ "tag") ∧ (c.fields.map (·.name)).Nodup
+  ∀ (n : String) (args : List Ty) (t : TypeDef), p.findType? n = some t →
+    ((t.ctorsAt args).map (·.name)).Nodup ∧
+      ∀ c ∈ t.ctorsAt args, (∀ f ∈ c.fields, f.name ≠ "tag") ∧ (c.fields.map (·.name)).Nodup
 
 theorem namesOk_of_nodup : ∀ {flds : List (String × Js.TyDesc)},
     (∀ n ∈ flds.map (·.1), n ≠ "tag") → (flds.map (·.1)).Nodup → Js.namesOk flds = true := by
@@ -1194,7 +1195,7 @@ theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty
     · rename_i alts halts
       cases hd
       rw [Js.descOk]
-      exact ih (fun c hc => hnames n args t c hfind hc) alts halts
+      exact ih (fun c hc => (hnames n args t hfind).2 c hc) alts halts
   | case15 budget hok alts halts =>
     rw [Compile.tyDescAlts.eq_def] at halts
     simp only at halts
@@ -1972,6 +1973,18 @@ theorem validateType_ctors {p : Program} {t : TypeDef} {u : Unit}
   · rename_i hnottag
     simpa using hnottag
 
+theorem validateType_ctorNames {p : Program} {t : TypeDef} {u : Unit}
+    (h : Compile.validateType p t = .ok u) : (t.ctors.map (·.name)).Nodup := by
+  rw [Compile.validateType] at h
+  simp only [bind, Except.bind] at h
+  split at h; · exact (errNeOk h).elim
+  split at h; · exact (errNeOk h).elim
+  split at h; · exact (errNeOk h).elim
+  split at h
+  · exact (errNeOk h).elim
+  · rename_i hdist
+    exact nodup_of_validateDistinct hdist
+
 theorem ctorsAt_names {t : TypeDef} {args : List Ty} {c : CtorDef} (hc : c ∈ t.ctorsAt args) :
     ∃ c0 ∈ t.ctors, c.fields.map (·.name) = c0.fields.map (·.name) := by
   obtain ⟨c0, hc0, rfl⟩ := List.mem_map.mp (by simpa [TypeDef.ctorsAt] using hc)
@@ -1986,10 +1999,13 @@ theorem typesNamesOk_of_compileProgram {p : Program} {m : Js.Module}
   split at hm; · exact (errNeOk hm).elim
   split at hm; · exact (errNeOk hm).elim
   rename_i htypes
-  intro n args t c hfind hc
+  intro n args t hfind
+  have hval := forM_ok _ htypes t (List.mem_of_find?_eq_some hfind)
+  refine ⟨?_, fun c hc => ?_⟩
+  · rw [show (t.ctorsAt args).map (·.name) = t.ctors.map (·.name) from by simp [TypeDef.ctorsAt]]
+    exact validateType_ctorNames hval
   obtain ⟨c0, hc0, hnames⟩ := ctorsAt_names hc
-  obtain ⟨hnotag, hnodup⟩ :=
-    validateType_ctors (forM_ok _ htypes t (List.mem_of_find?_eq_some hfind)) c0 hc0
+  obtain ⟨hnotag, hnodup⟩ := validateType_ctors hval c0 hc0
   refine ⟨fun f hf => ?_, hnames ▸ hnodup⟩
   have hf' : f.name ∈ c0.fields.map (·.name) :=
     hnames ▸ List.mem_map.mpr ⟨f, hf, rfl⟩

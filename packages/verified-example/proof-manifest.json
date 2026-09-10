@@ -341,6 +341,14 @@
     {
       "name": "entry_check_fits_dts",
       "statement": "every argument the entry check lets through is a value the published .d.ts type admits"
+    },
+    {
+      "name": "dts_fits_entry_check",
+      "statement": "every argument the published .d.ts type admits passes the entry check, given only that its numbers lie in the Int53 and UInt32 ranges"
+    },
+    {
+      "name": "encoded_values_fit_dts",
+      "statement": "every value the reference semantics gives a declared type to encodes to one the published .d.ts type admits"
     }
   ]
 }
