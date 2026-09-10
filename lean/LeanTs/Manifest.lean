@@ -28,7 +28,7 @@ structure Manifest where
   program : Core.Program
   claims : List Claim
 
-def Manifest.toJson (m : Manifest) : Json :=
+def Manifest.toJson (m : Manifest) (axioms : List String) : Json :=
   let exports := m.program.publicDecls.map fun d =>
     let params := d.params.map fun p => s!"{p.name} : {p.ty.render}"
     Json.obj [
@@ -44,7 +44,8 @@ def Manifest.toJson (m : Manifest) : Json :=
     ("leanToolchain", .str m.leanToolchain),
     ("source", .str m.source),
     ("exports", .arr exports),
-    ("theorems", .arr claims)
+    ("theorems", .arr claims),
+    ("axioms", .arr (axioms.map .str))
   ]
 
 end LeanTs

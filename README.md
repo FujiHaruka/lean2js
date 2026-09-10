@@ -133,6 +133,11 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
   符号化すると `.d.ts` の型を満たす
 - **差分テスト**: 生成した ESM を Node で実行し、`eval` の答えと突き合わせる。JS の模型が仮定している
   振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）はここで押さえる
+- **公理**: manifest に載る定理が `propext` / `Classical.choice` / `Quot.sound` 以外の公理に依らない
+  ことを、`leants` が書き出す前に確かめる（`collectAxioms`）。`sorry` で塞いだ証明は `lake build` を
+  警告だけで通ってしまうので、止めているのはこちら —— 許すのは 3 つだけなので、別の公理を持ち込む証明も
+  同じく書き出しに届かない。使った公理は `proof-manifest.json` の `axioms` に載る。処理系の側の
+  7 本の定理は `LeanTs/Axioms.lean` が `#print axioms` で固定している
 
 関数単位の主張は「模型の燃料が十分にあれば」の形をしている。これは**生成コードの模型**を全域にする
 ための装置で、本物の JavaScript には無い。出荷時に使う 10000 で足りていることは、上の実行時検査が
@@ -151,7 +156,7 @@ packages/verified-example/
   index.js.map          example.leants への source map（関数単位）
   index.d.ts            .d.ts。ADT は判別可能なユニオンに、型パラメータはジェネリクスになる
   example.leants        Core を書き出したソース
-  proof-manifest.json   定理・コンパイラ版・公開 API
+  proof-manifest.json   定理・証明が依る公理・コンパイラ版・公開 API
   package.json          exports / sideEffects / engines
   vectors.json          差分テストの入力と期待値
 ```

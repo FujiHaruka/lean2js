@@ -18,6 +18,9 @@ lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出�
 リファレンス意味論・生成した JavaScript の模型・small-step 意味論の 3 つが一致しなければ、
 パッケージは書き出されずに落ちる。
 
+`claims` に載せた定理の証明も書き出す前に見る。`propext` / `Classical.choice` / `Quot.sound` 以外の
+公理に依っていれば落ちる —— `sorry` で塞いだ証明は `lake build` を警告だけで通るので、止まるのはここ。
+
 ## 中身
 
 | ファイル | 役割 |

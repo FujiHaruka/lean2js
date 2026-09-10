@@ -12,11 +12,11 @@
 3. `lakefile.toml` の `name` / `[[lean_lib]]` を自分の名前に書き換える
 4. `MyLogic.lean` の例題を消して自分のロジックと定理を書く
 5. `manifest` の 7 フィールドを埋める（うち 4 つは処理系が知っているもの）
-6. `lake build && lake exe emit dist`
+6. `lake build && lake exe leants MyLogic --out dist`
 7. 出た `dist/` を自分の npm ワークスペースに置く
 
-利用者の手元に残る定型ファイルは 4 つ（`lakefile.toml` / `lean-toolchain` / `Main.lean` /
-`MyLogic.lean` の枠組み）で、うち自分のものは `MyLogic.lean` の中身だけ。
+利用者の手元に残る定型ファイルは 3 つ（`lakefile.toml` / `lean-toolchain` / `MyLogic.lean` の
+枠組み）で、うち自分のものは `MyLogic.lean` の中身だけ。
 
 ## 何が壊れているか
 
@@ -26,17 +26,11 @@ Lean の普通の作法に乗れない。コピーした瞬間に処理系との
 **`rev = "main"` を指している。** 利用者のビルドが main の更新で足元から変わる。`manifest` の
 `compiler := "0.1.0"` は手書きなので、何でビルドしたかを成果物が正しく述べない。
 
-**`Main.lean` は利用者の仕事ではない。** 中身は「import して manifest を `emit` に渡す」だけで、
-利用者ごとに違うのはモジュール名だけ。`lean-toolchain` も同じ（`lake update` が書ける、下記）。
+**`lean-toolchain` は利用者の仕事ではない。** `lake update` が依存から書ける（下記）。
 
 **`manifest` の 4 フィールドは処理系が知っている。** `compiler` / `leanToolchain` / `source` は
 手書きで、しかも間違えても誰も気づかない。証明 manifest が事実と違うことを言えてしまうのは、
 この成果物の売り物そのものを損なう。
-
-**`sorry` が通る。**（このリポジトリで実測。）利用者が `theorem foo : ... := by sorry` と書いて
-`claims` に載せても `lake build` は警告だけで成功し（exit 0）、`emit` は `claims` を一切見ないので
-`proof-manifest.json` に「証明した」と書かれた定理が出荷される。このリポジトリ自身は
-`LeanTs/Axioms.lean` の `#print axioms` 固定でこれを止めているが、**その防御は利用者には無い。**
 
 **依存すると 149 MB の olean を全部ビルドする。** `import LeanTs` は全 38 モジュールを引く。
 実測で olean 合計 149 MB、うち利用者が emit と定理記述に必要な閉包は 55 MB、**残り 93 MB は
@@ -125,7 +119,7 @@ npx @leants/check packages/order-logic             # 出た成果物を Node で
 
 順序は依存関係で決まっている。1 が 2 と 3 を可能にし、5 は 1〜4 と独立に進められる。
 
-### 1. `leants` が利用者の manifest を読む
+### 1. `leants` が利用者の manifest を読む — 完了
 
 `lean/Main.lean` を汎用ドライバに書き換える。
 
@@ -148,7 +142,7 @@ leants <Module> [--manifest <const>] [--out <dir>]
 **検査は別の default target に移す**（段階 5 と同じ話）。ここを落とすと `pnpm lean:build` が
 黙って何も検査しなくなる。
 
-### 2. `sorry` を止める
+### 2. `sorry` を止める — 完了
 
 `leants` が manifest 定数について `collectAxioms` を回し、`propext` / `Classical.choice` /
 `Quot.sound` 以外があれば **書き出さずに落ちる**。使った公理は `proof-manifest.json` に載せる
@@ -189,9 +183,10 @@ lakefile を見る。`pnpm lean:*` の `cd lean` が消え、`.gitignore` の `.
 コンパイラについての証明で、利用者は 1 つも import しない。
 
 - `LeanTs.lean` — 利用者が import するもの（上記 22）
-- `LeanTs/Checks.lean`（新）— `Correct` / `Sound` / `Exhaustive` / `Roundtrip` / `Renderable` /
-  `Decl` / `Dts` / `HelperProof` / `HelperAgree` / `HelperSem` / `Norm` / `Example` / `Tests` /
-  `Axioms` を引く。**`defaultTargets` に入れる**ので `pnpm lean:build` は今と同じものを検査する
+- `LeanTs/Checks.lean` — いまは `Axioms` / `Tests` だけを引いている。ここに `Correct` / `Sound` /
+  `Exhaustive` / `Roundtrip` / `Renderable` / `Decl` / `Dts` / `HelperProof` / `HelperAgree` /
+  `HelperSem` / `Norm` / `Example` を足す。すでに `defaultTargets` に入っているので、
+  `pnpm lean:build` は今と同じものを検査しつづける
 
 **ビルド済みを配る。** `preferReleaseBuild = true` を lakefile に置き、CI（macOS / Linux の
 matrix）でタグごとに `lake upload <tag>` する。これで利用者は 55 MB 分すらビルドしない。

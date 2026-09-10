@@ -12,7 +12,10 @@
 
 ### Phase 2 の到達点
 
-- proof manifest — 完了。`Claim` が証明項を持つので、定理を消すと `lake build` が落ちる
+- proof manifest — 完了。`Claim` が証明項を持つので、定理を消すと `lake build` が落ちる。`sorry` で
+  塞いだ証明は項として通ってしまうので、`leants` が書き出す前に manifest 定数の公理集合を見て、
+  `propext` / `Classical.choice` / `Quot.sound` 以外があれば書き出さずに落ちる。使った公理は
+  `proof-manifest.json` の `axioms` に載る
 - JS の意味論の模型（`JsSem.lean`）と、出荷する成果物がリファレンス意味論と一致することの実行時検査
   （`Agree.lean`）— 完了
 - 出荷するファイルのテキストが、コンパイラが作った AST に読み戻せること — 証明済み
@@ -70,8 +73,9 @@
 ### Phase 3 の到達点
 
 - source map / tree shaking / CI — 完了
-- 配布 — 完了。`emit` はライブラリ側にあり、利用者は自分の Lean パッケージで `LeanTs` に依存し、自分の
-  manifest を `emit` に渡す小さな実行ファイルを持つ。**npm に出るのは利用者の成果物のほう**で、
+- 配布 — 完了。利用者は自分の Lean パッケージで `LeanTs` に依存し、`lake exe leants <Module>` を呼ぶ。
+  実行ファイルは書かない —— `leants` がモジュールの `manifest` を実行時に読む。
+  **npm に出るのは利用者の成果物のほう**で、
   `packages/verified-example` はその形の見本にとどまる。雛形は `templates/verified-package/` にあり、
   空のディレクトリから通ることを `scripts/check-template.sh` が CI で確かめている
 - 定理は証明項であってデータではないので、プログラムをファイルで受け取る CLI では運べない。だから

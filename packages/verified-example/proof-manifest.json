@@ -350,5 +350,10 @@
       "name": "encoded_values_fit_dts",
       "statement": "every value the reference semantics gives a declared type to encodes to one the published .d.ts type admits"
     }
+  ],
+  "axioms": [
+    "Classical.choice",
+    "Quot.sound",
+    "propext"
   ]
 }
