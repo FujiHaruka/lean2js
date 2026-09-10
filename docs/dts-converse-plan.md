@@ -180,16 +180,25 @@ membership に落とす手間が消えた）。
 `encoded_values_fit_dts` / `hasTy_tsSat`、いずれも `[propext, Classical.choice, Quot.sound]`）。
 出荷される JS と `.d.ts` は 1 バイトも動いていない —— 動いたのは `proof-manifest.json` だけ。
 
-## Step 6. 実地で確かめて、文書を合わせる
+## Step 6. 実地で確かめて、文書を合わせる — 完了
 
-1. `Vectors.lean` に、フィールドを並べ替えた引数と余分なキーを持つ引数の出荷ベクタを足す。
-   `checkAgreement` が `eval` と JS の模型の一致を見る
-2. `packages/lean-ts/` に、生成された ESM を Node で実際に呼ぶ差分テストを足す。
-   計画の冒頭の表の 1 行目が通り、2 行目が変わらず `typeError` であることを実測する
-3. README の「保証の組み立て」の `.d.ts` の項と、その下の「`.d.ts` の型が通ることは…」の段落を
-   書き直す。`docs/mvp-plan.md` の到達点も
-4. ベクタ件数・`Helper.defs` の本数・`HelperSem` の表の行数・`Claim` の本数を、
-   引用しているすべての場所で直す
+`Vectors.lean` の `ArgShape` —— 出荷ベクタは引数ごとに「JS 側でどう書かれるか」を持てるようになった。
+`canonical` は `encodeValue` の綴り、`reversed` はオブジェクトのキーを後ろから、`extraKey` は
+`"not a field"` を足したもの（識別子ではないので、どのプログラムもその名前のフィールドを宣言できない）。
+どちらも配列と辞書の中まで降りる。公開関数ごと・引数ごとに、実際に形の変わるタプルを探して足すので、
+`cartTotal` のような配列引数も拾う。ベクタは 24431 → 24466 件。
+
+`Agree.reshapeJs` が `Js.JsValue` の側で同じ写像を持ち、`checkAgreement` は `v.args.map encodeValue`
+ではなく `v.jsArgs` で模型を呼ぶ。**並べ替えと余分なキーが `eval` との一致検査に入った。**
+`packages/lean-ts/src/vectors.ts` の `reshape` が Node 側の同じ写像。
+
+`packages/lean-ts/src/entry-check.test.ts` —— 冒頭の表を名指しで測る 4 本。並べ替えた `Money` が通り、
+宣言に無いキーを持つ `Money` が通り、そのキーは本体に届く前に落ち（`sameMoney` が `true` を返す）、
+`1e300` は変わらず `typeError`。
+
+README の `.d.ts` の項は両方向を書くようになり、その下の段落は「`.d.ts` の型が通れば入口検査も通る。
+但し書きは 1 点だけ」に変わった。`docs/mvp-plan.md` の「境界」の節が「順序と個数まで一致を要求する」と
+書いていたのを直し、`vectors.json` の形に `shapes` を足した。
 
 ## 順序と依存
 

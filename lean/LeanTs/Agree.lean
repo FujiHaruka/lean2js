@@ -44,6 +44,25 @@ termination_by xs => sizeOf xs
 
 end
 
+/-- What `ArgShape` names, applied to an encoded argument. Reversing an object's keys and giving it a key
+no type declares are both things the `.d.ts` admits and `encodeValue` never writes. A dictionary's keys
+are left where they are: they are a `Map`'s, and no order is declared for them. -/
+partial def reshapeJs (shape : ArgShape) : Js.JsValue → Js.JsValue
+  | .obj fields =>
+    let inner := fields.map fun (k, v) => (k, reshapeJs shape v)
+    match shape with
+    | .canonical => .obj inner
+    | .reversed => .obj inner.reverse
+    | .extraKey => .obj (inner ++ [(extraKeyName, .bool true)])
+  | .arr xs => .arr (xs.map (reshapeJs shape))
+  | .dict entries => .dict (entries.map fun (k, v) => (k, reshapeJs shape v))
+  | v => v
+
+/-- The arguments the generated code is called with: each `Value` encoded, then written the way the
+vector says a caller may write it. -/
+def TestVector.jsArgs (v : TestVector) : List Js.JsValue :=
+  v.args.zipIdx.map fun (a, i) => reshapeJs (v.shapeAt i) (encodeValue a)
+
 /-- Whether the result of `eval` and the result of the model are the same. Two failures are compared by
 the thrown `code`. -/
 def agrees : Except Err Value → Js.JsResult → Bool
@@ -54,11 +73,16 @@ def agrees : Except Err Value → Js.JsResult → Bool
 structure Disagreement where
   fn : String
   args : List Value
+  shapes : List ArgShape
   expected : Except Err Value
   actual : Js.JsResult
 
 def Disagreement.render (d : Disagreement) : String :=
-  let args := String.intercalate ", " (d.args.map fun v => toString (repr v))
+  let args :=
+    String.intercalate ", " (d.args.zipIdx.map fun (v, i) =>
+      match d.shapes.getD i .canonical with
+      | .canonical => toString (repr v)
+      | s => toString (repr v) ++ " as " ++ s.render)
   let expected :=
     match d.expected with
     | .ok v => toString (repr v)
@@ -72,9 +96,9 @@ def Disagreement.render (d : Disagreement) : String :=
 def disagreementsIn (m : Js.Module) (vectors : List TestVector) :
     List Disagreement :=
   vectors.filterMap fun v =>
-    let actual := Js.callFunction m v.fn (v.args.map encodeValue)
+    let actual := Js.callFunction m v.fn v.jsArgs
     if agrees v.expected actual then none
-    else some { fn := v.fn, args := v.args, expected := v.expected, actual }
+    else some { fn := v.fn, args := v.args, shapes := v.shapes, expected := v.expected, actual }
 
 /-- Whether small-step gives the same answer as big-step. Short-circuiting and evaluation order break
 nowhere else. -/

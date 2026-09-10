@@ -126,8 +126,10 @@ Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-ma
 入る前に引数を宣言した型と構造的に照合し、破っていれば `eval` と同じ `typeError` を投げるので、この
 前提は呼び出し側が何を渡しても成り立つ。`.d.ts` は同じことを TypeScript の呼び出し側に静的に伝える。
 
-検査は `eval` の `Value.hasTy` を写したもので、フィールドは順序と個数まで一致を要求する。欠けた
-フィールド・余分なフィールド・並べ替えは、どれも型エラーになる。
+検査は `eval` の `Value.hasTy` を写したものだが、オブジェクトのフィールドは**名前で**読む。並びは
+縛らず、宣言に無いキーは通したうえで本体に届く前に落とす。欠けたフィールドと型を破ったフィールドは
+型エラーになる。逆向き —— `.d.ts` の型を満たす引数は入口検査を通る —— も証明されており、残る但し書きは
+`Int53` / `UInt32` の範囲だけ（`dts_fits_entry_check`）。
 
 - `Int53` と `UInt32` の取り違えだけは検査できない。JS ではどちらもただの数で、区別は Lean 側の値の
   表現にしかない。ベクタ生成器も、この 2 つの取り違えを型エラーとして期待しない
@@ -150,8 +152,9 @@ Main.lean            leants 実行ファイル: index.js / index.d.ts / proof-ma
 相互再帰も書けず、走査は `map` / `filter` / `reduce` が受け持つ。`eval` の fuel は証明を閉じるための
 装置であって、サブセットの意味論ではない。
 
-差分テストの形: `leants` が `vectors.json`（`[{fn, args, expected}]`、`expected` は `eval` の結果で
-trap も符号化する）を出力し、Vitest が生成された ESM を実行して突き合わせる。
+差分テストの形: `leants` が `vectors.json`（`[{fn, args, shapes?, expected}]`、`expected` は `eval` の
+結果で trap も符号化し、`shapes` は引数を `.d.ts` が許すもう一つの綴り —— 並べ替え、宣言に無いキー ——
+で書けと言う）を出力し、Vitest が生成された ESM を実行して突き合わせる。
 
 出力先は実際の npm パッケージの形にする（`packages/verified-example/`）。提案書の配布ノードそのもので
 あり、差分がレビューできる。

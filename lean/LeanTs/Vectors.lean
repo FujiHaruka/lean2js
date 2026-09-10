@@ -118,10 +118,32 @@ private def randomTuples (p : Program) (s : UInt64) (tys : List Ty) : Nat → Li
       (acc ++ [randomValue p seed ty], nextSeed seed)
     row :: randomTuples p (nextSeed s') tys n
 
+/-- How an argument is written on the JS side. `encodeValue` puts `tag` first and the declared fields in
+declared order, but the `.d.ts` names no order and tolerates keys the type does not declare, so both of
+those readings need vectors of their own. Neither is a `Value`: the perturbation rides alongside the
+argument and is applied to its encoding. -/
+inductive ArgShape where
+  | canonical
+  | reversed
+  | extraKey
+  deriving BEq, Repr, Inhabited
+
+def ArgShape.render : ArgShape → String
+  | .canonical => "canonical"
+  | .reversed => "reversed"
+  | .extraKey => "extraKey"
+
+/-- The key `ArgShape.extraKey` adds. It is not an identifier, so no program can declare a field by that
+name and the key is undeclared whatever the program is. -/
+def extraKeyName : String := "not a field"
+
 structure TestVector where
   fn : String
   args : List Value
   expected : Except Err Value
+  shapes : List ArgShape := []
+
+def TestVector.shapeAt (v : TestVector) (i : Nat) : ArgShape := v.shapes.getD i .canonical
 
 partial def Value.toJson : Value → Json
   | .bool b => .obj [("t", .str "bool"), ("v", .bool b)]
@@ -143,7 +165,10 @@ def TestVector.toJson (v : TestVector) : Json :=
     match v.expected with
     | .ok value => [("ok", Json.bool true), ("value", value.toJson)]
     | .error e => [("ok", Json.bool false), ("error", .str e.code)]
-  .obj ([("fn", .str v.fn), ("args", .arr (v.args.map Value.toJson))] ++ outcome)
+  let shapes :=
+    if v.shapes.all (· == .canonical) then []
+    else [("shapes", Json.arr (v.shapes.map fun s => .str s.render))]
+  .obj ([("fn", .str v.fn), ("args", .arr (v.args.map Value.toJson))] ++ shapes ++ outcome)
 
 def vectorsFor (p : Program) (d : Decl) (edgeLimit randomCount : Nat) (seed : UInt64) :
     List TestVector :=
@@ -184,10 +209,51 @@ private def illTypedVectorsFor (p : Program) (d : Decl) (perParam : Nat) : List 
         let args := base.zipIdx.map fun (v, j) => if i == j then bad else v
         { fn := d.name, args, expected := evalCall p d.name args }
 
+/-- Whether reshaping an argument would change it: reversing needs an object carrying at least one field,
+adding a key needs only an object. Both look through arrays and dictionaries, since `__norm` does. -/
+private partial def reshapable : Value → Bool × Bool
+  | .obj _ fields => (!fields.isEmpty, true)
+  | .arr xs => xs.foldl (fun acc x => let r := reshapable x; (acc.1 || r.1, acc.2 || r.2)) (false, false)
+  | .dict es =>
+    es.foldl (fun acc e => let r := reshapable e.2; (acc.1 || r.1, acc.2 || r.2)) (false, false)
+  | _ => (false, false)
+
+/-- Whether a value of this type can hold an object at all. Nothing else is worth searching the tuples
+for, and a parameter that cannot hold one would otherwise cost a walk of the whole product. -/
+private def tyHasObj : Ty → Bool
+  | .named _ _ | .option _ | .result _ _ => true
+  | .array t => tyHasObj t
+  | .dict t => tyHasObj t
+  | _ => false
+
+/-- Calls each exported function with an argument the `.d.ts` admits and `encodeValue` would never write:
+its objects back to front, and its objects carrying a key no type declares. The entry check reads fields
+by name and `__norm` rebuilds what it accepted, so `eval` and the generated code have to agree on these
+the way they agree on the canonical spelling.
+
+The tuple is chosen per parameter rather than taken from the front, because the first edge case of an
+array or a dictionary is the empty one and reshaping that changes nothing. -/
+private def reshapedVectorsFor (p : Program) (d : Decl) : List TestVector :=
+  let tys := d.params.map (·.ty)
+  let tuples := edgeTuples p tys
+  let vectorAt := fun (i : Nat) (s : ArgShape) (changes : Value → Bool) =>
+    match tuples.find? fun row => (row.getD i (.bool false)) |> changes with
+    | none => []
+    | some base =>
+      [{ fn := d.name, args := base, expected := evalCall p d.name base,
+         shapes := base.zipIdx.map fun (_, j) => if i == j then s else ArgShape.canonical }]
+  tys.zipIdx.flatMap fun (ty, i) =>
+    if tyHasObj ty then
+      vectorAt i .reversed (fun v => (reshapable v).1)
+        ++ vectorAt i .extraKey (fun v => (reshapable v).2)
+    else []
+
 def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
   let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
   (p.decls.zip seeds).flatMap fun (d, seed) =>
-    if d.isPublic then vectorsFor p d edgeLimit randomCount seed ++ illTypedVectorsFor p d 3
+    if d.isPublic then
+      vectorsFor p d edgeLimit randomCount seed ++ illTypedVectorsFor p d 3
+        ++ reshapedVectorsFor p d
     else []
 
 /-- Fuel is a device for keeping termination inside the proof, not part of the subset's semantics. Since
