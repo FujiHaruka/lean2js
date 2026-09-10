@@ -573,7 +573,7 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
       .ok (.dict ((entries.map (·.1)).zip vs))
     | .check d x => do
       let v ← eval m f env x
-      if checkTy v d then .ok v else .error "typeError"
+      if checkTy v d then .ok (normTy v d) else .error "typeError"
     | .mapJs arr binder body => do
       match ← eval m f env arr with
       | .arr xs => do .ok (.arr (← evalMapJs m f env binder body xs))

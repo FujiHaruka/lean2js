@@ -1,5 +1,6 @@
 import LeanTs.Correct
 import LeanTs.Cost
+import LeanTs.Norm
 
 /-!
 # Decl
@@ -855,20 +856,152 @@ theorem eval_ident (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name : String) (
     Js.eval m (f + 1) jenv (.ident name) = .ok v := by
   rw [Js.eval.eq_def]; simp [h]
 
+/-! ### The descriptors the entry check reads
+
+The entry check hands the body a normalised value, so a proof about the entry has to know that reading a
+constructor's fields by name and reading them by position are the same reading. That is `Js.descOk`, and
+for a descriptor the compiler rendered it comes from the program having been validated. -/
+
+/-- Every constructor a declared type can produce names its fields apart from each other and from `tag`.
+`Compile.validateType` checks both, and `compileProgram` runs it over every declared type. -/
+def TypesNamesOk (p : Program) : Prop :=
+  ∀ (n : String) (args : List Ty) (t : TypeDef) (c : CtorDef),
+    p.findType? n = some t → c ∈ t.ctorsAt args →
+      (∀ f ∈ c.fields, f.name ≠ "tag") ∧ (c.fields.map (·.name)).Nodup
+
+theorem namesOk_of_nodup : ∀ {flds : List (String × Js.TyDesc)},
+    (∀ n ∈ flds.map (·.1), n ≠ "tag") → (flds.map (·.1)).Nodup → Js.namesOk flds = true := by
+  intro flds
+  induction flds with
+  | nil => intro _ _; rfl
+  | cons fd rest ih =>
+    intro htag hnd
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    obtain ⟨n, dd⟩ := fd
+    rw [Js.namesOk]
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true', List.any_eq_false]
+    refine ⟨⟨htag n (by simp), fun e he => ?_⟩, ih (fun m hm => htag m (by simp [hm])) hnd.2⟩
+    by_cases hb : e.1 = n
+    · exact absurd (List.mem_map.mpr ⟨e, he, hb⟩) hnd.1
+    · simp [hb]
+
+theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty) :
+    ∀ d, Compile.tyDesc p b ty = .ok d → Js.descOk d = true := by
+  induction b, ty using Compile.tyDesc.induct (p := p)
+    (motive2 := fun b cs =>
+      (∀ c ∈ cs, (∀ f ∈ c.fields, f.name ≠ "tag") ∧ (c.fields.map (·.name)).Nodup) →
+        ∀ alts, Compile.tyDescAlts p b cs = .ok alts → Js.altsOk alts = true)
+    (motive3 := fun b fs => ∀ flds, Compile.tyDescFields p b fs = .ok flds →
+      flds.map (·.1) = fs.map (·.name) ∧ Js.fieldsOk flds = true)
+    with
+  | case1 _ | case2 _ | case3 _ | case4 _ | case5 _ =>
+    intro d hd
+    rw [Compile.tyDesc.eq_def] at hd
+    simp only at hd
+    cases hd
+    rw [Js.descOk]
+  | case6 _ _ => intro d hd; rw [Compile.tyDesc.eq_def] at hd; simp at hd
+  | case7 budget t ih | case9 budget t ih | case10 budget t ih =>
+    intro d hd
+    rw [Compile.tyDesc.eq_def] at hd
+    simp only [bind, Except.bind] at hd
+    split at hd
+    · exact (errNeOk hd).elim
+    · rename_i inner hinner
+      cases hd
+      rw [Js.descOk]
+      exact ih inner hinner
+  | case8 budget a bb iha ihb =>
+    intro d hd
+    rw [Compile.tyDesc.eq_def] at hd
+    simp only [bind, Except.bind] at hd
+    split at hd
+    · exact (errNeOk hd).elim
+    · rename_i da hda
+      split at hd
+      · exact (errNeOk hd).elim
+      · rename_i db hdb
+        cases hd
+        rw [Js.descOk]
+        simp [iha da hda, ihb db hdb]
+  | case11 _ _ _ => intro d hd; rw [Compile.tyDesc.eq_def] at hd; simp at hd
+  | case12 _ _ => intro d hd; rw [Compile.tyDesc.eq_def] at hd; simp at hd
+  | case13 budget n args hfind =>
+    intro d hd
+    rw [Compile.tyDesc.eq_def] at hd
+    simp [hfind] at hd
+  | case14 budget n args t hfind ih =>
+    intro d hd
+    rw [Compile.tyDesc.eq_def] at hd
+    simp only [hfind, bind, Except.bind] at hd
+    split at hd
+    · exact (errNeOk hd).elim
+    · rename_i alts halts
+      cases hd
+      rw [Js.descOk]
+      exact ih (fun c hc => hnames n args t c hfind hc) alts halts
+  | case15 budget hok alts halts =>
+    rw [Compile.tyDescAlts.eq_def] at halts
+    simp only at halts
+    cases halts
+    rw [Js.altsOk]
+  | case16 budget c rest ihf ihr hok alts halts =>
+    rw [Compile.tyDescAlts.eq_def] at halts
+    simp only [bind, Except.bind] at halts
+    split at halts
+    · exact (errNeOk halts).elim
+    · rename_i flds hflds
+      split at halts
+      · exact (errNeOk halts).elim
+      · rename_i rs hrs
+        cases halts
+        obtain ⟨hmap, hfok⟩ := ihf flds hflds
+        obtain ⟨htag, hnd⟩ := hok c (by simp)
+        rw [Js.altsOk]
+        have hn : Js.namesOk flds = true := by
+          refine namesOk_of_nodup ?_ ?_
+          · intro n hn
+            rw [hmap] at hn
+            obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hn
+            exact htag f hf
+          · rw [hmap]; exact hnd
+        simp [hn, hfok, ihr (fun c' hc' => hok c' (by simp [hc'])) rs hrs]
+  | case17 budget flds hflds =>
+    rw [Compile.tyDescFields.eq_def] at hflds
+    simp only at hflds
+    cases hflds
+    exact ⟨rfl, by rw [Js.fieldsOk]⟩
+  | case18 budget f rest iht ihr flds hflds =>
+    rw [Compile.tyDescFields.eq_def] at hflds
+    simp only [bind, Except.bind] at hflds
+    split at hflds
+    · exact (errNeOk hflds).elim
+    · rename_i dt hdt
+      split at hflds
+      · exact (errNeOk hflds).elim
+      · rename_i rs hrs
+        cases hflds
+        obtain ⟨hmap, hfok⟩ := ihr rs hrs
+        refine ⟨by simp [hmap], ?_⟩
+        rw [Js.fieldsOk]
+        simp [iht dt hdt, hfok]
+
 theorem eval_check (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
-    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy v d = true) :
+    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hd : Js.descOk d = true)
+    (hc : Js.checkTy v d = true) :
     Js.eval m (f + 1) jenv (.check d x) = .ok v := by
   rw [Js.eval.eq_def]
   simp only [hx]
-  show (if Js.checkTy v d = true then Except.ok v else Except.error "typeError") = .ok v
-  rw [if_pos hc]
+  show (if Js.checkTy v d = true then Except.ok (Js.normTy v d) else Except.error "typeError")
+    = .ok v
+  rw [if_pos hc, Js.normTy_of_checkTy v d hd hc]
 
 theorem eval_check_fail (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
     (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy v d = false) :
     Js.eval m (f + 1) jenv (.check d x) = .error "typeError" := by
   rw [Js.eval.eq_def]
   simp only [hx]
-  show (if Js.checkTy v d = true then Except.ok v else Except.error "typeError")
+  show (if Js.checkTy v d = true then Except.ok (Js.normTy v d) else Except.error "typeError")
     = .error "typeError"
   rw [if_neg (by simp [hc])]
 
@@ -887,7 +1020,7 @@ theorem evalStmts_const_fail (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name :
   simp only [h]
   rfl
 
-theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat) :
+theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (hnames : TypesNamesOk p) (g : Nat) :
     ∀ (params : List Param) (args : List Value) (i : Nat) (checks rest : List Js.Stmt)
       (jenv : Js.JsEnv),
       paramChecks p i params = .ok checks →
@@ -915,7 +1048,7 @@ theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat) :
       intro val cs hval hcs hrest
       subst hcs
       rw [List.cons_append, evalStmts_const m (g + 2) jenv param.name val _ (cs ++ rest) hval,
-        evalStmts_paramChecks m p g ps as (i + 1) cs rest _ hrest htyped.2 hres.2
+        evalStmts_paramChecks m p hnames g ps as (i + 1) cs rest _ hrest htyped.2 hres.2
           (RawBound.cons_unreserved hres.1 hraw.2)]
       simp [checkedBindings]
     split at hchecks
@@ -932,14 +1065,15 @@ theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat) :
         | ok cs =>
           rw [hdesc, hrest] at hchecks
           refine hstep _ cs (eval_check m (g + 1) jenv desc _ _
-            (eval_ident m g jenv _ _ hraw.1)
+            (eval_ident m g jenv _ _ hraw.1) (descOk_tyDesc hnames _ _ desc hdesc)
             (checkTy_encodeValue p param.ty _ desc a hdesc htyped.1)) (Except.ok.inj hchecks).symm
             hrest
 termination_by params => params.length
 
 /-- Walking the same entry, the other way. At each parameter the check either throws or hands back a
 `Value` the argument is the encoding of, so reaching the body at all means every argument decoded. -/
-theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (g : Nat) :
+theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (hnames : TypesNamesOk p)
+    (g : Nat) :
     ∀ (params : List Param) (jargs : List Js.JsValue) (i : Nat) (checks rest : List Js.Stmt)
       (jenv : Js.JsEnv),
       paramChecks p i params = .ok checks →
@@ -981,8 +1115,10 @@ theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (g : Nat) :
           | true =>
             rw [List.cons_append,
               evalStmts_const m (g + 2) jenv param.name _ ja (cs ++ rest)
-                (eval_check m (g + 1) jenv desc _ ja hident hcheck)]
-            rcases evalStmts_paramChecks_sound m p g ps jas (i + 1) cs rest _ hrest hfn.2 hres.2
+                (eval_check m (g + 1) jenv desc _ ja hident
+                  (descOk_tyDesc hnames _ _ desc hdesc) hcheck)]
+            rcases evalStmts_paramChecks_sound m p hnames g ps jas (i + 1) cs rest _ hrest hfn.2
+              hres.2
               hlen (RawBound.cons_unreserved hres.1 hraw.2) hk.2 with hfail | ⟨args, rfl, htyped⟩
             · exact Or.inl hfail
             · refine Or.inr ?_
@@ -1568,6 +1704,25 @@ theorem ctorsAt_names {t : TypeDef} {args : List Ty} {c : CtorDef} (hc : c ∈ t
   obtain ⟨c0, hc0, rfl⟩ := List.mem_map.mp (by simpa [TypeDef.ctorsAt] using hc)
   exact ⟨c0, hc0, by simp⟩
 
+/-- The same reading of a validated program, in the form `Compile.tyDesc` walks: `findType?` and the
+constructors it expands, rather than `Compile.signature`. -/
+theorem typesNamesOk_of_compileProgram {p : Program} {m : Js.Module}
+    (hm : Compile.compileProgram p = .ok m) : TypesNamesOk p := by
+  rw [Compile.compileProgram] at hm
+  simp only [bind, Except.bind] at hm
+  split at hm; · exact (errNeOk hm).elim
+  split at hm; · exact (errNeOk hm).elim
+  rename_i htypes
+  intro n args t c hfind hc
+  obtain ⟨c0, hc0, hnames⟩ := ctorsAt_names hc
+  obtain ⟨hnotag, hnodup⟩ :=
+    validateType_ctors (forM_ok _ htypes t (List.mem_of_find?_eq_some hfind)) c0 hc0
+  refine ⟨fun f hf => ?_, hnames ▸ hnodup⟩
+  have hf' : f.name ∈ c0.fields.map (·.name) :=
+    hnames ▸ List.mem_map.mpr ⟨f, hf, rfl⟩
+  obtain ⟨f0, hf0, hfn⟩ := List.mem_map.mp hf'
+  exact hfn ▸ hnotag f0 hf0
+
 theorem signatureOk_of_compileProgram {p : Program} {m : Js.Module}
     (hm : Compile.compileProgram p = .ok m) : SignatureOk p := by
   rw [Compile.compileProgram] at hm
@@ -1780,7 +1935,8 @@ theorem decl_agrees_at (p : Program) (m : Js.Module) (hm : compileProgram p = .o
   rw [Js.callFunctionAt, hfindf]
   simp only [hparams, hfbody]
   rw [if_neg (by simp [rawParams_length, hlen]),
-    evalStmts_paramChecks m p g d.params args 0 checks stmts _ hchecks htyped hres
+    evalStmts_paramChecks m p (typesNamesOk_of_compileProgram hm) g d.params args 0 checks stmts _
+      hchecks htyped hres
       (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
   exact hgB (g + 2) (by omega)
 
@@ -1806,7 +1962,8 @@ theorem decl_traps_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok
   rw [Js.callFunctionAt, hfindf]
   simp only [hparams, hfbody]
   rw [if_neg (by simp [rawParams_length, hlen]),
-    evalStmts_paramChecks m p g d.params args 0 checks stmts _ hchecks htyped hres
+    evalStmts_paramChecks m p (typesNamesOk_of_compileProgram hm) g d.params args 0 checks stmts _
+      hchecks htyped hres
       (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
   exact hgB (g + 2) (by omega)
 
@@ -2018,7 +2175,8 @@ theorem decl_refuses (p : Program) (m : Js.Module) (fn : String) (d : Decl)
   simp only [hparams, hfbody]
   by_cases hlen : d.params.length = jargs.length
   · rw [if_neg (by simp [rawParams_length, hlen])]
-    rcases evalStmts_paramChecks_sound m p g' d.params jargs 0 checks stmts _ hchecks
+    rcases evalStmts_paramChecks_sound m p (typesNamesOk_of_compileProgram hm) g' d.params jargs 0
+      checks stmts _ hchecks
       (noFnParams_of_isPublic d.params (by simpa [Decl.isPublic] using hpub)) hres hlen
       (rawBound_bindAll d.params jargs 0 hlen) hk with hfail | ⟨args, rfl, htyped⟩
     · exact hfail

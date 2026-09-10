@@ -1,4 +1,5 @@
 import LeanTs.HelperSem
+import LeanTs.Norm
 
 /-!
 # HelperProof
@@ -3391,11 +3392,15 @@ theorem calls_has_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk 
       = .ok (.bool (Js.checkTy x t)) := by
   rw [calls_has, has_checkTy x t h]
 
-/-- What the generated code's entry check does to an argument: hand it back, or throw `typeError`. -/
+/-- What the generated code's entry check does to an argument: hand back the value the model's check
+normalises to, or throw `typeError`. The shipped source hands the argument back untouched, which is the
+same thing while the check reads a constructor's fields by position. -/
 theorem calls_ck_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk t = true) (f : Nat) :
     callDef ext (f + hasFuel (ofJs x) t + 9) "__ck" [ofJs x, tyVal t]
-      = ofRes (if Js.checkTy x t then .ok x else .error "typeError") := by
+      = ofRes (if Js.checkTy x t then .ok (Js.normTy x t) else .error "typeError") := by
   rw [calls_ck, has_checkTy x t h]
-  cases Js.checkTy x t <;> simp
+  cases hc : Js.checkTy x t
+  · simp
+  · rw [Js.normTy_of_checkTy x t h hc]; simp
 
 end LeanTs.HelperSem
