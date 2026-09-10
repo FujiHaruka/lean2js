@@ -174,6 +174,8 @@ lean/LeanTs/JsSem.lean      生成した JS の意味論の模型
 lean/LeanTs/Correct.lean    compiler correctness（断片）
 lean/LeanTs/Agree.lean      成果物に対する実行時の一致検査
 lean/LeanTs/Example.lean    出荷するプログラムと、それについての定理
+lean/LeanTs.lean            import LeanTs が引くもの（利用者のビルドはここまで）
+lean/LeanTs/Checks.lean     証明と #guard と公理固定。CI が建てる、利用者は引かない
 lean/Main.lean              leants 実行ファイル: 指定されたモジュールの manifest を読んで書き出す
 packages/lean-ts/           差分テスト・tree shaking・source map の検証
 packages/verified-example/  生成された npm パッケージ
@@ -209,5 +211,8 @@ lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出�
 
 `leants` は `LeanTs` が持つ実行ファイルで、`lake exe` が依存から解決する。利用者は実行ファイルを
 書かない —— モジュール名を渡すと、その `manifest` を実行時に読んで書き出す。
+
+利用者が建てるのは `import LeanTs` が引く 23 モジュール・56 MB だけで、コンパイラについての証明
+93 MB は入らない —— それは CI が建てるもので、利用者が再検査しても何も足されない。
 
 雛形の中身と書き換えどころは [`templates/verified-package/README.md`](templates/verified-package/README.md) にある。

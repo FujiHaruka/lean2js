@@ -1,12 +1,25 @@
-import LeanTs.Axioms
+import LeanTs.Correct
+import LeanTs.Sound
+import LeanTs.Exhaustive
+import LeanTs.Roundtrip
+import LeanTs.Renderable
+import LeanTs.Decl
+import LeanTs.Dts
+import LeanTs.HelperProof
+import LeanTs.HelperAgree
+import LeanTs.HelperSem
+import LeanTs.Norm
+import LeanTs.Example
 import LeanTs.Tests
+import LeanTs.Axioms
 
 /-!
 # Checks
 
-This repository's own checks, named as a target so that `lake build` runs them.
+Everything this repository checks about itself and a user does not: the compiler correctness proofs, the
+`#guard`s, the axiom pins, and the example the artifact is generated from.
 
-They used to ride along on `leants`, which imported them. The driver imports a user's module at run time
-and this repository's example not at all, so without a target of their own the `#guard`s and the axiom
-pins would go unbuilt — and a build with nothing checked looks exactly like a build that passed.
+It is a target of its own because nothing else names it. `leants` imports a user's module at run time and
+this repository's example not at all, so without this the proofs would go unbuilt — and a build with
+nothing checked looks exactly like a build that passed.
 -/

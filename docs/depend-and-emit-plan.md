@@ -27,12 +27,6 @@ Lean の普通の作法に乗れない。コピーした瞬間に処理系との
 
 **`lean-toolchain` は利用者の仕事ではない。** `lake update` が依存から書ける（下記）。
 
-**依存すると 149 MB の olean を全部ビルドする。** `import LeanTs` は全 38 モジュールを引く。
-実測で olean 合計 149 MB、うち利用者が emit と定理記述に必要な閉包は 55 MB、**残り 93 MB は
-コンパイラについての証明**（`HelperProof` 29 MB / `Correct` 15 MB / `Sound` 12 MB / `Decl` 9 MB
-/ `Roundtrip` 6 MB / `Renderable` 5 MB / `Dts` 4 MB ほか）。利用者はこれを再検査する必要がない
-（CI が検査している）のに、初回ビルドで全部通ることになる。
-
 **出したあと確かめる手段が利用者にない。** `vectors.json` は書き出されるのに、それを Node で
 突き合わせるハーネスはこのリポジトリの `packages/lean-ts`（`private`）の中にしかない。
 
@@ -169,16 +163,14 @@ lakefile を見る。`pnpm lean:*` の `cd lean` が消え、`.gitignore` の `.
 `scope` + `version` だけで `require` できる（登録前は
 `git = "https://github.com/FujiHaruka/lean.ts"` + `rev = "v0.1.0"` で同じことができる）。
 
-**モジュールを分ける。** `LeanTs.lean` が引くのを利用者に要るものだけにする。実測の import
-グラフでは、`Emit` の閉包 + `Syntax` / `Builder`（`decl%`）+ `Eval`（定理を書くための
-`evalCall_eq` / `evalExpr_*` はここにある）で **22 モジュール・55 MB**、残り 93 MB は
-コンパイラについての証明で、利用者は 1 つも import しない。
+**モジュールを分けた — 完了。** `LeanTs.lean` が引くのは `Emit` の閉包 + `Syntax` / `Builder`
+（`decl%`）+ `Eval`（定理を書くための `evalCall_eq` / `evalExpr_*` はここにある）だけになった。
+`LeanTs/Checks.lean` が残り —— `Correct` / `Sound` / `Exhaustive` / `Roundtrip` / `Renderable` /
+`Decl` / `Dts` / `HelperProof` / `HelperAgree` / `HelperSem` / `Norm` / `Example` / `Tests` /
+`Axioms` —— を引き、`defaultTargets` に入っているので `pnpm lean:build` は今までと同じものを検査する。
 
-- `LeanTs.lean` — 利用者が import するもの（上記 22）
-- `LeanTs/Checks.lean` — いまは `Axioms` / `Tests` だけを引いている。ここに `Correct` / `Sound` /
-  `Exhaustive` / `Roundtrip` / `Renderable` / `Decl` / `Dts` / `HelperProof` / `HelperAgree` /
-  `HelperSem` / `Norm` / `Example` を足す。すでに `defaultTargets` に入っているので、
-  `pnpm lean:build` は今と同じものを検査しつづける
+素のソースから下流パッケージを建てて実測すると、建つのは **23 モジュール・56 MB**（52 秒）で、
+証明の olean は 1 つも作られない。全部建てると 149 MB なので、**利用者のビルドから 93 MB が消えた。**
 
 **ビルド済みを配る。** `preferReleaseBuild = true` を lakefile に置き、CI（macOS / Linux の
 matrix）でタグごとに `lake upload <tag>` する。これで利用者は 55 MB 分すらビルドしない。
