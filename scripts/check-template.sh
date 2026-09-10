@@ -12,7 +12,7 @@ trap 'rm -rf "$work"' EXIT
 cp -R "$repo/templates/verified-package/." "$work/"
 rm -rf "$work/.lake" "$work/lake-manifest.json"
 
-python3 - "$work/lakefile.toml" "$repo/lean" <<'PY'
+python3 - "$work/lakefile.toml" "$repo" <<'PY'
 import re, sys
 path, dep = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -41,7 +41,7 @@ grep -q 'nothing_charged_below_one' dist/proof-manifest.json
 
 # `LeanTs.compilerVersion` is written down separately from the lakefile's, and a manifest naming a
 # version the package was not built at is worse than one naming none.
-lakefile_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo/lean/lakefile.toml")"
+lakefile_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo/lakefile.toml")"
 sed -n '/"compiler"/,/}/p' dist/proof-manifest.json | grep -q "\"version\": \"$lakefile_version\"" \
-  || { echo "the emitted manifest does not name the version in lean/lakefile.toml ($lakefile_version)"; exit 1; }
+  || { echo "the emitted manifest does not name the version in lakefile.toml ($lakefile_version)"; exit 1; }
 echo "template check passed: $(grep -c '^export function ' dist/index.js) export(s) written"

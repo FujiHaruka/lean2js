@@ -12,9 +12,9 @@
     "test": "vitest run",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "lean:build": "cd lean && lake build",
+    "lean:build": "lake build",
     "package:check": "publint packages/verified-example && attw --pack packages/verified-example --profile esm-only",
-    "lean:emit": "cd lean && lake exe leants LeanTs.Example --out ../packages/verified-example",
+    "lean:emit": "lake exe leants LeanTs.Example --out packages/verified-example",
     "template:check": "./scripts/check-template.sh"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 name = "LeanTs"
 version = "0.1.0"
+srcDir = "lean"
 defaultTargets = ["LeanTs", "checks", "leants"]
 
 [[lean_lib]]

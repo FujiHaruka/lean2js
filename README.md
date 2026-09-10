@@ -165,6 +165,7 @@ packages/verified-example/
 ## リポジトリ構成
 
 ```
+lakefile.toml               LeanTs パッケージ。ソースは srcDir = "lean"
 lean/LeanTs/Core.lean       サブセットの構文
 lean/LeanTs/Syntax.lean     Core 項へ展開される表層構文
 lean/LeanTs/Eval.lean       fuel 付き big-step のリファレンス意味論

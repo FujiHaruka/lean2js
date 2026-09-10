@@ -6,7 +6,6 @@ defaultTargets = ["MyLogic"]
 name = "LeanTs"
 git = "https://github.com/FujiHaruka/lean.ts"
 rev = "main"
-subDir = "lean"
 
 [[lean_lib]]
 name = "MyLogic"

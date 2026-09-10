@@ -155,9 +155,9 @@ leants <Module> [--manifest <const>] [--out <dir>]
 
 ### 5. 依存として解決できるようにする
 
-**root に lakefile を置く。** `lakefile.toml` と `lean-toolchain` をリポジトリ root へ移し、
-`srcDir = "lean"` でソースは今の場所に残す（実測で動作確認済み）。Reservoir は root の
-lakefile を見る。`pnpm lean:*` の `cd lean` が消え、`.gitignore` の `.lake` が root になる。
+**root に lakefile を置いた — 完了。** `lakefile.toml` / `lean-toolchain` / `lake-manifest.json` は
+root にあり、ソースは `srcDir = "lean"` で `lean/` に残っている。Reservoir が見るのは root の
+lakefile。`pnpm lean:*` の `cd lean` は消えた。雛形の `require` から `subDir` も消えた。
 
 **版を切る。** `v0.1.0` のタグを打ち、雛形の `rev = "main"` を捨てる。Reservoir に登録すれば
 `scope` + `version` だけで `require` できる（登録前は

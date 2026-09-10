@@ -10,14 +10,15 @@ Lean 4 で証明した業務ロジックを、普通の npm パッケージと�
 `git diff --exit-code -- packages/verified-example` で「コミットされた生成物が今の Lean から
 再生成できること」を見ている。手で直したものは、次に誰かが emit した瞬間に消える。
 
-**`leants` は書き出す前に検査する。** `Main.lean` の `emit` は `checkAgreement` を通ってから
-ファイルを書くので、出荷ベクタ全件について `eval` と JS の模型、`eval` と small-step が一致
-しなければ書き出し自体が失敗する。落ちたときに直すのはコンパイラか意味論であって、検査の側ではない。
+**`leants` は書き出す前に検査する。** `emit` は `checkAgreement` を通ってからファイルを書くので、
+出荷ベクタ全件について `eval` と JS の模型、`eval` と small-step が一致しなければ書き出し自体が
+失敗する。落ちたときに直すのはコンパイラか意味論であって、検査の側ではない。
 
 **manifest に載る定理は証明項そのものを持つ。** `Claim` が `proof` を取るので、定理を消せば
-`lake build` が落ちる。ただし `sorry` は項として通ってしまい、それを止めているのは
-`LeanTs/Axioms.lean` の `#print axioms` 固定のほう。**manifest に定理を足したら Axioms.lean に
-行も足す。**
+`lake build` が落ちる。`sorry` は項として通ってしまうが、`leants` が書き出す前に manifest 定数の
+公理集合を見て `propext` / `Classical.choice` / `Quot.sound` 以外があれば落ちる。
+`LeanTs/Axioms.lean` の `#print axioms` 固定はこれを `lake build` の側にも置いたもので、
+**manifest に定理を足したら Axioms.lean に行も足す。**
 
 ## 開発の進め方
 
@@ -40,7 +41,7 @@ git diff --exit-code -- packages/verified-example
 `.github/workflows/ci.yml` が見ているのはこれと同じもの。**一部だけ回した結果を判断に使わない** —
 Lean 側の変更は生成物と Node 側のテストの両方に届く。
 
-`lake` は `lean/` の中で動かす（`lakefile.toml` がそこにある）。`pnpm lean:*` はそれをやっている。
+`lake` はリポジトリ root で動かす（`lakefile.toml` は root、ソースは `srcDir = "lean"` で `lean/` にある）。
 
 ## 言語
 
