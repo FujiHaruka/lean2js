@@ -603,11 +603,14 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
     Js.callFunction m "add" [.str "1", .num 2] = .error "typeError" := by
   refine add_refuses m hm _ (by simp [Js.dictKeysDistinctList, Js.dictKeysDistinct]) ?_
   rintro ⟨args, hargs, -, htyped⟩
-  match args with
-  | [] => simp at hargs
-  | v :: rest =>
+  cases hargs with
+  | cons hdesc hnorm _ =>
     obtain ⟨i, rfl⟩ := hasTy_int53_inv htyped.1
-    simp [encodeValue] at hargs
+    rw [Compile.tyDesc.eq_def] at hdesc
+    simp only at hdesc
+    obtain rfl : Js.TyDesc.int53 = _ := (Except.ok.inj hdesc)
+    rw [Js.normTy.eq_def, encodeValue.eq_def] at hnorm
+    simp at hnorm
 
 /-- The same for `addMoney`: the only way its body throws is the `Int53` overflow of the sum, and the
 generated function throws that code. -/
@@ -640,12 +643,12 @@ theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : L
   HelperSem.helper_agrees ext name args r hok h
 
 /-- Everything the entry check lets through is a value the published `.d.ts` type admits. The two are
-not the same set: the check reads an object's fields by position and reads a number's range, and a
-TypeScript type says neither, so a call the `.d.ts` accepts can still be refused at the boundary. -/
+not the same set: the check reads a number's range, which a TypeScript type cannot say, so a call the
+`.d.ts` accepts can still be refused at the boundary. -/
 theorem entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
-    (hd : Compile.tyDesc program b ty = .ok d) (hc : Js.checkTy jv d = true)
-    (hk : Js.dictKeysDistinct jv = true) : Dts.TsSat program ty jv :=
-  Dts.checkTy_tsSat program jv ty b d hd hc hk
+    (hd : Compile.tyDesc program b ty = .ok d) (hc : Js.checkTy jv d = true) :
+    Dts.TsSat program ty jv :=
+  Dts.checkTy_tsSat program jv ty b d hd hc
 
 def manifest : Manifest := {
   package := "@leants/verified-example"

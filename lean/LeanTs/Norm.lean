@@ -3,12 +3,11 @@ import LeanTs.JsSem
 /-!
 # Norm
 
-What the entry check's normalisation does to a value the check accepted.
+The shapes of `Js.normTy` and `Js.checkFields`, unfolded once each.
 
-`Js.checkTy` reads a constructor's fields positionally, so an object it accepts already carries `tag`
-first and the fields in declared order. On those values `normTy` has nothing to rebuild, which is what
-`normTy_of_checkTy` says. That is what lets the normalisation be wired into the entry check without
-widening what any function accepts.
+Both are well-founded recursions over a value that is read by name, so neither reduces by `rfl` and
+neither is safe to hand to `simp` at a use site. The lemmas here are what the proofs about the entry
+check and its normalisation walk on.
 -/
 
 namespace LeanTs.Js
@@ -51,24 +50,158 @@ theorem normFields_cons {fields : List (String × JsValue)} {n : String} {t : Ty
   · next w hw => rw [h] at hw; injection hw with hw; subst hw; rfl
   · next hw => rw [h] at hw; exact absurd hw (by simp)
 
-theorem checkFields_nil {rest : List (String × JsValue)} (h : checkFields rest [] = true) :
-    rest = [] := by
-  cases rest with
-  | nil => rfl
-  | cons e es => obtain ⟨k, v⟩ := e; rw [checkFields.eq_def] at h; simp at h
+theorem normFields_none {fields : List (String × JsValue)} {n : String} {t : TyDesc}
+    {fs : List (String × TyDesc)} (h : lookupField fields n = none) :
+    normFields fields ((n, t) :: fs) = normFields fields fs := by
+  rw [normFields.eq_def]
+  dsimp only
+  split
+  · next w hw => rw [h] at hw; exact absurd hw (by simp)
+  · rfl
 
-theorem checkFields_cons {rest : List (String × JsValue)} {n : String} {t : TyDesc}
-    {ts : List (String × TyDesc)} (h : checkFields rest ((n, t) :: ts) = true) :
-    ∃ v rest', rest = (n, v) :: rest' ∧ checkTy v t = true ∧ checkFields rest' ts = true := by
-  cases rest with
-  | nil => rw [checkFields.eq_def] at h; simp at h
-  | cons e es =>
-    obtain ⟨k, v⟩ := e
-    rw [checkFields.eq_def] at h
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨⟨hk, hv⟩, hrest⟩ := h
-    subst hk
-    exact ⟨v, es, rfl, hv, hrest⟩
+theorem normTy_bool (b : Bool) : normTy (.bool b) .bool = .bool b := by rw [normTy.eq_def]
+
+theorem normTy_int53 (i : Int) : normTy (.num i) .int53 = .num i := by rw [normTy.eq_def]
+
+theorem normTy_uint32 (i : Int) : normTy (.num i) .uint32 = .num i := by rw [normTy.eq_def]
+
+theorem normTy_string (s : String) : normTy (.str s) .string = .str s := by rw [normTy.eq_def]
+
+theorem normTy_bigint (i : Int) : normTy (.bigint i) .bigint = .bigint i := by rw [normTy.eq_def]
+
+theorem normTy_array (xs : List JsValue) (t : TyDesc) :
+    normTy (.arr xs) (.array t) = .arr (normList xs t) := by rw [normTy.eq_def]
+
+theorem normTy_dict (es : List (String × JsValue)) (t : TyDesc) :
+    normTy (.dict es) (.dict t) = .dict (normEntries es t) := by rw [normTy.eq_def]
+
+theorem normTy_none {fields : List (String × JsValue)} {t : TyDesc}
+    (h : lookupField fields "tag" = some (.str "none")) :
+    normTy (.obj fields) (.option t) = .obj [("tag", .str "none")] := by
+  rw [normTy.eq_def]; simp [h]
+
+theorem normTy_some {fields : List (String × JsValue)} {t : TyDesc}
+    (h : lookupField fields "tag" = some (.str "some")) :
+    normTy (.obj fields) (.option t)
+      = .obj (("tag", .str "some") :: normFields fields [("value", t)]) := by
+  rw [normTy.eq_def]; simp [h]
+
+theorem normTy_ok {fields : List (String × JsValue)} {ok err : TyDesc}
+    (h : lookupField fields "tag" = some (.str "ok")) :
+    normTy (.obj fields) (.result ok err)
+      = .obj (("tag", .str "ok") :: normFields fields [("value", ok)]) := by
+  rw [normTy.eq_def]; simp [h]
+
+theorem normTy_error {fields : List (String × JsValue)} {ok err : TyDesc}
+    (h : lookupField fields "tag" = some (.str "error")) :
+    normTy (.obj fields) (.result ok err)
+      = .obj (("tag", .str "error") :: normFields fields [("error", err)]) := by
+  rw [normTy.eq_def]; simp [h]
+
+theorem normTy_ctors {fields : List (String × JsValue)} {ctor : String}
+    {alts : List (String × List (String × TyDesc))} {alt : String × List (String × TyDesc)}
+    (htag : lookupField fields "tag" = some (.str ctor))
+    (hf : alts.find? (·.1 == ctor) = some alt) :
+    normTy (.obj fields) (.ctors alts)
+      = .obj (("tag", .str ctor) :: normFields fields alt.2) := by
+  rw [normTy.eq_def]; simp [htag, hf]
+
+theorem normEntries_keys : ∀ (es : List (String × JsValue)) (t : TyDesc),
+    (normEntries es t).map (·.1) = es.map (·.1)
+  | [], t => by rw [normEntries_nil]
+  | (k, v) :: rest, t => by rw [normEntries_cons, List.map_cons, List.map_cons, normEntries_keys]
+
+theorem checkFields_nil (fields : List (String × JsValue)) : checkFields fields [] = true := by
+  rw [checkFields.eq_def]
+
+theorem checkFields_found {fields : List (String × JsValue)} {n : String} {t : TyDesc}
+    {ts : List (String × TyDesc)} {v : JsValue} (h : lookupField fields n = some v) :
+    checkFields fields ((n, t) :: ts) = (checkTy v t && checkFields fields ts) := by
+  rw [checkFields.eq_def]
+  dsimp only
+  split
+  · next w hw => rw [h] at hw; injection hw with hw; subst hw; rfl
+  · next hw => rw [h] at hw; exact absurd hw (by simp)
+
+theorem checkFields_missing {fields : List (String × JsValue)} {n : String} {t : TyDesc}
+    {ts : List (String × TyDesc)} (h : lookupField fields n = none) :
+    checkFields fields ((n, t) :: ts) = false := by
+  rw [checkFields.eq_def]
+  dsimp only
+  split
+  · next w hw => rw [h] at hw; exact absurd hw (by simp)
+  · rfl
+
+theorem lookupField_mem : ∀ {fields : List (String × JsValue)} {n : String} {v : JsValue},
+    lookupField fields n = some v → (n, v) ∈ fields := by
+  intro fields
+  induction fields with
+  | nil => intro n v h; simp [lookupField] at h
+  | cons e rest ih =>
+    obtain ⟨k, w⟩ := e
+    intro n v h
+    by_cases hk : (k == n) = true
+    · simp only [lookupField, List.find?, hk, Option.map_some, Option.some.injEq] at h
+      subst h
+      simp [eq_of_beq hk]
+    · simp only [Bool.not_eq_true] at hk
+      simp only [lookupField, List.find?, hk] at h
+      exact List.mem_cons_of_mem _ (ih h)
+
+theorem lookupField_cases (fields : List (String × JsValue)) (n : String) :
+    (∃ v, lookupField fields n = some v) ∨ lookupField fields n = none := by
+  cases h : lookupField fields n with
+  | none => exact Or.inr rfl
+  | some v => exact Or.inl ⟨v, rfl⟩
+
+theorem checkFields_cons {fields : List (String × JsValue)} {n : String} {t : TyDesc}
+    {ts : List (String × TyDesc)} (h : checkFields fields ((n, t) :: ts) = true) :
+    ∃ v, lookupField fields n = some v ∧ checkTy v t = true ∧ checkFields fields ts = true := by
+  rcases lookupField_cases fields n with ⟨v, hv⟩ | hv
+  · rw [checkFields_found hv, Bool.and_eq_true] at h
+    exact ⟨v, hv, h.1, h.2⟩
+  · rw [checkFields_missing hv] at h
+    exact absurd h (by simp)
+
+/-- `checkFields` reads only the keys the descriptor names, so two objects that answer those the same
+way answer the check the same way. -/
+theorem checkFields_congr : ∀ (ds : List (String × TyDesc)) (jfs jfs' : List (String × JsValue)),
+    (∀ n ∈ ds.map (·.1), lookupField jfs n = lookupField jfs' n) →
+    checkFields jfs ds = checkFields jfs' ds
+  | [], jfs, jfs', _ => by rw [checkFields_nil jfs, checkFields_nil jfs']
+  | (n, t) :: rest, jfs, jfs', h => by
+    have hn := h n (by simp)
+    rcases lookupField_cases jfs n with ⟨v, hv⟩ | hv
+    · rw [checkFields_found hv, checkFields_found (hn ▸ hv),
+        checkFields_congr rest jfs jfs' (fun m hm => h m (by simp [hm]))]
+    · rw [checkFields_missing hv, checkFields_missing (hn ▸ hv)]
+
+/-- `normFields` reads only the keys the descriptor names, so two objects that answer those the same
+way normalise the same way. -/
+theorem normFields_congr : ∀ (ds : List (String × TyDesc)) (jfs jfs' : List (String × JsValue)),
+    (∀ n ∈ ds.map (·.1), lookupField jfs n = lookupField jfs' n) →
+    normFields jfs ds = normFields jfs' ds
+  | [], jfs, jfs', _ => by rw [normFields_nil jfs, normFields_nil jfs']
+  | (n, t) :: rest, jfs, jfs', h => by
+    have hn := h n (by simp)
+    have hrest := normFields_congr rest jfs jfs' (fun m hm => h m (by simp [hm]))
+    rcases lookupField_cases jfs n with ⟨v, hv⟩ | hv
+    · rw [normFields_cons hv, normFields_cons (hn ▸ hv), hrest]
+    · rw [normFields_none hv, normFields_none (hn ▸ hv), hrest]
+
+theorem normFields_skip (e : String × JsValue) (rest : List (String × JsValue))
+    (ds : List (String × TyDesc)) (h : ∀ n ∈ ds.map (·.1), n ≠ e.1) :
+    normFields (e :: rest) ds = normFields rest ds :=
+  normFields_congr ds _ _ (fun n hn => by
+    have : (e.1 == n) = false := by simp [Ne.symm (h n hn)]
+    simp only [lookupField, List.find?, this])
+
+theorem checkFields_skip (e : String × JsValue) (rest : List (String × JsValue))
+    (ds : List (String × TyDesc)) (h : ∀ n ∈ ds.map (·.1), n ≠ e.1) :
+    checkFields (e :: rest) ds = checkFields rest ds :=
+  checkFields_congr ds _ _ (fun n hn => by
+    have : (e.1 == n) = false := by simp [Ne.symm (h n hn)]
+    simp only [lookupField, List.find?, this])
 
 theorem namesOk_head {n : String} {t : TyDesc} {ts : List (String × TyDesc)}
     (h : namesOk ((n, t) :: ts) = true) :
@@ -112,246 +245,5 @@ theorem altsOk_find {alts : List (String × List (String × TyDesc))} {ctor : St
     · simp only [Bool.not_eq_true] at hk
       rw [List.find?, hk] at hf
       exact ih h.2 hf
-
-/-- A constructor's fields, read by name off an object the positional check accepted, come back in the
-order they were declared — which is the order they are already in. `pre` is what the walk has passed:
-the tag, and the fields already read. -/
-theorem normFields_check (N : Nat)
-    (hsub : ∀ (y : JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d = true →
-      checkTy y d = true → normTy y d = y) :
-    ∀ (fs : List (String × TyDesc)) (pre rest : List (String × JsValue)),
-    (∀ e ∈ pre, ∀ m ∈ fs.map (·.1), e.1 ≠ m) →
-    namesOk fs = true → fieldsOk fs = true →
-    (∀ y ∈ rest.map (·.2), sizeOf y < N) →
-    checkFields rest fs = true →
-    normFields (pre ++ rest) fs = rest := by
-  intro fs
-  induction fs with
-  | nil => intro pre rest _ _ _ _ hc; rw [checkFields_nil hc, normFields_nil]
-  | cons fd fs ih =>
-    obtain ⟨n, t⟩ := fd
-    intro pre rest hpre hnames hfields hsize hc
-    obtain ⟨v, rest', rfl, hv, hrest⟩ := checkFields_cons hc
-    obtain ⟨hnotin, hnames'⟩ := namesOk_head hnames
-    rw [fieldsOk] at hfields
-    simp only [Bool.and_eq_true] at hfields
-    have hlook : lookupField (pre ++ (n, v) :: rest') n = some v := by
-      rw [lookupField_skip pre _ n (fun e he => hpre e he n (by simp)), lookupField_head]
-    have hval : normTy v t = v := hsub v (hsize v (by simp)) t hfields.1 hv
-    have hassoc : pre ++ (n, v) :: rest' = (pre ++ [(n, v)]) ++ rest' := by simp
-    rw [normFields_cons hlook, hval, hassoc]
-    congr 1
-    refine ih (pre ++ [(n, v)]) rest' ?_ hnames' hfields.2
-      (fun y hy => hsize y (by simp [hy])) hrest
-    intro e he m hm
-    rcases List.mem_append.mp he with hin | hin
-    · exact hpre e hin m (by simp [hm])
-    · simp only [List.mem_singleton] at hin
-      subst hin
-      exact fun hcontra => hnotin m hm hcontra.symm
-
-/-- The shape every object case takes: the tag sits in front, and the constructor's fields behind it are
-already the ones the descriptor names, in order. -/
-theorem normFields_tag (N : Nat)
-    (hsub : ∀ (y : JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d = true →
-      checkTy y d = true → normTy y d = y)
-    (ctor : String) (rest : List (String × JsValue)) (fs : List (String × TyDesc))
-    (hnames : namesOk fs = true) (hfields : fieldsOk fs = true)
-    (hsize : ∀ y ∈ rest.map (·.2), sizeOf y < N)
-    (hc : checkFields rest fs = true) :
-    normFields (("tag", JsValue.str ctor) :: rest) fs = rest := by
-  have h := normFields_check N hsub fs [("tag", .str ctor)] rest ?_ hnames hfields hsize hc
-  · simpa using h
-  · intro e he m hm
-    simp only [List.mem_singleton] at he
-    subst he
-    exact fun hcontra => namesOk_not_tag hnames m hm hcontra.symm
-
-theorem normList_check (N : Nat)
-    (hsub : ∀ (y : JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d = true →
-      checkTy y d = true → normTy y d = y) (t : TyDesc) (hd : descOk t = true) :
-    ∀ (xs : List JsValue), (∀ y ∈ xs, sizeOf y < N) → checkList xs t = true →
-    normList xs t = xs := by
-  intro xs
-  induction xs with
-  | nil => intro _ _; rw [normList_nil]
-  | cons y ys ih =>
-    intro hsize hc
-    rw [checkList.eq_def] at hc
-    simp only [Bool.and_eq_true] at hc
-    rw [normList_cons, hsub y (hsize y (by simp)) t hd hc.1]
-    congr 1
-    exact ih (fun z hz => hsize z (by simp [hz])) hc.2
-
-theorem normEntries_check (N : Nat)
-    (hsub : ∀ (y : JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d = true →
-      checkTy y d = true → normTy y d = y) (t : TyDesc) (hd : descOk t = true) :
-    ∀ (es : List (String × JsValue)), (∀ y ∈ es.map (·.2), sizeOf y < N) →
-    checkEntries es t = true → normEntries es t = es := by
-  intro es
-  induction es with
-  | nil => intro _ _; rw [normEntries_nil]
-  | cons e rest ih =>
-    obtain ⟨k, v⟩ := e
-    intro hsize hc
-    rw [checkEntries.eq_def] at hc
-    simp only [Bool.and_eq_true] at hc
-    rw [normEntries_cons, hsub v (hsize v (by simp)) t hd hc.1]
-    congr 1
-    exact ih (fun z hz => hsize z (by simp [hz])) hc.2
-
-theorem sizeOf_snd_mem {es : List (String × JsValue)} {y : JsValue} (h : y ∈ es.map (·.2)) :
-    sizeOf y < sizeOf es := by
-  obtain ⟨e, he, rfl⟩ := List.mem_map.mp h
-  have h1 := List.sizeOf_lt_of_mem he
-  have h2 : sizeOf e.2 < sizeOf e := by obtain ⟨k, v⟩ := e; simp; omega
-  omega
-
-theorem norm_aux : ∀ (N : Nat) (x : JsValue) (t : TyDesc), sizeOf x < N → descOk t = true →
-    checkTy x t = true → normTy x t = x := by
-  intro N
-  induction N with
-  | zero => intro x t h; exact absurd h (by omega)
-  | succ N ih =>
-    intro x t hlt hd hc
-    have hsub : ∀ (y : JsValue), sizeOf y < N → ∀ (d : TyDesc), descOk d = true →
-        checkTy y d = true → normTy y d = y := fun y hy d hdd => ih y d hy hdd
-    have hrest : ∀ (fields : List (String × JsValue)) (y : JsValue),
-        JsValue.obj fields = x → y ∈ fields.map (·.2) → sizeOf y < N := by
-      intro fields y hx hy
-      have := sizeOf_snd_mem hy
-      subst hx
-      simp only [JsValue.obj.sizeOf_spec] at hlt
-      omega
-    cases t with
-    | bool => cases x <;> first | rw [normTy.eq_def] | (rw [checkTy.eq_def] at hc; simp at hc)
-    | int53 => cases x <;> first | rw [normTy.eq_def] | (rw [checkTy.eq_def] at hc; simp at hc)
-    | uint32 => cases x <;> first | rw [normTy.eq_def] | (rw [checkTy.eq_def] at hc; simp at hc)
-    | string => cases x <;> first | rw [normTy.eq_def] | (rw [checkTy.eq_def] at hc; simp at hc)
-    | bigint => cases x <;> first | rw [normTy.eq_def] | (rw [checkTy.eq_def] at hc; simp at hc)
-    | array te =>
-      rw [descOk] at hd
-      cases x with
-      | arr xs =>
-        rw [checkTy.eq_def] at hc
-        simp only at hc
-        rw [normTy.eq_def]
-        simp only
-        rw [normList_check N hsub te hd xs (fun y hy => by
-          have := List.sizeOf_lt_of_mem hy
-          simp only [JsValue.arr.sizeOf_spec] at hlt
-          omega) hc]
-      | _ => rw [checkTy.eq_def] at hc; simp at hc
-    | dict te =>
-      rw [descOk] at hd
-      cases x with
-      | dict es =>
-        rw [checkTy.eq_def] at hc
-        simp only at hc
-        rw [normTy.eq_def]
-        simp only
-        rw [normEntries_check N hsub te hd es (fun y hy => by
-          have := sizeOf_snd_mem hy
-          simp only [JsValue.dict.sizeOf_spec] at hlt
-          omega) hc]
-      | _ => rw [checkTy.eq_def] at hc; simp at hc
-    | option te =>
-      rw [descOk] at hd
-      cases x with
-      | obj fields =>
-        cases fields with
-        | nil => rw [checkTy.eq_def] at hc; simp at hc
-        | cons e rest =>
-          obtain ⟨k, v⟩ := e
-          cases v with
-          | str c =>
-            by_cases hk : k = "tag"
-            · subst hk
-              rw [checkTy.eq_def] at hc
-              simp only at hc
-              by_cases h1 : c = "none"
-              · subst h1
-                cases rest with
-                | cons _ _ => simp [List.isEmpty] at hc
-                | nil =>
-                  rw [normTy.eq_def]
-                  simp only [lookupField_head]
-              · by_cases h2 : c = "some"
-                · subst h2
-                  rw [normTy.eq_def]
-                  simp only [lookupField_head]
-                  rw [normFields_tag N hsub "some" rest [("value", te)] (by simp [namesOk])
-                    (by rw [fieldsOk, fieldsOk]; simp [hd])
-                    (fun y hy => hrest _ y rfl (by simp [hy])) hc]
-                · simp at hc
-            · rw [checkTy.eq_def] at hc; simp [hk] at hc
-          | _ => rw [checkTy.eq_def] at hc; simp at hc
-      | _ => rw [checkTy.eq_def] at hc; simp at hc
-    | result a b =>
-      rw [descOk] at hd
-      simp only [Bool.and_eq_true] at hd
-      cases x with
-      | obj fields =>
-        cases fields with
-        | nil => rw [checkTy.eq_def] at hc; simp at hc
-        | cons e rest =>
-          obtain ⟨k, v⟩ := e
-          cases v with
-          | str c =>
-            by_cases hk : k = "tag"
-            · subst hk
-              rw [checkTy.eq_def] at hc
-              simp only at hc
-              by_cases h1 : c = "ok"
-              · subst h1
-                rw [normTy.eq_def]
-                simp only [lookupField_head]
-                rw [normFields_tag N hsub "ok" rest [("value", a)] (by simp [namesOk])
-                  (by rw [fieldsOk, fieldsOk]; simp [hd.1])
-                  (fun y hy => hrest _ y rfl (by simp [hy])) hc]
-              · by_cases h2 : c = "error"
-                · subst h2
-                  rw [normTy.eq_def]
-                  simp only [lookupField_head]
-                  rw [normFields_tag N hsub "error" rest [("error", b)] (by simp [namesOk])
-                    (by rw [fieldsOk, fieldsOk]; simp [hd.2])
-                    (fun y hy => hrest _ y rfl (by simp [hy])) hc]
-                · simp at hc
-            · rw [checkTy.eq_def] at hc; simp [hk] at hc
-          | _ => rw [checkTy.eq_def] at hc; simp at hc
-      | _ => rw [checkTy.eq_def] at hc; simp at hc
-    | ctors alts =>
-      rw [descOk] at hd
-      cases x with
-      | obj fields =>
-        cases fields with
-        | nil => rw [checkTy.eq_def] at hc; simp at hc
-        | cons e rest =>
-          obtain ⟨k, v⟩ := e
-          cases v with
-          | str c =>
-            by_cases hk : k = "tag"
-            · subst hk
-              rw [checkTy.eq_def] at hc
-              simp only at hc
-              cases hfind : alts.find? (·.1 == c) with
-              | none => rw [hfind] at hc; simp at hc
-              | some alt =>
-                rw [hfind] at hc
-                obtain ⟨hn, hf⟩ := altsOk_find hd hfind
-                obtain ⟨cn, cfs⟩ := alt
-                rw [normTy.eq_def]
-                simp only [lookupField_head, hfind]
-                rw [normFields_tag N hsub c rest cfs hn hf
-                  (fun y hy => hrest _ y rfl (by simp [hy])) hc]
-            · rw [checkTy.eq_def] at hc; simp [hk] at hc
-          | _ => rw [checkTy.eq_def] at hc; simp at hc
-      | _ => rw [checkTy.eq_def] at hc; simp at hc
-
-/-- Normalising a value the entry check accepted changes nothing: the check reads a constructor's fields
-positionally, so what it accepted is already in canonical order. -/
-theorem normTy_of_checkTy (x : JsValue) (t : TyDesc) (hd : descOk t = true)
-    (hc : checkTy x t = true) : normTy x t = x :=
-  norm_aux (sizeOf x + 1) x t (by omega) hd hc
 
 end LeanTs.Js

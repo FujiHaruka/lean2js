@@ -120,19 +120,31 @@ Float、JS 全体の字句・構文、TypeScript の型検査器のモデル化�
 - `calls_ck_checkTy` —— 文面は Step 2 のまま。新たに `Js.dictKeysDistinct x` を取る。
   `__norm` は辞書を `__dkeys` で回すので、鍵が相異なることが要る
 
-## Step 4. 検査を名前引きにする
+## Step 4. 検査を名前引きにする — 完了
 
-ここで初めて受け入れる集合が広がる。**模型とソースは同時に動かす**（`has_checkTy` が両者を縛って
-いるので、片方だけでは `lake build` が落ちる）。
+ここで受け入れる集合が広がった。**フィールドの並びは縛らない。宣言に無いキーは通り、`__norm` が
+落とす。** 出荷ベクタは 1 件も動かない —— 広がっただけで、通っていたものはそのまま通る。
 
-1. `JsSem.checkFields` を名前引きに。位置の一致と本数の一致をやめ、
-   「宣言された各フィールドがその名前で在り、型が合う」だけにする
-2. `checkTy` のオブジェクトの節を `.obj (("tag", .str ctor) :: rest)` から `tag` を名前で引く形に。
-   `tag` が先頭でなくても通る
-3. `Helper.lean` の `__hasFields` を `Object.hasOwn` で名前を引く形に。`HelperProof` の
-   `hasFieldsAt_check` を張り直し、`has_checkTy` を新しい両者について証明し直す
-4. `Decl.checkTy_sound` を
-   `checkTy jv d = true → ∃ v, normTy jv d = encodeValue v ∧ hasTy p v ty = true` として本当に証明する
+模型とソースを同時に動かした:
+
+- `JsSem.checkFields` は宣言された各フィールドを**名前で引く**。位置の一致も本数の一致も見ない。
+  `checkTy` のオブジェクトの節も `tag` を名前で引く
+- `Helper.lean` の `__hasFields` は `Object.hasOwn` で名前を引く。`Object.keys` の長さ比較と
+  `keys[i + 1]` の比較が消えた
+
+両側が名前引きになったので、`has_checkTy`（`__has` が決める述語と模型の入口検査が同じもの）は
+**記述子についての仮定を必要としなくなった**。位置と名前が割れる余地が無い。証明は
+`Js.checkTy.induct` に沿った 24 節で、`normV_ofJs` と同じ形。
+
+下流が動いた:
+
+- `Decl.checkTy_sound` は
+  `checkTy jv d = true → ∃ v, normTy jv d = encodeValue v ∧ hasTy p v ty = true` になった
+- `Decl.ArgsDecode`（新規）—— 各 JS 引数が宣言された型で正規化すると `Value` の符号化になる。
+  `EvalAccepts` はこれで述べる。`decl_refuses` の文面は変わらない
+- `Decl.normTy_encodeValue` —— `encodeValue` が書いた値の上で正規化は恒等。`eval_check` が使う
+- `Dts.checkTy_tsSat` は `checkTy_sound` を経由せず、`checkTy` の帰納で直接証明する形になった。
+  `Js.dictKeysDistinct` の仮定が落ち、`Classical.choice` にも依らなくなった（`Axioms.lean`）
 
 **余分なキーを落とすのは意図した選択。** TypeScript のオブジェクト型は、変数を経由して渡す値に
 余分なプロパティが載っていることを許す（禁じるのはその場のオブジェクトリテラルだけ）。落とさずに
@@ -162,15 +174,14 @@ Float、JS 全体の字句・構文、TypeScript の型検査器のモデル化�
 
 ## 順序と依存
 
-Step 1 → 2 → 3 → 4 は一本道で、順番を入れ替えられない。Step 2 と Step 3 が受け入れる集合を変えない
-まま模型と出荷コードの入口を動かし終えていることが、Step 4 で `Correct.lean` を動かさずに済む条件に
-なっている。Step 5 は Step 4 のあと。Step 6 は Step 4 のあとならいつでもよいが、README を 2 回
-書き直さないために最後に置く。
+Step 1 → 2 → 3 → 4 は一本道だった。Step 2 と Step 3 が受け入れる集合を変えないまま模型と出荷コードの
+入口を動かし終えていたことが、Step 4 で `Correct.lean` を動かさずに済んだ条件。Step 5 は Step 4 の
+あと。Step 6 は Step 4 のあとならいつでもよいが、README を 2 回書き直さないために最後に置く。
 
 ## 守ること
 
 - **保証を弱めて緑にしない。** 逆向きが重いときに `InRange` 以外の仮定を足して通さない。
-  仮定が増えるなら、それは Step 3 / 4 の正規化がまだ足りていない
+  仮定が増えるなら、それは正規化がまだ足りていない
 - **`sorry` で塞がない**（塞げば `Axioms.lean` が落ちる）
 - **実行時検査が落ちたときにベクタを減らさない**
 - **`packages/verified-example/` は生成物。** 手で直さない

@@ -17,17 +17,13 @@ TypeScript says about a property: the two part company only on an object holding
 not something a JavaScript object can be. Asking for a lookup instead would put "the declared field
 names are distinct" into every statement below, and it buys nothing on the values that exist.
 
-The entry check is the stricter of the two, and `checkTy_tsSat` is that direction. The converse fails:
-the check reads an object's fields by position, where a TypeScript object type does not constrain key
-order, and it reads an `Int53` or `UInt32` range, which `number` cannot express.
+The entry check is the stricter of the two, and `checkTy_tsSat` is that direction. The converse fails on
+one point: the check reads an `Int53` or `UInt32` range, which `number` cannot express.
 -/
 
 namespace LeanTs.Dts
 
 open LeanTs.Core
-
-def lookupJs (jfs : List (String × Js.JsValue)) (k : String) : Option Js.JsValue :=
-  (jfs.find? (·.1 == k)).map (·.2)
 
 mutual
 
@@ -43,20 +39,20 @@ inductive TsSat (p : Program) : Ty → Js.JsValue → Prop where
   | dict {t : Ty} {es : List (String × Js.JsValue)} :
       (∀ e ∈ es, TsSat p t e.2) → TsSat p (.dict t) (.dict es)
   | none {t : Ty} {jfs : List (String × Js.JsValue)} :
-      lookupJs jfs "tag" = some (.str "none") → TsSat p (.option t) (.obj jfs)
+      Js.lookupField jfs "tag" = some (.str "none") → TsSat p (.option t) (.obj jfs)
   | some {t : Ty} {jfs : List (String × Js.JsValue)} {x : Js.JsValue} :
-      lookupJs jfs "tag" = some (.str "some") → ("value", x) ∈ jfs → TsSat p t x →
+      Js.lookupField jfs "tag" = some (.str "some") → ("value", x) ∈ jfs → TsSat p t x →
       TsSat p (.option t) (.obj jfs)
   | ok {a e : Ty} {jfs : List (String × Js.JsValue)} {x : Js.JsValue} :
-      lookupJs jfs "tag" = some (.str "ok") → ("value", x) ∈ jfs → TsSat p a x →
+      Js.lookupField jfs "tag" = some (.str "ok") → ("value", x) ∈ jfs → TsSat p a x →
       TsSat p (.result a e) (.obj jfs)
   | error {a e : Ty} {jfs : List (String × Js.JsValue)} {x : Js.JsValue} :
-      lookupJs jfs "tag" = some (.str "error") → ("error", x) ∈ jfs → TsSat p e x →
+      Js.lookupField jfs "tag" = some (.str "error") → ("error", x) ∈ jfs → TsSat p e x →
       TsSat p (.result a e) (.obj jfs)
   | named {n : String} {args : List Ty} {t : TypeDef} {c : CtorDef}
       {jfs : List (String × Js.JsValue)} :
       p.findType? n = some t → c ∈ t.ctorsAt args →
-      lookupJs jfs "tag" = some (.str c.name) →
+      Js.lookupField jfs "tag" = some (.str c.name) →
       TsSatFields p c.fields jfs →
       TsSat p (.named n args) (.obj jfs)
 
@@ -74,8 +70,8 @@ theorem TsSatFields.weaken {p : Program} {fs : List Field}
   | .cons hm hx hrest => .cons (List.mem_cons_of_mem e hm) hx (weaken e hrest)
 
 theorem lookup_tag (ctor : String) (rest : List (String × Js.JsValue)) :
-    lookupJs (("tag", .str ctor) :: rest) "tag" = some (.str ctor) := by
-  simp [lookupJs]
+    Js.lookupField (("tag", .str ctor) :: rest) "tag" = some (.str ctor) :=
+  Js.lookupField_head _ _ _
 
 mutual
 
@@ -191,13 +187,152 @@ termination_by _ fs => sizeOf fs
 
 end
 
+mutual
+
 /-- What the entry check lets through, the `.d.ts` admits. The other direction does not hold: the check
-reads an object's fields by position and reads a number's range, and neither is something a TypeScript
-type can say. -/
-theorem checkTy_tsSat (p : Program) (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
-    (hd : Compile.tyDesc p b ty = .ok d) (hc : Js.checkTy jv d = true)
-    (hk : Js.dictKeysDistinct jv = true) : TsSat p ty jv := by
-  obtain ⟨v, rfl, hv⟩ := Decl.checkTy_sound p jv ty b d hd hc hk
-  exact hasTy_tsSat p v ty hv
+reads a number's range, which no TypeScript type can say. -/
+theorem checkTy_tsSat (p : Program) :
+    ∀ (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc),
+      Compile.tyDesc p b ty = .ok d → Js.checkTy jv d = true → TsSat p ty jv
+  | jv, .bool, b, d, hd, hc => by
+    rw [Decl.tyDesc_bool_inv hd] at hc
+    obtain ⟨x, rfl⟩ := Decl.checkTy_bool_inv hc
+    exact .bool x
+  | jv, .int53, b, d, hd, hc => by
+    rw [Decl.tyDesc_int53_inv hd] at hc
+    obtain ⟨i, rfl, -, -⟩ := Decl.checkTy_int53_inv hc
+    exact .int53 i
+  | jv, .uint32, b, d, hd, hc => by
+    rw [Decl.tyDesc_uint32_inv hd] at hc
+    obtain ⟨i, rfl, -, -⟩ := Decl.checkTy_uint32_inv hc
+    exact .uint32 i
+  | jv, .string, b, d, hd, hc => by
+    rw [Decl.tyDesc_string_inv hd] at hc
+    obtain ⟨x, rfl⟩ := Decl.checkTy_string_inv hc
+    exact .string x
+  | jv, .bigint, b, d, hd, hc => by
+    rw [Decl.tyDesc_bigint_inv hd] at hc
+    obtain ⟨i, rfl⟩ := Decl.checkTy_bigint_inv hc
+    exact .bigint i
+  | _, .var _, _, _, hd, _ => (Decl.tyDesc_var_inv hd).elim
+  | _, .fn _ _, _, _, hd, _ => (Decl.tyDesc_fn_inv hd).elim
+  | jv, .option elem, b, d, hd, hc => by
+    obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_option_inv hd
+    obtain ⟨fields, hjv⟩ := Decl.checkTy_option_shape hc
+    have hszf : ∀ (n : String) (jw : Js.JsValue), Js.lookupField fields n = some jw →
+        sizeOf jw < sizeOf jv := by
+      intro n jw h
+      have := Js.sizeOf_lookupField fields n h
+      rw [hjv]
+      simp only [Js.JsValue.obj.sizeOf_spec]
+      omega
+    rw [hjv] at hc ⊢
+    rcases Decl.checkTy_option_fields hc with htag | ⟨htag, hf⟩
+    · exact .none htag
+    · obtain ⟨jw, hlw, hw⟩ := Decl.checkFields_singleton_inv hf
+      have hsz := hszf "value" jw hlw
+      exact .some htag (Js.lookupField_mem hlw) (checkTy_tsSat p jw elem b de hde hw)
+  | jv, .result ok err, b, d, hd, hc => by
+    obtain ⟨dok, derr, hdok, hderr, rfl⟩ := Decl.tyDesc_result_inv hd
+    obtain ⟨fields, hjv⟩ := Decl.checkTy_result_shape hc
+    have hszf : ∀ (n : String) (jw : Js.JsValue), Js.lookupField fields n = some jw →
+        sizeOf jw < sizeOf jv := by
+      intro n jw h
+      have := Js.sizeOf_lookupField fields n h
+      rw [hjv]
+      simp only [Js.JsValue.obj.sizeOf_spec]
+      omega
+    rw [hjv] at hc ⊢
+    rcases Decl.checkTy_result_fields hc with ⟨htag, hf⟩ | ⟨htag, hf⟩
+    · obtain ⟨jw, hlw, hw⟩ := Decl.checkFields_singleton_inv hf
+      have hsz := hszf "value" jw hlw
+      exact .ok htag (Js.lookupField_mem hlw) (checkTy_tsSat p jw ok b dok hdok hw)
+    · obtain ⟨jw, hlw, hw⟩ := Decl.checkFields_singleton_inv hf
+      have hsz := hszf "error" jw hlw
+      exact .error htag (Js.lookupField_mem hlw) (checkTy_tsSat p jw err b derr hderr hw)
+  | jv, .array elem, b, d, hd, hc => by
+    obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_array_inv hd
+    obtain ⟨xs, hjv, hxs⟩ := Decl.checkTy_array_inv hc
+    have hsz : sizeOf xs < sizeOf jv := by
+      rw [hjv]
+      simp only [Js.JsValue.arr.sizeOf_spec]
+      omega
+    rw [hjv] at hc ⊢
+    exact .array (checkList_tsSat p xs elem b de hde hxs)
+  | jv, .dict elem, b, d, hd, hc => by
+    obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_dict_inv hd
+    obtain ⟨es, hjv, hes⟩ := Decl.checkTy_dict_inv hc
+    have hsz : sizeOf es < sizeOf jv := by
+      rw [hjv]
+      simp only [Js.JsValue.dict.sizeOf_spec]
+      omega
+    rw [hjv] at hc ⊢
+    exact .dict (checkEntries_tsSat p es elem b de hde hes)
+  | jv, .named n args, b, d, hd, hc => by
+    obtain ⟨b', t, alts, rfl, ht, halts, rfl⟩ := Decl.tyDesc_named_inv hd
+    obtain ⟨fields, hjv⟩ := Decl.checkTy_ctors_shape hc
+    have hszo : sizeOf fields < sizeOf jv := by
+      rw [hjv]
+      simp only [Js.JsValue.obj.sizeOf_spec]
+      omega
+    rw [hjv] at hc ⊢
+    obtain ⟨ctor, ds, htag, hfind, hf⟩ := Decl.checkTy_ctors_fields hc
+    obtain ⟨c, hc', hds⟩ := Decl.tyDescAlts_find_inv p b' (t.ctorsAt args) alts ctor ds halts hfind
+    have hname : c.name = ctor := by simpa using List.find?_some hc'
+    exact .named ht (List.mem_of_find?_eq_some hc') (hname ▸ htag)
+      (checkFields_tsSat p fields c.fields b' ds hds hf)
+termination_by jv => (sizeOf jv, 1, 0)
+
+theorem checkFields_tsSat (p : Program) :
+    ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (b : Nat)
+      (ds : List (String × Js.TyDesc)),
+      Compile.tyDescFields p b fdecls = .ok ds → Js.checkFields jfs ds = true →
+      TsSatFields p fdecls jfs
+  | jfs, [], _, ds, hds, _ => by
+    rw [Compile.tyDescFields.eq_def] at hds
+    simp only at hds
+    obtain rfl : ds = [] := (Except.ok.inj hds).symm
+    exact .nil
+  | jfs, fd :: fdecls, b, ds, hds, hf => by
+    rw [Compile.tyDescFields.eq_def] at hds
+    simp only at hds
+    cases hdd : Compile.tyDesc p b fd.ty with
+    | error e => rw [hdd] at hds; exact (Decl.errNeOk hds).elim
+    | ok dd =>
+      cases hrest : Compile.tyDescFields p b fdecls with
+      | error e => rw [hdd, hrest] at hds; exact (Decl.errNeOk hds).elim
+      | ok dsRest =>
+        rw [hdd, hrest] at hds
+        obtain rfl : ds = (fd.name, dd) :: dsRest := (Except.ok.inj hds).symm
+        obtain ⟨jw, hlw, hw, hfrest⟩ := Js.checkFields_cons hf
+        have hsz := Js.sizeOf_lookupField jfs fd.name hlw
+        exact .cons (Js.lookupField_mem hlw) (checkTy_tsSat p jw fd.ty b dd hdd hw)
+          (checkFields_tsSat p jfs fdecls b dsRest hrest hfrest)
+termination_by jfs fdecls => (sizeOf jfs, 0, sizeOf fdecls)
+
+theorem checkList_tsSat (p : Program) :
+    ∀ (jxs : List Js.JsValue) (elem : Ty) (b : Nat) (d : Js.TyDesc),
+      Compile.tyDesc p b elem = .ok d → Js.checkList jxs d = true → ∀ x ∈ jxs, TsSat p elem x
+  | [], _, _, _, _, _, x, hx => by simp at hx
+  | jx :: jrest, elem, b, d, hd, hc, x, hx => by
+    rw [Decl.checkList_cons, Bool.and_eq_true] at hc
+    rcases List.mem_cons.mp hx with heq | hm
+    · rw [heq]
+      exact checkTy_tsSat p jx elem b d hd hc.1
+    · exact checkList_tsSat p jrest elem b d hd hc.2 x hm
+termination_by jxs => (sizeOf jxs, 1, 0)
+
+theorem checkEntries_tsSat (p : Program) :
+    ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (b : Nat) (d : Js.TyDesc),
+      Compile.tyDesc p b elem = .ok d → Js.checkEntries jes d = true → ∀ e ∈ jes, TsSat p elem e.2
+  | [], _, _, _, _, _, e, he => by simp at he
+  | (key, jv) :: jrest, elem, b, d, hd, hc, e, he => by
+    rw [Decl.checkEntries_cons, Bool.and_eq_true] at hc
+    rcases List.mem_cons.mp he with rfl | hm
+    · exact checkTy_tsSat p jv elem b d hd hc.1
+    · exact checkEntries_tsSat p jrest elem b d hd hc.2 e hm
+termination_by jes => (sizeOf jes, 1, 0)
+
+end
 
 end LeanTs.Dts

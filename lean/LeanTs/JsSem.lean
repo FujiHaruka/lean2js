@@ -297,10 +297,38 @@ where
     | .str a, .str b => .ok (.bool (keep (compare a.toList b.toList)))
     | _, _ => .error "typeError"
 
+/-! ### Reading a field by name
+
+Everything below asks an object for a key rather than for a position: the order a JavaScript object
+carries its keys in is not something a caller can be held to. -/
+
+def lookupField (fields : List (String × JsValue)) (k : String) : Option JsValue :=
+  (fields.find? (·.1 == k)).map (·.2)
+
+theorem sizeOf_lookupField (fields : List (String × JsValue)) (k : String) {v : JsValue}
+    (h : lookupField fields k = some v) : sizeOf v < sizeOf fields := by
+  induction fields with
+  | nil => simp [lookupField] at h
+  | cons e rest ih =>
+    by_cases hk : e.1 == k
+    · simp only [lookupField, List.find?, hk, Option.map_some, Option.some.injEq] at h
+      subst h
+      have : sizeOf e.2 < sizeOf e := by cases e; simp; omega
+      simp only [List.cons.sizeOf_spec]
+      omega
+    · simp only [lookupField, List.find?, hk] at h
+      have := ih h
+      simp only [List.cons.sizeOf_spec]
+      omega
+
 mutual
 
 /-- Whether a value matches the type its declaration promised. This mirrors `Value.hasTy`; the two are
-held together by the vectors that call an exported function with an argument of the wrong shape. -/
+held together by the vectors that call an exported function with an argument of the wrong shape.
+
+A constructor's fields are read by name, so the order they arrive in does not matter and a key the
+descriptor does not name is ignored. `normTy` below is what puts such a value back into the shape
+`encodeValue` writes. -/
 def checkTy : JsValue → TyDesc → Bool
   | .bool _, .bool => true
   | .num i, .int53 => safeMin ≤ i && i ≤ safeMax
@@ -309,47 +337,53 @@ def checkTy : JsValue → TyDesc → Bool
   | .bigint _, .bigint => true
   | .arr xs, .array t => checkList xs t
   | .dict entries, .dict t => checkEntries entries t
-  | .obj (("tag", .str ctor) :: rest), .option t =>
-    match ctor with
-    | "none" => rest.isEmpty
-    | "some" => checkFields rest [("value", t)]
+  | .obj fields, .option t =>
+    match lookupField fields "tag" with
+    | some (.str "none") => true
+    | some (.str "some") => checkFields fields [("value", t)]
     | _ => false
-  | .obj (("tag", .str ctor) :: rest), .result ok err =>
-    match ctor with
-    | "ok" => checkFields rest [("value", ok)]
-    | "error" => checkFields rest [("error", err)]
+  | .obj fields, .result ok err =>
+    match lookupField fields "tag" with
+    | some (.str "ok") => checkFields fields [("value", ok)]
+    | some (.str "error") => checkFields fields [("error", err)]
     | _ => false
-  | .obj (("tag", .str ctor) :: rest), .ctors alts =>
-    match alts.find? (·.1 == ctor) with
-    | some (_, fields) => checkFields rest fields
-    | none => false
+  | .obj fields, .ctors alts =>
+    match lookupField fields "tag" with
+    | some (.str ctor) =>
+      match alts.find? (·.1 == ctor) with
+      | some alt => checkFields fields alt.2
+      | none => false
+    | _ => false
   | _, _ => false
-termination_by v => sizeOf v
+termination_by v => (sizeOf v, 1, 0)
 
-def checkFields : List (String × JsValue) → List (String × TyDesc) → Bool
-  | [], [] => true
-  | (key, value) :: rest, (name, t) :: ts =>
-    key == name && checkTy value t && checkFields rest ts
-  | _, _ => false
-termination_by fields => sizeOf fields
+def checkFields (fields : List (String × JsValue)) : List (String × TyDesc) → Bool
+  | [] => true
+  | (n, t) :: rest =>
+    match h : lookupField fields n with
+    | some v =>
+      have := sizeOf_lookupField fields n h
+      checkTy v t && checkFields fields rest
+    | none => false
+termination_by fs => (sizeOf (JsValue.obj fields), 0, sizeOf fs)
 
 def checkList : List JsValue → TyDesc → Bool
   | [], _ => true
   | x :: rest, t => checkTy x t && checkList rest t
-termination_by xs => sizeOf xs
+termination_by xs => (sizeOf xs, 1, 0)
 
 def checkEntries : List (String × JsValue) → TyDesc → Bool
   | [], _ => true
   | (_, v) :: rest, t => checkTy v t && checkEntries rest t
-termination_by entries => sizeOf entries
+termination_by entries => (sizeOf entries, 1, 0)
 
 end
 
 /-! ### Descriptors a compiled type renders
 
 Field names a constructor may carry: distinct, and none of them `tag`. `Compile.lean` rejects a field
-called `tag`, and `Decl.lean` proves the names distinct for a well-formed type. Without both, reading a
-field by name and reading it by position are different readings of the same object. -/
+called `tag`, and `Decl.lean` proves the names distinct for a well-formed type. Without both, the object
+this reads by name and the `Value` the reference semantics reads by position are different readings. -/
 
 def namesOk : List (String × TyDesc) → Bool
   | [] => true
@@ -378,29 +412,10 @@ end
 
 /-! ### The canonical shape
 
-`checkTy` reads a constructor's fields positionally, so a value it accepts is already the one
-`encodeValue` builds. `normTy` is what lets the check read them by name instead: it rebuilds an object
-with `tag` first and the constructor's fields in declared order, dropping keys the descriptor does not
-name, so what reaches the body is the canonical value again. -/
-
-def lookupField (fields : List (String × JsValue)) (k : String) : Option JsValue :=
-  (fields.find? (·.1 == k)).map (·.2)
-
-theorem sizeOf_lookupField (fields : List (String × JsValue)) (k : String) {v : JsValue}
-    (h : lookupField fields k = some v) : sizeOf v < 1 + sizeOf fields := by
-  induction fields with
-  | nil => simp [lookupField] at h
-  | cons e rest ih =>
-    by_cases hk : e.1 == k
-    · simp only [lookupField, List.find?, hk, Option.map_some, Option.some.injEq] at h
-      subst h
-      have : sizeOf e.2 < sizeOf e := by cases e; simp; omega
-      simp only [List.cons.sizeOf_spec]
-      omega
-    · simp only [lookupField, List.find?, hk] at h
-      have := ih h
-      simp only [List.cons.sizeOf_spec]
-      omega
+`checkTy` reads a constructor's fields by name, so a value it accepts may carry them in any order and may
+carry keys the descriptor does not name. `normTy` rebuilds it with `tag` first and the constructor's
+fields in declared order, dropping the keys the descriptor does not name, so what reaches the body is the
+value `encodeValue` writes. -/
 
 mutual
 

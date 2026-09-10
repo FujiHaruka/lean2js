@@ -126,11 +126,11 @@ between the trees the proofs are about and the text that ships.
 #guard_msgs in
 #print axioms LeanTs.HelperSem.helper_agrees
 
-/-- info: 'LeanTs.Example.entry_check_fits_dts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanTs.Example.entry_check_fits_dts' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Example.entry_check_fits_dts
 
-/-- info: 'LeanTs.Dts.checkTy_tsSat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanTs.Dts.checkTy_tsSat' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Dts.checkTy_tsSat
 

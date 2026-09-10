@@ -292,22 +292,16 @@ const __reduce = (xs, init, f) => {
 
 const __isObj = (x) => (((typeof x) === "object") && ((x !== null) && (!Array.isArray(x))));
 
-// Fields are compared in order and by count, because eval compares them that way: a missing
-// field, an extra one and a reordering are all type errors.
+// A key the declared type does not name is ignored rather than refused: TypeScript lets a
+// value reach a call carrying extra properties, and __ck drops them before the body runs.
 const __hasFields = (x, fields) => {
-  const keys = Object.keys(x);
-  if (((keys).length !== ((fields).length + 1))) {
-    return false;
-  }
-  let i = 0;
   for (const f of fields) {
-    if (((keys)[(i + 1)] !== (f)[0])) {
+    if ((!Object.hasOwn(x, (f)[0]))) {
       return false;
     }
     if ((!__has((x)[(f)[0]], (f)[1]))) {
       return false;
     }
-    i = (i + 1);
   }
   return true;
 };

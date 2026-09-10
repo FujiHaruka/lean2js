@@ -561,19 +561,14 @@ def isObj : Def :=
 def hasFields : Def :=
 
   { name := "__hasFields", params := ["x", "fields"]
-    doc := ["Fields are compared in order and by count, because eval compares them that way: a missing",
-            "field, an extra one and a reordering are all type errors."]
+    doc := ["A key the declared type does not name is ignored rather than refused: TypeScript lets a",
+            "value reach a call carrying extra properties, and __ck drops them before the body runs."]
     body := .block [
-      .const "keys" (.prim "Object.keys" [(.var "x")]),
-      .ifThen (.bin "!==" (lengthOf (.var "keys"))
-        (.bin "+" (lengthOf (.var "fields")) (.num 1))) [.ret (.bool false)],
-      .letMut "i" (.num 0),
       .forOf "f" (.var "fields") [
-        .ifThen (.bin "!==" (.index (.var "keys") (.bin "+" (.var "i") (.num 1)))
-          (.index (.var "f") (.num 0))) [.ret (.bool false)],
+        .ifThen (.not (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)]))
+          [.ret (.bool false)],
         .ifThen (.not (.call "__has" [.index (.var "x") (.index (.var "f") (.num 0)),
-          .index (.var "f") (.num 1)])) [.ret (.bool false)],
-        .setVar "i" (.bin "+" (.var "i") (.num 1))],
+          .index (.var "f") (.num 1)])) [.ret (.bool false)]],
       .ret (.bool true)] }
 
 /-! `__has` dispatches on the head of the descriptor, and every branch below is named so that a proof
