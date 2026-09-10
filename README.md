@@ -178,7 +178,7 @@ lean/LeanTs/Example.lean    出荷するプログラムと、それについて�
 lean/LeanTs.lean            import LeanTs が引くもの（利用者のビルドはここまで）
 lean/LeanTs/Checks.lean     証明と #guard と公理固定。CI が建てる、利用者は引かない
 lean/Main.lean              leants 実行ファイル: 指定されたモジュールの manifest を読んで書き出す
-packages/lean-ts/           差分テスト・tree shaking・source map の検証
+packages/lean-ts/           @leants/check —— 成果物に vectors.json を当てる CLI と、その差分テスト
 packages/verified-example/  生成された npm パッケージ
 templates/verified-package/ 利用者が自分のロジックを書きはじめるためのパッケージの雛形
 scripts/                    雛形が空のディレクトリから通ることを確かめる検査
@@ -208,6 +208,7 @@ pnpm template:check  # 雛形が空のディレクトリから通ることを確
 cp -R templates/verified-package my-logic && cd my-logic
 lake build                          # ロジックと定理を検査する
 lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出す
+npx @leants/check dist              # 出た成果物を Node で突き合わせる
 ```
 
 `leants` は `LeanTs` が持つ実行ファイルで、`lake exe` が依存から解決する。利用者は実行ファイルを
@@ -215,5 +216,9 @@ lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出�
 
 利用者が建てるのは `import LeanTs` が引く 23 モジュール・56 MB だけで、コンパイラについての証明
 93 MB は入らない —— それは CI が建てるもので、利用者が再検査しても何も足されない。
+
+`npx @leants/check <dir>` は成果物の `vectors.json` を `index.js` に当て、`proof-manifest.json` の
+要約（公開 API の本数・定理・依っている公理）を出す。このリポジトリが自分の成果物に回している
+差分テストと同じもので、利用者の CI の 1 行になる。
 
 雛形の中身と書き換えどころは [`templates/verified-package/README.md`](templates/verified-package/README.md) にある。

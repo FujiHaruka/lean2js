@@ -9,6 +9,7 @@ Lean で書いた業務ロジックと、それについての定理から、npm
 cp -R templates/verified-package my-logic && cd my-logic
 lake build                          # ロジックと定理を検査する
 lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出す
+npx @leants/check dist              # 出た成果物を Node で突き合わせる
 ```
 
 `leants` は `LeanTs` が持つ実行ファイルで、`lake exe` が依存から解決する。渡すのはモジュール名で、
@@ -20,6 +21,9 @@ lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出�
 
 `claims` に載せた定理の証明も書き出す前に見る。`propext` / `Classical.choice` / `Quot.sound` 以外の
 公理に依っていれば落ちる —— `sorry` で塞いだ証明は `lake build` を警告だけで通るので、止まるのはここ。
+
+`npx @leants/check dist` は出たパッケージの `vectors.json` を `index.js` に当て、一致しなければ
+落ちる。Lean を持たない CI でも回せるのはこちら。
 
 ## 中身
 

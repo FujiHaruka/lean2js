@@ -10,7 +10,7 @@
       "**",
       "!**/dist",
       "!docs/proposal.html",
-      "!lean/lake-manifest.json",
+      "!lake-manifest.json",
       "!packages/verified-example"
     ]
   },

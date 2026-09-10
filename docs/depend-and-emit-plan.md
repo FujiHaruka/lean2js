@@ -27,9 +27,6 @@ Lean の普通の作法に乗れない。コピーした瞬間に処理系との
 
 **`lean-toolchain` は利用者の仕事ではない。** `lake update` が依存から書ける（下記）。
 
-**出したあと確かめる手段が利用者にない。** `vectors.json` は書き出されるのに、それを Node で
-突き合わせるハーネスはこのリポジトリの `packages/lean-ts`（`private`）の中にしかない。
-
 ## Approach
 
 `require` 一つに畳む。動きは 3 つ、そこに保証が 1 つ増える。
@@ -176,17 +173,20 @@ lakefile。`pnpm lean:*` の `cd lean` は消えた。雛形の `require` から
 matrix）でタグごとに `lake upload <tag>` する。これで利用者は 55 MB 分すらビルドしない。
 Lake は `lake cache` 経由の Reservoir ビルドキャッシュも見るので、そちらが使えるなら合わせる。
 
-### 6. npm 側の検査を配る
+### 6. npm 側の検査を配る — 完了
 
-`packages/lean-ts` を `@leants/check` として公開可能にし、CLI を 1 本足す。
+`packages/lean-ts` は `@leants/check` になった（`private` が外れ、`bin` が 1 本ある）。
 
 ```
 npx @leants/check <dir>   # dir/vectors.json を dir/index.js に当て、proof-manifest を要約して出す
 ```
 
-中身は `packages/lean-ts/src/differential.test.ts` がやっていることそのもの（`loadVectors` /
-`decodeArgs` / `decode` は既にある）。利用者は vitest も tsconfig も持たずに、自分の成果物に対して
-このリポジトリと同じ差分テストを回せる。CI の 1 行にもなる。
+中身は `differential.test.ts` がやっていることそのもの。利用者は vitest も tsconfig も持たずに、
+自分の成果物に対してこのリポジトリと同じ差分テストを回せる。
+
+検査器そのものが素通りしないことは `src/check.test.ts` が見る —— 値違い・`-0`・export 欠け・
+落ちるべきところで返る・エラーコード違いを、それぞれ 1 件の失敗として報告することまで固定してある。
+`scripts/check-template.sh` からは呼ばない（CI の Lean ジョブに Node のビルドが無い）。
 
 ### 7.（任意）属性で `decls` と `claims` を集める
 
