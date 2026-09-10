@@ -2075,7 +2075,7 @@ theorem sizeOf_lookupV_lt (es : List (String × Val)) (k : String) :
 
 /-! ## Entry checks -/
 
-open LeanTs.Js (TyDesc)
+open LeanTs.Js (TyDesc namesOk descOk fieldsOk altsOk)
 
 mutual
 
@@ -2941,34 +2941,6 @@ theorem calls_ck (ext : Ext) (v : Val) (t : TyDesc) (f : Nat) :
 the same predicate exactly on descriptors whose constructor field names are distinct and none of them
 `tag` — which is what `Compile.lean` enforces and `Decl.lean` proves for a well-formed type.
 -/
-
-/-- Field names a constructor may carry: distinct, and none of them `tag`. `Compile.lean` rejects a field
-called `tag`, and `Decl.lean` proves the names distinct for a well-formed type; without both,
-`__hasFields` and `Js.checkFields` read different values out of the same object. -/
-def namesOk : List (String × TyDesc) → Bool
-  | [] => true
-  | (n, _) :: rest => n != "tag" && !rest.any (·.1 == n) && namesOk rest
-
-mutual
-
-def descOk : TyDesc → Bool
-  | .bool | .int53 | .uint32 | .string | .bigint => true
-  | .option t | .array t | .dict t => descOk t
-  | .result ok err => descOk ok && descOk err
-  | .ctors alts => altsOk alts
-termination_by d => sizeOf d
-
-def fieldsOk : List (String × TyDesc) → Bool
-  | [] => true
-  | (_, d) :: rest => descOk d && fieldsOk rest
-termination_by fs => sizeOf fs
-
-def altsOk : List (String × List (String × TyDesc)) → Bool
-  | [] => true
-  | (_, fields) :: rest => namesOk fields && fieldsOk fields && altsOk rest
-termination_by alts => sizeOf alts
-
-end
 
 theorem ofJsFields_length (fs : List (String × Js.JsValue)) :
     (ofJsFields fs).length = fs.length := by

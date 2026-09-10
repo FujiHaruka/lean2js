@@ -345,6 +345,111 @@ termination_by entries => sizeOf entries
 
 end
 
+/-! ### Descriptors a compiled type renders
+
+Field names a constructor may carry: distinct, and none of them `tag`. `Compile.lean` rejects a field
+called `tag`, and `Decl.lean` proves the names distinct for a well-formed type. Without both, reading a
+field by name and reading it by position are different readings of the same object. -/
+
+def namesOk : List (String × TyDesc) → Bool
+  | [] => true
+  | (n, _) :: rest => n != "tag" && !rest.any (·.1 == n) && namesOk rest
+
+mutual
+
+def descOk : TyDesc → Bool
+  | .bool | .int53 | .uint32 | .string | .bigint => true
+  | .option t | .array t | .dict t => descOk t
+  | .result ok err => descOk ok && descOk err
+  | .ctors alts => altsOk alts
+termination_by d => sizeOf d
+
+def fieldsOk : List (String × TyDesc) → Bool
+  | [] => true
+  | (_, d) :: rest => descOk d && fieldsOk rest
+termination_by fs => sizeOf fs
+
+def altsOk : List (String × List (String × TyDesc)) → Bool
+  | [] => true
+  | (_, fields) :: rest => namesOk fields && fieldsOk fields && altsOk rest
+termination_by alts => sizeOf alts
+
+end
+
+/-! ### The canonical shape
+
+`checkTy` reads a constructor's fields positionally, so a value it accepts is already the one
+`encodeValue` builds. `normTy` is what lets the check read them by name instead: it rebuilds an object
+with `tag` first and the constructor's fields in declared order, dropping keys the descriptor does not
+name, so what reaches the body is the canonical value again. -/
+
+def lookupField (fields : List (String × JsValue)) (k : String) : Option JsValue :=
+  (fields.find? (·.1 == k)).map (·.2)
+
+theorem sizeOf_lookupField (fields : List (String × JsValue)) (k : String) {v : JsValue}
+    (h : lookupField fields k = some v) : sizeOf v < 1 + sizeOf fields := by
+  induction fields with
+  | nil => simp [lookupField] at h
+  | cons e rest ih =>
+    by_cases hk : e.1 == k
+    · simp only [lookupField, List.find?, hk, Option.map_some, Option.some.injEq] at h
+      subst h
+      have : sizeOf e.2 < sizeOf e := by cases e; simp; omega
+      simp only [List.cons.sizeOf_spec]
+      omega
+    · simp only [lookupField, List.find?, hk] at h
+      have := ih h
+      simp only [List.cons.sizeOf_spec]
+      omega
+
+mutual
+
+def normTy : JsValue → TyDesc → JsValue
+  | .arr xs, .array t => .arr (normList xs t)
+  | .dict entries, .dict t => .dict (normEntries entries t)
+  | .obj fields, .option t =>
+    match lookupField fields "tag" with
+    | some (.str "none") => .obj [("tag", .str "none")]
+    | some (.str "some") => .obj (("tag", .str "some") :: normFields fields [("value", t)])
+    | _ => .obj fields
+  | .obj fields, .result ok err =>
+    match lookupField fields "tag" with
+    | some (.str "ok") => .obj (("tag", .str "ok") :: normFields fields [("value", ok)])
+    | some (.str "error") => .obj (("tag", .str "error") :: normFields fields [("error", err)])
+    | _ => .obj fields
+  | .obj fields, .ctors alts =>
+    match lookupField fields "tag" with
+    | some (.str ctor) =>
+      match alts.find? (·.1 == ctor) with
+      | some alt => .obj (("tag", .str ctor) :: normFields fields alt.2)
+      | none => .obj fields
+    | _ => .obj fields
+  | v, _ => v
+termination_by v => (sizeOf v, 1, 0)
+
+def normList : List JsValue → TyDesc → List JsValue
+  | [], _ => []
+  | x :: rest, t => normTy x t :: normList rest t
+termination_by xs => (sizeOf xs, 1, 0)
+
+def normEntries : List (String × JsValue) → TyDesc → List (String × JsValue)
+  | [], _ => []
+  | (k, v) :: rest, t => (k, normTy v t) :: normEntries rest t
+termination_by es => (sizeOf es, 1, 0)
+
+def normFields (fields : List (String × JsValue)) :
+    List (String × TyDesc) → List (String × JsValue)
+  | [] => []
+  | (n, t) :: rest =>
+    match h : lookupField fields n with
+    | some v =>
+      have := sizeOf_lookupField fields n h
+      (n, normTy v t) :: normFields fields rest
+    | none => normFields fields rest
+termination_by fs => (sizeOf (JsValue.obj fields), 0, sizeOf fs)
+
+end
+
 /-! ### Dictionaries a `Map` could have produced
 
 `checkTy` never looks at a dictionary's keys, because the value it is handed is a `Map` and a `Map`

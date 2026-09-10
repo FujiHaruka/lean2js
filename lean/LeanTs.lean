@@ -17,6 +17,7 @@ import LeanTs.Parse
 import LeanTs.Roundtrip
 import LeanTs.Renderable
 import LeanTs.JsSem
+import LeanTs.Norm
 import LeanTs.Agree
 import LeanTs.Exhaustive
 import LeanTs.Correct
