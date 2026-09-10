@@ -69,53 +69,58 @@ Float、JS 全体の字句・構文、TypeScript の型検査器のモデル化�
 本当に要るのは数値の範囲だけにする —— 並びは正規化が吸収し、余分なキーは正規化が落とす。
 仮定が 2 つ以上残るなら、それは設計がまだ穴を残しているということ。
 
-## Step 1. 正規化を模型と生成コードに足す
+## Step 1. 正規化を模型に足す — 完了
 
-まだ何にも繋がない。足すだけなので、この Step は受け入れる集合を 1 ミリも動かさない。
+`JsSem.lean` に `normTy` / `normList` / `normEntries` / `normFields`。記述子に沿ってオブジェクトを
+`tag` 先頭・宣言順に組み直し、配列・辞書・`option` / `result` / `ctors` の中身へ再帰する。フィールドは
+名前で引くので、`hasV` と同じく `sizeOf` の補題を渡して停止性を通す。
 
-1. `JsSem.lean` に `normTy : JsValue → TyDesc → JsValue`。記述子に沿ってオブジェクトを
-   `tag` 先頭・宣言順に組み直し、配列・辞書・`option` / `result` / `ctors` の中身へ再帰する。
-   記述子に合わない値はそのまま返す（検査が先に落とすので、そこは触らない）
-2. `Helper.lean` に `norm` / `normFields`。`__hasFields` と同じ形で書く
-3. `HelperSem.lean` の表に行を足し、`HelperProof.lean` で書き出されるソースと `normTy` の一致を
-   証明する。`helpers_ship_as_modelled` が新しい行を覆う
-4. `normTy (encodeValue v) d = encodeValue v`（正規な値の上で恒等）を `Decl.lean` に。
-   Step 2 が使う
+`descOk` / `namesOk` / `fieldsOk` / `altsOk` は `HelperProof.lean` から `JsSem.lean` へ移した。
+「フィールド名が相異なり、どれも `tag` でない」は模型の側の条件で、`__has` の証明だけのものではない。
 
-`Helper.defs` は 47 → 49 本、`HelperSem` の表は 35 → 37 行になる。README と `docs/mvp-plan.md` の
-数字を同じコミットで直す。
+`Norm.lean`（新規）の `normTy_of_checkTy` —— **検査を通った値の上で正規化は恒等**。検査がフィールドを
+位置で見ているうちは、通った値はもう正規順だから。Step 2 が下流を動かすのに使う。
 
-## Step 2. 下流を正規化を通した形に移す
+**生成コードには何も足さない。** プレリュードは使われるものだけに絞られず全部出るので、配線前の
+`__norm` を足すと出荷物にデッドコードが載る。ソース側の `__norm` は Step 3 で検査を緩めるのと同時に。
 
-検査は位置を見たまま。`normTy` が恒等なので、受け入れる集合は変わらない。
+## Step 2. 下流を正規化を通した形に移す — 完了
 
-1. `__ck` を `__has(x, t) ? __norm(x, t) : __fail("typeError")` に。docstring の
-   「Validates without normalising」を書き直す
-2. `JsSem.entryCheck` 相当（`JsSem.lean:471`）を同じ形に
-3. `Decl.checkTy_sound` を
-   `checkTy jv d = true → ∃ v, normTy jv d = encodeValue v ∧ hasTy p v ty = true` に置き換える。
-   証明は今の `checkTy_sound` と Step 1-4 の恒等から出る
-4. `Decl.decl_correct` / `decl_refuses_call` / `decl_traps_at_cost` を新しい形で組み直す。
-   本体が受け取る値は `encodeValue v` のままなので `Correct.lean` は動かない
+模型の `Js.Expr.check` が `.ok (normTy v d)` を返すようになった。`normTy` が恒等なので、**受け入れる
+集合も出荷物も 1 バイトも変わらない**。
 
-`Example.lean` の定理の文面は変わらない。manifest も変わらない。
+`Decl.eval_check` は文面を変えず、`Js.descOk d = true` を取るようになった。そこから出た宿題が 2 つ:
 
-## Step 3. 検査を名前引きにする
+- `descOk_tyDesc` —— コンパイラが書き出した記述子は `descOk` を満たす。`Compile.tyDesc.induct` に
+  沿った帰納で、`tyDescFields` の側は「名前の並びが元のフィールド名の並びと同じ」を運ぶ
+- `typesNamesOk_of_compileProgram` —— その前提は `compileProgram` が成功したことから出る
+  （`validateType` が全型について「フィールド名は相異なり `tag` でない」を見ている）
 
-ここで初めて受け入れる集合が広がる。
+`HelperProof.calls_ck_checkTy` も同じ形に置き換えた。出荷される `__ck` は引数をそのまま返すが、
+検査が位置で見ているうちはそれが正規化した値そのものである、と言っている。
+
+## Step 3. 検査を名前引きにし、生成コードに正規化を入れる
+
+ここで初めて受け入れる集合が広がり、出荷物が変わる。**模型とソースは同時に動かす**（`has_checkTy` が
+両者を縛っているので、片方だけでは `lake build` が落ちる）。
 
 1. `JsSem.checkFields` を名前引きに。位置の一致と本数の一致をやめ、
    「宣言された各フィールドがその名前で在り、型が合う」だけにする
 2. `checkTy` のオブジェクトの節を `.obj (("tag", .str ctor) :: rest)` から `tag` を名前で引く形に。
    `tag` が先頭でなくても通る
-3. `Helper.lean` の `__hasFields` を同じ形に。`keys.length` の比較と `keys[i + 1]` の比較が消え、
-   `Object.hasOwn(x, f[0])` が入る。`HelperProof.lean` の `hasFieldsAt_check` を張り直す
-4. Step 2-3 の `checkTy_sound` を本当に証明する。`normTy` が並びを吸収し、余分なキーを落とす
+3. `Helper.lean` に `__norm` / `__normFields`、`__ck` を
+   `__has(x, t) ? __norm(x, t) : __fail("typeError")` に。`__hasFields` は `Object.hasOwn` で
+   名前を引く形に。`HelperSem` の builtin の表に `Object.fromEntries` を 1 行足す
+   （オブジェクトを動的な鍵で組み立てる手段が helper の言語に無い）
+4. `HelperProof` に `__norm` の模型と、ソースがそれを計算することの証明。`hasFieldsAt_check` を
+   張り直す。`calls_ck_checkTy` を新しい `__ck` について証明し直す
+5. `Decl.checkTy_sound` を
+   `checkTy jv d = true → ∃ v, normTy jv d = encodeValue v ∧ hasTy p v ty = true` として本当に証明する
 
 **余分なキーを落とすのは意図した選択。** TypeScript のオブジェクト型は、変数を経由して渡す値に
 余分なプロパティが載っていることを許す（禁じるのはその場のオブジェクトリテラルだけ）。落とさずに
 弾くと、逆向きの主張に「余分なキーが無いこと」という 2 つ目の仮定が付く。落としても生成コードは
-そのキーを読まないし、`__eq` が見るのは正規化後の値なので、観測できる違いは受理か `typeError` かだけ。
+そのキーを読まないし、`__eq` はオブジェクトを名前で比べるので、観測できる違いは受理か `typeError` かだけ。
 
 ## Step 4. 逆向きを述べて manifest に載せる
 
@@ -141,7 +146,7 @@ Float、JS 全体の字句・構文、TypeScript の型検査器のモデル化�
 ## 順序と依存
 
 Step 1 → 2 → 3 は一本道で、順番を入れ替えられない。Step 2 が受け入れる集合を変えないまま下流を
-動かし終えていることが、Step 3 を `Decl.lean` の中に閉じ込める条件になっている。
+動かし終えていることが、Step 3 で `Correct.lean` を動かさずに済む条件になっている。
 Step 4 は Step 3 のあと。Step 5 は Step 3 のあとならいつでもよいが、README を 2 回書き直さないために
 最後に置く。
 
