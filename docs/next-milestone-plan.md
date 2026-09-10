@@ -207,16 +207,16 @@ JS 側で `.num 0` になるので、`Value.beq` では偽、`JsValue.beq` で�
 ロジックと定理を書き、自分の npm パッケージを生成できる。
 
 **`emit` がライブラリに入った。** `Main.lean` に焼き込まれていた書き出し手順は `LeanTs/Emit.lean` へ
-移り、`Manifest` を受け取るだけになった。`lean/Main.lean` はこのリポジトリの例題を渡す薄い実行ファイル
-にすぎず、利用者側の実行ファイルとまったく同じ形をしている。
+移り、`Manifest` を受け取るだけになった。`lean/Main.lean` は渡されたモジュールの `manifest` を実行時に
+読む汎用ドライバで、利用者はこれを `lake exe leants` で呼ぶ。
 
 **ライブラリのルートから例題が外れた。** `LeanTs.lean` が持つのは処理系だけで、`Example` /
 `Tests` / `Axioms` はこのリポジトリの実行ファイルが読む。`import LeanTs` で例題は付いてこない。
 
 **雛形は `templates/verified-package/`。** `lakefile.toml`（git 経由の `LeanTs` 依存）、最小の
-プログラム、定理 1 本とその `Claim`、`emit` を呼ぶ実行ファイル、書き換えどころを書いた README。
+プログラム、定理 1 本とその `Claim`、書き換えどころを書いた README。
 `scripts/check-template.sh` が雛形を空のディレクトリに展開し、依存を作業ツリーへ向け替えて
-`lake build` と `lake exe emit` を通し、npm パッケージが出ることを CI で確かめている。
+`lake build` と `lake exe leants` を通し、npm パッケージが出ることを CI で確かめている。
 
 **Reservoir への登録は残っている。** git の `rev` を指した `require` で今日から使えるので、雛形も
 CI もそれで動く。Reservoir に載せるのは公開の作業なので、このリポジトリの持ち主が決めること。

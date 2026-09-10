@@ -1,6 +1,6 @@
 name = "myLogic"
 version = "0.1.0"
-defaultTargets = ["MyLogic", "emit"]
+defaultTargets = ["MyLogic"]
 
 [[require]]
 name = "LeanTs"
@@ -10,7 +10,3 @@ subDir = "lean"
 
 [[lean_lib]]
 name = "MyLogic"
-
-[[lean_exe]]
-name = "emit"
-root = "Main"

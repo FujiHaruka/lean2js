@@ -29,7 +29,7 @@ PY
 
 cd "$work"
 lake build
-lake exe emit dist
+lake exe leants MyLogic --out dist
 
 for file in index.js index.d.ts index.js.map package.json proof-manifest.json vectors.json; do
   test -s "dist/$file" || { echo "the template did not write dist/$file"; exit 1; }

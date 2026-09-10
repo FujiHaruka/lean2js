@@ -15,7 +15,7 @@ jobs:
           lake-package-directory: lean
       - name: Regenerate the package
         working-directory: lean
-        run: lake exe leants ../packages/verified-example
+        run: lake exe leants LeanTs.Example --out ../packages/verified-example
       - name: Generated package is up to date
         run: git diff --exit-code -- packages/verified-example
       - name: The user package template builds and emits
