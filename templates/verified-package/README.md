@@ -28,6 +28,10 @@ lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出�
 | `lakefile.toml` | `LeanTs` への依存。`rev` を固定すると処理系の版が固定される |
 | `MyLogic.lean` | 業務ロジック（`decl%` の表層構文）、定理、`leants` が読む manifest |
 
+`dist/` に出るのは `index.js` / `index.js.map` / `index.d.ts` / `<パッケージ名の末尾>.leants` /
+`proof-manifest.json` / `README.md` / `package.json` / `vectors.json`。生成される `README.md` は
+公開 API と定理と公理の一覧で、npm のページに出るのはこれ。
+
 ## 書き換えるところ
 
 - `MyLogic.lean` の `orderTotal` を自分の宣言に置き換え、`program` の `decls` に並べる。
@@ -37,6 +41,9 @@ lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出�
 - `manifest` の `package` / `version` が、生成される `package.json` にそのまま入る
 - `compiler` / `lean` / `source` は書かない —— `leants` が入れる。手書きだと、成果物が何で
   ビルドされたかについて事実と違うことを言えてしまう
+- 公開するなら `isPrivate := false` を書く。既定は `true` で、生成される `package.json` に
+  `"private": true` が入る（事故で publish されない側に倒してある）。`license` /
+  `repository` も `manifest` に置くと `package.json` に入る
 
 ## 定理の書き方
 

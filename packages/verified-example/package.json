@@ -15,10 +15,11 @@
     "node": ">=18"
   },
   "files": [
+    "README.md",
     "index.js",
     "index.js.map",
     "index.d.ts",
-    "example.leants",
+    "verified-example.leants",
     "proof-manifest.json"
   ]
 }

@@ -33,10 +33,6 @@ Lean の普通の作法に乗れない。コピーした瞬間に処理系との
 / `Roundtrip` 6 MB / `Renderable` 5 MB / `Dts` 4 MB ほか）。利用者はこれを再検査する必要がない
 （CI が検査している）のに、初回ビルドで全部通ることになる。
 
-**生成物がこのリポジトリのものになっている。** `Emit.lean` が書くソース名は
-`example.leants` 固定で、`package.json` には `"private": true` が固定で入る。利用者が
-自分のパッケージとして公開することも、名前が例題臭くないことも、いまは選べない。
-
 **出したあと確かめる手段が利用者にない。** `vectors.json` は書き出されるのに、それを Node で
 突き合わせるハーネスはこのリポジトリの `packages/lean-ts`（`private`）の中にしかない。
 
@@ -55,8 +51,8 @@ Lean の普通の作法に乗れない。コピーした瞬間に処理系との
 Reservoir の scope/version、`preferReleaseBuild` によるビルド済み配布、そして
 **証明を利用者のビルドから外すモジュール分割**。
 
-**(3) 成果物を利用者のものにし、npm 側から検査できるようにする。** 固定の `example.leants` と
-`private: true` をやめ、`npx @leants/check <dir>` で差分テストを利用者の成果物に対して回せるようにする。
+**(3) 成果物を利用者のものにし、npm 側から検査できるようにする。** ソース名とパッケージの公開設定を
+利用者のものにし、`npx @leants/check <dir>` で差分テストを利用者の成果物に対して回せるようにする。
 
 **そして (1) が可能にする保証を足す。** 実行時にモジュールを読むということは、`leants` が
 `Environment` を持つということで、`collectAxioms` が呼べる。**manifest 定数の公理集合に
@@ -154,13 +150,13 @@ leants <Module> [--manifest <const>] [--out <dir>]
 `scripts/check-template.sh` が見る。利用者が書くのは `package` / `version` / `program` / `claims`
 の 4 つ。
 
-### 4. 生成物を利用者のものにする
+### 4. 生成物を利用者のものにする — 完了
 
-- `example.leants` 固定をやめる（`<package の末尾>.leants` か `program.leants`）。
-  `sourceMapFor` の引数と `package.json` の `files` も一緒に動かす
-- `"private": true` 固定をやめる。`Manifest` に `private` / `license` / `repository` を持たせ、
-  既定は `private := true`（事故で publish されない側に倒す）
-- 生成する `README.md` を 1 枚足す（公開 API と定理と公理集合の要約）。npm のページに
+- ソースは `<package の末尾>.leants` に出る。`sourceMapFor` の引数と `package.json` の `files` も
+  同じ名前を指す
+- `Manifest` が `isPrivate` / `license` / `repository` を持つ。既定は `isPrivate := true`
+  （事故で publish されない側に倒してある）
+- 生成する `README.md` が 1 枚出る（公開 API・定理・公理）。npm のページに
   「何が証明されているか」が出るのは、この成果物の売り物そのもの
 
 ### 5. 依存として解決できるようにする

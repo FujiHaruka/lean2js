@@ -18,10 +18,15 @@ a `Manifest` from them, and hand it to `emit`. Nothing here knows about this rep
 namespace LeanTs
 
 private def packageJson (m : Manifest) : Json :=
-  .obj [
+  let publishing :=
+    (if m.isPrivate then [("private", Json.bool true)] else [])
+      ++ (m.license.toList.map fun l => ("license", Json.str l))
+      ++ (m.repository.toList.map fun r =>
+            ("repository", Json.obj [("type", .str "git"), ("url", .str r)]))
+  .obj ([
     ("name", .str m.package),
-    ("version", .str m.version),
-    ("private", .bool true),
+    ("version", .str m.version)
+  ] ++ publishing ++ [
     ("type", .str "module"),
     ("exports", .obj [(".", .obj [
       ("types", .str "./index.d.ts"),
@@ -30,9 +35,9 @@ private def packageJson (m : Manifest) : Json :=
     ("types", .str "./index.d.ts"),
     ("sideEffects", .bool false),
     ("engines", .obj [("node", .str ">=18")]),
-    ("files", .arr [.str "index.js", .str "index.js.map", .str "index.d.ts",
-                    .str "example.leants", .str "proof-manifest.json"])
-  ]
+    ("files", .arr [.str "README.md", .str "index.js", .str "index.js.map", .str "index.d.ts",
+                    .str m.sourceFileName, .str "proof-manifest.json"])
+  ])
 
 /-- Checks before it writes. Every shipped vector has to agree between `eval`, the model of the generated
 JS and the small-step machine, and the text of the module has to read back as the module it was compiled
@@ -58,10 +63,11 @@ def emit (outDir : System.FilePath) (m : Manifest) (source : String) (axioms : L
       throw (IO.userError "the emitted text does not read back as the module it was compiled from")
     IO.FS.createDirAll outDir
     IO.FS.writeFile (outDir / "index.js") emitted.text
-    IO.FS.writeFile (outDir / "example.leants") m.program.source.text
+    IO.FS.writeFile (outDir / m.sourceFileName) m.program.source.text
     IO.FS.writeFile (outDir / "index.js.map")
-      ((sourceMapFor m.program emitted "example.leants").renderPretty ++ "\n")
+      ((sourceMapFor m.program emitted m.sourceFileName).renderPretty ++ "\n")
     IO.FS.writeFile (outDir / "index.d.ts") (Js.renderDts m.program)
+    IO.FS.writeFile (outDir / "README.md") (m.toReadme source axioms)
     IO.FS.writeFile (outDir / "proof-manifest.json") ((m.toJson source axioms).renderPretty ++ "\n")
     IO.FS.writeFile (outDir / "package.json") ((packageJson m).renderPretty ++ "\n")
     match renderVectors m.program 400 200 with

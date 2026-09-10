@@ -152,13 +152,14 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
 
 ```
 packages/verified-example/
-  index.js              ESM。実行時ヘルパは __ 接頭辞に閉じてある
-  index.js.map          example.leants への source map（関数単位）
-  index.d.ts            .d.ts。ADT は判別可能なユニオンに、型パラメータはジェネリクスになる
-  example.leants        Core を書き出したソース
-  proof-manifest.json   定理・証明が依る公理・コンパイラ版・公開 API
-  package.json          exports / sideEffects / engines
-  vectors.json          差分テストの入力と期待値
+  index.js                  ESM。実行時ヘルパは __ 接頭辞に閉じてある
+  index.js.map              .leants への source map（関数単位）
+  index.d.ts                .d.ts。ADT は判別可能なユニオンに、型パラメータはジェネリクスになる
+  verified-example.leants   Core を書き出したソース。名前はパッケージ名の末尾を取る
+  proof-manifest.json       定理・証明が依る公理・コンパイラ版・公開 API
+  README.md                 公開 API・定理・公理の一覧
+  package.json              exports / sideEffects / engines
+  vectors.json              差分テストの入力と期待値
 ```
 
 ## リポジトリ構成

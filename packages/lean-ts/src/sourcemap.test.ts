@@ -61,8 +61,8 @@ describe("the source map ties generated functions to .leants declarations", () =
 
   it("is v3, with the embedded source matching the shipped file", () => {
     expect(map.version).toBe(3);
-    expect(map.sources).toEqual(["example.leants"]);
-    expect(map.sourcesContent[0]).toBe(read("example.leants"));
+    expect(map.sources).toEqual(["verified-example.leants"]);
+    expect(map.sourcesContent[0]).toBe(read("verified-example.leants"));
   });
 
   it("has index.js point at the source map", () => {

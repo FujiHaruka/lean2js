@@ -31,7 +31,8 @@ cd "$work"
 lake build
 lake exe leants MyLogic --out dist
 
-for file in index.js index.d.ts index.js.map package.json proof-manifest.json vectors.json; do
+for file in index.js index.d.ts index.js.map package.json proof-manifest.json vectors.json \
+            README.md my-logic.leants; do
   test -s "dist/$file" || { echo "the template did not write dist/$file"; exit 1; }
 done
 
