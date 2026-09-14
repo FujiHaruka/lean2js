@@ -31,6 +31,7 @@ npx @leants/check dist              # 出た成果物を Node で突き合わせ
 | --- | --- |
 | `lakefile.toml` | `LeanTs` への依存。`rev` を固定すると処理系の版が固定される |
 | `MyLogic.lean` | 業務ロジック（`decl%` の表層構文）、定理、`leants` が読む manifest |
+| [`SYNTAX.md`](SYNTAX.md) | `decl%` / `type%` の中に書ける構文の全部 |
 
 `dist/` に出るのは `index.js` / `index.js.map` / `index.d.ts` / `<パッケージ名の末尾>.leants` /
 `proof-manifest.json` / `README.md` / `package.json` / `vectors.json`。生成される `README.md` は
@@ -39,7 +40,10 @@ npx @leants/check dist              # 出た成果物を Node で突き合わせ
 ## 書き換えるところ
 
 - `MyLogic.lean` の `orderTotal` を自分の宣言に置き換え、`program` の `decls` に並べる。
-  **宣言は自分より前に宣言された関数しか呼べない**ので、依存の順に並べる
+  **宣言は自分より前に宣言された関数しか呼べない**ので、依存の順に並べる。
+  書ける構文は [`SYNTAX.md`](SYNTAX.md) —— `decl%` の中は Lean の式ではない
+- `#eval program.check` はそのまま残す。`leants` がベクタを走らせる前に断る条件
+  （再帰、燃料の上限、コンパイルできない宣言）を `lake build` の側で先に落とす
 - 定理を書き、`manifest` の `claims` に `proof` ごと載せる。`claims` は証明項を要求するので、
   定理を消すと `lake build` が落ちる
 - `manifest` の `package` / `version` が、生成される `package.json` にそのまま入る

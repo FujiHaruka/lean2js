@@ -39,25 +39,32 @@ private def packageJson (m : Manifest) : Json :=
                     .str m.sourceFileName, .str "proof-manifest.json"])
   ])
 
+/-- Everything `emit` refuses by reading the program alone, and the module it compiles to when it refuses
+nothing. The fuel check is not per vector but per program: `Cost.cost` is decided from the syntax alone,
+so one comparison covers every call any caller can make. -/
+def Core.Program.checked (p : Core.Program) : Except String Js.Module := do
+  unless Cost.progOk p do
+    throw "a call in this program does not go backwards, so no fuel bound covers it"
+  if defaultFuel < Cost.cost p then
+    throw s!"this program can need {Cost.cost p} fuel, past the {defaultFuel} the artifact runs at"
+  match Compile.compileProgram p with
+  | .error e => throw s!"compile failed: {e}"
+  | .ok jsModule => return jsModule
+
+/-- `#eval program.check` puts the same wall in a user's `lake build`, where it costs a compile rather
+than the differential run `emit` does. Without it a program that no fuel bound covers, or that the
+compiler rejects, builds clean and is refused only once `leants` runs. -/
+def Core.Program.check (p : Core.Program) : IO Unit := do
+  let _ ← IO.ofExcept p.checked
+
 /-- Checks before it writes. Every shipped vector has to agree between `eval`, the model of the generated
 JS and the small-step machine, and the text of the module has to read back as the module it was compiled
-from, so a disagreement fails the build rather than reaching the package.
-
-The fuel check is not per vector but per program: `Cost.cost` is decided from the syntax alone, so one
-comparison covers every call any caller can make. -/
+from, so a disagreement fails the build rather than reaching the package. -/
 def emit (outDir : System.FilePath) (m : Manifest) (source : String) (axioms : List String) : IO Unit := do
-  unless Cost.progOk m.program do
-    throw (IO.userError
-      "a call in this program does not go backwards, so no fuel bound covers it")
-  if defaultFuel < Cost.cost m.program then
-    throw (IO.userError
-      s!"this program can need {Cost.cost m.program} fuel, past the {defaultFuel} the artifact runs at")
+  let jsModule ← IO.ofExcept m.program.checked
   match checkAgreement m.program 400 200 with
   | .error e => throw (IO.userError s!"the compiled module disagrees with eval: {e}")
   | .ok () =>
-  match Compile.compileProgram m.program with
-  | .error e => throw (IO.userError s!"compile failed: {e}")
-  | .ok jsModule =>
     let emitted := emitModule jsModule
     if Parse.parseModule emitted.text.toList != some jsModule then
       throw (IO.userError "the emitted text does not read back as the module it was compiled from")

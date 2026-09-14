@@ -5,7 +5,8 @@ import LeanTs
 
 The business logic this package ships, and the theorems proved about it.
 
-Everything the compiler accepts lives in `Core.Expr`, written here through the `decl%` surface syntax.
+Everything the compiler accepts lives in `Core.Expr`, written here through the `decl%` surface syntax —
+which is not Lean's own: see `SYNTAX.md` for the whole of what may go inside `decl%` and `type%`.
 The theorems are about `evalCall`, the reference semantics, and the generated JavaScript is checked
 against it for every shipped vector before `emit` writes anything.
 -/
@@ -20,6 +21,8 @@ def orderTotal : Decl := decl%
     unitPrice * (if quantity < 1 then 0 else quantity)
 
 def program : Program := { decls := [orderTotal] }
+
+#eval program.check
 
 private theorem find_orderTotal : program.find? "orderTotal" = some orderTotal := rfl
 

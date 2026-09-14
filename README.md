@@ -34,17 +34,20 @@ def addMoney : Decl := decl%
 ### 対象サブセット
 
 Lean 全体ではなく、JS との対応が明快な領域に絞ることで、コンパイラの正しさと小さな TCB を現実的に狙う。
+**`decl%` / `type%` の中に書くのは Lean の式ではない** —— Lean のパーサだけ借りた別の文法で、Lean の
+`Array` / `String` の API もラムダも再帰もそこには無い。全部の形は
+[`templates/verified-package/SYNTAX.md`](templates/verified-package/SYNTAX.md) にある。
 
 | 含める | 外す |
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
-| `structure` / `inductive` / 型パラメータ / `Option` / `Result` | `unsafe` / arbitrary FFI / pointer |
-| `Array` 操作（`map` / `filter` / `reduce` / `find` / `all` / `any` / `slice` / `reverse` / `++`）と `match`（入れ子・ワイルドカード・リテラル） | metaprogramming |
-| 算術（`+` / `-` / `*` / `/` / `%` / `abs` / `min` / `max`、溢れとゼロ除算は trap） | Float / IEEE 754 |
-| 純粋関数 | 再帰 / 非停止 / DOM access |
-| 宣言済み関数を名前で渡す引数（内部の宣言どうしに限る） | 関数を値にすること（ラムダ・クロージャ・公開境界の関数型） |
-| `String` 操作（`trim` / 大文字小文字 / `startsWith` / `endsWith` / `includes` / `split` / `substring`） | 正規表現 |
-| `Dict`（文字列キー、`Map` として出力。`get` / `set` / `has` / `delete` / `keys` / `values`） | 素のオブジェクトを辞書として使うこと |
+| `type%` の直和・直積（`Money(amount : Int53, ...)`、`guest \| member \| admin`）、型パラメータ、`Option<T>` / `Result<A, E>` | `unsafe` / arbitrary FFI / pointer |
+| 配列の走査（`xs.map(fun x => ...)` / `filter` / `reduce` / `find` / `all` / `any` / `slice` / `reverse` / `++`）と `match`（入れ子・ワイルドカード・リテラル） | metaprogramming |
+| 算術（`+` / `-` / `*` / `/` / `%` / `abs()` / `min()` / `max()`、溢れとゼロ除算は trap） | Float / IEEE 754 |
+| 純粋関数（`decl% f(x : T) : U := ...`） | 再帰 / 非停止 / DOM access |
+| 宣言済み関数を `@name` で渡す引数（内部の宣言どうしに限る） | 関数を値にすること（走査の外のラムダ・クロージャ・公開境界の関数型） |
+| 文字列（`trim()` / `toUpper()` / `toLower()` / `startsWith()` / `endsWith()` / `includes()` / `split()` / `substring()`） | 正規表現 |
+| `Dict<V>`（文字列キー、`Map` として出力。`get` / `set` / `has` / `delete` / `keys` / `values`） | 素のオブジェクトを辞書として使うこと |
 
 ## ロードマップ
 
@@ -221,4 +224,7 @@ npx @leants/check dist              # 出た成果物を Node で突き合わせ
 要約（公開 API の本数・定理・依っている公理）を出す。このリポジトリが自分の成果物に回している
 差分テストと同じもので、利用者の CI の 1 行になる。
 
-雛形の中身と書き換えどころは [`templates/verified-package/README.md`](templates/verified-package/README.md) にある。
+雛形の中身と書き換えどころは [`templates/verified-package/README.md`](templates/verified-package/README.md)、
+`decl%` / `type%` に書ける構文は [`templates/verified-package/SYNTAX.md`](templates/verified-package/SYNTAX.md) にある。
+雛形の `#eval program.check` は、`leants` が書き出す前に断る条件のうちベクタを要らない分
+（再帰、燃料の上限、コンパイルできない宣言）を、利用者の `lake build` の側で落とす。

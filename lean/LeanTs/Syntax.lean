@@ -173,6 +173,18 @@ private def varChain : List String → MacroM Term
     | "false", [] => `(Expr.lit (Lit.bool Bool.false))
     | name, rest => do projChain (← `(Expr.var $(quote name))) rest
 
+/-- What a receiver can be sent, listed by type. Leaving the subset most often looks like reaching for a
+method Lean's own `String` or `Array` has and this one does not, and the name of the missing method does
+not say what was there instead. -/
+private def methodTable : String :=
+  "Int53 / UInt32 / BigInt: abs(), min(x), max(x). \
+String: trim(), toUpper(), toLower(), startsWith(s), endsWith(s), includes(s), split(s), \
+substring(lo, hi). \
+Array: map(fun x => ...), filter, find, all, any, reduce(init, fun (acc, x) => ...), slice(lo, hi), \
+reverse(). \
+Dict: get(k), set(k, v), has(k), delete(k), keys(), values(). \
+A length is a field, not a call: xs.length"
+
 mutual
 
 private partial def exprOf (stx : TSyntax `leants_expr) : MacroM Term := do
@@ -195,14 +207,14 @@ private partial def exprOf (stx : TSyntax `leants_expr) : MacroM Term := do
     | [name] =>
       match name, es.getElems.toList with
       | "some", [e] => do `(Expr.someE $(← exprOf e))
-      | "big", _ => literalOf es (fun n => `(Expr.lit (Lit.bigint $n)))
-      | "u32", _ => literalOf es (fun n => `(Expr.lit (Lit.uint32 $n)))
+      | "big", _ => literalOf n es (fun n => `(Expr.lit (Lit.bigint $n)))
+      | "u32", _ => literalOf n es (fun n => `(Expr.lit (Lit.uint32 $n)))
       | _, _ => do
         let args ← es.getElems.mapM exprOf
         `(Expr.call $(quote name) [$args,*])
-    | parts => methodCall (← varChain parts.dropLast) parts.getLast! es
+    | parts => methodCall (← varChain parts.dropLast) n parts.getLast! es
   | `(leants_expr| $n:ident) => varChain ((nameOf n).splitOn ".")
-  | `(leants_expr| $e:leants_expr.$m:ident($es,*)) => methodCall (← exprOf e) (nameOf m) es
+  | `(leants_expr| $e:leants_expr.$m:ident($es,*)) => methodCall (← exprOf e) m (nameOf m) es
   | `(leants_expr| $e:leants_expr.$f:ident) => projChain (← exprOf e) [nameOf f]
   | `(leants_expr| @$n:ident) => `(Expr.fnRef $(quote (nameOf n)))
   | `(leants_expr| $e:leants_expr[$i:leants_expr]) =>
@@ -230,7 +242,12 @@ private partial def exprOf (stx : TSyntax `leants_expr) : MacroM Term := do
   | `(leants_expr| match $scrut:leants_expr { $alts|* }) =>
     let arms ← alts.getElems.mapM altOf
     `(Expr.matchE $(← exprOf scrut) [$arms,*])
-  | _ => Macro.throwUnsupported
+  | `(leants_expr| fun $_:ident => $_:leants_expr)
+  | `(leants_expr| fun ($_:ident, $_:ident) => $_:leants_expr) =>
+    Macro.throwErrorAt stx "a lambda is only ever the argument of map, filter, find, all, any or \
+      reduce: the subset has no function values. To pass behaviour, declare a function and hand over \
+      its name as @name"
+  | _ => Macro.throwErrorAt stx "this expression is not in the subset"
 
 private partial def altOf (stx : TSyntax `leants_alt) : MacroM Term := do
   match stx with
@@ -240,15 +257,15 @@ private partial def altOf (stx : TSyntax `leants_alt) : MacroM Term := do
 private partial def bin (op : Term) (a b : TSyntax `leants_expr) : MacroM Term := do
   `(Expr.bin $op $(← exprOf a) $(← exprOf b))
 
-private partial def literalOf (es : Syntax.TSepArray `leants_expr ",")
+private partial def literalOf (ref : Ident) (es : Syntax.TSepArray `leants_expr ",")
     (build : Term → MacroM Term) : MacroM Term := do
   match es.getElems.toList with
   | [e] =>
     match e with
     | `(leants_expr| $n:num) => build n
     | `(leants_expr| -$n:num) => build (← `(-$n))
-    | _ => Macro.throwUnsupported
-  | _ => Macro.throwUnsupported
+    | _ => Macro.throwErrorAt ref s!"{nameOf ref}(...) takes a numeric literal, not an expression"
+  | _ => Macro.throwErrorAt ref s!"{nameOf ref}(...) takes exactly one numeric literal"
 
 private partial def annotated (n : Ident) (ts : Syntax.TSepArray `leants_ty ",")
     (es : Syntax.TSepArray `leants_expr ",") : MacroM Term := do
@@ -258,7 +275,10 @@ private partial def annotated (n : Ident) (ts : Syntax.TSepArray `leants_ty ",")
   | "none", [t], [] => `(Expr.noneE $t)
   | "ok", [err], [e] => `(Expr.okE $err $e)
   | "error", [ok], [e] => `(Expr.errorE $ok $e)
-  | _, _, _ => Macro.throwUnsupported
+  | _, _, _ =>
+    Macro.throwErrorAt n s!"{nameOf n}<...>(...): the subset writes only none<T>, ok<E>(x), \
+      error<T>(x), Array<T>\{...} and Dict<T>\{...} with a type argument. A constructor of your own \
+      type takes it on the type: Name<T>::Ctor(...)"
 
 private partial def aggregate (n : Ident) (ts : Syntax.TSepArray `leants_ty ",")
     (items : Syntax.TSepArray `leants_item ",") : MacroM Term := do
@@ -270,19 +290,21 @@ private partial def aggregate (n : Ident) (ts : Syntax.TSepArray `leants_ty ",")
   | "Dict", [t] =>
     let entries ← items.getElems.mapM keyedItem
     `(Expr.dictLit $t [$entries,*])
-  | _, _ => Macro.throwUnsupported
+  | _, _ =>
+    Macro.throwErrorAt n s!"{nameOf n}<...>\{...}: only Array<T>\{...} and Dict<T>\{...} are written \
+      with braces. A value of your own type comes from a constructor: {nameOf n}::Ctor(...)"
 
 private partial def plainItem (stx : TSyntax `leants_item) : MacroM Term := do
   match stx with
   | `(leants_item| $e:leants_expr) => exprOf e
-  | _ => Macro.throwUnsupported
+  | _ => Macro.throwErrorAt stx "an Array element is an expression; \"key\": value is for a Dict"
 
 private partial def keyedItem (stx : TSyntax `leants_item) : MacroM Term := do
   match stx with
   | `(leants_item| $k:str : $e:leants_expr) => `(($k, $(← exprOf e)))
-  | _ => Macro.throwUnsupported
+  | _ => Macro.throwErrorAt stx "a Dict entry is written \"key\": value, with a literal string key"
 
-private partial def methodOn (recv : Term) (name : String) (args : Array Term) :
+private partial def methodOn (recv : Term) (ref : Syntax) (name : String) (args : Array Term) :
     MacroM Term := do
   match name, args.toList with
   | "abs", [] => `(Expr.un UnOp.abs $recv)
@@ -304,24 +326,26 @@ private partial def methodOn (recv : Term) (name : String) (args : Array Term) :
   | "keys", [] => `(Expr.dictKeys $recv)
   | "values", [] => `(Expr.dictValues $recv)
   | "delete", [k] => `(Expr.dictDelete $recv $k)
-  | _, _ => Macro.throwUnsupported
+  | _, _ =>
+    Macro.throwErrorAt ref s!"no method {name} takes {args.size} argument(s) in the \
+      subset.\n{methodTable}"
 
 /-- `map` and `filter` take a lambda and `reduce` takes a seed and a lambda; everything else takes plain
 arguments. The lambda is syntax rather than a value, so it is matched here and never elaborated on its
 own. -/
-private partial def methodCall (recv : Term) (name : String)
+private partial def methodCall (recv : Term) (ref : Syntax) (name : String)
     (es : Syntax.TSepArray `leants_expr ",") : MacroM Term := do
   match name, es.getElems.toList with
-  | "map", [lam] => lambdaMethod recv name lam
-  | "filter", [lam] => lambdaMethod recv name lam
-  | "find", [lam] => lambdaMethod recv name lam
-  | "all", [lam] => lambdaMethod recv name lam
-  | "any", [lam] => lambdaMethod recv name lam
-  | "reduce", [init, lam] => reduceMethod recv init lam
-  | _, _ => methodOn recv name (← es.getElems.mapM exprOf)
+  | "map", [lam] => lambdaMethod recv ref name lam
+  | "filter", [lam] => lambdaMethod recv ref name lam
+  | "find", [lam] => lambdaMethod recv ref name lam
+  | "all", [lam] => lambdaMethod recv ref name lam
+  | "any", [lam] => lambdaMethod recv ref name lam
+  | "reduce", [init, lam] => reduceMethod recv ref init lam
+  | _, _ => methodOn recv ref name (← es.getElems.mapM exprOf)
 
-private partial def lambdaMethod (recv : Term) (name : String) (lam : TSyntax `leants_expr) :
-    MacroM Term := do
+private partial def lambdaMethod (recv : Term) (ref : Syntax) (name : String)
+    (lam : TSyntax `leants_expr) : MacroM Term := do
   match lam with
   | `(leants_expr| fun $b:ident => $body:leants_expr) =>
     let jb ← exprOf body
@@ -332,16 +356,19 @@ private partial def lambdaMethod (recv : Term) (name : String) (lam : TSyntax `l
     | "find" => `(Expr.findE $recv $binder $jb)
     | "all" => `(Expr.quantE QuantOp.all $recv $binder $jb)
     | "any" => `(Expr.quantE QuantOp.any $recv $binder $jb)
-    | _ => Macro.throwUnsupported
-  | _ => Macro.throwUnsupported
+    | _ => Macro.throwErrorAt ref s!"{name}: the subset has no such method.\n{methodTable}"
+  | _ =>
+    Macro.throwErrorAt ref s!"{name} takes a lambda written as fun x => ..., and nothing else — the \
+      subset has no function values, so a name cannot stand for one here"
 
-private partial def reduceMethod (recv : Term) (init lam : TSyntax `leants_expr) :
+private partial def reduceMethod (recv : Term) (ref : Syntax) (init lam : TSyntax `leants_expr) :
     MacroM Term := do
   match lam with
   | `(leants_expr| fun ($acc:ident, $x:ident) => $body:leants_expr) =>
     `(Expr.reduceE $recv $(← exprOf init) $(quote (nameOf acc)) $(quote (nameOf x))
       $(← exprOf body))
-  | _ => Macro.throwUnsupported
+  | _ =>
+    Macro.throwErrorAt ref "reduce takes a seed and a lambda written as fun (acc, x) => ..."
 
 end
 
