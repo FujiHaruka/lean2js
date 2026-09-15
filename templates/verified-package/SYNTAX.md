@@ -151,11 +151,16 @@ xs[0]                                 添字
 
 | 書いたもの | 返るもの |
 | --- | --- |
-| Lean の関数適用（`xs.foldl f 0`）、小数、`do` | パーサの `unexpected token; expected leants_expr` |
+| 小数（`1.5`）、`do` | パーサの `unexpected token; expected subset expression` |
+| 呼び出しの引数に書いた小数（`g(1.5)`） | パーサの `unexpected token; expected ')'` |
+| Lean の関数適用（`xs.foldl f 0`） | パーサの `unexpected identifier; expected command` |
 | 無いメソッド（`s.padStart(2)`） | `padStart: the subset has no such method` と、受け手ごとの一覧 |
 | ラムダを走査の外に書く | `a lambda is only ever the argument of map, filter, ...` |
 | 再帰、宣言の順序違い | `#eval program.check` が `a call in this program does not go backwards` |
 | 無い関数・無い型・型が合わない | `#eval program.check` が `compile failed: ...` |
 
-パーサのエラー（1 行目）だけは位置しか言わない。サブセットのどこにいるか分からなくなったら、
-`lean/LeanTs/Example.lean` が全部の形をひととおり使っている。
+パーサのエラー（上の 3 行）は、位置と、そこで何を期待したか —— `subset expression` / `subset type` /
+`subset pattern` / `parameter` / `field` / `constructor` —— しか言わない。そして期待の対象は、読めなかった
+ものそのものとは限らない。`( )` の中の引数が式として読めなければ閉じ括弧を期待したと言い、`xs.foldl` の
+ように途中までで式が閉じてしまえば、残りを次のコマンドとして読もうとして落ちる。サブセットのどこに
+いるか分からなくなったら、`lean/LeanTs/Example.lean` が全部の形をひととおり使っている。

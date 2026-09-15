@@ -1,3 +1,6 @@
+import Lean.Parser.Basic
+import Lean.PrettyPrinter.Formatter
+import Lean.PrettyPrinter.Parenthesizer
 import LeanTs.Builder
 
 /-!
@@ -89,6 +92,26 @@ syntax "expr% " leants_expr : term
 syntax "ty% " leants_ty : term
 syntax "decl% " ident "(" leants_param,* ")" " : " leants_ty " := " leants_expr : term
 syntax "type% " ident ("<" ident,+ ">")? " := " sepBy1(leants_ctor, " | ") : term
+
+/-- Fails the way Lean does when no parser of a category applies, under a name a reader recognises. Renaming
+the categories instead would print `«subset expression»` and put guillemets into every quotation below. -/
+private def unmatched (what : String) : Parser.Parser where
+  fn := fun c s =>
+    let s := Parser.tokenFn [what] c s
+    if s.hasError then s else s.mkUnexpectedTokenError what
+
+@[combinator_formatter unmatched]
+private def unmatched.formatter (_ : String) : PrettyPrinter.Formatter := pure ()
+
+@[combinator_parenthesizer unmatched]
+private def unmatched.parenthesizer (_ : String) : PrettyPrinter.Parenthesizer := pure ()
+
+@[leants_ty_parser low] private def unmatchedTy : Parser.Parser := unmatched "subset type"
+@[leants_expr_parser low] private def unmatchedExpr : Parser.Parser := unmatched "subset expression"
+@[leants_pat_parser low] private def unmatchedPat : Parser.Parser := unmatched "subset pattern"
+@[leants_param_parser low] private def unmatchedParam : Parser.Parser := unmatched "parameter"
+@[leants_field_parser low] private def unmatchedField : Parser.Parser := unmatched "field"
+@[leants_ctor_parser low] private def unmatchedCtor : Parser.Parser := unmatched "constructor"
 
 mutual
 
