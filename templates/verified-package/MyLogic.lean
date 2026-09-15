@@ -9,6 +9,9 @@ Everything the compiler accepts lives in `Core.Expr`, written here through the `
 which is not Lean's own: see `SYNTAX.md` for the whole of what may go inside `decl%` and `type%`.
 The theorems are about `evalCall`, the reference semantics, and the generated JavaScript is checked
 against it, on Node as well as in Lean, for every vector before `emit` writes anything.
+
+The namespace is the package: `program%` gathers the declarations above it, and every public theorem ships
+in the manifest under the statement Lean prints for it.
 -/
 
 namespace MyLogic
@@ -20,12 +23,13 @@ def orderTotal : Decl := decl%
   orderTotal(unitPrice : Int53, quantity : Int53) : Int53 :=
     unitPrice * (if quantity < 1 then 0 else quantity)
 
-def program : Program := { decls := [orderTotal] }
+def program : Program := program%
 
 #eval program.check
 
 private theorem find_orderTotal : program.find? "orderTotal" = some orderTotal := rfl
 
+/-- Nothing is charged for fewer than one unit, whatever the unit price. -/
 theorem nothing_charged_below_one (unitPrice quantity : Int)
     (hu : int53Min ≤ unitPrice) (hu' : unitPrice ≤ int53Max)
     (hq : int53Min ≤ quantity) (hq' : quantity ≤ int53Max)
@@ -45,12 +49,6 @@ theorem nothing_charged_below_one (unitPrice quantity : Int)
 def manifest : Manifest := {
   package := "@example/my-logic"
   version := "0.1.0"
-  program := program
-  claims := [
-    { name := "nothing_charged_below_one"
-      statement := "∀ unitPrice quantity, quantity < 1 → orderTotal(unitPrice, quantity) = 0"
-      proof := nothing_charged_below_one }
-  ]
 }
 
 end MyLogic

@@ -1,3 +1,5 @@
+import Lean.DeclarationRange
+import Lean.Elab.Term
 import Lean.Parser.Basic
 import Lean.PrettyPrinter.Formatter
 import Lean.PrettyPrinter.Parenthesizer
@@ -426,5 +428,86 @@ macro_rules
     let ctors ← cs.getElems.mapM ctorOf
     let names := ps.getElems.map fun p => Syntax.mkStrLit (nameOf p)
     `(typeDef $(quote (nameOf n)) [$names,*] [$ctors,*])
+
+section Gather
+
+open Elab Term Meta
+
+/-- The constants a package is made of: those declared directly in `ns`, in the order they were written.
+Private ones and the ones Lean generates are left out, which is how a helper stays out of the package. -/
+def namespaceMembers (ns : Name) : CoreM (Array (Name × ConstantInfo)) := do
+  let env ← getEnv
+  let members := env.constants.fold (fun acc n info =>
+    if n.getPrefix == ns && !n.isInternalDetail then acc.push (n, info) else acc) #[]
+  let placed ← members.filterMapM fun (n, info) => do
+    let some ranges ← findDeclarationRanges? n | return none
+    let file := ((env.getModuleIdxFor? n).map (·.toNat)).getD env.allImportedModuleNames.size
+    return some ((file, ranges.range.pos.line, ranges.range.pos.column), n, info)
+  let written := placed.qsort fun (a, _) (b, _) =>
+    ((compare a.1 b.1).then ((compare a.2.1 b.2.1).then (compare a.2.2 b.2.2))) == .lt
+  return written.map (·.2)
+
+private unsafe def evalDeclUnsafe (n : Name) : CoreM Core.Decl :=
+  evalConstCheck Core.Decl ``Core.Decl n
+
+@[implemented_by evalDeclUnsafe]
+private opaque evalDecl (n : Name) : CoreM Core.Decl
+
+private def subterms : Core.Expr → List Core.Expr
+  | .lit _ | .var _ | .fnRef _ | .noneE _ => []
+  | .un _ x | .strUn _ x | .someE x | .okE _ x | .errorE _ x | .proj x _ | .length x
+  | .arrayReverse x | .dictKeys x | .dictValues x => [x]
+  | .bin _ a b | .strBin _ a b | .index a b | .dictGet a b | .dictHas a b | .dictDelete a b
+  | .letE _ _ a b | .mapE a _ b | .filterE a _ b | .findE a _ b | .quantE _ a _ b => [a, b]
+  | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c | .reduceE a b _ _ c =>
+    [a, b, c]
+  | .call _ args | .ctor _ _ _ args | .arrayLit _ args => args
+  | .dictLit _ entries => entries.map (·.2)
+  | .matchE scrut alts => scrut :: alts.map (·.2)
+
+/-- The pairs `(later, earlier)` a program has to respect: a body comes after everything it calls or names
+with `@`, and a callee comes after every declaration a call hands it with `@`, which is what `Cost.progOk`
+asks of a function argument. -/
+private partial def orderings (self : String) (e : Core.Expr) : List (String × String) :=
+  let here := match e with
+    | .fnRef g => [(self, g)]
+    | .call fn args => (self, fn) :: args.filterMap (fun | .fnRef g => some (fn, g) | _ => none)
+    | _ => []
+  here ++ (subterms e).flatMap (orderings self)
+
+private partial def placeAfterPrerequisites (edges : List (String × String))
+    (decls : Array (Name × Core.Decl)) (path : List String) (placed : Array (Name × Core.Decl))
+    (d : Name × Core.Decl) : CoreM (Array (Name × Core.Decl)) := do
+  if placed.any (·.1 == d.1) then return placed
+  let name := d.2.name
+  if path.contains name then
+    let cycle := (name :: path).reverse.dropWhile (· != name)
+    throwError "these declarations reach each other through calls, and the subset has no recursion: \
+      {" → ".intercalate cycle}"
+  let mut placed := placed
+  for (later, earlier) in edges do
+    if later == name then
+      if let some e := decls.find? (·.2.name == earlier) then
+        placed ← placeAfterPrerequisites edges decls (name :: path) placed e
+  return placed.push d
+
+/-- Every `Decl` and `TypeDef` declared above this point in the current namespace. The declarations are
+ordered so that every call goes backwards, and otherwise kept in the order they were written. -/
+syntax "program%" : term
+
+elab_rules : term
+  | `(program%) => do
+    let members ← namespaceMembers (← getCurrNamespace)
+    let ofType (ty : Name) := members.filterMap fun (n, info) =>
+      if info.type.isConstOf ty then some n else none
+    let decls ← (ofType ``Core.Decl).mapM fun n => return (n, ← evalDecl n)
+    let edges := decls.toList.flatMap fun (_, d) => orderings d.name d.body
+    let ordered ← (decls.foldlM (placeAfterPrerequisites edges decls []) #[] :
+      CoreM (Array (Name × Core.Decl)))
+    let types := (ofType ``Core.TypeDef).map fun n => (mkCIdent n : Term)
+    let fns := ordered.map fun (n, _) => (mkCIdent n : Term)
+    elabTerm (← `($(mkCIdent ``Core.Program.mk) [$types,*] [$fns,*])) none
+
+end Gather
 
 end LeanTs.Core.Dsl

@@ -6,12 +6,13 @@ import LeanTs.Renderable
 /-!
 # Axioms
 
-Pins down that the theorems the artifact is sold on do not depend on `sorry`: the claims carried by the
-manifest, plus the seven the guarantee itself rests on: `typeSound`, `fragment_correct`,
-`fragment_traps_in`, `decl_correct`, `decl_refuses`, `decl_traps` and `decl_traps_at_cost`.
+Pins down that the theorems the artifact is sold on do not depend on `sorry`: every public theorem of
+`LeanTs.Example`, which `leants` lists in the manifest, plus the seven the guarantee itself rests on:
+`typeSound`, `fragment_correct`, `fragment_traps_in`, `decl_correct`, `decl_refuses`, `decl_traps` and
+`decl_traps_at_cost`.
 
-`Claim` demands a proof term, so a missing theorem is caught by a failing `lake build`; a proof plugged
-with `sorry`, however, still goes through as a term. Pinning the axiom set makes this fail the moment
+`leants` refuses a claim whose proof reaches `sorryAx`, but only when it emits: `lake build` lets a proof
+plugged with `sorry` through with a warning. Pinning the axiom set makes the build fail the moment
 `sorryAx` gets mixed in.
 
 The roundtrip is pinned here too, ahead of the manifest carrying it: it is the only thing standing
@@ -85,6 +86,14 @@ between the trees the proofs are about and the text that ships.
 /-- info: 'LeanTs.Example.memberPrice_calls_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Example.memberPrice_calls_agree
+
+/-- info: 'LeanTs.Example.program_progOk' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanTs.Example.program_progOk
+
+/-- info: 'LeanTs.Example.program_cost_fits' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanTs.Example.program_cost_fits
 
 /-- info: 'LeanTs.typeSound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

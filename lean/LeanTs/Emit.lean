@@ -12,8 +12,8 @@ import LeanTs.Vectors
 
 Writes a manifest out as an npm package.
 
-This is the whole of what a user's own package calls: they write their program and their theorems, build
-a `Manifest` from them, and hand it to `emit`. Nothing here knows about this repository's example.
+Everything here reads an `Artifact`: the manifest a user wrote, and the program and theorems `leants` read
+out of its namespace. Nothing here knows about this repository's example.
 -/
 
 namespace LeanTs
@@ -78,29 +78,30 @@ private def checkOnNode (files : List (String × String)) (vectors : String) : I
 the small-step machine, the text of the module has to read back as the module it was compiled from, and
 the package, assembled in a scratch directory, has to agree with `eval` on every vector when Node runs
 it. A disagreement fails the build rather than reaching the package. -/
-def emit (outDir : System.FilePath) (m : Manifest) (source : String) (axioms : List String) : IO Unit := do
-  let jsModule ← IO.ofExcept m.program.checked
-  match checkAgreement m.program 400 200 with
+def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
+  let jsModule ← IO.ofExcept a.program.checked
+  match checkAgreement a.program 400 200 with
   | .error e => throw (IO.userError s!"the compiled module disagrees with eval: {e}")
   | .ok () =>
     let emitted := emitModule jsModule
     if Parse.parseModule emitted.text.toList != some jsModule then
       throw (IO.userError "the emitted text does not read back as the module it was compiled from")
-    let vectors ← match renderVectors m.program 400 200 with
+    let vectors ← match renderVectors a.program 400 200 with
       | .error e => throw (IO.userError s!"vector generation failed: {e}")
       | .ok vectors => pure vectors
+    let sourceFile := a.manifest.sourceFileName
     let files := [
       ("index.js", emitted.text),
-      (m.sourceFileName, m.program.source.text),
-      ("index.js.map", (sourceMapFor m.program emitted m.sourceFileName).renderPretty ++ "\n"),
-      ("index.d.ts", Js.renderDts m.program),
-      ("README.md", m.toReadme source axioms),
-      ("proof-manifest.json", (m.toJson source axioms).renderPretty ++ "\n"),
-      ("package.json", (packageJson m).renderPretty ++ "\n")]
+      (sourceFile, a.program.source.text),
+      ("index.js.map", (sourceMapFor a.program emitted sourceFile).renderPretty ++ "\n"),
+      ("index.d.ts", Js.renderDts a.program),
+      ("README.md", a.toReadme),
+      ("proof-manifest.json", a.toJson.renderPretty ++ "\n"),
+      ("package.json", (packageJson a.manifest).renderPretty ++ "\n")]
     checkOnNode files vectors
     IO.FS.createDirAll outDir
     for (name, text) in files do
       IO.FS.writeFile (outDir / name) text
-    IO.println s!"wrote {m.program.publicDecls.length} exports to {outDir}"
+    IO.println s!"wrote {a.program.publicDecls.length} exports to {outDir}"
 
 end LeanTs

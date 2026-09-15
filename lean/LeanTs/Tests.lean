@@ -1,4 +1,5 @@
 import LeanTs.Compile
+import LeanTs.Cost
 import LeanTs.Builder
 import LeanTs.Syntax
 
@@ -456,5 +457,42 @@ private def callsIdentity (name callee : String) : Decl :=
   ("admin", [])]
 #guard (type% Paginated<T> := Paginated(items : Array<T>, total : Int53))
   == struct "Paginated" [("items", .array (.var "T")), ("total", .int53)] (params := ["T"])
+
+/-! ## Gathering a program
+
+`program%` reads the declarations out of the namespace, so the order they are written in is not the order
+they ship in: a callee moves ahead of its caller, and a declaration handed over with `@` moves ahead of the
+callee it is handed to. -/
+
+namespace Gathered
+
+open Core.Dsl
+
+def lateCaller : Decl := decl% lateCaller(x : Int53) : Int53 := withRule(@base, x) + twice(x)
+def withRule : Decl := decl% withRule(rule : (Int53) => Int53, x : Int53) : Int53 := rule(x)
+def twice : Decl := decl% twice(x : Int53) : Int53 := base(x) * 2
+def base : Decl := decl% base(x : Int53) : Int53 := x + 1
+private def unshipped : Decl := decl% unshipped(x : Int53) : Int53 := x
+
+def program : Program := program%
+
+#guard program.decls.map (·.name) == ["base", "withRule", "twice", "lateCaller"]
+#guard Cost.progOk program
+#guard (Compile.compileProgram program).isOk
+
+end Gathered
+
+namespace Cyclic
+
+open Core.Dsl
+
+def ping : Decl := decl% ping(x : Int53) : Int53 := pong(x)
+def pong : Decl := decl% pong(x : Int53) : Int53 := ping(x)
+
+/-- error: these declarations reach each other through calls, and the subset has no recursion: ping → pong → ping -/
+#guard_msgs in
+example : Program := program%
+
+end Cyclic
 
 end LeanTs.Tests

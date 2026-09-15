@@ -12,8 +12,10 @@
 
 ### Phase 2 の到達点
 
-- proof manifest — 完了。`Claim` が証明項を持つので、定理を消すと `lake build` が落ちる。`sorry` で
-  塞いだ証明は項として通ってしまうので、`leants` が書き出す前に manifest 定数の公理集合を見て、
+- proof manifest — 完了。定理の一覧も文言も手で書かない。`leants` が manifest と同じ名前空間の公開定理を
+  すべて集め、Lean が印字する定理のシグネチャを文言に、docstring を説明にして載せる。一覧が定理そのもの
+  から作られるので、載っている主張が証明とずれることも、証明の無い主張が載ることもない。`sorry` で
+  塞いだ証明は項として通ってしまうので、`leants` が書き出す前に各定理の公理集合を見て、
   `propext` / `Classical.choice` / `Quot.sound` 以外があれば書き出さずに落ちる。使った公理は
   `proof-manifest.json` の `axioms` に載る
 - JS の意味論の模型（`JsSem.lean`）と、出荷する成果物がリファレンス意味論と一致することの実行時検査

@@ -46,6 +46,33 @@ if PATH="$work/disagreeing-node:$PATH" lake exe leants MyLogic --out refused; th
 fi
 test ! -e refused || { echo "leants left files behind for a package Node did not agree with"; exit 1; }
 
+# The namespace is the package, so neither a declaration program% did not gather nor a public theorem that
+# is not proved may slip out of it quietly.
+cp MyLogic.lean MyLogic.lean.orig
+cat >> MyLogic.lean <<'LEAN'
+
+namespace MyLogic
+open LeanTs.Core LeanTs.Core.Dsl
+def lateTotal : Decl := decl% lateTotal(x : Int53) : Int53 := x
+end MyLogic
+LEAN
+if lake exe leants MyLogic --out late 2> late.err; then
+  echo "leants wrote a package without a declaration program% did not gather"; exit 1
+fi
+grep -q 'would not ship' late.err || { cat late.err; echo "leants refused for another reason"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
+cat >> MyLogic.lean <<'LEAN'
+
+namespace MyLogic
+theorem unfinished : 1 = 2 := sorry
+end MyLogic
+LEAN
+if lake exe leants MyLogic --out unproved 2> unproved.err; then
+  echo "leants wrote a package claiming a theorem proved with sorry"; exit 1
+fi
+grep -q 'rests on sorryAx' unproved.err || { cat unproved.err; echo "leants refused for another reason"; exit 1; }
+mv MyLogic.lean.orig MyLogic.lean
+
 grep -q 'export declare function orderTotal' dist/index.d.ts
 grep -q 'nothing_charged_below_one' dist/proof-manifest.json
 

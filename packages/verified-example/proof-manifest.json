@@ -283,75 +283,123 @@
   "theorems": [
     {
       "name": "add_comm",
-      "statement": "∀ a b, add a b = add b a"
+      "statement": "add_comm (a b : Int) :\n  evalCall program \"add\" [Value.int53 a, Value.int53 b] = evalCall program \"add\" [Value.int53 b, Value.int53 a]",
+      "doc": "Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same\nsum, or fail the same way."
     },
     {
       "name": "draft_never_ships",
-      "statement": "∀ trackingId, ship(draft, trackingId) refuses with \"a draft order cannot ship\""
+      "statement": "draft_never_ships (trackingId : String) :\n  evalCall program \"ship\" [Value.obj \"draft\" [], Value.str trackingId] =\n    Except.ok (Value.obj \"error\" [(\"error\", Value.str \"a draft order cannot ship\")])",
+      "doc": "A draft order cannot ship, whatever tracking id comes with it."
     },
     {
       "name": "clamped_quantity_in_range",
-      "statement": "∀ quantity, clampQuantity(quantity, 999) lies between 1 and 999"
+      "statement": "clamped_quantity_in_range (quantity : Int) (hlo : int53Min ≤ quantity) (hhi : quantity ≤ int53Max) :\n  ∃ n,\n    evalCall program \"clampQuantity\" [Value.int53 quantity, Value.int53 999] = Except.ok (Value.int53 n) ∧\n      1 ≤ n ∧ n ≤ 999",
+      "doc": "Clamping any `Int53` quantity to at most 999 lands between 1 and 999."
     },
     {
       "name": "same_currency_adds",
-      "statement": "∀ a b sharing a currency whose amounts sum within Int53, addMoney(a, b) = ok(a.amount + b.amount)"
+      "statement": "same_currency_adds (x y : Int) (currency : String) (hx : int53Min ≤ x ∧ x ≤ int53Max) (hy : int53Min ≤ y ∧ y ≤ int53Max)\n  (hsum : int53Min ≤ x + y ∧ x + y ≤ int53Max) :\n  evalCall program \"addMoney\" [money x currency, money y currency] =\n    Except.ok (Value.obj \"ok\" [(\"value\", money (x + y) currency)])",
+      "doc": "Two amounts in the same currency add up, as long as their sum stays within `Int53`."
     },
     {
       "name": "add_calls_agree",
-      "statement": "for any arguments, the generated add returns what eval returns, entry check included"
+      "statement": "add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"add\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "doc": "Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body\nis a single binary operation."
     },
     {
-      "name": "add_refuses",
-      "statement": "for any arguments eval would not accept, the generated add throws instead of computing"
+      "name": "discounted_calls_agree",
+      "statement": "discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"discounted\" args = Except.ok v) :\n  ∃ g,\n    ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"discounted\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "doc": "The same for a body that opens with a `let`, which the compiler emits as a `const` statement."
     },
     {
-      "name": "add_traps",
-      "statement": "for any arguments eval accepts, if eval throws the generated add throws the same code"
-    },
-    {
-      "name": "addMoney_calls_agree",
-      "statement": "for any arguments, the generated addMoney returns what eval returns, entry check included"
-    },
-    {
-      "name": "addMoney_traps",
-      "statement": "for any arguments eval accepts, if eval throws the generated addMoney throws the same code"
-    },
-    {
-      "name": "ship_calls_agree",
-      "statement": "for any arguments, the generated ship returns what eval returns, arm chosen by constructor"
-    },
-    {
-      "name": "cartTotal_calls_agree",
-      "statement": "for any arguments, the generated cartTotal returns what eval returns, fold included"
+      "name": "rebindTwice_calls_agree",
+      "statement": "rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"rebindTwice\" args = Except.ok v) :\n  ∃ g,\n    ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"rebindTwice\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "doc": "And for a body whose second `let` rebinds a name already in scope, which the compiler leaves as an\nexpression rather than a statement."
     },
     {
       "name": "memberPrice_calls_agree",
-      "statement": "for any arguments, the generated memberPrice returns what eval returns, the call it makes and the function it passes included"
+      "statement": "memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"memberPrice\" args = Except.ok v) :\n  ∃ g,\n    ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"memberPrice\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "doc": "And for a body that calls another declaration, handing it a third by name. The call is where the\nproof leaves the expression it is looking at: `priced` applies the function it was given, so the claim\nabout `memberPrice` rests on the same claim about `tenPercentOff`."
+    },
+    {
+      "name": "program_progOk",
+      "statement": "program_progOk : Cost.progOk program = true",
+      "doc": "The first of the two checks the emitter runs on a program before it writes anything: every call goes\nbackwards."
+    },
+    {
+      "name": "program_cost_fits",
+      "statement": "program_cost_fits : Cost.cost program ≤ defaultFuel",
+      "doc": "The second: the fuel the artifact runs at covers the deepest call this program can make."
+    },
+    {
+      "name": "add_traps",
+      "statement": "add_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : add.params.length = args.length) (htyped : ParamsTyped program add.params args)\n  (he : evalCall program \"add\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" (List.map encodeValue args) = Except.error err.code",
+      "doc": "Whenever `eval` refuses to return a value for `add`, the generated function throws the code `eval`\nthrew. Its body can reach `int53Overflow`. Running out of fuel is not among the answers: the two checks\nabove rule it out for this program."
+    },
+    {
+      "name": "add_overflow_throws",
+      "statement": "add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :\n  ∃ g,\n    ∀ (g' : Nat),\n      g ≤ g' → Js.callFunctionAt m g' \"add\" [Js.JsValue.num int53Max, Js.JsValue.num 1] = Except.error \"int53Overflow\"",
+      "doc": "The trap is reachable, and reached the same way on both sides: one past the top of `Int53` throws\n`int53Overflow` out of the generated function."
+    },
+    {
+      "name": "addMoney_calls_agree",
+      "statement": "addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"addMoney\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "doc": "The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,\nand builds a `Result` around a constructor."
+    },
+    {
+      "name": "ship_calls_agree",
+      "statement": "ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"ship\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"ship\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "doc": "The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads\nthe fields that arm binds."
+    },
+    {
+      "name": "cartTotal_calls_agree",
+      "statement": "cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"cartTotal\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "doc": "And an array traversal: `cartTotal` folds a body over the elements, each under its own binding."
     },
     {
       "name": "cartTotal_traps",
-      "statement": "for any arguments eval accepts, if the fold throws the generated cartTotal throws the same code"
+      "statement": "cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : cartTotal.params.length = args.length) (htyped : ParamsTyped program cartTotal.params args)\n  (he : evalCall program \"cartTotal\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" (List.map encodeValue args) = Except.error err.code",
+      "doc": "The trap side of a traversal: a fold whose running sum leaves `Int53` throws where `eval` does, at\nthe element that overflowed rather than at the end."
+    },
+    {
+      "name": "add_refuses",
+      "statement": "add_refuses (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (hk : Js.dictKeysDistinctList jargs = true) (hno : ¬Decl.EvalAccepts program add jargs) :\n  Js.callFunction m \"add\" jargs = Except.error \"typeError\"",
+      "doc": "Whatever `add` is handed, if no reading of those JS values is a pair of `Int53`s, the generated\nfunction throws instead of computing."
+    },
+    {
+      "name": "add_refuses_string",
+      "statement": "add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :\n  Js.callFunction m \"add\" [Js.JsValue.str \"1\", Js.JsValue.num 2] = Except.error \"typeError\"",
+      "doc": "The hypothesis discharged on a concrete call: a string where an `Int53` was declared throws, because\nno `Int53` encodes to one."
+    },
+    {
+      "name": "addMoney_traps",
+      "statement": "addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : addMoney.params.length = args.length) (htyped : ParamsTyped program addMoney.params args)\n  (he : evalCall program \"addMoney\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" (List.map encodeValue args) = Except.error err.code",
+      "doc": "The same for `addMoney`: the only way its body throws is the `Int53` overflow of the sum, and the\ngenerated function throws that code."
     },
     {
       "name": "file_reads_back",
-      "statement": "the index.js shipped for this program reads back as the module the compiler built"
+      "statement": "file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :\n  Parse.parseModule m.render.toList = some m",
+      "doc": "The text `leants` writes for this program reads back as the module the compiler built. Nothing in\nbetween is assumed: the roundtrip holds of whatever `compileProgram` produces, so the claim carries no\nside condition about the shape of the module."
     },
     {
       "name": "helpers_ship_as_modelled",
-      "statement": "every runtime helper the model of the generated code assumes is what the shipped source computes"
+      "statement": "helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : List Js.JsValue) (r : Js.JsResult)\n  (hok : HelperSem.helperArgsOk name args) (h : Js.helper name args = some r) :\n  HelperSem.Helper.Calls ext name (List.map HelperSem.ofJs args) (HelperSem.ofRes r)",
+      "doc": "The runtime helpers are the last hand-written JavaScript in the artifact, and the model of the\ngenerated code reaches them through one table. Every row of that table is what the source the compiler\nprints actually computes; `helperArgsOk` is all that is left assumed, and it asks only for the Int53\nrange a type has already given, the distinct keys a `Map` cannot break, and the shapes on which `__eq`'s\nwalk and the model's structural equality decide the same thing."
     },
     {
       "name": "entry_check_fits_dts",
-      "statement": "every argument the entry check lets through is a value the published .d.ts type admits"
+      "statement": "entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)\n  (hd : Compile.tyDesc program b ty = Except.ok d) (hc : Js.checkTy jv d = true) : Dts.TsSat program ty jv",
+      "doc": "Everything the entry check lets through is a value the published `.d.ts` type admits. The two are\nnot the same set: the check reads a number's range, which a TypeScript type cannot say, so a call the\n`.d.ts` accepts can still be refused at the boundary."
     },
     {
       "name": "dts_fits_entry_check",
-      "statement": "every argument the published .d.ts type admits passes the entry check, given only that its numbers lie in the Int53 and UInt32 ranges"
+      "statement": "dts_fits_entry_check (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jv : Js.JsValue) (ty : Ty)\n  (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d) (hts : Dts.TsSat program ty jv)\n  (hr : Dts.inRange jv d = true) : Js.checkTy jv d = true",
+      "doc": "The other direction, and the one a caller feels: an argument the published `.d.ts` type admits is one\nthe entry check accepts. `Dts.inRange` is the whole of what is assumed about the value — the `Int53` and\n`UInt32` ranges the check reads, which a TypeScript type cannot express. The order the keys arrive in is\nnot read, and neither are keys the type does not declare."
     },
     {
       "name": "encoded_values_fit_dts",
-      "statement": "every value the reference semantics gives a declared type to encodes to one the published .d.ts type admits"
+      "statement": "encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value) (ty : Ty)\n  (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeValue v)",
+      "doc": "What comes back, rather than what goes in: a value the reference semantics gives a declared type to\nencodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration\nreturns, and `decl_correct` says the generated function returns its encoding."
     }
   ],
   "axioms": [

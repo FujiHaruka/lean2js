@@ -48,31 +48,71 @@ private def rebuild (module : Name) : IO Bool := do
 
 private def allowedAxioms : List Name := [`propext, `Classical.choice, `Quot.sound]
 
-/-- The manifest holds its claims as proof terms, so one traversal covers every theorem it lists.
-`lake build` is no help here: a proof plugged with `sorry` is still a term, and the build passes with a
+/-- Statements are printed from inside the package's namespace with `LeanTs` and `LeanTs.Core` open, the
+way the template's file reads; the printer shortens a name only where it still resolves to the same
+constant. -/
+private def printingContext (ns : Name) : Core.Context := {
+  fileName := "<leants>", fileMap := default, currNamespace := ns
+  openDecls := [.simple `LeanTs [], .simple `LeanTs.Core []] }
+
+/-- A theorem's signature as Lean prints it, under its name inside the package's namespace rather than the
+full one `delabConstWithSignature` insists on. -/
+private def statementOf (ns n : Name) : MetaM String := do
+  let info ← getConstInfo n
+  let (sig, _) ← PrettyPrinter.delabCore (.const n (info.levelParams.map mkLevelParam))
+    (delab := PrettyPrinter.Delaborator.delabConstWithSignature)
+  let sig := sig.raw.setArg 0 (mkIdent (n.replacePrefix ns .anonymous))
+  return toString (← PrettyPrinter.ppTerm ⟨sig⟩)
+
+/-- Every public theorem in the manifest's namespace is a claim, so each one's axioms are read here:
+`lake build` is no help, since a proof plugged with `sorry` is still a term and the build passes with a
 warning. -/
-private def axiomsOf (env : Environment) (constName : Name) : IO (List String) := do
-  let (used, _) ← Lean.Core.CoreM.toIO (collectAxioms constName)
-    { fileName := "<leants>", fileMap := default } { env }
-  return Array.toList ((used.map toString).qsort (fun a b => decide (a < b)))
+private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
+  let ns := inv.manifestConst.getPrefix
+  let manifest ← evalConstCheck Manifest ``Manifest inv.manifestConst
+  let members ← Core.Dsl.namespaceMembers ns
+  let ofType (ty : Name) := members.filterMap fun (n, info) =>
+    if info.type.isConstOf ty then some n else none
+  let (programConst, program) ← match ofType ``Core.Program with
+    | #[n] => do pure (n, ← evalConstCheck Core.Program ``Core.Program n)
+    | found => throwError "{ns} declares {found.size} Programs, and {inv.manifestConst} ships exactly one"
+  for n in ofType ``Core.Decl do
+    let d ← evalConstCheck Core.Decl ``Core.Decl n
+    unless program.decls.any (·.name == d.name) do
+      throwError "{n} is not in {programConst}, so it would not ship: program% gathers only what is \
+        declared above it"
+  for n in ofType ``Core.TypeDef do
+    let t ← evalConstCheck Core.TypeDef ``Core.TypeDef n
+    unless program.types.any (·.name == t.name) do
+      throwError "{n} is not in {programConst}, so it would not ship: program% gathers only what is \
+        declared above it"
+  let allowed := String.intercalate ", " (allowedAxioms.map toString)
+  let theorems := members.filterMap fun (n, info) =>
+    if info matches ConstantInfo.thmInfo _ then some n else none
+  let mut used : Array Name := #[]
+  for n in theorems do
+    let axioms ← collectAxioms n
+    let unproved := axioms.filter (!allowedAxioms.contains ·)
+    unless unproved.isEmpty do
+      throwError "refusing to write: {n} rests on {String.intercalate ", " (unproved.toList.map toString)}\n\
+        every public theorem in {ns} ships as a claim, and a claim ships only when its proof reaches no \
+        further than {allowed}"
+    used := used ++ axioms
+  let claims : List Claim ← theorems.toList.mapM fun n => do
+    return { name := toString (n.replacePrefix ns .anonymous), statement := ← statementOf ns n,
+             doc := (← findDocString? (← getEnv) n).map (·.trimAscii.copy) }
+  let axioms := ((used.map toString).qsort (fun a b => decide (a < b))).toList.eraseDups
+  return { manifest, program, claims, source := toString inv.module, axioms }
 
 private unsafe def run (inv : Invocation) : IO UInt32 := do
   unless (← rebuild inv.module) do return 1
   initSearchPath (← findSysroot)
-  let env ← importModules #[{ module := inv.module }] {} (trustLevel := 1024)
-  match env.evalConstCheck Manifest {} ``Manifest inv.manifestConst with
+  enableInitializersExecution
+  let env ← importModules #[{ module := inv.module }] {} (trustLevel := 1024) (loadExts := true)
+  match ← EIO.toBaseIO ((readArtifact inv).toIO (printingContext inv.manifestConst.getPrefix) { env }) with
   | .error e => IO.eprintln e; return 1
-  | .ok manifest =>
-    let axioms ← axiomsOf env inv.manifestConst
-    let allowed := allowedAxioms.map toString
-    let unproved := axioms.filter (!allowed.contains ·)
-    unless unproved.isEmpty do
-      IO.eprintln s!"refusing to write: {inv.manifestConst} rests on \
-        {String.intercalate ", " unproved}"
-      IO.eprintln s!"a claim ships only when its proof reaches no further than \
-        {String.intercalate ", " allowed}"
-      return 1
-    emit inv.outDir manifest (toString inv.module) axioms
+  | .ok (artifact, _) =>
+    emit inv.outDir artifact
     return 0
 
 unsafe def main (args : List String) : IO UInt32 := do

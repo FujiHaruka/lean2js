@@ -18,18 +18,17 @@ def Role : TypeDef := type% Role := guest | member | admin
 def Paginated : TypeDef := type%
   Paginated<T> := Paginated(items : Array<T>, total : Int53)
 
-def program : Program := {
-  types := [Money, Role, Paginated]
-  decls := [orderTotal]
-}
+def program : Program := program%
 
 #eval program.check
 ```
 
 - 左の `def` の名前は Lean のもの。成果物に出るのは `decl%` / `type%` の中の名前。
 - 引数と返り値の型は省略できない。引数ゼロの `f() : T := ...` も書ける。
-- `decls` は**依存の順**に並べる。宣言は自分より前の宣言しか呼べない（後述）。
-- `types` に載せ忘れた型は `unknown type: Name` になる。
+- `program%` は、同じ名前空間でそれより上に書いた `Decl` と `TypeDef` をすべて集める。`private` を
+  付けたものは集めない。
+- 宣言は `program%` が呼び出しの前へ進む順に並べ替えるので、書く順序は問わない（後述）。
+- `program%` より下に書いた宣言や型は集まらない。`leants` はそれが出荷されないと言って落ちる。
 - `#eval program.check` は、`leants` がベクタを走らせる前に断る条件を `lake build` の側に置いたもの。
 
 ## 型
@@ -138,10 +137,12 @@ xs[0]                                 添字
 
 ## 文法の外にある規則
 
-- **宣言は自分より前の宣言しか呼べない。** 自己再帰も相互再帰も通らない。繰り返しは配列の走査
-  （`map` / `filter` / `reduce` …）が受け持つ。
-- **関数は値にならない。** 渡せるのは `@name` という宣言への参照だけで、渡し先より前に宣言されて
-  いなければならない。`xs.map(@double)` は書けない —— 走査が取るのはラムダの構文であって値ではない。
+- **呼び出しは循環できない。** 自己再帰も相互再帰も通らない。繰り返しは配列の走査
+  （`map` / `filter` / `reduce` …）が受け持つ。`program%` は呼ばれる宣言を呼ぶ宣言より前に並べ、
+  並べられない —— 循環している —— ときに落ちる。
+- **関数は値にならない。** 渡せるのは `@name` という宣言への参照だけで、`program%` は渡される宣言を
+  渡し先の宣言より前にも並べる。この順序も循環に数える。`xs.map(@double)` は書けない —— 走査が取るのは
+  ラムダの構文であって値ではない。
 - **関数を引数に取る宣言は公開されない。** 公開境界に関数型は出せないので、`.d.ts` にも
   `index.js` の輸出にも現れず、内部からだけ呼ばれる。
 - **燃料の上限。** 必要な燃料は式の深さと宣言の本数から決まり、10000 を超えるプログラムは書き出せない。
@@ -156,7 +157,8 @@ xs[0]                                 添字
 | Lean の関数適用（`xs.foldl f 0`） | パーサの `unexpected identifier; expected command` |
 | 無いメソッド（`s.padStart(2)`） | `padStart: the subset has no such method` と、受け手ごとの一覧 |
 | ラムダを走査の外に書く | `a lambda is only ever the argument of map, filter, ...` |
-| 再帰、宣言の順序違い | `#eval program.check` が `a call in this program does not go backwards` |
+| 再帰 | `program%` が `these declarations reach each other through calls, ...: ping → pong → ping` |
+| `program%` より下に書いた宣言・型 | `leants` が `... is not in ...program, so it would not ship` |
 | 無い関数・無い型・型が合わない | `#eval program.check` が `compile failed: ...` |
 
 パーサのエラー（上の 3 行）は、位置と、そこで何を期待したか —— `subset expression` / `subset type` /

@@ -14,11 +14,11 @@ Lean 4 で証明した業務ロジックを、普通の npm パッケージと�
 ファイルを書くので、生成したベクタ全件について `eval` と JS の模型、`eval` と small-step、`eval` と
 Node で動かした生成物が一致しなければ書き出し自体が失敗する。落ちたときに直すのはコンパイラか意味論であって、検査の側ではない。
 
-**manifest に載る定理は証明項そのものを持つ。** `Claim` が `proof` を取るので、定理を消せば
-`lake build` が落ちる。`sorry` は項として通ってしまうが、`leants` が書き出す前に manifest 定数の
-公理集合を見て `propext` / `Classical.choice` / `Quot.sound` 以外があれば落ちる。
-`LeanTs/Axioms.lean` の `#print axioms` 固定はこれを `lake build` の側にも置いたもので、
-**manifest に定理を足したら Axioms.lean に行も足す。**
+**manifest に載る定理は手で書かない。** `leants` が manifest と同じ名前空間の公開定理をすべて集め、
+文言は Lean が印字する定理のシグネチャになるので、一覧が証明とずれない。`sorry` は項として通って
+しまうが、`leants` が書き出す前に各定理の公理集合を見て `propext` / `Classical.choice` / `Quot.sound`
+以外があれば落ちる。`LeanTs/Axioms.lean` の `#print axioms` 固定はこれを `lake build` の側にも置いた
+もので、**`Example.lean` に公開定理を足したら Axioms.lean に行も足す。**
 
 ## 開発の進め方
 

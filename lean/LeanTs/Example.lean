@@ -63,6 +63,8 @@ def divide : Decl := decl% divide(a : Int53, b : Int53) : Int53 := a / b
 
 def remainder : Decl := decl% remainder(a : Int53, b : Int53) : Int53 := a % b
 
+def negate : Decl := decl% negate(a : Int53) : Int53 := -a
+
 def priceGap : Decl := decl% priceGap(a : Int53, b : Int53) : Int53 := (a - b).abs()
 
 def cappedCharge : Decl := decl%
@@ -86,8 +88,6 @@ def memberPrice : Decl := decl%
 
 def guestPrice : Decl := decl%
   guestPrice(amount : Int53) : Int53 := priced(@noDiscount, amount)
-
-def negate : Decl := decl% negate(a : Int53) : Int53 := -a
 
 /-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
 def safeQuotientIsPositive : Decl := decl%
@@ -349,28 +349,12 @@ def withdrawn : Decl := decl%
 def catalogueSize : Decl := decl%
   catalogueSize(prices : Dict<Int53>) : Int53 := prices.length
 
-def program : Program := {
-  types := [Money, Role, OrderState, Paginated, Validated]
-  decls := [
-    add, clampQuantity, lineTotal, discounted, divide, remainder, negate,
-    priceGap, cappedCharge, atLeast,
-    noDiscount, tenPercentOff, priced, memberPrice, guestPrice,
-    safeQuotientIsPositive, canCheckout, mixChannels, bucketOf, scaleFee,
-    bigQuotient, slugOf, sortsBefore, sameLabel, rebindTwice,
-    roleRank, addMoney, sameMoney, ship, trackingOf, canRefund,
-    total, headOr, firstTracking, pageOf, mostRecentFirst, combinedCart,
-    lineTotals, currenciesOf, refundableOnly, cartTotal, anyOverLimit,
-    firstOverLimit, everyLineWithinLimit, someLineIsFree,
-    quantityLabel, renewalLabel, chargeable, settleMessage,
-    remainingItems, firstPage, validateQuantity, validationMessage,
-    storedCoupon, couponApplies, mentionsTerm, fieldCount, truncateLabel, isSpreadsheet,
-    limitsFor, dailyLimit, priceOf, isListed, repriced, listedSkus, listedPrices, withdrawn,
-    catalogueSize
-  ]
-}
+def program : Program := program%
 
 private theorem find_add : program.find? "add" = some add := rfl
 
+/-- Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same
+sum, or fail the same way. -/
 theorem add_comm (a b : Int) :
     evalCall program "add" [.int53 a, .int53 b]
       = evalCall program "add" [.int53 b, .int53 a] := by
@@ -400,6 +384,7 @@ private theorem findAt_Money :
 def money (amount : Int) (currency : String) : Value :=
   .obj "Money" [("amount", .int53 amount), ("currency", .str currency)]
 
+/-- A draft order cannot ship, whatever tracking id comes with it. -/
 theorem draft_never_ships (trackingId : String) :
     evalCall program "ship" [.obj "draft" [], .str trackingId]
       = .ok (.obj "error" [("error", .str "a draft order cannot ship")]) := by
@@ -409,6 +394,7 @@ theorem draft_never_ships (trackingId : String) :
   simp [ship, bindParams, evalExpr_matchE, evalExpr_var, evalExpr_errorE, evalExpr_lit,
     Env.lookup?, firstMatch, matchPat, matchPats, litValue, Alt.pat, Alt.body, bind, Except.bind]
 
+/-- Clamping any `Int53` quantity to at most 999 lands between 1 and 999. -/
 theorem clamped_quantity_in_range (quantity : Int)
     (hlo : int53Min ≤ quantity) (hhi : quantity ≤ int53Max) :
     ∃ n, evalCall program "clampQuantity" [.int53 quantity, .int53 999] = .ok (.int53 n)
@@ -435,6 +421,7 @@ theorem clamped_quantity_in_range (quantity : Int)
         beq_eq_false_iff_ne.mpr (Int.compare_ne_gt.mpr (by omega))
       simp [e1, e2]
 
+/-- Two amounts in the same currency add up, as long as their sum stays within `Int53`. -/
 theorem same_currency_adds (x y : Int) (currency : String)
     (hx : int53Min ≤ x ∧ x ≤ int53Max) (hy : int53Min ≤ y ∧ y ≤ int53Max)
     (hsum : int53Min ≤ x + y ∧ x + y ≤ int53Max) :
@@ -514,11 +501,12 @@ theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
 `Decl.decl_traps` is the other half of `decl_correct`: for arguments the entry accepts, a body that
 throws is matched by a generated function that throws the same code. -/
 
-/-- The two checks the emitter runs on a program before it writes anything: every call goes backwards,
-and the fuel the artifact runs at covers the deepest call this program can make. -/
+/-- The first of the two checks the emitter runs on a program before it writes anything: every call goes
+backwards. -/
 theorem program_progOk : Cost.progOk program = true := rfl
 
 set_option maxRecDepth 8000 in
+/-- The second: the fuel the artifact runs at covers the deepest call this program can make. -/
 theorem program_cost_fits : Cost.cost program ≤ defaultFuel := Nat.le_of_ble_eq_true rfl
 
 /-- Whenever `eval` refuses to return a value for `add`, the generated function throws the code `eval`
@@ -671,76 +659,6 @@ theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram prog
 def manifest : Manifest := {
   package := "@leants/verified-example"
   version := "0.1.0"
-  program := program
-  claims := [
-    { name := "add_comm", statement := "∀ a b, add a b = add b a", proof := add_comm },
-    { name := "draft_never_ships"
-      statement := "∀ trackingId, ship(draft, trackingId) refuses with \"a draft order cannot ship\""
-      proof := draft_never_ships },
-    { name := "clamped_quantity_in_range"
-      statement := "∀ quantity, clampQuantity(quantity, 999) lies between 1 and 999"
-      proof := clamped_quantity_in_range },
-    { name := "same_currency_adds"
-      statement :=
-        "∀ a b sharing a currency whose amounts sum within Int53, addMoney(a, b) = ok(a.amount + b.amount)"
-      proof := same_currency_adds },
-    { name := "add_calls_agree"
-      statement :=
-        "for any arguments, the generated add returns what eval returns, entry check included"
-      proof := add_calls_agree },
-    { name := "add_refuses"
-      statement :=
-        "for any arguments eval would not accept, the generated add throws instead of computing"
-      proof := add_refuses },
-    { name := "add_traps"
-      statement :=
-        "for any arguments eval accepts, if eval throws the generated add throws the same code"
-      proof := add_traps },
-    { name := "addMoney_calls_agree"
-      statement :=
-        "for any arguments, the generated addMoney returns what eval returns, entry check included"
-      proof := addMoney_calls_agree },
-    { name := "addMoney_traps"
-      statement :=
-        "for any arguments eval accepts, if eval throws the generated addMoney throws the same code"
-      proof := addMoney_traps },
-    { name := "ship_calls_agree"
-      statement :=
-        "for any arguments, the generated ship returns what eval returns, arm chosen by constructor"
-      proof := ship_calls_agree },
-    { name := "cartTotal_calls_agree"
-      statement :=
-        "for any arguments, the generated cartTotal returns what eval returns, fold included"
-      proof := cartTotal_calls_agree },
-    { name := "memberPrice_calls_agree"
-      statement :=
-        "for any arguments, the generated memberPrice returns what eval returns, the call it makes and the function it passes included"
-      proof := memberPrice_calls_agree },
-    { name := "cartTotal_traps"
-      statement :=
-        "for any arguments eval accepts, if the fold throws the generated cartTotal throws the same code"
-      proof := cartTotal_traps },
-    { name := "file_reads_back"
-      statement :=
-        "the index.js shipped for this program reads back as the module the compiler built"
-      proof := file_reads_back },
-    { name := "helpers_ship_as_modelled"
-      statement :=
-        "every runtime helper the model of the generated code assumes is what the shipped source computes"
-      proof := helpers_ship_as_modelled },
-    { name := "entry_check_fits_dts"
-      statement :=
-        "every argument the entry check lets through is a value the published .d.ts type admits"
-      proof := entry_check_fits_dts },
-    { name := "dts_fits_entry_check"
-      statement :=
-        "every argument the published .d.ts type admits passes the entry check, given only that its numbers lie in the Int53 and UInt32 ranges"
-      proof := dts_fits_entry_check },
-    { name := "encoded_values_fit_dts"
-      statement :=
-        "every value the reference semantics gives a declared type to encodes to one the published .d.ts type admits"
-      proof := encoded_values_fit_dts }
-  ]
 }
 
 end LeanTs.Example

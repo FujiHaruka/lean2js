@@ -12,14 +12,15 @@ lake exe leants MyLogic --out dist  # 検査して、dist/ に npm パッケー�
 ```
 
 `leants` は `LeanTs` が持つ実行ファイルで、`lake exe` が依存から解決する。渡すのはモジュール名で、
-そのモジュールの `manifest` を実行時に読んで書き出す（`--manifest` で別の定数を指せる）。
+そのモジュールの `manifest` と、同じ名前空間にある `Program` と公開定理を実行時に読んで書き出す
+（`--manifest` で別の定数を指せる）。
 
 `lake exe leants` は書き出す前に照合する。公開関数ごとに生成した差分ベクタの全件について、Lean の
 リファレンス意味論・生成した JavaScript の模型・small-step 意味論の 3 つが一致しなければ、
 パッケージは書き出されずに落ちる。そのうえで、組み立てたパッケージを Node で読み込み、同じ全件を
 本物の JavaScript で呼ぶ。ここで食い違っても書き出されない。だから `node` が PATH に要る。
 
-`claims` に載せた定理の証明も書き出す前に見る。`propext` / `Classical.choice` / `Quot.sound` 以外の
+名前空間の公開定理も、どれも書き出す前に証明を見る。`propext` / `Classical.choice` / `Quot.sound` 以外の
 公理に依っていれば落ちる —— `sorry` で塞いだ証明は `lake build` を警告だけで通るので、止まるのはここ。
 
 ## 中身
@@ -36,16 +37,17 @@ lake exe leants MyLogic --out dist  # 検査して、dist/ に npm パッケー�
 
 ## 書き換えるところ
 
-- `MyLogic.lean` の `orderTotal` を自分の宣言に置き換え、`program` の `decls` に並べる。
-  **宣言は自分より前に宣言された関数しか呼べない**ので、依存の順に並べる。
+- `MyLogic.lean` の `orderTotal` を自分の宣言に置き換える。`program%` が、同じ名前空間でそれより上に
+  書いた `Decl` と `TypeDef` を集め、呼び出しが前へ進む順に並べるので、書く順序は問わない。
+  **呼び出しは循環できない。** `program%` より下に書いた宣言は集まらず、`leants` が落ちる。
   書ける構文は [`SYNTAX.md`](SYNTAX.md) —— `decl%` の中は Lean の式ではない
 - `#eval program.check` はそのまま残す。`leants` がベクタを走らせる前に断る条件
-  （再帰、燃料の上限、コンパイルできない宣言）を `lake build` の側で先に落とす
-- 定理を書き、`manifest` の `claims` に `proof` ごと載せる。`claims` は証明項を要求するので、
-  定理を消すと `lake build` が落ちる
+  （燃料の上限、コンパイルできない宣言）を `lake build` の側で先に落とす
+- 定理を書く。**名前空間の公開定理はすべて、成果物の定理として載る。** 文言は Lean が定理に対して
+  印字するシグネチャで、docstring があれば説明として添えられる。載せたくない補題は `private` にする
 - `manifest` の `package` / `version` が、生成される `package.json` にそのまま入る
-- `compiler` / `lean` / `source` は書かない —— `leants` が入れる。手書きだと、成果物が何で
-  ビルドされたかについて事実と違うことを言えてしまう
+- `compiler` / `lean` / `source` も、定理の一覧と文言も書かない —— `leants` が入れる。手書きだと、
+  成果物が何でビルドされ何が証明されたかについて、事実と違うことを言えてしまう
 - 公開するなら `isPrivate := false` を書く。既定は `true` で、生成される `package.json` に
   `"private": true` が入る（事故で publish されない側に倒してある）。`license` /
   `repository` も `manifest` に置くと `package.json` に入る
