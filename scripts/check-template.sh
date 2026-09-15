@@ -31,10 +31,20 @@ cd "$work"
 lake build
 lake exe leants MyLogic --out dist
 
-for file in index.js index.d.ts index.js.map package.json proof-manifest.json vectors.json \
-            README.md my-logic.leants; do
+for file in index.js index.d.ts index.js.map package.json proof-manifest.json README.md \
+            my-logic.leants; do
   test -s "dist/$file" || { echo "the template did not write dist/$file"; exit 1; }
 done
+test ! -e dist/vectors.json || { echo "the vectors were written into dist"; exit 1; }
+
+# A node that disagrees with every vector stands in for a module that disagrees with eval on Node.
+mkdir "$work/disagreeing-node"
+printf '#!/bin/sh\nexit 1\n' > "$work/disagreeing-node/node"
+chmod +x "$work/disagreeing-node/node"
+if PATH="$work/disagreeing-node:$PATH" lake exe leants MyLogic --out refused; then
+  echo "leants wrote a package Node did not agree with"; exit 1
+fi
+test ! -e refused || { echo "leants left files behind for a package Node did not agree with"; exit 1; }
 
 grep -q 'export declare function orderTotal' dist/index.d.ts
 grep -q 'nothing_charged_below_one' dist/proof-manifest.json

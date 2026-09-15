@@ -8,7 +8,7 @@ The business logic this package ships, and the theorems proved about it.
 Everything the compiler accepts lives in `Core.Expr`, written here through the `decl%` surface syntax —
 which is not Lean's own: see `SYNTAX.md` for the whole of what may go inside `decl%` and `type%`.
 The theorems are about `evalCall`, the reference semantics, and the generated JavaScript is checked
-against it for every shipped vector before `emit` writes anything.
+against it, on Node as well as in Lean, for every vector before `emit` writes anything.
 -/
 
 namespace MyLogic

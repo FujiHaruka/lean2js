@@ -70,7 +70,7 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
 
 生成した JS  ──証明（往復）──  出荷する index.js のテキスト
 
-生成した JS の模型  ──Node 上の差分テスト──  本物の JavaScript
+生成した JS の模型  ──実行時検査（Node 上・成果物の全ベクタ）──  本物の JavaScript
 ```
 
 - **証明（式）**: `Core.Expr` の **35 形すべて**について、`eval` が値を返すなら生成コードも同じ値を
@@ -113,8 +113,8 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
   増えない —— し、呼び出しは前へしか進まないので段数は宣言の本数で上から押さえられる。`Cost.cost` が
   その上界を構文から計算し、`leants` は書き出す前に、出荷時の 10000 に収まることを**プログラムごとに
   1 回**確かめる（この例題は 482）
-- **実行時検査**: 出荷する成果物の全ベクタ（現在 24466 件）について、`eval` と JS の模型、および
-  `eval` と small-step が一致することを `leants` が書き出す前に確かめる。証明が届いたいまも残るのは、
+- **実行時検査**: 成果物ごとに生成する全ベクタ（この例題で 24466 件）について、`eval` と JS の模型、
+  および `eval` と small-step が一致することを `leants` が書き出す前に確かめる。証明が届いたいまも残るのは、
   **模型の燃料**が出荷時の 10000 で足りることを見る役と、small-step との一致を見る役
 - **テキスト**: コンパイルが通ったなら、書き出した `index.js` は**そのまま同じ AST に読み戻る**
   （`parseModule_render_of_compileProgram`）。但し書きは無い —— 読み手が木に要求すること
@@ -134,8 +134,10 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
   `.d.ts` は利用者が実際に読む唯一の型なので、これが「読んだ型と受け取る値がずれていない」の側。
   範囲の但し書きは下記。返る側は `encoded_values_fit_dts` —— `eval` が宣言した型を与える値は、
   符号化すると `.d.ts` の型を満たす
-- **差分テスト**: 生成した ESM を Node で実行し、`eval` の答えと突き合わせる。JS の模型が仮定している
-  振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）はここで押さえる
+- **Node での検査**: `leants` は書き出す前に、組み立てたパッケージを一時ディレクトリで Node に読み込ませ、
+  全ベクタを本物の JavaScript で呼んで `eval` の答えと突き合わせる。1 件でも食い違えば出力先には何も
+  書かない。JS の模型が仮定している振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）
+  はここで押さえる
 - **公理**: manifest に載る定理が `propext` / `Classical.choice` / `Quot.sound` 以外の公理に依らない
   ことを、`leants` が書き出す前に確かめる（`collectAxioms`）。`sorry` で塞いだ証明は `lake build` を
   警告だけで通ってしまうので、止めているのはこちら —— 許すのは 3 つだけなので、別の公理を持ち込む証明も
@@ -162,7 +164,6 @@ packages/verified-example/
   proof-manifest.json       定理・証明が依る公理・コンパイラ版・公開 API
   README.md                 公開 API・定理・公理の一覧
   package.json              exports / sideEffects / engines
-  vectors.json              差分テストの入力と期待値
 ```
 
 ## リポジトリ構成
@@ -177,11 +178,12 @@ lean/LeanTs/Compile.lean    Core → JS（型検査と生成を一本のパス�
 lean/LeanTs/JsSem.lean      生成した JS の意味論の模型
 lean/LeanTs/Correct.lean    compiler correctness（断片）
 lean/LeanTs/Agree.lean      成果物に対する実行時の一致検査
+lean/LeanTs/NodeCheck.lean  書き出す前に成果物を Node で全ベクタに当てるスクリプト
 lean/LeanTs/Example.lean    出荷するプログラムと、それについての定理
 lean/LeanTs.lean            import LeanTs が引くもの（利用者のビルドはここまで）
 lean/LeanTs/Checks.lean     証明と #guard と公理固定。CI が建てる、利用者は引かない
 lean/Main.lean              leants 実行ファイル: 指定されたモジュールの manifest を読んで書き出す
-packages/lean-ts/           @leants/check —— 成果物に vectors.json を当てる CLI と、その差分テスト
+packages/lean-ts/           Node 上のテスト —— 生成物の入口検査・source map・tree shaking と、検査スクリプト
 packages/verified-example/  生成された npm パッケージ
 templates/verified-package/ 利用者が自分のロジックを書きはじめるためのパッケージの雛形
 scripts/                    雛形が空のディレクトリから通ることを確かめる検査
@@ -210,8 +212,7 @@ pnpm template:check  # 雛形が空のディレクトリから通ることを確
 ```sh
 cp -R templates/verified-package my-logic && cd my-logic
 lake build                          # ロジックと定理を検査する
-lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出す
-npx @leants/check dist              # 出た成果物を Node で突き合わせる
+lake exe leants MyLogic --out dist  # 検査して、dist/ に npm パッケージを書き出す
 ```
 
 `leants` は `LeanTs` が持つ実行ファイルで、`lake exe` が依存から解決する。利用者は実行ファイルを
@@ -220,9 +221,8 @@ npx @leants/check dist              # 出た成果物を Node で突き合わせ
 利用者が建てるのは `import LeanTs` が引く 23 モジュール・56 MB だけで、コンパイラについての証明
 93 MB は入らない —— それは CI が建てるもので、利用者が再検査しても何も足されない。
 
-`npx @leants/check <dir>` は成果物の `vectors.json` を `index.js` に当て、`proof-manifest.json` の
-要約（公開 API の本数・定理・依っている公理）を出す。このリポジトリが自分の成果物に回している
-差分テストと同じもので、利用者の CI の 1 行になる。
+`leants` は書き出す前に、生成した全ベクタを Node で成果物に当てる（上記「Node での検査」）ので、
+`node` が PATH に要る。ベクタは出力先に残らず、検査を通ったパッケージだけが書き出される。
 
 雛形の中身と書き換えどころは [`templates/verified-package/README.md`](templates/verified-package/README.md)、
 `decl%` / `type%` に書ける構文は [`templates/verified-package/SYNTAX.md`](templates/verified-package/SYNTAX.md) にある。

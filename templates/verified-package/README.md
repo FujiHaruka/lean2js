@@ -8,8 +8,7 @@ Lean で書いた業務ロジックと、それについての定理から、npm
 ```sh
 cp -R templates/verified-package my-logic && cd my-logic
 lake build                          # ロジックと定理を検査する
-lake exe leants MyLogic --out dist  # dist/ に npm パッケージを書き出す
-npx @leants/check dist              # 出た成果物を Node で突き合わせる
+lake exe leants MyLogic --out dist  # 検査して、dist/ に npm パッケージを書き出す
 ```
 
 `leants` は `LeanTs` が持つ実行ファイルで、`lake exe` が依存から解決する。渡すのはモジュール名で、
@@ -17,13 +16,11 @@ npx @leants/check dist              # 出た成果物を Node で突き合わせ
 
 `lake exe leants` は書き出す前に照合する。公開関数ごとに生成した差分ベクタの全件について、Lean の
 リファレンス意味論・生成した JavaScript の模型・small-step 意味論の 3 つが一致しなければ、
-パッケージは書き出されずに落ちる。
+パッケージは書き出されずに落ちる。そのうえで、組み立てたパッケージを Node で読み込み、同じ全件を
+本物の JavaScript で呼ぶ。ここで食い違っても書き出されない。だから `node` が PATH に要る。
 
 `claims` に載せた定理の証明も書き出す前に見る。`propext` / `Classical.choice` / `Quot.sound` 以外の
 公理に依っていれば落ちる —— `sorry` で塞いだ証明は `lake build` を警告だけで通るので、止まるのはここ。
-
-`npx @leants/check dist` は出たパッケージの `vectors.json` を `index.js` に当て、一致しなければ
-落ちる。Lean を持たない CI でも回せるのはこちら。
 
 ## 中身
 
@@ -34,7 +31,7 @@ npx @leants/check dist              # 出た成果物を Node で突き合わせ
 | [`SYNTAX.md`](SYNTAX.md) | `decl%` / `type%` の中に書ける構文の全部 |
 
 `dist/` に出るのは `index.js` / `index.js.map` / `index.d.ts` / `<パッケージ名の末尾>.leants` /
-`proof-manifest.json` / `README.md` / `package.json` / `vectors.json`。生成される `README.md` は
+`proof-manifest.json` / `README.md` / `package.json`。生成される `README.md` は
 公開 API と定理と公理の一覧で、npm のページに出るのはこれ。
 
 ## 書き換えるところ

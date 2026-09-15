@@ -78,6 +78,9 @@
   **npm に出るのは利用者の成果物のほう**で、
   `packages/verified-example` はその形の見本にとどまる。雛形は `templates/verified-package/` にあり、
   空のディレクトリから通ることを `scripts/check-template.sh` が CI で確かめている
+- Node での検査 — 完了。`leants` は組み立てたパッケージを一時ディレクトリで Node に読み込ませ、全ベクタを
+  本物の JavaScript で呼んで `eval` と一致したときだけ書き出す。検査は処理系の中にあるので、利用者が別に
+  回す npm の道具は無く、ベクタも成果物に残らない
 - 定理は証明項であってデータではないので、プログラムをファイルで受け取る CLI では運べない。だから
   配布物は「CLI」ではなく「利用者側のパッケージの雛形」になっている
 
@@ -101,7 +104,7 @@ LeanTs/Js.lean       JS AST + ESM printer + .d.ts printer
 LeanTs/Compile.lean  Program → Js.Module  … Phase 2 で正しさを証明する対象
 LeanTs/Syntax.lean   表層構文: type% / decl% / expr% を Core 項へ展開する
 LeanTs/Builder.lean  Core 項を直接組み立てるための記法（Tests が使う）
-Main.lean            leants 実行ファイル: 渡されたモジュールの manifest を読み、index.js / index.d.ts / proof-manifest.json / vectors.json を出力
+Main.lean            leants 実行ファイル: 渡されたモジュールの manifest を読み、Node で全ベクタを当ててから index.js / index.d.ts / proof-manifest.json を出力
 ```
 
 「Restricted Lean」は Lean に埋め込まれた DSL として満たす。定理は `eval` 上で述べる。
@@ -158,7 +161,8 @@ Main.lean            leants 実行ファイル: 渡されたモジュールの m
 
 差分テストの形: `leants` が `vectors.json`（`[{fn, args, shapes?, expected}]`、`expected` は `eval` の
 結果で trap も符号化し、`shapes` は引数を `.d.ts` が許すもう一つの綴り —— 並べ替え、宣言に無いキー ——
-で書けと言う）を出力し、Vitest が生成された ESM を実行して突き合わせる。
+で書けと言う）を、組み立てたパッケージと一緒に一時ディレクトリへ書き、Node で生成された ESM を実行して
+突き合わせる。全件が一致したときだけ出力先に書き、ベクタは出力先に残さない。
 
 出力先は実際の npm パッケージの形にする（`packages/verified-example/`）。提案書の配布ノードそのもので
 あり、差分がレビューできる。

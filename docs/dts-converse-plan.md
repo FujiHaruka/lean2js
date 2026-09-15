@@ -192,7 +192,7 @@ membership に落とす手間が消えた）。
 
 `Agree.reshapeJs` が `Js.JsValue` の側で同じ写像を持ち、`checkAgreement` は `v.args.map encodeValue`
 ではなく `v.jsArgs` で模型を呼ぶ。**並べ替えと余分なキーが `eval` との一致検査に入った。**
-`packages/lean-ts/src/vectors.ts` の `reshape` が Node 側の同じ写像。
+`LeanTs/NodeCheck.lean` が Node で走らせるスクリプトの `reshape` が、Node 側の同じ写像。
 
 `packages/lean-ts/src/entry-check.test.ts` —— 冒頭の表を名指しで測る 4 本。並べ替えた `Money` が通り、
 宣言に無いキーを持つ `Money` が通り、そのキーは本体に届く前に落ち（`sameMoney` が `true` を返す）、

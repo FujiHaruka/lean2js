@@ -42,8 +42,8 @@ Lean の普通の作法に乗れない。コピーした瞬間に処理系との
 Reservoir の scope/version、`preferReleaseBuild` によるビルド済み配布、そして
 **証明を利用者のビルドから外すモジュール分割**。
 
-**(3) 成果物を利用者のものにし、npm 側から検査できるようにする。** ソース名とパッケージの公開設定を
-利用者のものにし、`npx @leants/check <dir>` で差分テストを利用者の成果物に対して回せるようにする。
+**(3) 成果物を利用者のものにし、Node での検査を書き出しに入れる。** ソース名とパッケージの公開設定を
+利用者のものにし、`leants` が書き出す前に、利用者の成果物に対して差分テストを Node で回す。
 
 **そして (1) が可能にする保証を足す。** 実行時にモジュールを読むということは、`leants` が
 `Environment` を持つということで、`collectAxioms` が呼べる。**manifest 定数の公理集合に
@@ -90,8 +90,7 @@ end OrderLogic
 
 ```sh
 lake update                                        # LeanTs を取り、lean-toolchain を書く
-lake exe leants OrderLogic --out packages/order-logic
-npx @leants/check packages/order-logic             # 出た成果物を Node で突き合わせる
+lake exe leants OrderLogic --out packages/order-logic  # Node で全ベクタを当ててから書き出す
 ```
 
 `lean-toolchain` は書かない（`lake update` が依存から書く）。`Main.lean` は書かない。
@@ -173,20 +172,20 @@ lakefile。`pnpm lean:*` の `cd lean` は消えた。雛形の `require` から
 matrix）でタグごとに `lake upload <tag>` する。これで利用者は 55 MB 分すらビルドしない。
 Lake は `lake cache` 経由の Reservoir ビルドキャッシュも見るので、そちらが使えるなら合わせる。
 
-### 6. npm 側の検査を配る — 完了
+### 6. Node での検査を書き出しに入れる — 完了
 
-`packages/lean-ts` は `@leants/check` になった（`private` が外れ、`bin` が 1 本ある）。
+`leants` は組み立てたパッケージを一時ディレクトリに書き、ベクタと検査スクリプト
+（`LeanTs/NodeCheck.lean`）を並べて `node` で走らせる。全件が `eval` と一致したときだけ出力先に書く。
+ベクタは出力先に残らず、`node` が起動できなければ書き出さずに落ちる。利用者は npm の道具も vitest も
+持たずに、このリポジトリと同じ差分テストを書き出しのたびに受ける。回し忘れる経路が無い。
 
-```
-npx @leants/check <dir>   # dir/vectors.json を dir/index.js に当て、proof-manifest を要約して出す
-```
+検査スクリプトは `.mjs` ファイルではなく Lean の文字列として持つ。`include_str` が読むファイルを Lake は
+追跡しないので、ファイルにすると直したあとも古いスクリプトが走りうる。
 
-中身は `differential.test.ts` がやっていることそのもの。利用者は vitest も tsconfig も持たずに、
-自分の成果物に対してこのリポジトリと同じ差分テストを回せる。
-
-検査器そのものが素通りしないことは `src/check.test.ts` が見る —— 値違い・`-0`・export 欠け・
-落ちるべきところで返る・エラーコード違いを、それぞれ 1 件の失敗として報告することまで固定してある。
-`scripts/check-template.sh` からは呼ばない（CI の Lean ジョブに Node のビルドが無い）。
+検査スクリプトが素通りしないことは `packages/lean-ts/src/node-check.test.ts` が見る —— 値違い・`-0`・
+BigInt・export 欠け・落ちるべきところで返る・エラーコード違い・読み込めないモジュールをそれぞれ失敗と
+して報告すること、並べ替えたオブジェクトと余分なキーを実際に渡すことまで固定してある。食い違ったときに
+出力先へ何も書かないことは、`scripts/check-template.sh` が全件に食い違う `node` を PATH に置いて確かめる。
 
 ### 7.（任意）属性で `decls` と `claims` を集める
 
@@ -207,13 +206,14 @@ CI がビルドする例**にする。
 - `examples/quickstart/{lakefile.toml, OrderLogic.lean}` に置く（2 ファイル）
 - `scripts/check-template.sh` → `scripts/check-quickstart.sh`。やることは今と同じ
   （空のディレクトリに展開し、`LeanTs` の require を作業ツリーへ向け直し、`lake build` →
-  `lake exe leants` → 出たファイルを見る）。`npx @leants/check` も通す
+  `lake exe leants` → 出たファイルを見る）
 - README の「自分のロジックを書く」は `cp -R` ではなく `require` の 3 行になる
 
 ## やらないこと
 
 - **lake を包む npm CLI（`npx leants build`）は作らない。** Lean のツールチェーンは利用者が
-  持つ必要があり、包んでも隠しきれない。npm 側に置くのは検査（段階 6）だけにする
+  持つ必要があり、包んでも隠しきれない。npm 側には何も置かない —— Node での検査も `leants` の中にある
+  （段階 6）
 - **`lake init` のテンプレートは狙わない。** Lake の組み込みテンプレートは拡張できない
 - **利用者のビルドから証明を外すが、証明を消すわけではない。** 外すのは「利用者が再検査する」
   ことだけで、CI は今と同じものを全部通す（段階 5 の `LeanTs/Checks.lean`）

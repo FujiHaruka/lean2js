@@ -1,27 +1,8 @@
 {
-  "name": "@leants/check",
+  "name": "lean-ts",
   "version": "0.1.0",
-  "description": "Runs a leants artifact's shipped vectors against its generated JavaScript.",
-  "license": "MIT",
+  "private": true,
   "type": "module",
-  "bin": {
-    "check": "./dist/cli.js"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
-  "scripts": {
-    "build": "tsc --build"
-  },
   "devDependencies": {
     "@leants/verified-example": "workspace:*"
   }

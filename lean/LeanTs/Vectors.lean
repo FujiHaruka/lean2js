@@ -14,7 +14,7 @@ namespace LeanTs
 
 open Core
 
-/-- Deterministic randomness. The vectors go into git, so a diff on every run would be trouble. -/
+/-- Deterministic randomness, so a disagreement one run finds is found again by the next. -/
 private def nextSeed (s : UInt64) : UInt64 :=
   s * 6364136223846793005 + 1442695040888963407
 
@@ -265,8 +265,6 @@ private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
     | .error .outOfFuel => true
     | _ => false
 
-/-- Writes one vector per line. The artifact goes into git, and neither over-formatting it nor collapsing
-it to a single line leaves a readable diff. -/
 def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String :=
   let vectors := allTestVectors p edgeLimit randomCount
   match outOfFuelIn vectors with

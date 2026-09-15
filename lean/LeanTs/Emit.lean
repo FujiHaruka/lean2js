@@ -2,6 +2,7 @@ import LeanTs.Agree
 import LeanTs.Cost
 import LeanTs.Compile
 import LeanTs.Manifest
+import LeanTs.NodeCheck
 import LeanTs.Parse
 import LeanTs.SourceMap
 import LeanTs.Vectors
@@ -57,9 +58,26 @@ compiler rejects, builds clean and is refused only once `leants` runs. -/
 def Core.Program.check (p : Core.Program) : IO Unit := do
   let _ ← IO.ofExcept p.checked
 
-/-- Checks before it writes. Every shipped vector has to agree between `eval`, the model of the generated
-JS and the small-step machine, and the text of the module has to read back as the module it was compiled
-from, so a disagreement fails the build rather than reaching the package. -/
+private def checkOnNode (files : List (String × String)) (vectors : String) : IO Unit :=
+  IO.FS.withTempDir fun dir => do
+    for (name, text) in files do
+      IO.FS.writeFile (dir / name) text
+    IO.FS.writeFile (dir / "vectors.json") vectors
+    IO.FS.writeFile (dir / "check.mjs") nodeCheckScript
+    let out ← try
+        IO.Process.output { cmd := "node", args := #[(dir / "check.mjs").toString, dir.toString] }
+      catch e =>
+        throw (IO.userError
+          s!"could not start node ({e}); every vector runs on Node before anything is written")
+    IO.print out.stdout
+    IO.eprint out.stderr
+    unless out.exitCode == 0 do
+      throw (IO.userError "the emitted module disagrees with eval on Node")
+
+/-- Checks before it writes. Every vector has to agree between `eval`, the model of the generated JS and
+the small-step machine, the text of the module has to read back as the module it was compiled from, and
+the package, assembled in a scratch directory, has to agree with `eval` on every vector when Node runs
+it. A disagreement fails the build rather than reaching the package. -/
 def emit (outDir : System.FilePath) (m : Manifest) (source : String) (axioms : List String) : IO Unit := do
   let jsModule ← IO.ofExcept m.program.checked
   match checkAgreement m.program 400 200 with
@@ -68,18 +86,21 @@ def emit (outDir : System.FilePath) (m : Manifest) (source : String) (axioms : L
     let emitted := emitModule jsModule
     if Parse.parseModule emitted.text.toList != some jsModule then
       throw (IO.userError "the emitted text does not read back as the module it was compiled from")
+    let vectors ← match renderVectors m.program 400 200 with
+      | .error e => throw (IO.userError s!"vector generation failed: {e}")
+      | .ok vectors => pure vectors
+    let files := [
+      ("index.js", emitted.text),
+      (m.sourceFileName, m.program.source.text),
+      ("index.js.map", (sourceMapFor m.program emitted m.sourceFileName).renderPretty ++ "\n"),
+      ("index.d.ts", Js.renderDts m.program),
+      ("README.md", m.toReadme source axioms),
+      ("proof-manifest.json", (m.toJson source axioms).renderPretty ++ "\n"),
+      ("package.json", (packageJson m).renderPretty ++ "\n")]
+    checkOnNode files vectors
     IO.FS.createDirAll outDir
-    IO.FS.writeFile (outDir / "index.js") emitted.text
-    IO.FS.writeFile (outDir / m.sourceFileName) m.program.source.text
-    IO.FS.writeFile (outDir / "index.js.map")
-      ((sourceMapFor m.program emitted m.sourceFileName).renderPretty ++ "\n")
-    IO.FS.writeFile (outDir / "index.d.ts") (Js.renderDts m.program)
-    IO.FS.writeFile (outDir / "README.md") (m.toReadme source axioms)
-    IO.FS.writeFile (outDir / "proof-manifest.json") ((m.toJson source axioms).renderPretty ++ "\n")
-    IO.FS.writeFile (outDir / "package.json") ((packageJson m).renderPretty ++ "\n")
-    match renderVectors m.program 400 200 with
-    | .error e => throw (IO.userError s!"vector generation failed: {e}")
-    | .ok vectors => IO.FS.writeFile (outDir / "vectors.json") vectors
+    for (name, text) in files do
+      IO.FS.writeFile (outDir / name) text
     IO.println s!"wrote {m.program.publicDecls.length} exports to {outDir}"
 
 end LeanTs
