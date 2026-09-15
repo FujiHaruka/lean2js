@@ -14,6 +14,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: Regenerate the package
         run: lake exe leants LeanTs.Example --out packages/verified-example
       - name: Generated package is up to date
