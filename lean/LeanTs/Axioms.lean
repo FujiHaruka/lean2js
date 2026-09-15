@@ -16,7 +16,8 @@ plugged with `sorry` through with a warning. Pinning the axiom set makes the bui
 `sorryAx` gets mixed in.
 
 The roundtrip is pinned here too, ahead of the manifest carrying it: it is the only thing standing
-between the trees the proofs are about and the text that ships.
+between the trees the proofs are about and the text that ships. So is the small-step machine's agreement
+with `eval`.
 -/
 
 /-- info: 'LeanTs.Example.add_comm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -166,3 +167,11 @@ between the trees the proofs are about and the text that ships.
 /-- info: 'LeanTs.Cost.evalCall_ne_outOfFuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanTs.Cost.evalCall_ne_outOfFuel
+
+/-- info: 'LeanTs.StepAgree.stepCall_agrees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.StepAgree.stepCall_agrees
+
+/-- info: 'LeanTs.Example.steps_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanTs.Example.steps_agree

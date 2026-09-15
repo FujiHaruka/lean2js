@@ -9,6 +9,7 @@ import LeanTs.HelperProof
 import LeanTs.HelperAgree
 import LeanTs.HelperSem
 import LeanTs.Norm
+import LeanTs.StepAgree
 import LeanTs.Example
 import LeanTs.Tests
 import LeanTs.Axioms

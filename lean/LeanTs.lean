@@ -28,6 +28,6 @@ What a user's package gets from `import LeanTs`: the subset, the reference seman
 `emit`.
 
 The proofs about the compiler are not here. They are `LeanTs/Checks.lean`, which this repository's CI
-builds and a user never imports — re-checking them costs a user 93 MB of olean and tells them nothing
+builds and a user never imports — re-checking them costs a user 98 MB of olean and tells them nothing
 their own build could not already assume.
 -/

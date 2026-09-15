@@ -100,28 +100,12 @@ def disagreementsIn (m : Js.Module) (vectors : List TestVector) :
     if agrees v.expected actual then none
     else some { fn := v.fn, args := v.args, shapes := v.shapes, expected := v.expected, actual }
 
-/-- Whether small-step gives the same answer as big-step. Short-circuiting and evaluation order break
-nowhere else. -/
-def stepDisagreementsIn (p : Program) (vectors : List TestVector) : List (String × List Value) :=
-  vectors.filterMap fun v =>
-    let bySteps := stepCall p v.fn v.args
-    let same :=
-      match bySteps, v.expected with
-      | .ok a, .ok b => a == b
-      | .error a, .error b => a == b
-      | _, _ => false
-    if same then none else some (v.fn, v.args)
-
 /-- Checks that the artifact does not disagree with the reference semantics, before writing it out. -/
 def checkAgreement (p : Program) (edgeLimit randomCount : Nat) : Except String Unit := do
   let m ← Compile.compileProgram p
   let vectors := allTestVectors p edgeLimit randomCount
   match disagreementsIn m vectors with
   | d :: rest => .error s!"{rest.length + 1} disagreements, first: {d.render}"
-  | [] =>
-    match stepDisagreementsIn p vectors with
-    | (fn, _) :: rest =>
-      .error s!"small-step disagrees with big-step on {rest.length + 1} vectors, first: {fn}"
-    | [] => .ok ()
+  | [] => .ok ()
 
 end LeanTs

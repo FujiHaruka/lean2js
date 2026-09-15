@@ -344,6 +344,16 @@ theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram prog
   (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeValue v)
 ```
 
+### steps_agree
+
+The small-step machine, given enough steps, answers every call to a public function exactly as `eval`
+does.
+
+```lean
+theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :
+  ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args
+```
+
 ## Axioms
 
 The proofs above reach no axioms beyond Classical.choice, Quot.sound, propext.

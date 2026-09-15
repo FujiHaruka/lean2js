@@ -4,6 +4,7 @@ import LeanTs.Dts
 import LeanTs.HelperAgree
 import LeanTs.Manifest
 import LeanTs.Renderable
+import LeanTs.StepAgree
 import LeanTs.Syntax
 
 /-!
@@ -655,6 +656,13 @@ theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram prog
     (v : Value) (ty : Ty) (hv : Value.hasTy program v ty = true) :
     Dts.TsSat program ty (encodeValue v) :=
   Dts.hasTy_tsSat program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
+
+/-- The small-step machine, given enough steps, answers every call to a public function exactly as `eval`
+does. -/
+theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d)
+    (hpub : d.isPublic = true) :
+    ∃ n, ∀ bound, n ≤ bound → stepCall program bound fn args = evalCall program fn args :=
+  StepAgree.stepCall_agrees program_progOk program_cost_fits hd hpub
 
 def manifest : Manifest := {
   package := "@leants/verified-example"

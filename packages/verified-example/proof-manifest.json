@@ -400,6 +400,11 @@
       "name": "encoded_values_fit_dts",
       "statement": "encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value) (ty : Ty)\n  (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeValue v)",
       "doc": "What comes back, rather than what goes in: a value the reference semantics gives a declared type to\nencodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration\nreturns, and `decl_correct` says the generated function returns its encoding."
+    },
+    {
+      "name": "steps_agree",
+      "statement": "steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :\n  ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args",
+      "doc": "The small-step machine, given enough steps, answers every call to a public function exactly as `eval`\ndoes."
     }
   ],
   "axioms": [

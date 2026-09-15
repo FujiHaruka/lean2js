@@ -16,8 +16,7 @@ lake exe leants MyLogic --out dist  # 検査して、dist/ に npm パッケー�
 （`--manifest` で別の定数を指せる）。
 
 `lake exe leants` は書き出す前に照合する。公開関数ごとに生成した差分ベクタの全件について、Lean の
-リファレンス意味論・生成した JavaScript の模型・small-step 意味論の 3 つが一致しなければ、
-パッケージは書き出されずに落ちる。そのうえで、組み立てたパッケージを Node で読み込み、同じ全件を
+リファレンス意味論と生成した JavaScript の模型が一致しなければ、パッケージは書き出されずに落ちる。そのうえで、組み立てたパッケージを Node で読み込み、同じ全件を
 本物の JavaScript で呼ぶ。ここで食い違っても書き出されない。だから `node` が PATH に要る。
 
 名前空間の公開定理も、どれも書き出す前に証明を見る。`propext` / `Classical.choice` / `Quot.sound` 以外の

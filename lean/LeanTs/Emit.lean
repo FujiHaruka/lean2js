@@ -74,8 +74,8 @@ private def checkOnNode (files : List (String × String)) (vectors : String) : I
     unless out.exitCode == 0 do
       throw (IO.userError "the emitted module disagrees with eval on Node")
 
-/-- Checks before it writes. Every vector has to agree between `eval`, the model of the generated JS and
-the small-step machine, the text of the module has to read back as the module it was compiled from, and
+/-- Checks before it writes. Every vector has to agree between `eval` and the model of the generated JS,
+the text of the module has to read back as the module it was compiled from, and
 the package, assembled in a scratch directory, has to agree with `eval` on every vector when Node runs
 it. A disagreement fails the build rather than reaching the package. -/
 def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do

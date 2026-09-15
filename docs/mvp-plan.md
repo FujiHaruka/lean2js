@@ -7,7 +7,7 @@
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | 1. COMPILE | 最小言語の定義と ESM 出力（基本型・ADT・純粋関数、`index.js` / `index.d.ts`、Node での差分テスト） | 完了 |
-| 2. VERIFY | 変換の保証（small-step semantics、type soundness、compiler correctness、proof manifest） | 一部 |
+| 2. VERIFY | 変換の保証（small-step semantics、type soundness、compiler correctness、proof manifest） | 完了 |
 | 3. SHIP | npm 開発体験（source maps、tree shaking、CI）と、処理系そのものの配布（利用者のパッケージの雛形） | 完了 |
 
 ### Phase 2 の到達点
@@ -69,8 +69,12 @@
   構文から計算し、`emit` がプログラムごとに 1 回、出荷時の 10000 に収まることを確かめる。
   関数値を経由した呼び出しも前へ進まないことは `progOk` が構文で見ている ——
   `fnRef` は呼び出しの引数にしか置けず、関数型のパラメータは呼ぶことしかできない
-- small-step semantics — 継続を明示した抽象機械として実装（`Step.lean`）。big-step との一致は
-  成果物のベクタ全件について実行時に確かめている。短絡評価を壊すと 125 件の食い違いとして落ちる
+- small-step semantics — 継続を明示した抽象機械として実装（`Step.lean`）。big-step との一致は証明済み
+  （`StepAgree.lean`）。`eval` が燃料切れ以外の答えを返すなら、機械は十分なステップのうちに同じ答えに着き
+  （`stepCall_eventually`）、`leants` が書き出すプログラムでは公開関数へのすべての呼び出しがそうなる
+  （`stepCall_agrees`）。機械は決定的なので、どのステップ数で出した答えも同じ（`stepCall_refines`）。
+  `eval` の燃料は深さを、機械のステップは遷移の数を数えるので、主張は「十分なステップで」の形になる。
+  証明は `eval` の燃料についての帰納で、式に入るときに機械が持っている継続ごと運ぶ
 
 ### Phase 3 の到達点
 
