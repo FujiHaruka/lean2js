@@ -238,3 +238,8 @@ lake exe leants MyLogic --out dist  # 検査して、dist/ に npm パッケー�
 `decl%` / `type%` に書ける構文は [`templates/verified-package/SYNTAX.md`](templates/verified-package/SYNTAX.md) にある。
 雛形の `#eval program.check` は、`leants` が書き出す前に断る条件のうちベクタを要らない分
 （再帰、燃料の上限、コンパイルできない宣言）を、利用者の `lake build` の側で落とす。
+
+## ライセンス
+
+Apache License 2.0（[`LICENSE`](LICENSE)）。生成された npm パッケージは利用者のロジックと定理から
+できているので、そのライセンスは利用者が決める。
