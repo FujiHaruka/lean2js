@@ -41,7 +41,7 @@ git diff --exit-code -- packages/verified-example
 `.github/workflows/ci.yml` が見ているのはこれと同じもの。**一部だけ回した結果を判断に使わない** —
 Lean 側の変更は生成物と Node 側のテストの両方に届く。
 
-`lake` はリポジトリ root で動かす（`lakefile.toml` は root、ソースは `srcDir = "lean"` で `lean/` にある）。
+`lake` はリポジトリ root で動かす（`lakefile.toml` も Lean のソースも root にある）。
 
 ## 言語
 

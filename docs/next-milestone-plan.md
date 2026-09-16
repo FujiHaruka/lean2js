@@ -207,7 +207,7 @@ JS 側で `.num 0` になるので、`Value.beq` では偽、`JsValue.beq` で�
 ロジックと定理を書き、自分の npm パッケージを生成できる。
 
 **`emit` がライブラリに入った。** `Main.lean` に焼き込まれていた書き出し手順は `Lean2Js/Emit.lean` へ
-移り、`Manifest` を受け取るだけになった。`lean/Main.lean` は渡されたモジュールの `manifest` を実行時に
+移り、`Manifest` を受け取るだけになった。`Main.lean` は渡されたモジュールの `manifest` を実行時に
 読む汎用ドライバで、利用者はこれを `lake exe lean2js` で呼ぶ。
 
 **ライブラリのルートから例題が外れた。** `Lean2Js.lean` が持つのは処理系だけで、`Example` /

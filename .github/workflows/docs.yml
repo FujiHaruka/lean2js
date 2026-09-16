@@ -1,0 +1,40 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One Pages deployment at a time, queued rather than cancelled so a deployment in
+# flight finishes publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # `lib` is passed rather than read from the lakefile: the second library there is named
+      # `checks` while its module root is `Lean2Js.Checks`, and the name is what litedoc4
+      # globs. `Lean2Js` already covers every module under it, the proofs included.
+      - uses: FujiHaruka/litedoc4@v1.4.0
+        id: docs
+        with:
+          lib: Lean2Js
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ steps.docs.outputs.site }}
+
+      - id: deployment
+        uses: actions/deploy-pages@v5

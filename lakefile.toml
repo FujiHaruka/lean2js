@@ -1,6 +1,5 @@
 name = "Lean2Js"
 version = "0.1.0"
-srcDir = "lean"
 defaultTargets = ["Lean2Js", "checks", "lean2js"]
 
 [[lean_lib]]

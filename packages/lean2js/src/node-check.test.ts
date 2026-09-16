@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const leanSource = readFileSync(
-  fileURLToPath(new URL("../../../lean/Lean2Js/NodeCheck.lean", import.meta.url)),
+  fileURLToPath(new URL("../../../Lean2Js/NodeCheck.lean", import.meta.url)),
   "utf8",
 );
 const script = /r#"([\s\S]*?)"#/.exec(leanSource)?.[1];

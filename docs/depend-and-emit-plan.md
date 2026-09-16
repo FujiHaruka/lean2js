@@ -38,7 +38,7 @@ Lean の普通の作法に乗れない。コピーした瞬間に処理系との
 （この節の主張はすべて実機で確認済み。末尾「確かめたこと」を参照。）
 
 **(2) 依存として解決できる形にする。** Lean の作法で `require` できるようにする ——
-リポジトリ root の `lakefile.toml`（ソースは `srcDir = "lean"` で今の場所に残す）、版のタグ、
+リポジトリ root の `lakefile.toml`、版のタグ、
 Reservoir の scope/version、`preferReleaseBuild` によるビルド済み配布、そして
 **証明を利用者のビルドから外すモジュール分割**。
 
@@ -102,7 +102,7 @@ lake exe lean2js OrderLogic --out packages/order-logic  # Node で全ベクタ�
 
 ### 1. `lean2js` が利用者の manifest を読む — 完了
 
-`lean/Main.lean` を汎用ドライバに書き換える。
+`Main.lean` を汎用ドライバに書き換える。
 
 ```
 lean2js <Module> [--manifest <const>] [--out <dir>]
@@ -152,7 +152,7 @@ lean2js <Module> [--manifest <const>] [--out <dir>]
 ### 5. 依存として解決できるようにする
 
 **root に lakefile を置いた — 完了。** `lakefile.toml` / `lean-toolchain` / `lake-manifest.json` は
-root にあり、ソースは `srcDir = "lean"` で `lean/` に残っている。Reservoir が見るのは root の
+root にあり、Lean のソースも root にある。Reservoir が見るのは root の
 lakefile。`pnpm lean:*` の `cd lean` は消えた。雛形の `require` から `subDir` も消えた。
 
 **版を切る。** `v0.1.0` のタグを打ち、雛形の `rev = "main"` を捨てる。Reservoir に登録すれば
@@ -231,7 +231,7 @@ CI がビルドする例**にする。
   `lake build` はこれを警告だけで通す（exit 0）
 - 実行ファイルの中から `$LAKE build <Module>` を回せる（`lake exe` はビルドを終えてから
   起動するので詰まらない）
-- root の `lakefile.toml` + `srcDir = "lean"` で、ソースを今の場所に置いたままビルドできる
+- root の `lakefile.toml` から、root に置いた Lean のソースをビルドできる
 - `lake update` は依存の `lean-toolchain` を利用者の root に書く
 - `[[lean_exe]]` の `supportInterpreter` は TOML から効く
 - olean 実測: 全 149 MB / 利用者向け閉包 55 MB / 証明のみ 93 MB

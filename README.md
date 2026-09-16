@@ -57,7 +57,8 @@ Lean 全体ではなく、JS との対応が明快な領域に絞ることで、
 | 2. VERIFY | 変換の保証（small-step semantics、compiler correctness、proof manifest） | 完了 |
 | 3. SHIP | npm 開発体験（source maps、tree shaking、CI）と、処理系そのものの配布（利用者のパッケージの雛形） | 完了 |
 
-詳細は [提案書](docs/proposal.html) と [実装プラン](docs/mvp-plan.md) を参照。
+詳細は [提案書](docs/proposal.html) と [実装プラン](docs/mvp-plan.md) を参照。Lean のモジュール・定義・定理の
+リファレンスは [API ドキュメント](https://fujiharuka.github.io/lean2js/) にある。
 
 ## 保証の組み立て
 
@@ -178,21 +179,21 @@ packages/verified-example/
 ## リポジトリ構成
 
 ```
-lakefile.toml               Lean2Js パッケージ。ソースは srcDir = "lean"
-lean/Lean2Js/Core.lean       サブセットの構文
-lean/Lean2Js/Syntax.lean     Core 項へ展開される表層構文
-lean/Lean2Js/Eval.lean       fuel 付き big-step のリファレンス意味論
-lean/Lean2Js/Step.lean       継続を明示した small-step 意味論
-lean/Lean2Js/StepAgree.lean  small-step 意味論と eval の一致の証明
-lean/Lean2Js/Compile.lean    Core → JS（型検査と生成を一本のパスで）
-lean/Lean2Js/JsSem.lean      生成した JS の意味論の模型
-lean/Lean2Js/Correct.lean    compiler correctness（断片）
-lean/Lean2Js/Agree.lean      成果物に対する実行時の一致検査
-lean/Lean2Js/NodeCheck.lean  書き出す前に成果物を Node で全ベクタに当てるスクリプト
-lean/Lean2Js/Example.lean    出荷するプログラムと、それについての定理
-lean/Lean2Js.lean            import Lean2Js が引くもの（利用者のビルドはここまで）
-lean/Lean2Js/Checks.lean     証明と #guard と公理固定。CI が建てる、利用者は引かない
-lean/Main.lean              lean2js 実行ファイル: 指定されたモジュールの manifest を読んで書き出す
+lakefile.toml               Lean2Js パッケージ
+Lean2Js/Core.lean           サブセットの構文
+Lean2Js/Syntax.lean         Core 項へ展開される表層構文
+Lean2Js/Eval.lean           fuel 付き big-step のリファレンス意味論
+Lean2Js/Step.lean           継続を明示した small-step 意味論
+Lean2Js/StepAgree.lean      small-step 意味論と eval の一致の証明
+Lean2Js/Compile.lean        Core → JS（型検査と生成を一本のパスで）
+Lean2Js/JsSem.lean          生成した JS の意味論の模型
+Lean2Js/Correct.lean        compiler correctness（断片）
+Lean2Js/Agree.lean          成果物に対する実行時の一致検査
+Lean2Js/NodeCheck.lean      書き出す前に成果物を Node で全ベクタに当てるスクリプト
+Lean2Js/Example.lean        出荷するプログラムと、それについての定理
+Lean2Js.lean                import Lean2Js が引くもの（利用者のビルドはここまで）
+Lean2Js/Checks.lean         証明と #guard と公理固定。CI が建てる、利用者は引かない
+Main.lean                   lean2js 実行ファイル: 指定されたモジュールの manifest を読んで書き出す
 packages/lean2js/           Node 上のテスト —— 生成物の入口検査・source map・tree shaking と、検査スクリプト
 packages/verified-example/  生成された npm パッケージ
 templates/verified-package/ 利用者が自分のロジックを書きはじめるためのパッケージの雛形
