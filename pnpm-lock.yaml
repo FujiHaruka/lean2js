@@ -30,9 +30,9 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.4.1)
 
-  packages/lean-ts:
+  packages/lean2js:
     devDependencies:
-      '@leants/verified-example':
+      '@lean2js/verified-example':
         specifier: workspace:*
         version: link:../verified-example
 

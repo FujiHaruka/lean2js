@@ -165,7 +165,7 @@ UTF-16 は前方一致を保ち、引数に孤立サロゲートは入らない�
 **書けるようになること**: 人が業務ロジックを書ける。`v "a" +' v "b"` は AST の組み立てであって、業務
 ロジックの記述ではない。
 
-**形**: `LeanTs/Syntax.lean` が `leants_ty` / `leants_expr` / `leants_pat` の構文カテゴリを立て、
+**形**: `Lean2Js/Syntax.lean` が `lean2js_ty` / `lean2js_expr` / `lean2js_pat` の構文カテゴリを立て、
 `type%` / `decl%` / `expr%` が Core 項へ展開する。**Lean にトークンを 1 つも足していない** ——
 `if` / `let` / `match` / `fun` / `::` はすでに Lean が予約しているものだけを使い、`Int53`・`Option`・
 `map`・`trim` のような名前は普通の識別子としてマクロが名前で振り分ける。`true` を原子として宣言すると

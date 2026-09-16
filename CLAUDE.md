@@ -1,4 +1,4 @@
-# lean.ts project rules
+# lean2js project rules
 
 Lean 4 で証明した業務ロジックを、普通の npm パッケージとして JS / TS へ届けるための処理系。
 売っているのは「証明した実装が動いていること」なので、**保証を弱めて緑にすることだけはしない**。
@@ -10,14 +10,14 @@ Lean 4 で証明した業務ロジックを、普通の npm パッケージと�
 `git diff --exit-code -- packages/verified-example` で「コミットされた生成物が今の Lean から
 再生成できること」を見ている。手で直したものは、次に誰かが emit した瞬間に消える。
 
-**`leants` は書き出す前に検査する。** `emit` は `checkAgreement` と Node 上の検査を通ってから
+**`lean2js` は書き出す前に検査する。** `emit` は `checkAgreement` と Node 上の検査を通ってから
 ファイルを書くので、生成したベクタ全件について `eval` と JS の模型、`eval` と Node で動かした
 生成物が一致しなければ書き出し自体が失敗する。落ちたときに直すのはコンパイラか意味論であって、検査の側ではない。
 
-**manifest に載る定理は手で書かない。** `leants` が manifest と同じ名前空間の公開定理をすべて集め、
+**manifest に載る定理は手で書かない。** `lean2js` が manifest と同じ名前空間の公開定理をすべて集め、
 文言は Lean が印字する定理のシグネチャになるので、一覧が証明とずれない。`sorry` は項として通って
-しまうが、`leants` が書き出す前に各定理の公理集合を見て `propext` / `Classical.choice` / `Quot.sound`
-以外があれば落ちる。`LeanTs/Axioms.lean` の `#print axioms` 固定はこれを `lake build` の側にも置いた
+しまうが、`lean2js` が書き出す前に各定理の公理集合を見て `propext` / `Classical.choice` / `Quot.sound`
+以外があれば落ちる。`Lean2Js/Axioms.lean` の `#print axioms` 固定はこれを `lake build` の側にも置いた
 もので、**`Example.lean` に公開定理を足したら Axioms.lean に行も足す。**
 
 ## 開発の進め方

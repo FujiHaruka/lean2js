@@ -12,10 +12,10 @@
 
 ### Phase 2 の到達点
 
-- proof manifest — 完了。定理の一覧も文言も手で書かない。`leants` が manifest と同じ名前空間の公開定理を
+- proof manifest — 完了。定理の一覧も文言も手で書かない。`lean2js` が manifest と同じ名前空間の公開定理を
   すべて集め、Lean が印字する定理のシグネチャを文言に、docstring を説明にして載せる。一覧が定理そのもの
   から作られるので、載っている主張が証明とずれることも、証明の無い主張が載ることもない。`sorry` で
-  塞いだ証明は項として通ってしまうので、`leants` が書き出す前に各定理の公理集合を見て、
+  塞いだ証明は項として通ってしまうので、`lean2js` が書き出す前に各定理の公理集合を見て、
   `propext` / `Classical.choice` / `Quot.sound` 以外があれば書き出さずに落ちる。使った公理は
   `proof-manifest.json` の `axioms` に載る
 - JS の意味論の模型（`JsSem.lean`）と、出荷する成果物がリファレンス意味論と一致することの実行時検査
@@ -71,7 +71,7 @@
   `fnRef` は呼び出しの引数にしか置けず、関数型のパラメータは呼ぶことしかできない
 - small-step semantics — 継続を明示した抽象機械として実装（`Step.lean`）。big-step との一致は証明済み
   （`StepAgree.lean`）。`eval` が燃料切れ以外の答えを返すなら、機械は十分なステップのうちに同じ答えに着き
-  （`stepCall_eventually`）、`leants` が書き出すプログラムでは公開関数へのすべての呼び出しがそうなる
+  （`stepCall_eventually`）、`lean2js` が書き出すプログラムでは公開関数へのすべての呼び出しがそうなる
   （`stepCall_agrees`）。機械は決定的なので、どのステップ数で出した答えも同じ（`stepCall_refines`）。
   `eval` の燃料は深さを、機械のステップは遷移の数を数えるので、主張は「十分なステップで」の形になる。
   証明は `eval` の燃料についての帰納で、式に入るときに機械が持っている継続ごと運ぶ
@@ -79,12 +79,12 @@
 ### Phase 3 の到達点
 
 - source map / tree shaking / CI — 完了
-- 配布 — 完了。利用者は自分の Lean パッケージで `LeanTs` に依存し、`lake exe leants <Module>` を呼ぶ。
-  実行ファイルは書かない —— `leants` がモジュールの `manifest` を実行時に読む。
+- 配布 — 完了。利用者は自分の Lean パッケージで `Lean2Js` に依存し、`lake exe lean2js <Module>` を呼ぶ。
+  実行ファイルは書かない —— `lean2js` がモジュールの `manifest` を実行時に読む。
   **npm に出るのは利用者の成果物のほう**で、
   `packages/verified-example` はその形の見本にとどまる。雛形は `templates/verified-package/` にあり、
   空のディレクトリから通ることを `scripts/check-template.sh` が CI で確かめている
-- Node での検査 — 完了。`leants` は組み立てたパッケージを一時ディレクトリで Node に読み込ませ、全ベクタを
+- Node での検査 — 完了。`lean2js` は組み立てたパッケージを一時ディレクトリで Node に読み込ませ、全ベクタを
   本物の JavaScript で呼んで `eval` と一致したときだけ書き出す。検査は処理系の中にあるので、利用者が別に
   回す npm の道具は無く、ベクタも成果物に残らない
 - 定理は証明項であってデータではないので、プログラムをファイルで受け取る CLI では運べない。だから
@@ -104,13 +104,13 @@ elaborator と compiler に委ねられ、証明すべき命題そのものが�
 リファレンス意味論であり、Phase 2 の定理はすべてこれと JS 側の評価との一致として述べられる。
 
 ```
-LeanTs/Core.lean     Ty / Expr / Decl / Program  … サブセットの構文（deep embedding）
-LeanTs/Eval.lean     eval : Program → ... → Except Err Value  … リファレンス意味論（fuel 付き big-step）
-LeanTs/Js.lean       JS AST + ESM printer + .d.ts printer
-LeanTs/Compile.lean  Program → Js.Module  … Phase 2 で正しさを証明する対象
-LeanTs/Syntax.lean   表層構文: type% / decl% / expr% を Core 項へ展開する
-LeanTs/Builder.lean  Core 項を直接組み立てるための記法（Tests が使う）
-Main.lean            leants 実行ファイル: 渡されたモジュールの manifest を読み、Node で全ベクタを当ててから index.js / index.d.ts / proof-manifest.json を出力
+Lean2Js/Core.lean     Ty / Expr / Decl / Program  … サブセットの構文（deep embedding）
+Lean2Js/Eval.lean     eval : Program → ... → Except Err Value  … リファレンス意味論（fuel 付き big-step）
+Lean2Js/Js.lean       JS AST + ESM printer + .d.ts printer
+Lean2Js/Compile.lean  Program → Js.Module  … Phase 2 で正しさを証明する対象
+Lean2Js/Syntax.lean   表層構文: type% / decl% / expr% を Core 項へ展開する
+Lean2Js/Builder.lean  Core 項を直接組み立てるための記法（Tests が使う）
+Main.lean            lean2js 実行ファイル: 渡されたモジュールの manifest を読み、Node で全ベクタを当ててから index.js / index.d.ts / proof-manifest.json を出力
 ```
 
 「Restricted Lean」は Lean に埋め込まれた DSL として満たす。定理は `eval` 上で述べる。
@@ -165,7 +165,7 @@ Main.lean            leants 実行ファイル: 渡されたモジュールの m
 相互再帰も書けず、走査は `map` / `filter` / `reduce` が受け持つ。`eval` の fuel は証明を閉じるための
 装置であって、サブセットの意味論ではない。
 
-差分テストの形: `leants` が `vectors.json`（`[{fn, args, shapes?, expected}]`、`expected` は `eval` の
+差分テストの形: `lean2js` が `vectors.json`（`[{fn, args, shapes?, expected}]`、`expected` は `eval` の
 結果で trap も符号化し、`shapes` は引数を `.d.ts` が許すもう一つの綴り —— 並べ替え、宣言に無いキー ——
 で書けと言う）を、組み立てたパッケージと一緒に一時ディレクトリへ書き、Node で生成された ESM を実行して
 突き合わせる。全件が一致したときだけ出力先に書き、ベクタは出力先に残さない。

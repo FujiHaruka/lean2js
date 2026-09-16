@@ -18,21 +18,21 @@ path, dep = sys.argv[1], sys.argv[2]
 with open(path) as f:
     text = f.read()
 patched = re.sub(
-    r'\[\[require\]\]\nname = "LeanTs"\n(?:(?!\[\[).*\n)*',
-    f'[[require]]\nname = "LeanTs"\npath = "{dep}"\n\n',
+    r'\[\[require\]\]\nname = "Lean2Js"\n(?:(?!\[\[).*\n)*',
+    f'[[require]]\nname = "Lean2Js"\npath = "{dep}"\n\n',
     text,
 )
-assert patched != text, "the template no longer has a LeanTs require to redirect"
+assert patched != text, "the template no longer has a Lean2Js require to redirect"
 with open(path, "w") as f:
     f.write(patched)
 PY
 
 cd "$work"
 lake build
-lake exe leants MyLogic --out dist
+lake exe lean2js MyLogic --out dist
 
 for file in index.js index.d.ts index.js.map package.json proof-manifest.json README.md \
-            my-logic.leants; do
+            my-logic.lean2js; do
   test -s "dist/$file" || { echo "the template did not write dist/$file"; exit 1; }
 done
 test ! -e dist/vectors.json || { echo "the vectors were written into dist"; exit 1; }
@@ -41,10 +41,10 @@ test ! -e dist/vectors.json || { echo "the vectors were written into dist"; exit
 mkdir "$work/disagreeing-node"
 printf '#!/bin/sh\nexit 1\n' > "$work/disagreeing-node/node"
 chmod +x "$work/disagreeing-node/node"
-if PATH="$work/disagreeing-node:$PATH" lake exe leants MyLogic --out refused; then
-  echo "leants wrote a package Node did not agree with"; exit 1
+if PATH="$work/disagreeing-node:$PATH" lake exe lean2js MyLogic --out refused; then
+  echo "lean2js wrote a package Node did not agree with"; exit 1
 fi
-test ! -e refused || { echo "leants left files behind for a package Node did not agree with"; exit 1; }
+test ! -e refused || { echo "lean2js left files behind for a package Node did not agree with"; exit 1; }
 
 # The namespace is the package, so neither a declaration program% did not gather nor a public theorem that
 # is not proved may slip out of it quietly.
@@ -52,14 +52,14 @@ cp MyLogic.lean MyLogic.lean.orig
 cat >> MyLogic.lean <<'LEAN'
 
 namespace MyLogic
-open LeanTs.Core LeanTs.Core.Dsl
+open Lean2Js.Core Lean2Js.Core.Dsl
 def lateTotal : Decl := decl% lateTotal(x : Int53) : Int53 := x
 end MyLogic
 LEAN
-if lake exe leants MyLogic --out late 2> late.err; then
-  echo "leants wrote a package without a declaration program% did not gather"; exit 1
+if lake exe lean2js MyLogic --out late 2> late.err; then
+  echo "lean2js wrote a package without a declaration program% did not gather"; exit 1
 fi
-grep -q 'would not ship' late.err || { cat late.err; echo "leants refused for another reason"; exit 1; }
+grep -q 'would not ship' late.err || { cat late.err; echo "lean2js refused for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
 cat >> MyLogic.lean <<'LEAN'
 
@@ -67,16 +67,16 @@ namespace MyLogic
 theorem unfinished : 1 = 2 := sorry
 end MyLogic
 LEAN
-if lake exe leants MyLogic --out unproved 2> unproved.err; then
-  echo "leants wrote a package claiming a theorem proved with sorry"; exit 1
+if lake exe lean2js MyLogic --out unproved 2> unproved.err; then
+  echo "lean2js wrote a package claiming a theorem proved with sorry"; exit 1
 fi
-grep -q 'rests on sorryAx' unproved.err || { cat unproved.err; echo "leants refused for another reason"; exit 1; }
+grep -q 'rests on sorryAx' unproved.err || { cat unproved.err; echo "lean2js refused for another reason"; exit 1; }
 mv MyLogic.lean.orig MyLogic.lean
 
 grep -q 'export declare function orderTotal' dist/index.d.ts
 grep -q 'nothing_charged_below_one' dist/proof-manifest.json
 
-# `LeanTs.compilerVersion` is written down separately from the lakefile's, and a manifest naming a
+# `Lean2Js.compilerVersion` is written down separately from the lakefile's, and a manifest naming a
 # version the package was not built at is worse than one naming none.
 lakefile_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo/lakefile.toml")"
 sed -n '/"compiler"/,/}/p' dist/proof-manifest.json | grep -q "\"version\": \"$lakefile_version\"" \

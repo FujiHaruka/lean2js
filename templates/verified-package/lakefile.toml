@@ -3,8 +3,8 @@ version = "0.1.0"
 defaultTargets = ["MyLogic"]
 
 [[require]]
-name = "LeanTs"
-git = "https://github.com/FujiHaruka/lean.ts"
+name = "Lean2Js"
+git = "https://github.com/FujiHaruka/lean2js"
 rev = "main"
 
 [[lean_lib]]

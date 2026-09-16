@@ -1,4 +1,4 @@
-# lean.ts
+# lean2js
 
 Lean 4 で証明した業務ロジックを、普通の npm パッケージとして JavaScript / TypeScript の世界へ届けるための処理系。
 
@@ -112,13 +112,13 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
 - **燃料**: `eval` を全域にしている燃料は、出荷するプログラムでは尽きない。必要な燃料は**式の入れ子の
   深さと呼び出しの段数**だけで決まる —— 走査はリストの残りを同じ燃料で評価するので、配列が長くても
   増えない —— し、呼び出しは前へしか進まないので段数は宣言の本数で上から押さえられる。`Cost.cost` が
-  その上界を構文から計算し、`leants` は書き出す前に、出荷時の 10000 に収まることを**プログラムごとに
+  その上界を構文から計算し、`lean2js` は書き出す前に、出荷時の 10000 に収まることを**プログラムごとに
   1 回**確かめる（この例題は 482）
 - **実行時検査**: 成果物ごとに生成する全ベクタ（この例題で 24466 件）について、`eval` と JS の模型が
-  一致することを `leants` が書き出す前に確かめる。証明が届いたいまも残るのは、**模型の燃料**が出荷時の
+  一致することを `lean2js` が書き出す前に確かめる。証明が届いたいまも残るのは、**模型の燃料**が出荷時の
   10000 で足りることを見る役
 - **small-step 意味論**: 評価順序と短絡評価を継続として明示した抽象機械は、`eval` が燃料切れ以外の答えを
-  返す呼び出しなら、十分なステップのうちに同じ答えに着く（`stepCall_eventually`）。`leants` が書き出す
+  返す呼び出しなら、十分なステップのうちに同じ答えに着く（`stepCall_eventually`）。`lean2js` が書き出す
   プログラムでは `eval` が燃料切れにならないので、公開関数へのすべての呼び出しで機械と `eval` の答えが
   揃う（`stepCall_agrees`）。落ちる場合はどのエラーで落ちるかまで同じで、機械は決定的なので、少ない
   ステップで出した答えもそれと変わらない（`stepCall_refines`）
@@ -126,7 +126,7 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
   （`parseModule_render_of_compileProgram`）。但し書きは無い —— 読み手が木に要求すること
   （名前が識別子であること、呼び先が読み手の振り分ける 10 語でないこと、doc が `/** */` を閉じないこと）
   は、コンパイルが成功したことから取り出せるので、利用者の側には現れない。読み手が受けるのは
-  **この処理系が書く部分集合**だけで、JavaScript の字句・構文全体ではない。`leants` は書き出す前に、
+  **この処理系が書く部分集合**だけで、JavaScript の字句・構文全体ではない。`lean2js` は書き出す前に、
   出荷するテキストそのものでも同じことを確かめる
 - **実行時ヘルパ**: 生成コードが呼ぶ `__` 接頭辞の JavaScript は手で書いてあるが、**印字器が
   書き出すその 49 本のソースが何を計算するかは証明済み**。JS の模型がヘルパについて仮定している表は
@@ -140,18 +140,18 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
   `.d.ts` は利用者が実際に読む唯一の型なので、これが「読んだ型と受け取る値がずれていない」の側。
   範囲の但し書きは下記。返る側は `encoded_values_fit_dts` —— `eval` が宣言した型を与える値は、
   符号化すると `.d.ts` の型を満たす
-- **Node での検査**: `leants` は書き出す前に、組み立てたパッケージを一時ディレクトリで Node に読み込ませ、
+- **Node での検査**: `lean2js` は書き出す前に、組み立てたパッケージを一時ディレクトリで Node に読み込ませ、
   全ベクタを本物の JavaScript で呼んで `eval` の答えと突き合わせる。1 件でも食い違えば出力先には何も
   書かない。JS の模型が仮定している振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）
   はここで押さえる
-- **定理の一覧**: manifest に載る定理は手で書かない。`leants` が manifest と同じ名前空間の公開定理を
+- **定理の一覧**: manifest に載る定理は手で書かない。`lean2js` が manifest と同じ名前空間の公開定理を
   すべて集め、Lean が印字する定理のシグネチャを文言に、docstring を説明にする。一覧も文言も定理そのもの
   から作るので、証明とずれることも、証明の無い主張が載ることもない
 - **公理**: manifest に載る定理のどれもが `propext` / `Classical.choice` / `Quot.sound` 以外の公理に依らない
-  ことを、`leants` が書き出す前に確かめる（`collectAxioms`）。`sorry` で塞いだ証明は `lake build` を
+  ことを、`lean2js` が書き出す前に確かめる（`collectAxioms`）。`sorry` で塞いだ証明は `lake build` を
   警告だけで通ってしまうので、止めているのはこちら —— 許すのは 3 つだけなので、別の公理を持ち込む証明も
   同じく書き出しに届かない。使った公理は `proof-manifest.json` の `axioms` に載る。処理系の側の
-  7 本の定理は `LeanTs/Axioms.lean` が `#print axioms` で固定している
+  7 本の定理は `Lean2Js/Axioms.lean` が `#print axioms` で固定している
 
 関数単位の主張は「模型の燃料が十分にあれば」の形をしている。これは**生成コードの模型**を全域にする
 ための装置で、本物の JavaScript には無い。出荷時に使う 10000 で足りていることは、上の実行時検査が
@@ -167,9 +167,9 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
 ```
 packages/verified-example/
   index.js                  ESM。実行時ヘルパは __ 接頭辞に閉じてある
-  index.js.map              .leants への source map（関数単位）
+  index.js.map              .lean2js への source map（関数単位）
   index.d.ts                .d.ts。ADT は判別可能なユニオンに、型パラメータはジェネリクスになる
-  verified-example.leants   Core を書き出したソース。名前はパッケージ名の末尾を取る
+  verified-example.lean2js   Core を書き出したソース。名前はパッケージ名の末尾を取る
   proof-manifest.json       定理・証明が依る公理・コンパイラ版・公開 API
   README.md                 公開 API・定理・公理の一覧
   package.json              exports / sideEffects / engines
@@ -178,22 +178,22 @@ packages/verified-example/
 ## リポジトリ構成
 
 ```
-lakefile.toml               LeanTs パッケージ。ソースは srcDir = "lean"
-lean/LeanTs/Core.lean       サブセットの構文
-lean/LeanTs/Syntax.lean     Core 項へ展開される表層構文
-lean/LeanTs/Eval.lean       fuel 付き big-step のリファレンス意味論
-lean/LeanTs/Step.lean       継続を明示した small-step 意味論
-lean/LeanTs/StepAgree.lean  small-step 意味論と eval の一致の証明
-lean/LeanTs/Compile.lean    Core → JS（型検査と生成を一本のパスで）
-lean/LeanTs/JsSem.lean      生成した JS の意味論の模型
-lean/LeanTs/Correct.lean    compiler correctness（断片）
-lean/LeanTs/Agree.lean      成果物に対する実行時の一致検査
-lean/LeanTs/NodeCheck.lean  書き出す前に成果物を Node で全ベクタに当てるスクリプト
-lean/LeanTs/Example.lean    出荷するプログラムと、それについての定理
-lean/LeanTs.lean            import LeanTs が引くもの（利用者のビルドはここまで）
-lean/LeanTs/Checks.lean     証明と #guard と公理固定。CI が建てる、利用者は引かない
-lean/Main.lean              leants 実行ファイル: 指定されたモジュールの manifest を読んで書き出す
-packages/lean-ts/           Node 上のテスト —— 生成物の入口検査・source map・tree shaking と、検査スクリプト
+lakefile.toml               Lean2Js パッケージ。ソースは srcDir = "lean"
+lean/Lean2Js/Core.lean       サブセットの構文
+lean/Lean2Js/Syntax.lean     Core 項へ展開される表層構文
+lean/Lean2Js/Eval.lean       fuel 付き big-step のリファレンス意味論
+lean/Lean2Js/Step.lean       継続を明示した small-step 意味論
+lean/Lean2Js/StepAgree.lean  small-step 意味論と eval の一致の証明
+lean/Lean2Js/Compile.lean    Core → JS（型検査と生成を一本のパスで）
+lean/Lean2Js/JsSem.lean      生成した JS の意味論の模型
+lean/Lean2Js/Correct.lean    compiler correctness（断片）
+lean/Lean2Js/Agree.lean      成果物に対する実行時の一致検査
+lean/Lean2Js/NodeCheck.lean  書き出す前に成果物を Node で全ベクタに当てるスクリプト
+lean/Lean2Js/Example.lean    出荷するプログラムと、それについての定理
+lean/Lean2Js.lean            import Lean2Js が引くもの（利用者のビルドはここまで）
+lean/Lean2Js/Checks.lean     証明と #guard と公理固定。CI が建てる、利用者は引かない
+lean/Main.lean              lean2js 実行ファイル: 指定されたモジュールの manifest を読んで書き出す
+packages/lean2js/           Node 上のテスト —— 生成物の入口検査・source map・tree shaking と、検査スクリプト
 packages/verified-example/  生成された npm パッケージ
 templates/verified-package/ 利用者が自分のロジックを書きはじめるためのパッケージの雛形
 scripts/                    雛形が空のディレクトリから通ることを確かめる検査
@@ -222,21 +222,21 @@ pnpm template:check  # 雛形が空のディレクトリから通ることを確
 ```sh
 cp -R templates/verified-package my-logic && cd my-logic
 lake build                          # ロジックと定理を検査する
-lake exe leants MyLogic --out dist  # 検査して、dist/ に npm パッケージを書き出す
+lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケージを書き出す
 ```
 
-`leants` は `LeanTs` が持つ実行ファイルで、`lake exe` が依存から解決する。利用者は実行ファイルを
+`lean2js` は `Lean2Js` が持つ実行ファイルで、`lake exe` が依存から解決する。利用者は実行ファイルを
 書かない —— モジュール名を渡すと、その `manifest` を実行時に読んで書き出す。
 
-利用者が建てるのは `import LeanTs` が引く 23 モジュール・57 MB だけで、コンパイラについての証明
+利用者が建てるのは `import Lean2Js` が引く 23 モジュール・57 MB だけで、コンパイラについての証明
 98 MB は入らない —— それは CI が建てるもので、利用者が再検査しても何も足されない。
 
-`leants` は書き出す前に、生成した全ベクタを Node で成果物に当てる（上記「Node での検査」）ので、
+`lean2js` は書き出す前に、生成した全ベクタを Node で成果物に当てる（上記「Node での検査」）ので、
 `node` が PATH に要る。ベクタは出力先に残らず、検査を通ったパッケージだけが書き出される。
 
 雛形の中身と書き換えどころは [`templates/verified-package/README.md`](templates/verified-package/README.md)、
 `decl%` / `type%` に書ける構文は [`templates/verified-package/SYNTAX.md`](templates/verified-package/SYNTAX.md) にある。
-雛形の `#eval program.check` は、`leants` が書き出す前に断る条件のうちベクタを要らない分
+雛形の `#eval program.check` は、`lean2js` が書き出す前に断る条件のうちベクタを要らない分
 （再帰、燃料の上限、コンパイルできない宣言）を、利用者の `lake build` の側で落とす。
 
 ## ライセンス

@@ -1,4 +1,4 @@
-import LeanTs
+import Lean2Js
 
 /-!
 # MyLogic
@@ -16,7 +16,7 @@ in the manifest under the statement Lean prints for it.
 
 namespace MyLogic
 
-open LeanTs LeanTs.Core LeanTs.Core.Dsl
+open Lean2Js Lean2Js.Core Lean2Js.Core.Dsl
 
 /-- A line costs nothing until at least one unit is ordered. -/
 def orderTotal : Decl := decl%

@@ -1,16 +1,16 @@
-name = "LeanTs"
+name = "Lean2Js"
 version = "0.1.0"
 srcDir = "lean"
-defaultTargets = ["LeanTs", "checks", "leants"]
+defaultTargets = ["Lean2Js", "checks", "lean2js"]
 
 [[lean_lib]]
-name = "LeanTs"
+name = "Lean2Js"
 
 [[lean_lib]]
 name = "checks"
-roots = ["LeanTs.Checks"]
+roots = ["Lean2Js.Checks"]
 
 [[lean_exe]]
-name = "leants"
+name = "lean2js"
 root = "Main"
 supportInterpreter = true

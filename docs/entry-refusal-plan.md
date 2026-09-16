@@ -76,10 +76,10 @@ JS 側に区別は無い。`Value.hasTy p (.uint32 5) .int53 = false` だが `Js
 
 | ファイル | 足すもの |
 | --- | --- |
-| `LeanTs/JsSem.lean` | `Js.dictKeysDistinct` / `dictKeysDistinctFields` / `dictKeysDistinctList` —— 値の中のすべての辞書でキーが相異なること。`Js.checkTy` の隣に置く |
-| `LeanTs/Decl.lean` | `Js.checkTy` の「真 → 形」の反転補題一式（`checkTy_bool_inv` …、`.option` / `.result` / `.ctors` は場合分けを畳んだ形）、`tyDescAlts_find_inv`、`checkTy_sound` の相互再帰 4 本、`EvalAccepts`、`evalStmts_paramChecks_sound`、`decl_refuses` と `Js.callFunction` での系 |
-| `LeanTs/Example.lean` | `add_refuses`（`decl_refuses` の具体化）と manifest の `Claim` |
-| `LeanTs/Axioms.lean` | `add_refuses` と `decl_refuses` の `#print axioms` |
+| `Lean2Js/JsSem.lean` | `Js.dictKeysDistinct` / `dictKeysDistinctFields` / `dictKeysDistinctList` —— 値の中のすべての辞書でキーが相異なること。`Js.checkTy` の隣に置く |
+| `Lean2Js/Decl.lean` | `Js.checkTy` の「真 → 形」の反転補題一式（`checkTy_bool_inv` …、`.option` / `.result` / `.ctors` は場合分けを畳んだ形）、`tyDescAlts_find_inv`、`checkTy_sound` の相互再帰 4 本、`EvalAccepts`、`evalStmts_paramChecks_sound`、`decl_refuses` と `Js.callFunction` での系 |
+| `Lean2Js/Example.lean` | `add_refuses`（`decl_refuses` の具体化）と manifest の `Claim` |
+| `Lean2Js/Axioms.lean` | `add_refuses` と `decl_refuses` の `#print axioms` |
 | `README.md` | 「保証の組み立て」の**境界の検査**の行 —— 今は実行時検査が受け持っている主張が、公開関数 67 本について証明に変わる |
 | `docs/mvp-plan.md` | Phase 2 の到達点に陰性方向を書く |
 

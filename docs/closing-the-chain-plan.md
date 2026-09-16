@@ -129,10 +129,10 @@ Float）に加えて、このマイルストーンで新たに外すもの。
 同じ燃料で**評価する（`Eval.lean:399-464`）ので、20000 要素の `map` は燃料 2、同じ長さの `reduce` は
 燃料 5 で答えを返す。だから `cost` は構文だけで書ける —— 強正規化の証明は要らない。
 
-- **C-1 燃料の単調性 — 完了。** `LeanTs/Fuel.lean`。`Refines a b` は「`a` が燃料切れでない限り
+- **C-1 燃料の単調性 — 完了。** `Lean2Js/Fuel.lean`。`Refines a b` は「`a` が燃料切れでない限り
   `a = b`」で、燃料が変えうるのはそれだけなので、主張はすべてこの形。**帰納は 1 段ずつ**
   （`evalExpr_succ`）にして、`f ≤ g` は差についての帰納で出す
-- **C-2 コスト関数 — 完了。** `LeanTs/Cost.lean`。上界は
+- **C-2 コスト関数 — 完了。** `Lean2Js/Cost.lean`。上界は
   `cost p = maxBodyDepth p.decls + p.decls.length * (maxBodyDepth p.decls + 1)` ——
   1 段あたり最も深い本体ぶん、段数は宣言の本数まで。整礎再帰は要らない。
   **帰納は燃料についてで、式についてではない**（`Fuel.lean` と同じ形）: 呼び出しは 1 段少ない燃料で
@@ -169,9 +169,9 @@ Float）に加えて、このマイルストーンで新たに外すもの。
 
 - **D-1 レンダラを全域に — 完了。** `Js.Expr.render` / `TyDesc.render` / `tsType` は
   リストごとの相互再帰に書き直してあり、`partial` は付いていない。出力は 1 バイトも動いていない
-- **D-2 字句 — 完了。** 数値とエスケープは `toString` と `String.foldl` を捨て、`LeanTs/Text.lean` の
+- **D-2 字句 — 完了。** 数値とエスケープは `toString` と `String.foldl` を捨て、`Lean2Js/Text.lean` の
   `List Char` 再帰にした。どちらも proof が展開できない壁で、読み返す側の証明が書けない。出力は
-  1 バイトも動いていない。読む側は `LeanTs/Parse.lean` の `parseInt` / `parseStr` / `parseIdent` で、
+  1 バイトも動いていない。読む側は `Lean2Js/Parse.lean` の `parseInt` / `parseStr` / `parseIdent` で、
   それぞれ「書いたものの後ろに何が続いていても、書いたものと残りを返す」形の往復補題を持つ
 - **D-3 型記述子 — 完了。** `parseDesc (render d ++ rest) = some (d, rest)`。ついでに
   `TyDesc.ctors` が持っていた型名を落とした —— `render` は書かず `checkTy` は読まないのに、
@@ -187,7 +187,7 @@ Float）に加えて、このマイルストーンで新たに外すもの。
 
   パーサの再帰は燃料で回す。上限は入力テキストの長さから取るので、**主張に燃料の但し書きは
   出ない**（Step C が消そうとしている意味論の燃料とは別物）
-- **D-5 往復の証明 — 完了。** `LeanTs/Roundtrip.lean` の `parseModule_render` ——
+- **D-5 往復の証明 — 完了。** `Lean2Js/Roundtrip.lean` の `parseModule_render` ——
   `RenderableModule m` なら `parseModule (Js.Module.render m).toList = some m`。
 
   **`Renderable` が除くのは、`render` が同じテキストに写す 3 か所と、自分を閉じる doc。**
@@ -214,7 +214,7 @@ Float）に加えて、このマイルストーンで新たに外すもの。
   引数名の並びは `Js.renderNames`、文の並びは `Js.Stmt.renderAll` という素の再帰にした。
   前置きと末尾の source-map 行も `Js.preamble` / `Js.sourceMapLink` という名前を持つ ——
   `runtime` の 4000 字を展開させないため。出力は 1 バイトも動いていない
-- **D-5b `Renderable` を成果物から取り出す — 完了。** `LeanTs/Renderable.lean` の
+- **D-5b `Renderable` を成果物から取り出す — 完了。** `Lean2Js/Renderable.lean` の
   `renderableModule_of_compileProgram` —— `compileProgram p = .ok m → RenderableModule m`。
   **往復の主張から但し書きが消えた**: `parseModule_render_of_compileProgram` は
   「コンパイルが通ったなら、書き出したテキストは同じモジュールに読み戻る」を無条件で言う。
@@ -250,18 +250,18 @@ Float）に加えて、このマイルストーンで新たに外すもの。
   対象は `JsSem.helper` の 32 本だけではない。`.mapJs` ほか走査 6 つと `.check` は AST の構成子で、
   その意味論が `__map` / `__ck` の振る舞いを仮定している。**`__fail` から `__ck` まで 47 本**が届く範囲。
 
-  - **D-6-1 断片と印字器 — 完了。** `LeanTs/Helper.lean` に AST と印字器、47 本の定義。
+  - **D-6-1 断片と印字器 — 完了。** `Lean2Js/Helper.lean` に AST と印字器、47 本の定義。
     `Js.runtime` はそこから出る。**書き込みはローカル変数を名指しする文** —— `push` / `set` /
     フィールド代入は式ではなく文で、書き込む相手が「たった今作ったもの」であることが構文から
     出る。だから意味論は環境の再束縛だけで済み、別名付けを追う必要がない。
     **短絡演算子と `instanceof` は独自の構成子。** `bin` の綴りにすると意味論も証明も
     op の文字列で分岐することになる
-  - **D-6-2 断片の意味論 — 完了。** `LeanTs/HelperSem.lean`。値は `JsValue` に `null` /
+  - **D-6-2 断片の意味論 — 完了。** `Lean2Js/HelperSem.lean`。値は `JsValue` に `null` /
     `undefined` / 関数 / 商を足した `Val`。**JS について仮定していることは `prim` / `method` /
     `binOp` / `field` / `index` の 5 つの表だけ**で、どれもヘルパが実際に使う形でしか定義されて
     いない —— 使わない仮定を紛れ込ませられない。燃料は 1 ノード 1 で、主張は `f + k` の形。
     `#eval` で `JsSem.helper` と 70 件、`checkTy` と 23 件突き合わせて一致を確認済み
-  - **D-6-3 算術 — 完了。** `LeanTs/HelperProof.lean`。`__fail` / `__i53` / `__i53div` /
+  - **D-6-3 算術 — 完了。** `Lean2Js/HelperProof.lean`。`__fail` / `__i53` / `__i53div` /
     `__i53mod` / `__u32mul` / `__u32div` / `__u32mod` / `__bigdiv` / `__bigmod` / `__abs` /
     `__min` / `__max`。**主張は「そのヘルパが何を計算するか」を素の Lean で書く。**
     `JsSem.helper` と結ぶのは別の段 —— 模型は商を範囲検査するがヘルパはしないので、
@@ -294,7 +294,7 @@ Float）に加えて、このマイルストーンで新たに外すもの。
     分岐の連鎖は `simp` ではなく書き換えで降りる —— `simp` は到達不能だと決まった枝も、その枝を
     落とす `match` を簡約する前に正規化するので、9 段の `if (k === …)` を素直に歩くと 1 分岐あたり
     分単位かかる
-  - **D-6-8 出荷 — 完了。** `LeanTs/HelperAgree.lean` が、模型の表 `Js.helper` の **35 行すべて**を
+  - **D-6-8 出荷 — 完了。** `Lean2Js/HelperAgree.lean` が、模型の表 `Js.helper` の **35 行すべて**を
     書き出されるソースの計算と結ぶ（`helper_agrees`）。行ごとの主張は `HelperProof` にあるので、
     ここでやるのは値の変換（`ofJs`）と、模型とヘルパで書き方が違う 3 か所を埋めること ——
     `Math.imul` は積の 2^32 の剰余を変えないので `__u32mul` は模型の掛け算、`__i53div` はヘルパが
@@ -327,7 +327,7 @@ Float）に加えて、このマイルストーンで新たに外すもの。
 **成り立つのは片方向** —— 入口検査を通った値は `.d.ts` の型を満たす。本体を守っているのはこちらで、
 これが Step E で証明する主張になる。
 
-- **E-1 TS 型を値の集合として定義する — 完了。** `LeanTs/Dts.lean` の `TsSat`。`tsType` と
+- **E-1 TS 型を値の集合として定義する — 完了。** `Lean2Js/Dts.lean` の `TsSat`。`tsType` と
   `declareType` が出す構文の読みで、判別可能なユニオンと型パラメータがそのまま中身になる。
   **フィールドは名前引きではなく「その名前の項目がある」で述べる** —— 引きにすると「宣言された
   フィールド名が相異なる」がすべての主張に付くが、割れるのは同じキーを二度持つオブジェクトだけで、

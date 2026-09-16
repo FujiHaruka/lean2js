@@ -1,6 +1,6 @@
 {"version": "1.2.0",
  "packagesDir": ".lake/packages",
  "packages": [],
- "name": "LeanTs",
+ "name": "Lean2Js",
  "lakeDir": ".lake",
  "fixedToolchain": false}

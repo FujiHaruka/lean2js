@@ -16,7 +16,7 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       - name: Regenerate the package
-        run: lake exe leants LeanTs.Example --out packages/verified-example
+        run: lake exe lean2js Lean2Js.Example --out packages/verified-example
       - name: Generated package is up to date
         run: git diff --exit-code -- packages/verified-example
       - name: The user package template builds and emits

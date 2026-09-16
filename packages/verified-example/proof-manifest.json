@@ -1,15 +1,15 @@
 {
-  "package": "@leants/verified-example",
+  "package": "@lean2js/verified-example",
   "version": "0.1.0",
   "compiler": {
-    "name": "leants",
+    "name": "lean2js",
     "version": "0.1.0"
   },
   "lean": {
     "version": "4.33.1",
     "githash": "819816b2e0a3bf405af45ae5c7af2491d8f5bee6"
   },
-  "source": "LeanTs.Example",
+  "source": "Lean2Js.Example",
   "exports": [
     {
       "name": "add",
@@ -379,7 +379,7 @@
     {
       "name": "file_reads_back",
       "statement": "file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :\n  Parse.parseModule m.render.toList = some m",
-      "doc": "The text `leants` writes for this program reads back as the module the compiler built. Nothing in\nbetween is assumed: the roundtrip holds of whatever `compileProgram` produces, so the claim carries no\nside condition about the shape of the module."
+      "doc": "The text `lean2js` writes for this program reads back as the module the compiler built. Nothing in\nbetween is assumed: the roundtrip holds of whatever `compileProgram` produces, so the claim carries no\nside condition about the shape of the module."
     },
     {
       "name": "helpers_ship_as_modelled",

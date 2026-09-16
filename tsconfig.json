@@ -1,4 +1,4 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/lean-ts" }]
+  "references": [{ "path": "./packages/lean2js" }]
 }

@@ -28,8 +28,8 @@ def program : Program := program%
 - `program%` は、同じ名前空間でそれより上に書いた `Decl` と `TypeDef` をすべて集める。`private` を
   付けたものは集めない。
 - 宣言は `program%` が呼び出しの前へ進む順に並べ替えるので、書く順序は問わない（後述）。
-- `program%` より下に書いた宣言や型は集まらない。`leants` はそれが出荷されないと言って落ちる。
-- `#eval program.check` は、`leants` がベクタを走らせる前に断る条件を `lake build` の側に置いたもの。
+- `program%` より下に書いた宣言や型は集まらない。`lean2js` はそれが出荷されないと言って落ちる。
+- `#eval program.check` は、`lean2js` がベクタを走らせる前に断る条件を `lake build` の側に置いたもの。
 
 ## 型
 
@@ -158,11 +158,11 @@ xs[0]                                 添字
 | 無いメソッド（`s.padStart(2)`） | `padStart: the subset has no such method` と、受け手ごとの一覧 |
 | ラムダを走査の外に書く | `a lambda is only ever the argument of map, filter, ...` |
 | 再帰 | `program%` が `these declarations reach each other through calls, ...: ping → pong → ping` |
-| `program%` より下に書いた宣言・型 | `leants` が `... is not in ...program, so it would not ship` |
+| `program%` より下に書いた宣言・型 | `lean2js` が `... is not in ...program, so it would not ship` |
 | 無い関数・無い型・型が合わない | `#eval program.check` が `compile failed: ...` |
 
 パーサのエラー（上の 3 行）は、位置と、そこで何を期待したか —— `subset expression` / `subset type` /
 `subset pattern` / `parameter` / `field` / `constructor` —— しか言わない。そして期待の対象は、読めなかった
 ものそのものとは限らない。`( )` の中の引数が式として読めなければ閉じ括弧を期待したと言い、`xs.foldl` の
 ように途中までで式が閉じてしまえば、残りを次のコマンドとして読もうとして落ちる。サブセットのどこに
-いるか分からなくなったら、`lean/LeanTs/Example.lean` が全部の形をひととおり使っている。
+いるか分からなくなったら、`lean/Lean2Js/Example.lean` が全部の形をひととおり使っている。

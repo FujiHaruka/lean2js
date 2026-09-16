@@ -1,5 +1,5 @@
 {
-  "name": "lean.ts",
+  "name": "lean2js",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -15,7 +15,7 @@
     "format": "biome check --write .",
     "lean:build": "lake build",
     "package:check": "publint packages/verified-example && attw --pack packages/verified-example --profile esm-only",
-    "lean:emit": "lake exe leants LeanTs.Example --out packages/verified-example",
+    "lean:emit": "lake exe lean2js Lean2Js.Example --out packages/verified-example",
     "template:check": "./scripts/check-template.sh"
   },
   "devDependencies": {

@@ -1,0 +1,9 @@
+{
+  "name": "lean2js",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@lean2js/verified-example": "workspace:*"
+  }
+}

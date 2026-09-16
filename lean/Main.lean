@@ -1,15 +1,15 @@
 import Lean
-import LeanTs
+import Lean2Js
 
 /-!
-`leants` — writes a verified module out as an npm package.
+`lean2js` — writes a verified module out as an npm package.
 
 The module named on the command line is read at run time rather than imported here, which is what lets a
-user's package be a lakefile and one `.lean` file: `lake exe leants MyLogic` resolves this executable out
+user's package be a lakefile and one `.lean` file: `lake exe lean2js MyLogic` resolves this executable out
 of the dependency and starts it with the user's own build output on `LEAN_PATH`.
 -/
 
-open Lean LeanTs
+open Lean Lean2Js
 
 private structure Invocation where
   module : Name
@@ -17,7 +17,7 @@ private structure Invocation where
   outDir : System.FilePath
 
 private def usage : String :=
-  "usage: leants <Module> [--manifest <const>] [--out <dir>]"
+  "usage: lean2js <Module> [--manifest <const>] [--out <dir>]"
 
 private def parseFlags (inv : Invocation) : List String → Except String Invocation
   | [] => .ok inv
@@ -34,7 +34,7 @@ private def parseArgs : List String → Except String Invocation
       let module := arg.toName
       parseFlags { module, manifestConst := module ++ `manifest, outDir := "dist" } rest
 
-/-- `lake exe leants MyLogic` builds this executable, not `MyLogic`, so without this the manifest would
+/-- `lake exe lean2js MyLogic` builds this executable, not `MyLogic`, so without this the manifest would
 be read out of whatever olean was left lying around. Re-entering lake from inside a lake-launched process
 does not deadlock: `lake exe` finishes building before it starts the process. -/
 private def rebuild (module : Name) : IO Bool := do
@@ -48,12 +48,12 @@ private def rebuild (module : Name) : IO Bool := do
 
 private def allowedAxioms : List Name := [`propext, `Classical.choice, `Quot.sound]
 
-/-- Statements are printed from inside the package's namespace with `LeanTs` and `LeanTs.Core` open, the
+/-- Statements are printed from inside the package's namespace with `Lean2Js` and `Lean2Js.Core` open, the
 way the template's file reads; the printer shortens a name only where it still resolves to the same
 constant. -/
 private def printingContext (ns : Name) : Core.Context := {
-  fileName := "<leants>", fileMap := default, currNamespace := ns
-  openDecls := [.simple `LeanTs [], .simple `LeanTs.Core []] }
+  fileName := "<lean2js>", fileMap := default, currNamespace := ns
+  openDecls := [.simple `Lean2Js [], .simple `Lean2Js.Core []] }
 
 /-- A theorem's signature as Lean prints it, under its name inside the package's namespace rather than the
 full one `delabConstWithSignature` insists on. -/

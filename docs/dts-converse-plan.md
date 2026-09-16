@@ -8,7 +8,7 @@
 **この計画は完遂した。** 逆向き —— `.d.ts` の型を満たす引数は入口検査を通る —— が
 `dts_fits_entry_check` として manifest に載り、値について残る但し書きは数値の範囲だけになった。
 
-出発点だった 2 つの呼び出しがいまどうなるか（`packages/lean-ts/src/entry-check.test.ts` が
+出発点だった 2 つの呼び出しがいまどうなるか（`packages/lean2js/src/entry-check.test.ts` が
 出荷物そのもので実測している）:
 
 | 呼び出し | いま | 理由 |
@@ -192,9 +192,9 @@ membership に落とす手間が消えた）。
 
 `Agree.reshapeJs` が `Js.JsValue` の側で同じ写像を持ち、`checkAgreement` は `v.args.map encodeValue`
 ではなく `v.jsArgs` で模型を呼ぶ。**並べ替えと余分なキーが `eval` との一致検査に入った。**
-`LeanTs/NodeCheck.lean` が Node で走らせるスクリプトの `reshape` が、Node 側の同じ写像。
+`Lean2Js/NodeCheck.lean` が Node で走らせるスクリプトの `reshape` が、Node 側の同じ写像。
 
-`packages/lean-ts/src/entry-check.test.ts` —— 冒頭の表を名指しで測る 4 本。並べ替えた `Money` が通り、
+`packages/lean2js/src/entry-check.test.ts` —— 冒頭の表を名指しで測る 4 本。並べ替えた `Money` が通り、
 宣言に無いキーを持つ `Money` が通り、そのキーは本体に届く前に落ち（`sameMoney` が `true` を返す）、
 `1e300` は変わらず `typeError`。
 
