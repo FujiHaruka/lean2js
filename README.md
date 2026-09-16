@@ -74,94 +74,52 @@ Lean のリファレンス意味論  ──証明（式のすべての形・公�
 生成した JS の模型  ──実行時検査（Node 上・成果物の全ベクタ）──  本物の JavaScript
 ```
 
-- **証明（式）**: `Core.Expr` の **35 形すべて**について、`eval` が値を返すなら生成コードも同じ値を
-  返す。リテラル・変数・条件式・`let` 束縛・単項演算・**二項演算のすべて**（算術・比較・等値・論理・
-  連結の 16 演算子）、**部分式を評価して値を組み立てるだけの形**すべて —— `Option` と `Result`
-  の構成、構造体の構成と射影、配列リテラルと添字・`slice` / `reverse`・長さ、辞書リテラルと
-  `get` / `has` / `set` / `keys` / `values` / `delete`、文字列の `trim` / 大文字小文字 /
-  `startsWith` / `endsWith` / `includes` / `split` / `substring` ——、**束縛を変えて部分式を
-  評価する形** —— `match` と配列走査 5 つ（`map` / `filter` / `find` / `all`・`any` / `reduce`）——、
-  そして**他の宣言の本体へ行く形** —— 呼び出しと関数参照。呼び出しは呼ばれた宣言の本体を 1 段少ない
-  燃料で走らせるので、証明は式の形についてではなく**燃料についての帰納**で、宣言単位の主張と同時に立つ
-- **証明（関数・返す側）**: **公開関数 67 本すべて**について、主張が呼び出しの単位で立つ。
-  **どんな引数でも**、`eval` が値を返すなら生成モジュールの同名関数が同じ値を返す。
-  入口の型検査、`__pN` から宣言名への引き渡し、先頭の `let` が `const` 文に開かれるところ、そして
-  本体が他の宣言を呼ぶところまで含む
-- **証明（関数・落ちる側）**: 同じ **67 本**について、`eval` が値を返さずに落ちるなら、生成モジュールの
-  同名関数は**同じコード**で落ちる。届く落ち方はゼロ除算・`Int53` 溢れ・範囲外アクセス
-  （添字・`slice` / `substring`）で、型エラーには届かないことを型の健全性が示す。**除外は無い** ——
-  燃料切れは `eval` の答えに現れない（下記「燃料」）
-- **網羅性**: コンパイラが受け入れた `match` は、走査値の型が取りうる**すべての値**について腕を持つ
-  （Maranget の usefulness 検査の健全性）。生成した条件の連鎖が最後の腕をテストなしで取るのはこれが
-  理由で、`eval` の側も「どの腕にも当たらない」に落ちない。検査は全域関数として書かれていて、降りる
-  深さの上限を使い切ったときは「網羅でない」と答える —— 通してしまう側には倒れない
-- **型の健全性**: コンパイラが型 `T` と判断した式を `eval` が評価して値が返るなら、その値は `T` を
-  満たす。**`Core.Expr` の 35 形すべて**について証明済みで、生成コードが被演算子の型で分岐する箇所を
-  閉じているのがこれ。呼び出しまで届くのは、コンパイラが受け取ったプログラムの**すべての宣言**について
-  「本体は宣言した返り値型でコンパイルされる」を成果物から取り出せるから
-- **証明（関数・弾く側）**: 公開関数は本体に入る前に、引数を宣言した型と構造的に照合する。**公開関数
-  67 本すべて**について、この検査を通る引数は `eval` も受け取る引数の符号化であることが証明されている。
-  裏を返せば、`eval` が受け取らない呼び出しは —— 本数違いも、型を破ったものも —— 生成コードが `typeError`
-  を投げる。一致の主張に「宣言した型を満たす引数について」という但し書きが要らないのはこれによる。落ちること自体は両側で
-  揃うが、コードまで揃うとは言っていない —— 本数違いのとき `eval` が返すのは `arity` である。辞書に
-  ついては、実行時に渡るのが `Map` である（同じキーを二度持てない）ことを仮定に置く
-- **停止性**: 関数はプログラムの中で自分より前に並んだ関数しか呼べないので、自己再帰も相互再帰もコンパイルが
-  通らない。関数を引数に渡すときも、渡せるのは受け取る宣言より前に並んだ関数だけなので、引数を経由した
-  呼び出しも前へしか進まない。`program%` はこの順に宣言を並べ、循環していれば並べられずに落ちる。
-  非停止は `eval` の fuel が尽きるのを待つのではなく構文として排除され、走査は `map` / `filter` /
-  `reduce` が受け持つ
-- **燃料**: `eval` を全域にしている燃料は、出荷するプログラムでは尽きない。必要な燃料は**式の入れ子の
-  深さと呼び出しの段数**だけで決まる —— 走査はリストの残りを同じ燃料で評価するので、配列が長くても
-  増えない —— し、呼び出しは前へしか進まないので段数は宣言の本数で上から押さえられる。`Cost.cost` が
-  その上界を構文から計算し、`lean2js` は書き出す前に、出荷時の 10000 に収まることを**プログラムごとに
-  1 回**確かめる（この例題は 482）
-- **実行時検査**: 成果物ごとに生成する全ベクタ（この例題で 24466 件）について、`eval` と JS の模型が
-  一致することを `lean2js` が書き出す前に確かめる。証明が届いたいまも残るのは、**模型の燃料**が出荷時の
-  10000 で足りることを見る役
-- **small-step 意味論**: 評価順序と短絡評価を継続として明示した抽象機械は、`eval` が燃料切れ以外の答えを
-  返す呼び出しなら、十分なステップのうちに同じ答えに着く（`stepCall_eventually`）。`lean2js` が書き出す
-  プログラムでは `eval` が燃料切れにならないので、公開関数へのすべての呼び出しで機械と `eval` の答えが
-  揃う（`stepCall_agrees`）。落ちる場合はどのエラーで落ちるかまで同じで、機械は決定的なので、少ない
-  ステップで出した答えもそれと変わらない（`stepCall_refines`）
-- **テキスト**: コンパイルが通ったなら、書き出した `index.js` は**そのまま同じ AST に読み戻る**
-  （`parseModule_render_of_compileProgram`）。但し書きは無い —— 読み手が木に要求すること
-  （名前が識別子であること、呼び先が読み手の振り分ける 10 語でないこと、doc が `/** */` を閉じないこと）
-  は、コンパイルが成功したことから取り出せるので、利用者の側には現れない。読み手が受けるのは
-  **この処理系が書く部分集合**だけで、JavaScript の字句・構文全体ではない。`lean2js` は書き出す前に、
-  出荷するテキストそのものでも同じことを確かめる
-- **実行時ヘルパ**: 生成コードが呼ぶ `__` 接頭辞の JavaScript は手で書いてあるが、**印字器が
-  書き出すその 49 本のソースが何を計算するかは証明済み**。JS の模型がヘルパについて仮定している表は
-  35 行あり、その**全行**が、書き出されるソースの計算と一致する（`helpers_ship_as_modelled`）。
-  呼び出し側に残る仮定は 3 つ —— 商が Int53 に収まること（型が与える）、辞書のキーが相異なること
-  （`Map` が保証する）、そして `===` による構造比較が模型の構造等価と割れない形であること
-  （比べる 2 つのオブジェクトのフィールドが同じ並びで、辞書のキーが相異なる）
-- **`.d.ts`**: 入口検査を通った引数は `.d.ts` が公開している型を満たす値であり
-  （`entry_check_fits_dts`）、逆に `.d.ts` の型を満たす引数は、数値が `Int53` / `UInt32` の範囲に
-  収まっているかぎり入口検査を通る（`dts_fits_entry_check`）。**両方向とも manifest に載っている。**
-  `.d.ts` は利用者が実際に読む唯一の型なので、これが「読んだ型と受け取る値がずれていない」の側。
-  範囲の但し書きは下記。返る側は `encoded_values_fit_dts` —— `eval` が宣言した型を与える値は、
-  符号化すると `.d.ts` の型を満たす
-- **Node での検査**: `lean2js` は書き出す前に、組み立てたパッケージを一時ディレクトリで Node に読み込ませ、
-  全ベクタを本物の JavaScript で呼んで `eval` の答えと突き合わせる。1 件でも食い違えば出力先には何も
-  書かない。JS の模型が仮定している振る舞い（`-0`、`Math.trunc` の精度、UTF-16 と コードポイントの違い）
-  はここで押さえる
-- **定理の一覧**: manifest に載る定理は手で書かない。`lean2js` が manifest と同じ名前空間の公開定理を
-  すべて集め、Lean が印字する定理のシグネチャを文言に、docstring を説明にする。一覧も文言も定理そのもの
-  から作るので、証明とずれることも、証明の無い主張が載ることもない
-- **公理**: manifest に載る定理のどれもが `propext` / `Classical.choice` / `Quot.sound` 以外の公理に依らない
-  ことを、`lean2js` が書き出す前に確かめる（`collectAxioms`）。`sorry` で塞いだ証明は `lake build` を
-  警告だけで通ってしまうので、止めているのはこちら —— 許すのは 3 つだけなので、別の公理を持ち込む証明も
-  同じく書き出しに届かない。使った公理は `proof-manifest.json` の `axioms` に載る。処理系の側の
-  7 本の定理は `Lean2Js/Axioms.lean` が `#print axioms` で固定している
-
-関数単位の主張は「模型の燃料が十分にあれば」の形をしている。これは**生成コードの模型**を全域にする
-ための装置で、本物の JavaScript には無い。出荷時に使う 10000 で足りていることは、上の実行時検査が
-全ベクタについて確かめている。`eval` の側の燃料は主張から消えた（上記「燃料」）。
+- **証明が届く範囲** — `Core.Expr` の **35 形すべて**と、公開関数 **67 本すべて**。`eval` が値を返すなら
+  生成した同名関数が同じ値を返し（[`decl_correct`]）、`eval` が落ちるなら**同じコード**で落ち
+  （[`decl_traps`]）、`eval` が受け取らない引数は本体に入る前に `typeError` になる（[`decl_refuses`]）。
+  一致の主張に「宣言した型を満たす引数について」という但し書きは無く、除外も無い ——
+  `eval` 側の燃料切れは出荷するプログラムでは起きない（[`cost`] が必要な燃料の上界を構文から計算し、
+  [`progOk`] が呼び出しが前へしか進まないことを見る。出荷時の上限 10000 に対してこの例題は 482）
+- **その土台** — 生成コードが被演算子の型で分岐できるのは型の健全性（[`typeSound`]）、`match` の最後の腕を
+  テストなしで取れるのは網羅性（[`firstMatch_isSome`]、Maranget の usefulness 検査の健全性）による。
+  評価順序と短絡評価を継続として明示した small-step 意味論も、公開関数へのすべての呼び出しで `eval` と
+  同じ答えに着く（[`stepCall_agrees`]）
+- **出荷物そのもの** — 書き出した `index.js` は**そのまま同じ AST に読み戻る**
+  （[`parseModule_render_of_compileProgram`]、但し書き無し）。生成コードが呼ぶ `__` 接頭辞の実行時
+  ヘルパ 49 本は手で書いてあるが、模型がヘルパについて仮定している表 35 行の**全行**が、印字器の
+  書き出すソースの計算と一致する（[`helpers_ship_as_modelled`]）
+- **`.d.ts`** — 入口検査を通る引数は `.d.ts` の型を満たし（[`entry_check_fits_dts`]）、`.d.ts` の型を
+  満たす引数は入口検査を通る（[`dts_fits_entry_check`]）。返る側も同じ（[`encoded_values_fit_dts`]）。
+  `.d.ts` は利用者が実際に読む唯一の型なので、**両方向とも manifest に載っている**
+- **証明の外** — 成果物ごとに生成する全ベクタ（この例題で 24466 件）を、`lean2js` が書き出す前に
+  2 通りで確かめる。`eval` と JS の模型の一致（[`checkAgreement`]）と、組み立てたパッケージを一時
+  ディレクトリで Node に読み込ませた本物の JavaScript との一致。1 件でも食い違えば出力先には何も書かない
+- **一覧が証明とずれないこと** — manifest に載る定理は手で書かない。`lean2js` が同じ名前空間の公開定理を
+  すべて集め、Lean が印字するシグネチャを文言にする。どの定理も `propext` / `Classical.choice` /
+  `Quot.sound` 以外の公理に依らないことも書き出す前に確かめる —— `sorry` で塞いだ証明は `lake build` を
+  警告だけで通ってしまうので、止めているのはこちら
 
 **`.d.ts` の型が通れば入口検査も通る。但し書きは 1 点だけ。** `Int53` と `UInt32` はどちらも `number`
 に写るので、範囲を外れた数も TS では通り、渡せば `typeError` になる。それ以外は縛らない ——
 オブジェクトのフィールドは名前で読むので並びは自由で、宣言に無いキーが載っていても通り、本体に
 届く前に落ちる。
+
+定理の主張・仮定・証明の構成は [Lean のリファレンス](https://fujiharuka.github.io/lean2js/)にある。
+
+[`decl_correct`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_correct
+[`decl_traps`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_traps
+[`decl_refuses`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_refuses
+[`cost`]: https://fujiharuka.github.io/lean2js/Lean2Js/Cost.html#Lean2Js.Cost.cost
+[`progOk`]: https://fujiharuka.github.io/lean2js/Lean2Js/Cost.html#Lean2Js.Cost.progOk
+[`typeSound`]: https://fujiharuka.github.io/lean2js/Lean2Js/Sound.html#Lean2Js.typeSound
+[`firstMatch_isSome`]: https://fujiharuka.github.io/lean2js/Lean2Js/Exhaustive.html#Lean2Js.Exhaustive.firstMatch_isSome
+[`stepCall_agrees`]: https://fujiharuka.github.io/lean2js/Lean2Js/StepAgree.html#Lean2Js.StepAgree.stepCall_agrees
+[`parseModule_render_of_compileProgram`]: https://fujiharuka.github.io/lean2js/Lean2Js/Renderable.html#Lean2Js.Compile.parseModule_render_of_compileProgram
+[`helpers_ship_as_modelled`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.helpers_ship_as_modelled
+[`entry_check_fits_dts`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.entry_check_fits_dts
+[`dts_fits_entry_check`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.dts_fits_entry_check
+[`encoded_values_fit_dts`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.encoded_values_fit_dts
+[`checkAgreement`]: https://fujiharuka.github.io/lean2js/Lean2Js/Agree.html#Lean2Js.checkAgreement
 
 ## 生成物
 
