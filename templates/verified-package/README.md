@@ -36,8 +36,9 @@ lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケー
 
 ## 書き換えるところ
 
-- `MyLogic.lean` の `orderTotal` を自分の宣言に置き換える。`program%` が、同じ名前空間でそれより上に
-  書いた `Decl` と `TypeDef` を集め、呼び出しが前へ進む順に並べるので、書く順序は問わない。
+- `MyLogic.lean` の宣言（`invoiceFor` と、それが呼ぶ `invoiceLines` / `discountOn` …）を自分のものに
+  置き換える。`program%` が、同じ名前空間でそれより上に書いた `Decl` と `TypeDef` を集め、
+  呼び出しが前へ進む順に並べるので、書く順序は問わない。
   **呼び出しは循環できない。** `program%` より下に書いた宣言は集まらず、`lean2js` が落ちる。
   書ける構文は [`SYNTAX.md`](SYNTAX.md) —— `decl%` の中は Lean の式ではない
 - `#eval program.check` はそのまま残す。`lean2js` がベクタを走らせる前に断る条件
@@ -54,8 +55,16 @@ lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケー
 ## 定理の書き方
 
 `evalCall` について書く。`evalCall_eq` で公開関数の入口を 1 度で越え、そのあとは
-`evalExpr_<形>` の 1 段展開補題で本体を開いていく。`MyLogic.lean` の
-`nothing_charged_below_one` がその形をひととおり踏んでいる。
+`evalExpr_<形>` の 1 段展開補題で本体を開いていく。`MyLogic.lean` の 4 本が、よく要る形をひととおり
+踏んでいる —— 引数が具体値で計算だけで閉じるもの（`enterprise_includes_its_seats`）、入口の `if` で
+断るもの（`negative_seats_are_refused`）、`match` の腕が定数のもの（`no_discount_takes_nothing`）、
+引数が記号のまま場合分けが要るもの（`free_plan_is_never_charged`）。
+
+要る道具は 3 つ。**公開関数ごとに `private theorem find_f : program.find? "f" = some f := rfl`**
+を置くこと、**本体が別の宣言を呼ぶなら `calleeOf` と呼ばれる側の `find_` も `simp` に渡すこと**
+（渡さないと呼び出しが `program.find? ...` のまま止まる）、そして **`Int53` の範囲は
+`decide_eq_false (by simp only [int53Min]; omega)` の形で与えること** —— `int53Min` を `decide` の
+中で展開すると `Decidable` インスタンスが古い形のまま残り、補題が当たらなくなる。
 
 `evalExpr.eq_def` を `simp` に直接渡さないこと。右辺が `evalExpr` を含むので止まらず、再帰深度が
 尽きる。

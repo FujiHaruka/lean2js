@@ -11,4 +11,4 @@ Lean 4 で証明した業務ロジックを、普通の npm パッケージと�
 - **`Lean2Js.Example`** — 出荷するプログラムと、それについての定理
 
 証明が届く範囲と、その外を受け持つ実行時検査・Node 上の差分テストの組み立ては
-[README](https://github.com/FujiHaruka/lean2js#保証の組み立て)にある。
+[保証の組み立て](https://github.com/FujiHaruka/lean2js/blob/main/docs/guarantees.md)にある。

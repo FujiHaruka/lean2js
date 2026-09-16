@@ -73,8 +73,8 @@ fi
 grep -q 'rests on sorryAx' unproved.err || { cat unproved.err; echo "lean2js refused for another reason"; exit 1; }
 mv MyLogic.lean.orig MyLogic.lean
 
-grep -q 'export declare function orderTotal' dist/index.d.ts
-grep -q 'nothing_charged_below_one' dist/proof-manifest.json
+grep -q 'export declare function invoiceFor' dist/index.d.ts
+grep -q 'free_plan_is_never_charged' dist/proof-manifest.json
 
 # `Lean2Js.compilerVersion` is written down separately from the lakefile's, and a manifest naming a
 # version the package was not built at is worse than one naming none.
