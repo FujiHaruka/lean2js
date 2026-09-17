@@ -12,6 +12,7 @@ import Lean2Js.Norm
 import Lean2Js.StepAgree
 import Lean2Js.Example
 import Lean2Js.Denote
+import Lean2Js.Reify
 import Lean2Js.Tests
 import Lean2Js.Axioms
 

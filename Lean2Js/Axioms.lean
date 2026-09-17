@@ -1,5 +1,6 @@
 import Lean2Js.Example
 import Lean2Js.Denote
+import Lean2Js.Reify
 import Lean2Js.Correct
 import Lean2Js.Decl
 import Lean2Js.Renderable
@@ -18,8 +19,8 @@ plugged with `sorry` through with a warning. Pinning the axiom set makes the bui
 
 The roundtrip is pinned here too, ahead of the manifest carrying it: it is the only thing standing
 between the trees the proofs are about and the text that ships. So is the small-step machine's agreement
-with `eval`. So are the two claims `Lean2Js.Denote` reaches: nothing ships on them yet, but the plan they
-decide does.
+with `eval`. So are the claims `Lean2Js.Denote` reaches, including the ones a reifier assembled rather
+than a person wrote: nothing ships on them yet, but the plan they decide does.
 -/
 
 /-- info: 'Lean2Js.Example.add_comm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -189,3 +190,11 @@ decide does.
 /-- info: 'Lean2Js.Denote.lineTotal_ships' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Denote.lineTotal_ships
+
+/-- info: 'Lean2Js.Denote.add_reified_denotes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Denote.add_reified_denotes
+
+/-- info: 'Lean2Js.Denote.netFee_reified_denotes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Denote.netFee_reified_denotes
