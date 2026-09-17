@@ -39,14 +39,15 @@ theorem denotes_var (p : Program) (env : Env) (name : String) {α : Type} [Enc �
   simp only [Except.ok.injEq] at h
   rw [← h]
 
-/-- The three arithmetic forms differ only in which `Int` operation `applyArith` lands on, so they share
-the walk down to the operands. -/
-private theorem denotes_arith (p : Program) (env : Env) (op : BinOp) (l r : Expr) (a b : Int)
-    (g : Int -> Int -> Int)
-    (hop : applyBin op (.int53 a) (.int53 b) = mkInt53 (g a b))
+/-- Every binary form shares the walk down to the operands; what differs is only what `applyBin` is
+allowed to answer. The hypothesis is one-sided for the same reason the whole certificate is: arithmetic
+traps on overflow, so `applyBin` returning at all is part of what is assumed. -/
+private theorem denotes_bin (p : Program) (env : Env) (op : BinOp) (l r : Expr) (a b : Int)
+    {α : Type} [Enc α] (t : α)
+    (hop : ∀ w, applyBin op (.int53 a) (.int53 b) = .ok w → w = toValue t)
     (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
-    Denotes p env (.bin op l r) (g a b) := by
+    Denotes p env (.bin op l r) t := by
   intro f hf v he
   have h := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ,
@@ -60,27 +61,123 @@ private theorem denotes_arith (p : Program) (env : Env) (op : BinOp) (l r : Expr
       rw [hx, hy] at h
       simp only [bind, Except.bind] at h
       rw [hl (by simp [defaultFuel]) x hx, hr (by simp [defaultFuel]) y hy, toValue_int,
-        toValue_int, hop, mkInt53] at h
-      split at h
-      · simp at h
-      · simp only [Except.ok.injEq] at h
-        rw [← h]
-        rfl
+        toValue_int] at h
+      exact hop v h
+
+private theorem mkInt53_ok {i : Int} {w : Value} (h : mkInt53 i = .ok w) : w = toValue i := by
+  rw [mkInt53] at h
+  split at h
+  · simp at h
+  · simp only [Except.ok.injEq] at h
+    rw [← h]
+    rfl
 
 theorem denotes_add (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .add l r) (a + b) :=
-  denotes_arith p env .add l r a b (· + ·) rfl (by simp) (by simp) hl hr
+  denotes_bin p env .add l r a b _ (fun _ hw => mkInt53_ok hw) (by simp) (by simp) hl hr
 
 theorem denotes_sub (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .sub l r) (a - b) :=
-  denotes_arith p env .sub l r a b (· - ·) rfl (by simp) (by simp) hl hr
+  denotes_bin p env .sub l r a b _ (fun _ hw => mkInt53_ok hw) (by simp) (by simp) hl hr
 
 theorem denotes_mul (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .mul l r) (a * b) :=
-  denotes_arith p env .mul l r a b (· * ·) rfl (by simp) (by simp) hl hr
+  denotes_bin p env .mul l r a b _ (fun _ hw => mkInt53_ok hw) (by simp) (by simp) hl hr
+
+/-! ### Comparison, and the branch it decides
+
+`compareValues` answers with an `Ordering` and the author writes a `Prop`, so each comparison form needs
+the one lemma that lines the two up. They are stated about `decide` rather than the proposition because
+that is what the condition of an `if` reifies to. -/
+
+private theorem compare_lt (a b : Int) : (compare a b == Ordering.lt) = decide (a < b) := by
+  by_cases h : a < b
+  · have hc : compare a b = Ordering.lt := Int.compare_eq_lt.mpr h
+    simp [hc, h]
+  · have hc : compare a b ≠ Ordering.lt := Int.compare_ne_lt.mpr (by omega)
+    simp [beq_eq_false_iff_ne.mpr hc, h]
+
+private theorem compare_le (a b : Int) : (compare a b != Ordering.gt) = decide (a ≤ b) := by
+  by_cases h : a ≤ b
+  · have hc : compare a b ≠ Ordering.gt := Int.compare_ne_gt.mpr h
+    simp [bne, beq_eq_false_iff_ne.mpr hc, h]
+  · have hc : compare a b = Ordering.gt := Int.compare_eq_gt.mpr (by omega)
+    simp [bne, hc, h]
+
+private theorem compare_gt (a b : Int) : (compare a b == Ordering.gt) = decide (a > b) := by
+  by_cases h : a > b
+  · have hc : compare a b = Ordering.gt := Int.compare_eq_gt.mpr h
+    simp [hc, h]
+  · have hc : compare a b ≠ Ordering.gt := Int.compare_ne_gt.mpr (by omega)
+    simp [beq_eq_false_iff_ne.mpr hc, h]
+
+private theorem compare_ge (a b : Int) : (compare a b != Ordering.lt) = decide (a ≥ b) := by
+  by_cases h : a ≥ b
+  · have hc : compare a b ≠ Ordering.lt := Int.compare_ne_lt.mpr h
+    simp [bne, beq_eq_false_iff_ne.mpr hc, h]
+  · have hc : compare a b = Ordering.lt := Int.compare_eq_lt.mpr (by omega)
+    simp [bne, hc, h]
+
+private theorem denotes_cmp (p : Program) (env : Env) (op : BinOp) (l r : Expr) (a b : Int) (q : Bool)
+    (hop : applyBin op (.int53 a) (.int53 b) = .ok (.bool q))
+    (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin op l r) q :=
+  denotes_bin p env op l r a b q
+    (fun w hw => by
+      rw [hop] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_bool])
+    hne hor hl hr
+
+theorem denotes_lt (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .lt l r) (decide (a < b)) :=
+  denotes_cmp p env .lt l r a b _ (by rw [show applyBin .lt (.int53 a) (.int53 b)
+    = .ok (.bool (compare a b == Ordering.lt)) from rfl, compare_lt]) (by simp) (by simp) hl hr
+
+theorem denotes_le (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .le l r) (decide (a ≤ b)) :=
+  denotes_cmp p env .le l r a b _ (by rw [show applyBin .le (.int53 a) (.int53 b)
+    = .ok (.bool (compare a b != Ordering.gt)) from rfl, compare_le]) (by simp) (by simp) hl hr
+
+theorem denotes_gt (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .gt l r) (decide (a > b)) :=
+  denotes_cmp p env .gt l r a b _ (by rw [show applyBin .gt (.int53 a) (.int53 b)
+    = .ok (.bool (compare a b == Ordering.gt)) from rfl, compare_gt]) (by simp) (by simp) hl hr
+
+theorem denotes_ge (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .ge l r) (decide (a ≥ b)) :=
+  denotes_cmp p env .ge l r a b _ (by rw [show applyBin .ge (.int53 a) (.int53 b)
+    = .ok (.bool (compare a b != Ordering.lt)) from rfl, compare_ge]) (by simp) (by simp) hl hr
+
+/-- The author writes a proposition and `eval` branches on a `Value`, so the condition is carried as
+`decide P` and the two sides of the `if` are walked independently. -/
+theorem denotes_ite (p : Program) (env : Env) (c t e : Expr) (P : Prop) [Decidable P]
+    {α : Type} [Enc α] (x y : α)
+    (hc : Denotes p env c (decide P)) (ht : Denotes p env t x) (he : Denotes p env e y) :
+    Denotes p env (.cond c t e) (if P then x else y) := by
+  intro f hf v hev
+  have h := Fuel.evalExpr_of_le hf (by simp) hev
+  rw [defaultFuel_succ, evalExpr_cond] at h
+  cases hx : evalExpr p 9999 env c with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hc (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_bool, bind, Except.bind] at h
+    by_cases hP : P
+    · rw [if_pos hP]
+      simp only [hP, decide_true] at h
+      exact ht (by simp [defaultFuel]) v h
+    · rw [if_neg hP]
+      simp only [hP, decide_false] at h
+      exact he (by simp [defaultFuel]) v h
 
 end Lean2Js.Denote
 
@@ -107,6 +204,13 @@ private partial def walk (names : Array String) (xs : Array Lean.Expr) (e : Lean
   | (``HAdd.hAdd, #[_, _, _, _, l, r]) => binary `add ``Lean2Js.Denote.denotes_add l r
   | (``HSub.hSub, #[_, _, _, _, l, r]) => binary `sub ``Lean2Js.Denote.denotes_sub l r
   | (``HMul.hMul, #[_, _, _, _, l, r]) => binary `mul ``Lean2Js.Denote.denotes_mul l r
+  | (``Decidable.decide, #[prop, inst]) => decided prop inst
+  | (``ite, #[_, prop, inst, t, f]) =>
+    let (ce, cp) ← decided prop inst
+    let (te, tp) ← walk names xs t
+    let (fe, fp) ← walk names xs f
+    return (← `(Lean2Js.Core.Expr.cond $ce $te $fe),
+            ← `(Lean2Js.Denote.denotes_ite _ _ _ _ _ _ _ _ $cp $tp $fp))
   | _ => throwError "reify: {e} is outside the subset this walk reads"
 where
   binary (op : Name) (lemma : Name) (l r : Lean.Expr) : MetaM (Term × Term) := do
@@ -115,19 +219,46 @@ where
     let opStx := mkIdent (`Lean2Js.Core.BinOp ++ op)
     return (← `(Lean2Js.Core.Expr.bin $opStx $le $re),
             ← `($(mkIdent lemma) _ _ _ _ _ _ $lp $rp))
+  /-- A proposition reaches the subset only as the `Bool` a comparison decides, so the decidable
+  instance is walked rather than the proposition. -/
+  decided (prop inst : Lean.Expr) : MetaM (Term × Term) := do
+    match prop.getAppFnArgs with
+    | (``LT.lt, #[_, _, l, r]) => binary `lt ``Lean2Js.Denote.denotes_lt l r
+    | (``LE.le, #[_, _, l, r]) => binary `le ``Lean2Js.Denote.denotes_le l r
+    | (``GT.gt, #[_, _, l, r]) => binary `gt ``Lean2Js.Denote.denotes_gt l r
+    | (``GE.ge, #[_, _, l, r]) => binary `ge ``Lean2Js.Denote.denotes_ge l r
+    | _ =>
+      throwError "reify: {mkApp2 (mkConst ``Decidable.decide) prop inst} is outside the subset \
+        this walk reads"
 
-private def reifyTarget (stx : Syntax) : TermElabM (Name × Array String × Term × Term) := do
+/-- The subset type a Lean type crosses the boundary as. It is written as the `Enc` projection rather
+than the `Ty` it reduces to, so the declaration says where its types came from. -/
+private def encTy (α : Lean.Expr) : TermElabM Term := do
+  unless (← synthInstance? (mkApp (mkConst ``Lean2Js.Enc) α)).isSome do
+    throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
+  `(Lean2Js.Enc.ty (α := $(← exprToSyntax α)))
+
+private structure Reified where
+  name : Name
+  params : Array Term
+  ret : Term
+  ast : Term
+  proof : Term
+
+private def reifyTarget (stx : Syntax) : TermElabM Reified := do
   let n ← realizeGlobalConstNoOverload stx
   let some (.defnInfo di) := (← getEnv).find? n
     | throwError "reify: {n} is not a definition"
   lambdaTelescope di.value fun xs body => do
     let mut names := #[]
+    let mut params := #[]
     for x in xs do
-      unless (← inferType x).isConstOf ``Int do
-        throwError "reify: {x} is not an Int, and this walk reads Int parameters only"
-      names := names.push (← x.fvarId!.getUserName).toString
+      let nm := (← x.fvarId!.getUserName).toString
+      names := names.push nm
+      params := params.push
+        (← `(Lean2Js.Core.Param.mk $(⟨Syntax.mkStrLit nm⟩) $(← encTy (← inferType x))))
     let (ast, proof) ← walk names xs body
-    return (n, names, ast, proof)
+    return { name := n, params, ret := ← encTy (← inferType body), ast, proof }
 
 /-- The declaration an author's `def` reifies to. -/
 syntax (name := reifyDeclStx) "reify_decl% " ident : term
@@ -137,18 +268,15 @@ syntax (name := reifyProofStx) "reify_proof% " ident : term
 
 @[term_elab reifyDeclStx]
 def elabReifyDecl : TermElab := fun stx _ => do
-  let (n, names, ast, _) ← reifyTarget stx[1]
-  let nameLit : Term := ⟨Syntax.mkStrLit n.getString!⟩
-  let params ← names.mapM fun nm =>
-    `(Lean2Js.Core.Param.mk $(⟨Syntax.mkStrLit nm⟩) Lean2Js.Core.Ty.int53)
+  let d ← reifyTarget stx[1]
+  let nameLit : Term := ⟨Syntax.mkStrLit d.name.getString!⟩
   elabTerm
-    (← `({ name := $nameLit, params := [$params,*], ret := Lean2Js.Core.Ty.int53, body := $ast }))
+    (← `({ name := $nameLit, params := [$(d.params),*], ret := $(d.ret), body := $(d.ast) }))
     (some (mkConst ``Lean2Js.Core.Decl))
 
 @[term_elab reifyProofStx]
 def elabReifyProof : TermElab := fun stx expectedType? => do
-  let (_, _, _, proof) ← reifyTarget stx[1]
-  elabTerm proof expectedType?
+  elabTerm (← reifyTarget stx[1]).proof expectedType?
 
 end Lean2Js.Reify
 
@@ -185,6 +313,18 @@ theorem netFee_reified_denotes (p : Program) (base rate : Int) :
     Denotes p (bindParams netFeeCore.params [toValue base, toValue rate]) netFeeCore.body
       (netFee base rate) :=
   reify_proof% netFee
+
+/-- The declaration `clampQuantity_denotes` was written by hand for, now assembled. The two `if`s nest
+and the conditions are propositions, so this is what says the walk crosses `Prop` and `Bool` without a
+tactic. -/
+abbrev clampQuantityCore : Decl := reify_decl% clampQuantity
+
+example : clampQuantityCore = Example.clampQuantity := rfl
+
+theorem clampQuantity_reified_denotes (p : Program) (q u : Int) :
+    Denotes p (bindParams clampQuantityCore.params [toValue q, toValue u]) clampQuantityCore.body
+      (clampQuantity q u) :=
+  reify_proof% clampQuantity
 
 end Lean2Js.Denote
 

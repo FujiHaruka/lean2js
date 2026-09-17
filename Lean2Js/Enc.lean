@@ -48,6 +48,8 @@ instance : Enc Bool where
   accepts _ _ := True
   toValue_hasTy := by intro p b _; exact hasTy_bool p b
 
+@[simp] theorem toValue_bool (b : Bool) : (toValue b : Value) = .bool b := rfl
+
 instance : Enc Int where
   ty := .int53
   toValue := .int53
