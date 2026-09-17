@@ -59,23 +59,27 @@ half: the boundary asks about the program as well as the value. -/
 example : Role.typeDef = Example.Role := rfl
 
 /-! A constructor with fields is the case `Role` does not cover: the `TypeDef` carries each field's subset
-type, the decoding threads `Option` through them, and the entry check becomes the fields' own. Nothing
-declares `Line` yet — the walk cannot read a field projection until Step 2. -/
+type, the decoding threads `Option` through them, and the entry check becomes the fields' own — including
+when a field is itself a derived type. Nothing declares `Sale` yet; the walk cannot read a field
+projection until Step 2. -/
 
-structure Line where
-  unitPrice : Int
-  quantity : Int
+structure Sale where
+  buyer : Role
+  amount : Int
   deriving Enc
 
-example : Line.typeDef =
-    { name := "Line", ctors := [⟨"mk", [⟨"unitPrice", .int53⟩, ⟨"quantity", .int53⟩]⟩] } := rfl
+example : Sale.typeDef =
+    { name := "Sale", ctors := [⟨"mk", [⟨"buyer", .named "Role" []⟩, ⟨"amount", .int53⟩]⟩] } := rfl
 
-example (a b : Int) : (toValue (Line.mk a b) : Value)
-    = .obj "mk" [("unitPrice", .int53 a), ("quantity", .int53 b)] := by
+example (r : Role) (a : Int) : (toValue (Sale.mk r a) : Value)
+    = .obj "mk" [("buyer", toValue r), ("amount", .int53 a)] := by
   simp
 
-example (p : Program) (a b : Int) (h : accepts p (Line.mk a b)) :
-    Value.hasTy p (toValue (Line.mk a b)) (.named "Line" []) = true :=
+example (r : Role) (a : Int) : Sale.ofValue (toValue (Sale.mk r a)) = some (Sale.mk r a) :=
+  Sale.ofValue_toValue _
+
+example (p : Program) (r : Role) (a : Int) (h : accepts p (Sale.mk r a)) :
+    Value.hasTy p (toValue (Sale.mk r a)) (.named "Sale" []) = true :=
   toValue_hasTy h
 
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
