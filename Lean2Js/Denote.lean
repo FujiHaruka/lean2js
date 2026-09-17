@@ -164,6 +164,10 @@ def discounted (amount percent : Int) : Int :=
 
 def tenPercentOff (amount : Int) : Int := amount - Int53.div amount 10
 
+def mixChannels (a b : UInt32) : UInt32 := a * b + (a - b)
+
+def bucketOf (key buckets : UInt32) : UInt32 := key % buckets
+
 def scaleFee (fee factor : BigInt) : BigInt := fee * factor - 1
 
 def bigQuotient (a b : BigInt) : BigInt := BigInt.div a b

@@ -74,13 +74,20 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     return ← projection fields[idx]!.toString recv
   match e.getAppFnArgs with
   | (``HAdd.hAdd, #[α, _, _, _, l, r]) =>
-    binary `add (← numeric α ``Lean2Js.Denote.denotes_add ``Lean2Js.Denote.denotes_addBig) l r
+    binary `add (← numeric α ``Lean2Js.Denote.denotes_add ``Lean2Js.Denote.denotes_addU32
+      ``Lean2Js.Denote.denotes_addBig) l r
   | (``HSub.hSub, #[α, _, _, _, l, r]) =>
-    binary `sub (← numeric α ``Lean2Js.Denote.denotes_sub ``Lean2Js.Denote.denotes_subBig) l r
+    binary `sub (← numeric α ``Lean2Js.Denote.denotes_sub ``Lean2Js.Denote.denotes_subU32
+      ``Lean2Js.Denote.denotes_subBig) l r
   | (``HMul.hMul, #[α, _, _, _, l, r]) =>
-    binary `mul (← numeric α ``Lean2Js.Denote.denotes_mul ``Lean2Js.Denote.denotes_mulBig) l r
+    binary `mul (← numeric α ``Lean2Js.Denote.denotes_mul ``Lean2Js.Denote.denotes_mulU32
+      ``Lean2Js.Denote.denotes_mulBig) l r
+  | (``HDiv.hDiv, #[α, _, _, _, l, r]) =>
+    binary `div (← u32Only α ``Lean2Js.Denote.denotes_divU32) l r
+  | (``HMod.hMod, #[α, _, _, _, l, r]) =>
+    binary `mod (← u32Only α ``Lean2Js.Denote.denotes_modU32) l r
   | (``Neg.neg, #[α, _, a]) =>
-    unary `neg (← numeric α ``Lean2Js.Denote.denotes_neg ``Lean2Js.Denote.denotes_negBig) a
+    unary `neg (← signed α ``Lean2Js.Denote.denotes_neg ``Lean2Js.Denote.denotes_negBig) a
   | (``BEq.beq, #[_, _, l, r]) => binary `eq ``Lean2Js.Denote.denotes_eq l r
   | (``bne, #[_, _, l, r]) => binary `ne ``Lean2Js.Denote.denotes_ne l r
   | (``Bool.and, #[l, r]) => binary `and ``Lean2Js.Denote.denotes_and l r
@@ -250,17 +257,33 @@ where
     | t => throwError "reify: {what} on {t} is outside the subset this walk reads"
   /-- `Int` and `BigInt` are both Lean `Int`s underneath and are told apart only by their type, so the
   operators they share reach the right lemma by what they were applied to. -/
-  numeric (α : Lean.Expr) (intLemma bigLemma : Name) : TermElabM Name := do
+  numeric (α : Lean.Expr) (intLemma u32Lemma bigLemma : Name) : TermElabM Name := do
+    match ← whnf α with
+    | .const ``Int _ => return intLemma
+    | .const ``UInt32 _ => return u32Lemma
+    | .const ``Lean2Js.BigInt _ => return bigLemma
+    | t => throwError "reify: arithmetic on {t} is outside the subset this walk reads"
+  /-- `eval` has no `neg` for a `UInt32`, so Lean's own — which wraps — is turned away rather than read
+  as the wrapping negation the subset does not have. -/
+  signed (α : Lean.Expr) (intLemma bigLemma : Name) : TermElabM Name := do
     match ← whnf α with
     | .const ``Int _ => return intLemma
     | .const ``Lean2Js.BigInt _ => return bigLemma
-    | t => throwError "reify: arithmetic on {t} is outside the subset this walk reads"
-  /-- `Int53`, `BigInt` and `String` are ordered by different functions on both sides, so a comparison
-  reads as the lemma for the type being compared. -/
-  cmp (α : Lean.Expr) (op : Name) (intLemma strLemma bigLemma : Name) (l r : Lean.Expr) :
+    | t => throwError "reify: negating a {t} is outside the subset this walk reads"
+  /-- `/` and `%` read only on `UInt32`, where both sides divide the same natural numbers. On `Int53` and
+  `BigInt` Lean rounds towards negative infinity and the subset truncates, so there the author writes
+  `Int53.div` or `BigInt.div` and the operator itself stays unread. -/
+  u32Only (α : Lean.Expr) (lemma : Name) : TermElabM Name := do
+    match ← whnf α with
+    | .const ``UInt32 _ => return lemma
+    | _ => throwError "reify: {e} is outside the subset this walk reads"
+  /-- `Int53`, `UInt32`, `BigInt` and `String` are ordered by different functions on both sides, so a
+  comparison reads as the lemma for the type being compared. -/
+  cmp (α : Lean.Expr) (op : Name) (intLemma u32Lemma strLemma bigLemma : Name) (l r : Lean.Expr) :
       TermElabM (Term × Term) := do
     match ← whnf α with
     | .const ``Int _ => binary op intLemma l r
+    | .const ``UInt32 _ => binary op u32Lemma l r
     | .const ``String _ => binary op strLemma l r
     | .const ``Lean2Js.BigInt _ => binary op bigLemma l r
     | t => throwError "reify: comparing two values of type {t} is outside the subset this walk reads"
@@ -428,17 +451,17 @@ where
   decided (prop inst : Lean.Expr) : TermElabM (Term × Term) := do
     match prop.getAppFnArgs with
     | (``LT.lt, #[α, _, l, r]) =>
-      cmp α `lt ``Lean2Js.Denote.denotes_lt ``Lean2Js.Denote.denotes_ltStr
-        ``Lean2Js.Denote.denotes_ltBig l r
+      cmp α `lt ``Lean2Js.Denote.denotes_lt ``Lean2Js.Denote.denotes_ltU32
+        ``Lean2Js.Denote.denotes_ltStr ``Lean2Js.Denote.denotes_ltBig l r
     | (``LE.le, #[α, _, l, r]) =>
-      cmp α `le ``Lean2Js.Denote.denotes_le ``Lean2Js.Denote.denotes_leStr
-        ``Lean2Js.Denote.denotes_leBig l r
+      cmp α `le ``Lean2Js.Denote.denotes_le ``Lean2Js.Denote.denotes_leU32
+        ``Lean2Js.Denote.denotes_leStr ``Lean2Js.Denote.denotes_leBig l r
     | (``GT.gt, #[α, _, l, r]) =>
-      cmp α `gt ``Lean2Js.Denote.denotes_gt ``Lean2Js.Denote.denotes_gtStr
-        ``Lean2Js.Denote.denotes_gtBig l r
+      cmp α `gt ``Lean2Js.Denote.denotes_gt ``Lean2Js.Denote.denotes_gtU32
+        ``Lean2Js.Denote.denotes_gtStr ``Lean2Js.Denote.denotes_gtBig l r
     | (``GE.ge, #[α, _, l, r]) =>
-      cmp α `ge ``Lean2Js.Denote.denotes_ge ``Lean2Js.Denote.denotes_geStr
-        ``Lean2Js.Denote.denotes_geBig l r
+      cmp α `ge ``Lean2Js.Denote.denotes_ge ``Lean2Js.Denote.denotes_geU32
+        ``Lean2Js.Denote.denotes_geStr ``Lean2Js.Denote.denotes_geBig l r
     | (``Eq, #[_, b, t]) =>
       if t.isConstOf ``Bool.true then
         let (be, bp) ← walk ns names xs b
@@ -883,6 +906,29 @@ theorem tenPercentOff_certificate (p : Program) (amount : Int) :
     Denotes p (bindParams tenPercentOffCore.params [toValue amount]) tenPercentOffCore.body
       (tenPercentOff amount) :=
   reify_proof% tenPercentOff
+
+/-! ### The integer that wraps
+
+`UInt32` is the one numeric type where `/` and `%` are the operators an author already writes: both sides
+divide natural numbers and round the same way, so nothing stands between them. -/
+
+abbrev mixChannelsCore : Decl := reify_decl% mixChannels
+
+example : mixChannelsCore = Example.mixChannels := rfl
+
+theorem mixChannels_certificate (p : Program) (a b : UInt32) :
+    Denotes p (bindParams mixChannelsCore.params [toValue a, toValue b]) mixChannelsCore.body
+      (mixChannels a b) :=
+  reify_proof% mixChannels
+
+abbrev bucketOfCore : Decl := reify_decl% bucketOf
+
+example : bucketOfCore = Example.bucketOf := rfl
+
+theorem bucketOf_certificate (p : Program) (key buckets : UInt32) :
+    Denotes p (bindParams bucketOfCore.params [toValue key, toValue buckets]) bucketOfCore.body
+      (bucketOf key buckets) :=
+  reify_proof% bucketOf
 
 abbrev scaleFeeCore : Decl := reify_decl% scaleFee
 

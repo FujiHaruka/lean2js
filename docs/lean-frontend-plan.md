@@ -307,10 +307,10 @@ lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を�
 | --- | --- |
 | `==` / `!=` | `Enc` の外に `EncBEq`（符号化が等価を保つ）を置いて、`Bool` / `Int` / `String` / `UInt32` / `BigInt` に instance。**利用者の型はまだ** —— `deriving Enc` が instance を出していない |
 | `&&` / `\|\|` | 済。短絡するので `bin` は通らず、専用の補題 2 本 |
-| `min` / `max` | 済（`Int53` のみ。`BigInt` に `Min` instance を置いていないので、walk に届かない） |
+| `min` / `max` | 済（`Int53` のみ。`BigInt` には `Min` instance が無いので walk に届かないが、`UInt32` にはあるので届いて断られる —— `eval` は `UInt32` の `min` を持っているので、これは残っている穴） |
 | 構成子と射影 | 済。**構成子はプログラムを名指しする** —— `eval` が型を引いてフィールド名を取るので、`findType?` を `rfl` で通すために証明書が `Example.program` についてのものになる。射影は通らない |
 | `none` / `some` / `ok` / `error` | 済。型注釈が形に乗るので `encTy` を通す |
-| `UInt32` の算術 | **まだ**。`Enc UInt32` はあるが補題が無い。ラップする算術なので `Int` の補題は使えない |
+| `UInt32` の算術と比較 | 済。ラップするので `Int53` の補題は使えず、`+ - * / %` と `< ≤ > ≥` に別系統を置いた。**`/` と `%` は `UInt32` でだけ演算子そのものを読む** —— 両側とも自然数を割って同じ丸めをするので、prelude の関数が要らない |
 | 関数を取る引数 | **まだ**。`.fn` に `Enc` instance は立たない。reifier が `@f` を宣言名に落とす |
 | リテラル・`_` の腕、入れ子 `match` | **まだ**。Step 2 で残した既知の穴 |
 | 型パラメタを取る型 | **まだ**。`Paginated<T>` / `Validated<E, A>` は `deriving Enc` が `numParams == 0` しか受けない |

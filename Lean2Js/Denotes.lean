@@ -1149,6 +1149,129 @@ theorem denotes_dictLit (p : Program) (env : Env) (value : Ty) (entries : List (
     rw [← hv, evalArgs_denotesEntries p env (by simp [defaultFuel]) h hx]
     rfl
 
+/-! ### UInt32
+
+The integer that wraps where `Int53` traps. Lean's `UInt32` wraps at the same bound and divides the same
+natural numbers, so an author writes the ordinary operators and no prelude function stands between — `/`
+and `%` included, which is what separates this from `Int53`. -/
+
+private theorem denotes_u32Arith (p : Program) (env : Env) (op : BinOp) (l r : Expr)
+    (a b n : UInt32)
+    (hop : applyBin op (toValue a) (toValue b) = .ok (.uint32 n))
+    (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin op l r) n :=
+  denotes_bin p env op l r a b n
+    (fun _ hw => by
+      rw [hop] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw]
+      rfl)
+    hne hor hl hr
+
+private theorem denotes_u32Guarded (p : Program) (env : Env) (op : BinOp) (l r : Expr)
+    (a b n : UInt32)
+    (hop : applyBin op (toValue a) (toValue b)
+      = (if b == 0 then .error .divByZero else .ok (.uint32 n)))
+    (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin op l r) n :=
+  denotes_bin p env op l r a b n
+    (fun _ hw => by
+      rw [hop] at hw
+      split at hw
+      · simp at hw
+      · simp only [Except.ok.injEq] at hw
+        rw [← hw]
+        rfl)
+    hne hor hl hr
+
+theorem denotes_addU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .add l r) (a + b) :=
+  denotes_u32Arith p env .add l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_subU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .sub l r) (a - b) :=
+  denotes_u32Arith p env .sub l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_mulU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .mul l r) (a * b) :=
+  denotes_u32Arith p env .mul l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_divU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .div l r) (a / b) :=
+  denotes_u32Guarded p env .div l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_modU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .mod l r) (a % b) :=
+  denotes_u32Guarded p env .mod l r a b _ rfl (by simp) (by simp) hl hr
+
+/-! `compareValues` orders two `UInt32`s by `toNat`, and Lean orders them by the same, so each comparison
+is the `Nat` one under a different name. -/
+
+private theorem compare_u32_lt (a b : UInt32) :
+    (compare a.toNat b.toNat == Ordering.lt) = decide (a < b) := by
+  simp only [UInt32.lt_iff_toNat_lt]
+  by_cases h : a.toNat < b.toNat
+  · simp [Nat.compare_eq_lt.mpr h, h]
+  · simp [beq_eq_false_iff_ne.mpr (fun hc => h (Nat.compare_eq_lt.mp hc)), h]
+
+private theorem compare_u32_le (a b : UInt32) :
+    (compare a.toNat b.toNat != Ordering.gt) = decide (a ≤ b) := by
+  simp only [UInt32.le_iff_toNat_le]
+  by_cases h : a.toNat ≤ b.toNat
+  · simp [bne, beq_eq_false_iff_ne.mpr
+      (fun hg => absurd (Nat.compare_eq_gt.mp hg) (Nat.not_lt.mpr h)), h]
+  · simp [bne, Nat.compare_eq_gt.mpr (Nat.not_le.mp h), h]
+
+private theorem compare_u32_gt (a b : UInt32) :
+    (compare a.toNat b.toNat == Ordering.gt) = decide (a > b) := by
+  simp only [gt_iff_lt, UInt32.lt_iff_toNat_lt]
+  by_cases h : b.toNat < a.toNat
+  · simp [Nat.compare_eq_gt.mpr h, h]
+  · simp [beq_eq_false_iff_ne.mpr (fun hc => h (Nat.compare_eq_gt.mp hc)), h]
+
+private theorem compare_u32_ge (a b : UInt32) :
+    (compare a.toNat b.toNat != Ordering.lt) = decide (a ≥ b) := by
+  simp only [ge_iff_le, UInt32.le_iff_toNat_le]
+  by_cases h : b.toNat ≤ a.toNat
+  · simp [bne, beq_eq_false_iff_ne.mpr
+      (fun hl => absurd (Nat.compare_eq_lt.mp hl) (Nat.not_lt.mpr h)), h]
+  · simp [bne, Nat.compare_eq_lt.mpr (Nat.not_le.mp h), h]
+
+theorem denotes_ltU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .lt l r) (decide (a < b)) :=
+  denotes_cmp p env .lt l r a b _ (by rw [show applyBin .lt (toValue a) (toValue b)
+    = .ok (.bool (compare a.toNat b.toNat == Ordering.lt)) from rfl, compare_u32_lt])
+    (by simp) (by simp) hl hr
+
+theorem denotes_leU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .le l r) (decide (a ≤ b)) :=
+  denotes_cmp p env .le l r a b _ (by rw [show applyBin .le (toValue a) (toValue b)
+    = .ok (.bool (compare a.toNat b.toNat != Ordering.gt)) from rfl, compare_u32_le])
+    (by simp) (by simp) hl hr
+
+theorem denotes_gtU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .gt l r) (decide (a > b)) :=
+  denotes_cmp p env .gt l r a b _ (by rw [show applyBin .gt (toValue a) (toValue b)
+    = .ok (.bool (compare a.toNat b.toNat == Ordering.gt)) from rfl, compare_u32_gt])
+    (by simp) (by simp) hl hr
+
+theorem denotes_geU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .ge l r) (decide (a ≥ b)) :=
+  denotes_cmp p env .ge l r a b _ (by rw [show applyBin .ge (toValue a) (toValue b)
+    = .ok (.bool (compare a.toNat b.toNat != Ordering.lt)) from rfl, compare_u32_ge])
+    (by simp) (by simp) hl hr
+
 /-! ### BigInt
 
 `Int` took the encoding into `Int53`, so the integer that need not fit in a JS number is a type of its
