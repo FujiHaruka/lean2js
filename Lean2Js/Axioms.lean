@@ -185,3 +185,7 @@ decide does.
 /-- info: 'Lean2Js.Denote.roleRank_ships' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Denote.roleRank_ships
+
+/-- info: 'Lean2Js.Denote.lineTotal_ships' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Denote.lineTotal_ships

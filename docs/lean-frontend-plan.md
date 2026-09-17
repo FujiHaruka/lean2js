@@ -98,8 +98,8 @@ evalCall … = .ok v → v = enc (f args)
 
 ## Step 0. 縦に 1 本通す —— 済
 
-`Lean2Js/Denote.lean`。`add` と `roleRank` の 2 本を、符号化も証明書も手書きで通した。reifier は無い。
-**合成は閉じる。**
+`Lean2Js/Denote.lean`。`add` / `clampQuantity` / `lineTotal` / `roleRank` の 4 本を、符号化も証明書も
+手書きで通した。reifier は無い。**合成は閉じる。**
 
 ```lean
 def add (a b : Int) : Int := a + b
@@ -111,15 +111,25 @@ theorem add_comm' (a b : Int) : add a b = add b a := Int.add_comm a b
 なる —— 「**列挙されたコードのどれかを投げるか、`add b a` を返すか、どちらかである**」。
 降ろす手順は `rw [← add_comm']` 1 行で、宣言の形を一切見ていない。
 
-### 分かったこと
+### 証明書の形（ここで決まった）
 
-**符号化は全域ではない。** `enc : Int → Value` は entry check が撥ねる値（Int53 の外）を作れるので、
-`add_ships` は範囲の仮定を 1 つ持ち歩く。`encRole` は撥ねられる値を作れないので `roleRank_ships` は
-仮定を持たない。つまり `Enc` に `hasTy` を無条件のフィールドとして置くことはできない。
-**整数は prelude の `Int53`（範囲を担いだ部分型）を利用者に書かせる**のが出口で、これは Step 4 ではなく
-Step 1 の仕事になる。そうしないと、整数を返す宣言の定理すべてに範囲の仮定が残る。
+**本体について、任意の fuel で述べる。** `evalCall` について述べると、宣言が別の宣言を呼んだときに
+呼び先の証明書を引用できない —— 呼び先は残った fuel で走るので、`defaultFuel` での主張が当たらない。
+一般化の代償は無い: `.ok` は fuel 切れの形ではないので `Fuel.evalExpr_of_le` が仮定を `defaultFuel` まで
+持ち上げ、証明は一般化しなかった場合と同じものになる。`lineTotal` → `clampQuantity` で実測。
 
-**matcher の復元は見積りより軽い。** `Lean.Meta.matchMatcherApp?` が入れ子なしの `match` について
+**entry check は証明書に出てこない。** 引数が境界の受け付ける値かは `Decl.decl_refuses` の問いで、
+呼び出しの一箇所でだけ訊く。証明書どうしを繋ぐときには出てこないので、宣言が深くなっても増えない。
+
+**境界の仮定は符号化が全域かで決まる。** `enc : Int → Value` は entry check が撥ねる値（Int53 の外）を
+作れるので `add_ships` は範囲の仮定を持ち、`encRole` は作れないので `roleRank_ships` は持たない。
+これは払うべき代価ではなく、`decl_refuses`（境界を破る引数は本体に入らない）を素直に書いたもの。
+**`Enc` の `hasTy` が無条件の法則にならない**ことだけが設計への制約で、prelude の `Int53` を
+前倒しする理由にはならない。
+
+### matcher
+
+**復元は見積りより軽い。** `Lean.Meta.matchMatcherApp?` が入れ子なしの `match` について
 スクルティニー・腕・`altNumParams` をそのまま返す（`roleRank` で実測: `discrs 1, alts 3,
 altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす必要はない。
 残るのは腕と構成子の対応が位置でしか決まらないことで、`match n { 0 => … | _ => … }` のような
@@ -130,14 +140,18 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 
 ## Step 1. 符号化層と、スカラの断片
 
-- `Enc` クラス（`toValue` / `ofValue` / `hasTy` が成り立つこと）と、`Value` の 9 コンストラクタぶんの instance
-- prelude の `Int53` —— 範囲を担った部分型。`Enc` の `hasTy` を無条件にできるのはこれがある場合だけで、
-  素の `Int` のままだと整数を返す宣言の定理すべてに範囲の仮定が残る（Step 0 で実測）
+- `Enc` クラス（`toValue` / `ofValue`、および `hasTy` —— 符号化が全域でない型では条件つき）と、
+  `Value` の 9 コンストラクタぶんの instance
 - 利用者の `inductive` / `structure` への `deriving` —— 符号化、`hasTy` 補題、`match` 対応補題を生成する
 - denotation 補題: リテラル・変数・`let`・条件式・単項/二項演算・呼び出し（35 形のうち 12 前後）
 - reifier: 同じ範囲。サブセットの外に出たときは、**利用者が書いた構文の位置で**断る
 
-**ここでリスクの 6 割が解ける。** 補題の形と証明項の組み立て方が、この Step で確定する。
+証明書の形は Step 0 で決まっている（本体について任意の fuel、entry check は境界だけ）。ここで確定するのは
+**形ごとの denotation 補題の粒度と、reifier がそれを貼る順序**。
+
+**利用者が書ける算術は Lean のそれと一致しない。** `/` は Lean では床で、サブセットでは切り捨て
+（`Eval.lean` の `applyArith` がそう書いてある）。利用者には `Int.tdiv` を書かせるか prelude で包むかの
+どちらかで、**どちらにせよ `/` をそのまま受け付けてはいけない**。Step 1 の受け入れ条件に入れる。
 
 ## Step 2. `match`
 
@@ -154,8 +168,6 @@ Lean は `match` を補助 matcher に潰すので、腕を復元して型ごと
 後ろの要素で trap する述語がそこまで届かないことは、`eval` 側の既存の性質がそのまま使える。
 
 ## Step 4. 文字列・辞書・prelude
-
-`Int53` は Step 1 で入っている。ここで足すのは残り。
 
 **文字列はコードポイントで数える。** 利用者が Lean の `String.length` を直接呼べてはいけない ——
 JS 側は UTF-16 単位なので、補題が偽になる。prelude の `Str` に寄せ、prelude の外の関数は reify できない
