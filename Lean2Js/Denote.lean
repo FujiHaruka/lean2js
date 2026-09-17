@@ -179,6 +179,58 @@ def cappedCharge (amount budget : Int) : Int := min amount budget
 
 def atLeast (amount floor : Int) : Int := max amount floor
 
+/-- The constructor is named so that the subset reads it as `Money`; Lean's default `mk` would make the
+generated object's tag `mk`. -/
+structure Money where
+  Money ::
+  amount : Int
+  currency : String
+  deriving Enc
+
+inductive OrderState where
+  | draft
+  | placed (orderId : Int)
+  | shipped (orderId : Int) (trackingId : String)
+  | cancelled (reason : String)
+  deriving Enc
+
+def addMoney (a b : Money) : Except String Money :=
+  if a.currency != b.currency then .error "currency mismatch"
+  else .ok (Money.Money (a.amount + b.amount) a.currency)
+
+def currenciesOf (items : List Money) : List String := items.map (fun item => item.currency)
+
+def cartTotal (items : List Money) : Int :=
+  items.foldl (fun subtotal item => subtotal + item.amount) 0
+
+def total (xs : List Int) : Int := xs.foldl (fun sum x => sum + x) 0
+
+def trackingOf (state : OrderState) : Option String :=
+  match state with
+  | .draft => none
+  | .placed _ => none
+  | .shipped _ trackingId => some trackingId
+  | .cancelled _ => none
+
+def canRefund (role : Role) (state : OrderState) : Bool :=
+  match state with
+  | .draft => false
+  | .placed _ => roleRank role ≥ 1
+  | .shipped _ _ => roleRank role ≥ 2
+  | .cancelled _ => false
+
+def refundableOnly (role : Role) (states : List OrderState) : List OrderState :=
+  states.filter (fun state => canRefund role state)
+
+def ship (state : OrderState) (trackingId : String) : Except String OrderState :=
+  match state with
+  | .draft => .error "a draft order cannot ship"
+  | .placed orderId =>
+    if trackingId == "" then .error "a tracking id is required"
+    else .ok (OrderState.shipped orderId trackingId)
+  | .shipped _ _ => .error "the order has already shipped"
+  | .cancelled _ => .error "a cancelled order cannot ship"
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 

@@ -67,6 +67,11 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
             ← `(Lean2Js.Denote.denotes_letE _ _ _ _ _ _ _ _ $vp $bp))
   if let some app ← matchMatcherApp? e then
     return ← matched app e
+  if let .proj tName idx recv := e then
+    unless isStructure (← getEnv) tName do
+      throwError "reify: {e} projects out of {tName}, which is not a structure"
+    let fields : Array Name := getStructureFields (← getEnv) tName
+    return ← projection fields[idx]!.toString recv
   match e.getAppFnArgs with
   | (``HAdd.hAdd, #[α, _, _, _, l, r]) =>
     binary `add (← numeric α ``Lean2Js.Denote.denotes_add ``Lean2Js.Denote.denotes_addBig) l r
@@ -174,6 +179,20 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     return (← `(Lean2Js.Core.Expr.reduceE $ae $ie $accLit $elemLit $be),
             ← `(Lean2Js.Denote.denotes_reduceE _ _ _ _ $accLit $elemLit _ _ _ _ $ap $ip
                   (fun _ _ => $bp)))
+  | (``Option.none, #[α]) =>
+    return (← `(Lean2Js.Core.Expr.noneE $(← encTy α)),
+            ← `(Lean2Js.Denote.denotes_noneE _ _ _))
+  | (``Option.some, #[_, a]) =>
+    let (ae, ap) ← walk ns names xs a
+    return (← `(Lean2Js.Core.Expr.someE $ae), ← `(Lean2Js.Denote.denotes_someE _ _ _ _ $ap))
+  | (``Except.ok, #[ε, _, a]) =>
+    let (ae, ap) ← walk ns names xs a
+    return (← `(Lean2Js.Core.Expr.okE $(← encTy ε) $ae),
+            ← `(Lean2Js.Denote.denotes_okE _ _ _ _ _ $ap))
+  | (``Except.error, #[_, α, a]) =>
+    let (ae, ap) ← walk ns names xs a
+    return (← `(Lean2Js.Core.Expr.errorE $(← encTy α) $ae),
+            ← `(Lean2Js.Denote.denotes_errorE _ _ _ _ _ $ap))
   | (``Decidable.decide, #[prop, inst]) => decided prop inst
   | (``ite, #[_, prop, inst, t, f]) =>
     let (ce, cp) ← decided prop inst
@@ -182,6 +201,11 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     return (← `(Lean2Js.Core.Expr.cond $ce $te $fe),
             ← `(Lean2Js.Denote.denotes_ite _ _ _ _ _ _ _ _ $cp $tp $fp))
   | (c, callArgs) =>
+    if let some (.ctorInfo ci) := (← getEnv).find? c then
+      return ← constructed ci callArgs
+    if let some pi ← getProjectionFnInfo? c then
+      if callArgs.size == pi.numParams + 1 then
+        return ← projection c.getString! callArgs[pi.numParams]!
     let cert := c.appendAfter "_certificate"
     unless (← getEnv).contains cert do
       if ns.isPrefixOf c then
@@ -275,6 +299,40 @@ where
       proof ← `(Lean2Js.Denote.denotesItems_cons _ _ _ _ _ _ $ip $proof)
     return (← `(Lean2Js.Core.Expr.arrayLit $(← encTy α) [$(itemStx.reverse),*]),
             ← `(Lean2Js.Denote.denotes_arrayLit _ _ _ _ _ $proof))
+  /-- The `match` as a function of its scrutinee, which is what the correspondence lemma unifies against
+  the author's own matcher. An arm may read a variable bound outside the `match`, and that variable does
+  not exist where this syntax is elaborated, so those are abstracted too and handed back as holes for the
+  expected type to fill. -/
+  matchedFn (scrut : Lean.Expr) (e : Lean.Expr) : TermElabM Term := do
+    unless scrut.isFVar do return ← `(_)
+    let core ← mkLambdaFVars #[scrut] e
+    let free := xs.filter fun y => y.isFVar && core.hasAnyFVar (· == y.fvarId!)
+    let stx ← exprToSyntax (← mkLambdaFVars free core)
+    if free.isEmpty then return stx
+    let holes : Array Term ← free.mapM fun _ => `(_)
+    `($stx $holes*)
+  /-- A value of a type the author declared. `eval` looks the type up in the program to pair the
+  arguments with the field names, so the certificate names the program the way a call does. -/
+  constructed (ci : ConstructorVal) (callArgs : Array Lean.Expr) : TermElabM (Term × Term) := do
+    unless (← getEnv).contains (ci.induct ++ `typeDef) do
+      throwError "reify: {ci.name} builds a {ci.induct}, which needs `deriving Enc` before the \
+        subset has a type for it"
+    let mut items := #[]
+    let mut proof ← `(Lean2Js.Denote.denotesArgs_nil _ _)
+    for a in callArgs.reverse do
+      let (ae, ap) ← walk ns names xs a
+      items := items.push ae
+      proof ← `(Lean2Js.Denote.denotesArgs_cons _ _ _ _ _ _ $ap $proof)
+    let tLit : Term := ⟨Syntax.mkStrLit ci.induct.getString!⟩
+    let cLit : Term := ⟨Syntax.mkStrLit ci.name.getString!⟩
+    return (← `(Lean2Js.Core.Expr.ctor $tLit [] $cLit [$(items.reverse),*]),
+            ← `(Lean2Js.Denote.denotes_ctor _ _ $tLit $cLit _ _ _ _ _ _ rfl rfl rfl $proof rfl))
+  /-- Reading a field asks nothing of the program: the encoding of the value already carries it. -/
+  projection (field : String) (recv : Lean.Expr) : TermElabM (Term × Term) := do
+    let (re, rp) ← walk ns names xs recv
+    let fLit : Term := ⟨Syntax.mkStrLit field⟩
+    return (← `(Lean2Js.Core.Expr.proj $re $fLit),
+            ← `(Lean2Js.Denote.denotes_proj _ _ _ $fLit _ _ _ _ $rp rfl rfl))
   dictKeyed (ctor : Name) (lemma : Name) (d k : Lean.Expr) : TermElabM (Term × Term) := do
     let (de, dp) ← walk ns names xs d
     let (ke, kp) ← walk ns names xs k
@@ -361,7 +419,7 @@ where
         (← `((Lean2Js.Core.Pat.ctor $(⟨Syntax.mkStrLit ctorName⟩) [$pats,*], $be)))
       let holes : Array Term ← (Array.range fieldNames.size).mapM fun _ => `(_)
       armProofs := armProofs.push (← if holes.isEmpty then pure bp else `(fun $holes* => $bp))
-    let gStx ← if scrut.isFVar then exprToSyntax (← mkLambdaFVars #[scrut] e) else `(_)
+    let gStx ← matchedFn scrut e
     let bodyHoles : Array Term ← (Array.range ctors.size).mapM fun _ => `(_)
     return (← `(Lean2Js.Core.Expr.matchE $se [$altStx,*]),
             ← `($(mkIdent lemmaName) _ _ _ _ $gStx $bodyHoles* $armProofs* $sp))
@@ -896,6 +954,90 @@ theorem atLeast_certificate (p : Program) (amount floor : Int) :
     Denotes p (bindParams atLeastCore.params [toValue amount, toValue floor]) atLeastCore.body
       (atLeast amount floor) :=
   reify_proof% atLeast
+
+/-! ### The author's own types, built and taken apart
+
+`deriving Enc` already wrote where the type sits inside `Value`; what is new here is making one and
+reading a field out of one. `Option` and `Except` have forms of their own rather than being types the
+program declares, so they do not go through the program at all. -/
+
+example : Money.typeDef = Example.Money := rfl
+
+example : OrderState.typeDef = Example.OrderState := rfl
+
+abbrev addMoneyCore : Decl := reify_decl% addMoney
+
+example : addMoneyCore = Example.addMoney := rfl
+
+/-- Building a `Money` names `Example.program`, for the reason a call does: `eval` looks the type up to
+find the field names, so the certificate goes through `findType?` the way a call goes through `find?`. -/
+theorem addMoney_certificate (a b : Money) :
+    Denotes Example.program (bindParams addMoneyCore.params [toValue a, toValue b])
+      addMoneyCore.body (addMoney a b) :=
+  reify_proof% addMoney
+
+abbrev currenciesOfCore : Decl := reify_decl% currenciesOf
+
+example : currenciesOfCore = Example.currenciesOf := rfl
+
+theorem currenciesOf_certificate (p : Program) (items : List Money) :
+    Denotes p (bindParams currenciesOfCore.params [toValue items]) currenciesOfCore.body
+      (currenciesOf items) :=
+  reify_proof% currenciesOf
+
+abbrev cartTotalCore : Decl := reify_decl% cartTotal
+
+example : cartTotalCore = Example.cartTotal := rfl
+
+theorem cartTotal_certificate (p : Program) (items : List Money) :
+    Denotes p (bindParams cartTotalCore.params [toValue items]) cartTotalCore.body
+      (cartTotal items) :=
+  reify_proof% cartTotal
+
+abbrev totalCore : Decl := reify_decl% total
+
+example : totalCore = Example.total := rfl
+
+theorem total_certificate (p : Program) (xs : List Int) :
+    Denotes p (bindParams totalCore.params [toValue xs]) totalCore.body (total xs) :=
+  reify_proof% total
+
+abbrev trackingOfCore : Decl := reify_decl% trackingOf
+
+example : trackingOfCore = Example.trackingOf := rfl
+
+theorem trackingOf_certificate (p : Program) (state : OrderState) :
+    Denotes p (bindParams trackingOfCore.params [toValue state]) trackingOfCore.body
+      (trackingOf state) :=
+  reify_proof% trackingOf
+
+abbrev canRefundCore : Decl := reify_decl% canRefund
+
+example : canRefundCore = Example.canRefund := rfl
+
+theorem canRefund_certificate (role : Role) (state : OrderState) :
+    Denotes Example.program (bindParams canRefundCore.params [toValue role, toValue state])
+      canRefundCore.body (canRefund role state) :=
+  reify_proof% canRefund
+
+abbrev refundableOnlyCore : Decl := reify_decl% refundableOnly
+
+example : refundableOnlyCore = Example.refundableOnly := rfl
+
+theorem refundableOnly_certificate (role : Role) (states : List OrderState) :
+    Denotes Example.program
+      (bindParams refundableOnlyCore.params [toValue role, toValue states])
+      refundableOnlyCore.body (refundableOnly role states) :=
+  reify_proof% refundableOnly
+
+abbrev shipCore : Decl := reify_decl% ship
+
+example : shipCore = Example.ship := rfl
+
+theorem ship_certificate (state : OrderState) (trackingId : String) :
+    Denotes Example.program (bindParams shipCore.params [toValue state, toValue trackingId])
+      shipCore.body (ship state trackingId) :=
+  reify_proof% ship
 
 end Lean2Js.Denote
 

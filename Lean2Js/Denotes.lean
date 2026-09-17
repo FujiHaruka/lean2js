@@ -1416,5 +1416,104 @@ theorem denotes_call (p : Program) (env : Env) (fn : String) (args : List Expr) 
     simp only [harity, Bool.false_eq_true, if_false] at h
     exact hbody (by simp [defaultFuel]) v h
 
+/-! ### Making a value of the author's own type, and taking one apart
+
+Building one goes through the program: `eval` looks the type up to find the field names to pair the
+arguments with, so a certificate that builds a value names the program the way a caller does. Reading a
+field does not — the encoding of the value already carries the field, whatever program it came from. -/
+
+theorem denotes_ctor (p : Program) (env : Env) (typeName ctorName : String) (tyArgs : List Ty)
+    (args : List Expr) (t : TypeDef) (c : CtorDef) (vs : List Value) {α : Type} [Enc α] (x : α)
+    (ht : p.findType? typeName = some t) (hc : t.find? ctorName = some c)
+    (hlen : c.fields.length = vs.length)
+    (hargs : DenotesArgs p env args vs)
+    (henc : (toValue x : Value) = .obj ctorName ((c.fields.map (·.name)).zip vs)) :
+    Denotes p env (.ctor typeName tyArgs ctorName args) x := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_ctor] at h
+  cases ha : evalArgs p 9999 env args with
+  | error err => rw [ha] at h; simp [bind, Except.bind] at h
+  | ok ws =>
+    rw [ha] at h
+    simp only [bind, Except.bind] at h
+    have harity : (c.fields.length != vs.length) = false := by simp [hlen]
+    rw [evalArgs_denotes p env (by simp [defaultFuel]) hargs ha, ht] at h
+    simp only [hc, harity, Bool.false_eq_true, if_false, Except.ok.injEq] at h
+    rw [← h, henc]
+
+theorem denotes_proj (p : Program) (env : Env) (e : Expr) (field : String)
+    {β : Type} [Enc β] (x : β) {α : Type} [Enc α] (t : α)
+    (ctorName : String) (fields : List (String × Value))
+    (hx : Denotes p env e x)
+    (henc : (toValue x : Value) = .obj ctorName fields)
+    (hf : (fields.find? (·.1 == field)).map (·.2) = some (toValue t)) :
+    Denotes p env (.proj e field) t := by
+  intro f hfuel v he
+  have h := Fuel.evalExpr_of_le hfuel (by simp) he
+  rw [defaultFuel_succ, evalExpr_proj] at h
+  cases hy : evalExpr p 9999 env e with
+  | error err => rw [hy] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hy, hx (by simp [defaultFuel]) w hy, henc] at h
+    simp only [bind, Except.bind, hf, Except.ok.injEq] at h
+    rw [← h]
+
+/-! ### `Option` and `Except`
+
+Both have a form of their own rather than being constructors of a declared type, so neither goes through
+the program. The side the term does not determine is carried as an annotation, which is why each lemma
+takes a `Ty` it never looks at. -/
+
+theorem denotes_noneE (p : Program) (env : Env) (elem : Ty) {β : Type} [Enc β] :
+    Denotes p env (.noneE elem) (none : Option β) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_noneE] at h
+  simp only [Except.ok.injEq] at h
+  rw [← h]
+  rfl
+
+theorem denotes_someE (p : Program) (env : Env) (e : Expr) {β : Type} [Enc β] (x : β)
+    (hx : Denotes p env e x) : Denotes p env (.someE e) (some x) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_someE] at h
+  cases hy : evalExpr p 9999 env e with
+  | error err => rw [hy] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hy, hx (by simp [defaultFuel]) w hy] at h
+    simp only [bind, Except.bind, Except.ok.injEq] at h
+    rw [← h]
+    rfl
+
+theorem denotes_okE (p : Program) (env : Env) (err : Ty) (e : Expr) {ε β : Type} [Enc ε] [Enc β]
+    (x : β) (hx : Denotes p env e x) :
+    Denotes p env (.okE err e) (Except.ok x : Except ε β) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_okE] at h
+  cases hy : evalExpr p 9999 env e with
+  | error e' => rw [hy] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hy, hx (by simp [defaultFuel]) w hy] at h
+    simp only [bind, Except.bind, Except.ok.injEq] at h
+    rw [← h]
+    rfl
+
+theorem denotes_errorE (p : Program) (env : Env) (ok : Ty) (e : Expr) {ε β : Type} [Enc ε] [Enc β]
+    (x : ε) (hx : Denotes p env e x) :
+    Denotes p env (.errorE ok e) (Except.error x : Except ε β) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_errorE] at h
+  cases hy : evalExpr p 9999 env e with
+  | error e' => rw [hy] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hy, hx (by simp [defaultFuel]) w hy] at h
+    simp only [bind, Except.bind, Except.ok.injEq] at h
+    rw [← h]
+    rfl
+
 end Lean2Js.Denote
 
