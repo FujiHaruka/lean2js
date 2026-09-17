@@ -658,6 +658,240 @@ theorem denotes_concatArr (p : Program) (env : Env) (l r : Expr) {β : Type} [En
       rw [← hw, toValue_list, List.map_append])
     (by simp) (by simp) hl hr
 
+/-! ### Strings
+
+A string is a list of code points on both sides — `eval` counts and slices `String.toList`, and the
+generated code goes through `Array.from` to do the same. What differs is case folding and trimming, where
+Lean's own functions are full Unicode and the subset's are not: the prelude names the subset's, and the
+walk reads the prelude rather than `String.trim`. -/
+
+theorem denotes_lengthStr (p : Program) (env : Env) (e : Expr) (s : String)
+    (h : Denotes p env e s) : Denotes p env (.length e) (Str.length s) := by
+  intro f hf v he
+  have hv := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_length] at hv
+  cases hx : evalExpr p 9999 env e with
+  | error err => rw [hx] at hv; simp [bind, Except.bind] at hv
+  | ok w =>
+    rw [hx, h (by simp [defaultFuel]) w hx] at hv
+    simp only [toValue_str, bind, Except.bind] at hv
+    exact mkInt53_ok hv
+
+theorem denotes_concatStr (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .concat l r) (a ++ b) :=
+  denotes_bin p env .concat l r a b _
+    (fun w hw => by
+      rw [show applyBin .concat (toValue a) (toValue b) = Except.ok (Value.str (a ++ b)) from rfl]
+        at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_str])
+    (by simp) (by simp) hl hr
+
+private theorem denotes_strUn (p : Program) (env : Env) (op : StrUnOp) (e : Expr) (s : String)
+    {α : Type} [Enc α] (t : α)
+    (hop : ∀ w, applyStrUn op (toValue s) = .ok w → w = toValue t)
+    (h : Denotes p env e s) : Denotes p env (.strUn op e) t := by
+  intro f hf v he
+  have hv := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_strUn] at hv
+  cases hx : evalExpr p 9999 env e with
+  | error err => rw [hx] at hv; simp [bind, Except.bind] at hv
+  | ok w =>
+    rw [hx, h (by simp [defaultFuel]) w hx] at hv
+    simp only [bind, Except.bind] at hv
+    exact hop v hv
+
+theorem denotes_trim (p : Program) (env : Env) (e : Expr) (s : String) (h : Denotes p env e s) :
+    Denotes p env (.strUn .trim e) (Str.trim s) :=
+  denotes_strUn p env .trim e s _
+    (fun w hw => by
+      rw [show applyStrUn .trim (toValue s) = Except.ok (Value.str (Str.trim s)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_str])
+    h
+
+theorem denotes_upper (p : Program) (env : Env) (e : Expr) (s : String) (h : Denotes p env e s) :
+    Denotes p env (.strUn .upper e) (Str.upper s) :=
+  denotes_strUn p env .upper e s _
+    (fun w hw => by
+      rw [show applyStrUn .upper (toValue s) = Except.ok (Value.str (Str.upper s)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_str])
+    h
+
+theorem denotes_lower (p : Program) (env : Env) (e : Expr) (s : String) (h : Denotes p env e s) :
+    Denotes p env (.strUn .lower e) (Str.lower s) :=
+  denotes_strUn p env .lower e s _
+    (fun w hw => by
+      rw [show applyStrUn .lower (toValue s) = Except.ok (Value.str (Str.lower s)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_str])
+    h
+
+private theorem denotes_strBin (p : Program) (env : Env) (op : StrBinOp) (l r : Expr)
+    (a b : String) {α : Type} [Enc α] (t : α)
+    (hop : ∀ w, applyStrBin op (toValue a) (toValue b) = .ok w → w = toValue t)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.strBin op l r) t := by
+  intro f hf v he
+  have hv := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_strBin] at hv
+  cases hx : evalExpr p 9999 env l with
+  | error err => rw [hx] at hv; simp [bind, Except.bind] at hv
+  | ok w =>
+    cases hy : evalExpr p 9999 env r with
+    | error err => rw [hx, hy] at hv; simp [bind, Except.bind] at hv
+    | ok u =>
+      rw [hx, hy, hl (by simp [defaultFuel]) w hx, hr (by simp [defaultFuel]) u hy] at hv
+      simp only [bind, Except.bind] at hv
+      exact hop v hv
+
+theorem denotes_startsWith (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.strBin .startsWith l r) (Str.startsWith a b) :=
+  denotes_strBin p env .startsWith l r a b _
+    (fun w hw => by
+      rw [show applyStrBin .startsWith (toValue a) (toValue b)
+        = Except.ok (Value.bool (Str.startsWith a b)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_bool])
+    hl hr
+
+theorem denotes_endsWith (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.strBin .endsWith l r) (Str.endsWith a b) :=
+  denotes_strBin p env .endsWith l r a b _
+    (fun w hw => by
+      rw [show applyStrBin .endsWith (toValue a) (toValue b)
+        = Except.ok (Value.bool (Str.endsWith a b)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_bool])
+    hl hr
+
+theorem denotes_includes (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.strBin .includes l r) (Str.includes a b) :=
+  denotes_strBin p env .includes l r a b _
+    (fun w hw => by
+      rw [show applyStrBin .includes (toValue a) (toValue b)
+        = Except.ok (Value.bool (Str.includes a b)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_bool])
+    hl hr
+
+theorem denotes_split (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.strBin .split l r) (Str.split a b) :=
+  denotes_strBin p env .split l r a b _
+    (fun w hw => by
+      rw [show applyStrBin .split (toValue a) (toValue b)
+        = Except.ok (Value.arr ((Str.split a b).map Value.str)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_list]
+      rfl)
+    hl hr
+
+theorem denotes_substring (p : Program) (env : Env) (e lo hi : Expr) (s : String) (a b : Int)
+    (hs : Denotes p env e s) (hlo : Denotes p env lo a) (hhi : Denotes p env hi b) :
+    Denotes p env (.substring e lo hi) (Str.substring s a b) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_substring] at h
+  cases hx : evalExpr p 9999 env e with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env lo with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      cases hz : evalExpr p 9999 env hi with
+      | error err => rw [hx, hy, hz] at h; simp [bind, Except.bind] at h
+      | ok z =>
+        rw [hx, hy, hz, hs (by simp [defaultFuel]) w hx, hlo (by simp [defaultFuel]) u hy,
+          hhi (by simp [defaultFuel]) z hz] at h
+        simp only [toValue_str, toValue_int, bind, Except.bind, sliceStr] at h
+        split at h
+        · simp at h
+        · simp only [Except.ok.injEq] at h
+          rw [← h]
+          rfl
+
+/-! Ordering a `String` is by code point on both sides, but Lean states it as `String.lt` and `eval`
+answers with an `Ordering`, so each comparison needs the lemma that lines the two up — the same shape the
+`Int` comparisons take, over a different order. -/
+
+private theorem compare_str (a b : String) :
+    compare a b = if a < b then Ordering.lt else if a = b then Ordering.eq else Ordering.gt := rfl
+
+private theorem lt_of_not_lt_of_ne {a b : String} (hlt : ¬ a < b) (hne : a ≠ b) : b < a :=
+  match Decidable.em (b < a) with
+  | .inl h => h
+  | .inr h => absurd (String.le_antisymm (String.not_lt.mp h) (String.not_lt.mp hlt)) hne
+
+private theorem compare_str_lt (a b : String) :
+    (compare a b == Ordering.lt) = decide (a < b) := by
+  rw [compare_str]
+  by_cases h : a < b
+  · simp [h]
+  · by_cases he : a = b <;> simp [h, he]
+
+private theorem compare_str_le (a b : String) :
+    (compare a b != Ordering.gt) = decide (a ≤ b) := by
+  rw [compare_str]
+  by_cases h : a < b
+  · have hle : a ≤ b := String.not_lt.mp (String.lt_asymm h)
+    simp [h, hle]
+  · by_cases he : a = b
+    · subst he
+      simp [h]
+    · have hgt : ¬ a ≤ b := fun hc => absurd (lt_of_not_lt_of_ne h he) (String.not_lt.mpr hc)
+      simp [h, he, hgt]
+
+private theorem compare_str_gt (a b : String) :
+    (compare a b == Ordering.gt) = decide (a > b) := by
+  rw [compare_str]
+  by_cases h : a < b
+  · have hn : ¬ b < a := String.lt_asymm h
+    simp [h, hn]
+  · by_cases he : a = b
+    · subst he
+      simp [h]
+    · have hgt : b < a := lt_of_not_lt_of_ne h he
+      simp [h, he, hgt]
+
+private theorem compare_str_ge (a b : String) :
+    (compare a b != Ordering.lt) = decide (a ≥ b) := by
+  rw [compare_str]
+  by_cases h : a < b
+  · have hn : ¬ b ≤ a := fun hc => absurd h (String.not_lt.mpr hc)
+    simp [h, hn]
+  · have hge : b ≤ a := String.not_lt.mp h
+    by_cases he : a = b <;> simp [h, he, hge]
+
+theorem denotes_ltStr (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .lt l r) (decide (a < b)) :=
+  denotes_cmp p env .lt l r a b _ (by rw [show applyBin .lt (toValue a) (toValue b)
+    = .ok (.bool (compare a b == Ordering.lt)) from rfl, compare_str_lt]) (by simp) (by simp) hl hr
+
+theorem denotes_leStr (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .le l r) (decide (a ≤ b)) :=
+  denotes_cmp p env .le l r a b _ (by rw [show applyBin .le (toValue a) (toValue b)
+    = .ok (.bool (compare a b != Ordering.gt)) from rfl, compare_str_le]) (by simp) (by simp) hl hr
+
+theorem denotes_gtStr (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .gt l r) (decide (a > b)) :=
+  denotes_cmp p env .gt l r a b _ (by rw [show applyBin .gt (toValue a) (toValue b)
+    = .ok (.bool (compare a b == Ordering.gt)) from rfl, compare_str_gt]) (by simp) (by simp) hl hr
+
+theorem denotes_geStr (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .ge l r) (decide (a ≥ b)) :=
+  denotes_cmp p env .ge l r a b _ (by rw [show applyBin .ge (toValue a) (toValue b)
+    = .ok (.bool (compare a b != Ordering.lt)) from rfl, compare_str_ge]) (by simp) (by simp) hl hr
+
 /-- The arguments of a call, paired with the values the callee's certificate is stated about. It is a
 list of `Value` rather than of encoded terms because a call's arguments need not share a type. -/
 def DenotesArgs (p : Program) (env : Env) : List Expr → List Value → Prop

@@ -75,11 +75,7 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     let (ae, ap) ← walk ns names xs l
     return (← `(Lean2Js.Core.Expr.arrayReverse $ae),
             ← `(Lean2Js.Denote.denotes_arrayReverse _ _ _ _ $ap))
-  | (``HAppend.hAppend, #[_, _, _, _, l, r]) =>
-    let (le, lp) ← walk ns names xs l
-    let (re, rp) ← walk ns names xs r
-    return (← `(Lean2Js.Core.Expr.bin Lean2Js.Core.BinOp.concat $le $re),
-            ← `(Lean2Js.Denote.denotes_concatArr _ _ _ _ _ _ $lp $rp))
+  | (``HAppend.hAppend, #[α, _, _, _, l, r]) => concat α l r
   | (``Lean2Js.Arr.length, #[_, l]) =>
     let (ae, ap) ← walk ns names xs l
     return (← `(Lean2Js.Core.Expr.length $ae),
@@ -95,6 +91,24 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     let (hie, hip) ← walk ns names xs hi
     return (← `(Lean2Js.Core.Expr.arraySlice $ae $loe $hie),
             ← `(Lean2Js.Denote.denotes_arraySlice _ _ _ _ _ _ _ _ $ap $lop $hip))
+  | (``Lean2Js.Str.length, #[l]) =>
+    let (ae, ap) ← walk ns names xs l
+    return (← `(Lean2Js.Core.Expr.length $ae),
+            ← `(Lean2Js.Denote.denotes_lengthStr _ _ _ _ $ap))
+  | (``Lean2Js.Str.trim, #[l]) => strUn `trim ``Lean2Js.Denote.denotes_trim l
+  | (``Lean2Js.Str.upper, #[l]) => strUn `upper ``Lean2Js.Denote.denotes_upper l
+  | (``Lean2Js.Str.lower, #[l]) => strUn `lower ``Lean2Js.Denote.denotes_lower l
+  | (``Lean2Js.Str.startsWith, #[l, r]) =>
+    strBin `startsWith ``Lean2Js.Denote.denotes_startsWith l r
+  | (``Lean2Js.Str.endsWith, #[l, r]) => strBin `endsWith ``Lean2Js.Denote.denotes_endsWith l r
+  | (``Lean2Js.Str.includes, #[l, r]) => strBin `includes ``Lean2Js.Denote.denotes_includes l r
+  | (``Lean2Js.Str.split, #[l, r]) => strBin `split ``Lean2Js.Denote.denotes_split l r
+  | (``Lean2Js.Str.substring, #[l, lo, hi]) =>
+    let (ae, ap) ← walk ns names xs l
+    let (loe, lop) ← walk ns names xs lo
+    let (hie, hip) ← walk ns names xs hi
+    return (← `(Lean2Js.Core.Expr.substring $ae $loe $hie),
+            ← `(Lean2Js.Denote.denotes_substring _ _ _ _ _ _ _ _ $ap $lop $hip))
   | (``List.map, #[_, _, f, l]) => traverse `mapE ``Lean2Js.Denote.denotes_mapE f l
   | (``List.filter, #[_, f, l]) => traverse `filterE ``Lean2Js.Denote.denotes_filterE f l
   | (``List.find?, #[_, f, l]) => traverse `findE ``Lean2Js.Denote.denotes_findE f l
@@ -145,6 +159,31 @@ where
     let (re, rp) ← walk ns names xs r
     let opStx := mkIdent (`Lean2Js.Core.BinOp ++ op)
     return (← `(Lean2Js.Core.Expr.bin $opStx $le $re),
+            ← `($(mkIdent lemma) _ _ _ _ _ _ $lp $rp))
+  /-- `++` joins two arrays or two strings, and `eval` answers each with its own `Value`, so which lemma
+  the form takes is decided by what is being joined. -/
+  concat (α : Lean.Expr) (l r : Lean.Expr) : TermElabM (Term × Term) := do
+    match ← whnf α with
+    | .const ``String _ => binary `concat ``Lean2Js.Denote.denotes_concatStr l r
+    | t =>
+      if t.isAppOf ``List then binary `concat ``Lean2Js.Denote.denotes_concatArr l r
+      else throwError "reify: {t} is not a type this walk knows how to join"
+  /-- `Int53` and `String` are ordered by different functions on both sides, so a comparison reads as the
+  lemma for the type being compared. -/
+  cmp (α : Lean.Expr) (op : Name) (intLemma strLemma : Name) (l r : Lean.Expr) :
+      TermElabM (Term × Term) := do
+    match ← whnf α with
+    | .const ``Int _ => binary op intLemma l r
+    | .const ``String _ => binary op strLemma l r
+    | t => throwError "reify: comparing two values of type {t} is outside the subset this walk reads"
+  strUn (op : Name) (lemma : Name) (l : Lean.Expr) : TermElabM (Term × Term) := do
+    let (ae, ap) ← walk ns names xs l
+    return (← `(Lean2Js.Core.Expr.strUn $(mkIdent (`Lean2Js.Core.StrUnOp ++ op)) $ae),
+            ← `($(mkIdent lemma) _ _ _ _ $ap))
+  strBin (op : Name) (lemma : Name) (l r : Lean.Expr) : TermElabM (Term × Term) := do
+    let (le, lp) ← walk ns names xs l
+    let (re, rp) ← walk ns names xs r
+    return (← `(Lean2Js.Core.Expr.strBin $(mkIdent (`Lean2Js.Core.StrBinOp ++ op)) $le $re),
             ← `($(mkIdent lemma) _ _ _ _ _ _ $lp $rp))
   /-- A binder's name becomes a variable in the generated JavaScript, so it has to be one the author
   wrote rather than one the elaborator invented. -/
@@ -237,10 +276,14 @@ where
   instance is walked rather than the proposition. -/
   decided (prop inst : Lean.Expr) : TermElabM (Term × Term) := do
     match prop.getAppFnArgs with
-    | (``LT.lt, #[_, _, l, r]) => binary `lt ``Lean2Js.Denote.denotes_lt l r
-    | (``LE.le, #[_, _, l, r]) => binary `le ``Lean2Js.Denote.denotes_le l r
-    | (``GT.gt, #[_, _, l, r]) => binary `gt ``Lean2Js.Denote.denotes_gt l r
-    | (``GE.ge, #[_, _, l, r]) => binary `ge ``Lean2Js.Denote.denotes_ge l r
+    | (``LT.lt, #[α, _, l, r]) =>
+      cmp α `lt ``Lean2Js.Denote.denotes_lt ``Lean2Js.Denote.denotes_ltStr l r
+    | (``LE.le, #[α, _, l, r]) =>
+      cmp α `le ``Lean2Js.Denote.denotes_le ``Lean2Js.Denote.denotes_leStr l r
+    | (``GT.gt, #[α, _, l, r]) =>
+      cmp α `gt ``Lean2Js.Denote.denotes_gt ``Lean2Js.Denote.denotes_gtStr l r
+    | (``GE.ge, #[α, _, l, r]) =>
+      cmp α `ge ``Lean2Js.Denote.denotes_ge ``Lean2Js.Denote.denotes_geStr l r
     | (``Eq, #[_, b, t]) =>
       if t.isConstOf ``Bool.true then
         let (be, bp) ← walk ns names xs b
@@ -491,6 +534,65 @@ theorem bracket_certificate (p : Program) (lo hi : Int) :
     Denotes p (bindParams (reify_decl% bracket).params [toValue lo, toValue hi])
       (reify_decl% bracket).body (bracket lo hi) :=
   reify_proof% bracket
+
+/-! ### Strings
+
+Joining, measuring, slicing, folding case and ordering. Lean's `String.trim` and `String.toLower` do not
+appear: they are full Unicode where the subset is not, so an author writes the prelude's. -/
+
+abbrev slugOfCore : Decl := reify_decl% slugOf
+
+example : slugOfCore = Example.slugOf := rfl
+
+theorem slugOf_certificate (p : Program) («prefix» name : String) :
+    Denotes p (bindParams slugOfCore.params [toValue «prefix», toValue name]) slugOfCore.body
+      (slugOf «prefix» name) :=
+  reify_proof% slugOf
+
+abbrev sortsBeforeCore : Decl := reify_decl% sortsBefore
+
+example : sortsBeforeCore = Example.sortsBefore := rfl
+
+theorem sortsBefore_certificate (p : Program) (a b : String) :
+    Denotes p (bindParams sortsBeforeCore.params [toValue a, toValue b]) sortsBeforeCore.body
+      (sortsBefore a b) :=
+  reify_proof% sortsBefore
+
+abbrev mentionsTermCore : Decl := reify_decl% mentionsTerm
+
+example : mentionsTermCore = Example.mentionsTerm := rfl
+
+theorem mentionsTerm_certificate (p : Program) (text term : String) :
+    Denotes p (bindParams mentionsTermCore.params [toValue text, toValue term])
+      mentionsTermCore.body (mentionsTerm text term) :=
+  reify_proof% mentionsTerm
+
+abbrev fieldCountCore : Decl := reify_decl% fieldCount
+
+example : fieldCountCore = Example.fieldCount := rfl
+
+theorem fieldCount_certificate (p : Program) (row separator : String) :
+    Denotes p (bindParams fieldCountCore.params [toValue row, toValue separator])
+      fieldCountCore.body (fieldCount row separator) :=
+  reify_proof% fieldCount
+
+abbrev truncateLabelCore : Decl := reify_decl% truncateLabel
+
+example : truncateLabelCore = Example.truncateLabel := rfl
+
+theorem truncateLabel_certificate (p : Program) (label : String) (limit : Int) :
+    Denotes p (bindParams truncateLabelCore.params [toValue label, toValue limit])
+      truncateLabelCore.body (truncateLabel label limit) :=
+  reify_proof% truncateLabel
+
+abbrev isSpreadsheetCore : Decl := reify_decl% isSpreadsheet
+
+example : isSpreadsheetCore = Example.isSpreadsheet := rfl
+
+theorem isSpreadsheet_certificate (p : Program) (fileName : String) :
+    Denotes p (bindParams isSpreadsheetCore.params [toValue fileName]) isSpreadsheetCore.body
+      (isSpreadsheet fileName) :=
+  reify_proof% isSpreadsheet
 
 end Lean2Js.Denote
 

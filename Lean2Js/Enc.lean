@@ -85,6 +85,8 @@ instance : Enc String where
   accepts _ _ := True
   toValue_hasTy := by intro p s _; exact hasTy_str p s
 
+@[simp] theorem toValue_str (s : String) : (toValue s : Value) = .str s := rfl
+
 /-! ### The shapes built out of another type -/
 
 instance [Enc α] : Enc (Option α) where

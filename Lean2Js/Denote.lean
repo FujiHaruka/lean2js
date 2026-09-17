@@ -116,6 +116,20 @@ def headOr (xs : List Int) (fallback : Int) : Int :=
 
 def bracket (lo hi : Int) : List Int := [lo, hi]
 
+def slugOf («prefix» name : String) : String := «prefix» ++ "-" ++ name
+
+def sortsBefore (a b : String) : Bool := a < b
+
+def mentionsTerm (text term : String) : Bool := Str.includes (Str.lower text) (Str.lower term)
+
+def fieldCount (row separator : String) : Int := Arr.length (Str.split row separator)
+
+def truncateLabel (label : String) (limit : Int) : String :=
+  if Str.length label ≤ limit then label else Str.substring label 0 limit ++ "..."
+
+def isSpreadsheet (fileName : String) : Bool :=
+  Str.endsWith (Str.lower (Str.trim fileName)) ".csv"
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 
