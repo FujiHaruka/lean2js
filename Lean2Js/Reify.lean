@@ -40,6 +40,14 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
   if let some i := xs.findIdx? (· == e) then
     let nm : Term := ⟨Syntax.mkStrLit names[i]!⟩
     return (← `(Lean2Js.Core.Expr.var $nm), ← `(Lean2Js.Denote.denotes_var _ _ $nm _ rfl))
+  if e.isConstOf ``Bool.true || e.isConstOf ``Bool.false then
+    let lit := mkIdent (if e.isConstOf ``Bool.true then `Bool.true else `Bool.false)
+    return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.bool $lit)),
+            ← `(Lean2Js.Denote.denotes_litBool _ _ $lit))
+  if let .lit (.strVal str) := e then
+    let lit : Term := ⟨Syntax.mkStrLit str⟩
+    return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.str $lit)),
+            ← `(Lean2Js.Denote.denotes_litStr _ _ $lit))
   if let some n := e.int? then
     if n < 0 then
       throwError "reify: {e} is a negative literal, which this walk does not read"
@@ -61,6 +69,25 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     let (ae, ap) ← walk ns names xs a
     return (← `(Lean2Js.Core.Expr.un Lean2Js.Core.UnOp.neg $ae),
             ← `(Lean2Js.Denote.denotes_neg _ _ _ _ $ap))
+  | (``List.map, #[_, _, f, l]) => traverse `mapE ``Lean2Js.Denote.denotes_mapE f l
+  | (``List.filter, #[_, f, l]) => traverse `filterE ``Lean2Js.Denote.denotes_filterE f l
+  | (``List.find?, #[_, f, l]) => traverse `findE ``Lean2Js.Denote.denotes_findE f l
+  | (``List.all, #[_, l, f]) => quantified `all ``Lean2Js.Denote.denotes_allE f l
+  | (``List.any, #[_, l, f]) => quantified `any ``Lean2Js.Denote.denotes_anyE f l
+  | (``List.foldl, #[_, _, f, init, l]) =>
+    let (ae, ap) ← walk ns names xs l
+    let (ie, ip) ← walk ns names xs init
+    let f2 ← if f.isLambda then pure f else etaExpand f
+    let (accName, elemName, be, bp) ← lambdaBoundedTelescope f2 2 fun ys body => do
+      let accName ← named ys[0]!
+      let elemName ← named ys[1]!
+      let (be, bp) ← walk ns (names ++ #[accName, elemName]) (xs ++ ys) body
+      return (accName, elemName, be, bp)
+    let accLit : Term := ⟨Syntax.mkStrLit accName⟩
+    let elemLit : Term := ⟨Syntax.mkStrLit elemName⟩
+    return (← `(Lean2Js.Core.Expr.reduceE $ae $ie $accLit $elemLit $be),
+            ← `(Lean2Js.Denote.denotes_reduceE _ _ _ _ $accLit $elemLit _ _ _ _ $ap $ip
+                  (fun _ _ => $bp)))
   | (``Decidable.decide, #[prop, inst]) => decided prop inst
   | (``ite, #[_, prop, inst, t, f]) =>
     let (ce, cp) ← decided prop inst
@@ -93,6 +120,33 @@ where
     let opStx := mkIdent (`Lean2Js.Core.BinOp ++ op)
     return (← `(Lean2Js.Core.Expr.bin $opStx $le $re),
             ← `($(mkIdent lemma) _ _ _ _ _ _ $lp $rp))
+  /-- A binder's name becomes a variable in the generated JavaScript, so it has to be one the author
+  wrote rather than one the elaborator invented. -/
+  named (y : Lean.Expr) : TermElabM String := do
+    let nm ← y.fvarId!.getUserName
+    if nm.hasMacroScopes then
+      throwError "reify: a binder here has no name, and the generated code needs one"
+    return nm.toString
+  /-- The traversals all carry their binder and body rather than a function, so each reads as the array,
+  the binder's name, and the body walked with that name in scope. -/
+  arm (f : Lean.Expr) : TermElabM (String × Term × Term) := do
+    let f1 ← if f.isLambda then pure f else etaExpand f
+    lambdaBoundedTelescope f1 1 fun ys body => do
+      let nm ← named ys[0]!
+      let (be, bp) ← walk ns (names.push nm) (xs.push ys[0]!) body
+      return (nm, be, bp)
+  traverse (ctor : Name) (lemma : Name) (f l : Lean.Expr) : TermElabM (Term × Term) := do
+    let (ae, ap) ← walk ns names xs l
+    let (nm, be, bp) ← arm f
+    let nmLit : Term := ⟨Syntax.mkStrLit nm⟩
+    return (← `($(mkIdent (`Lean2Js.Core.Expr ++ ctor)) $ae $nmLit $be),
+            ← `($(mkIdent lemma) _ _ _ $nmLit _ _ _ $ap (fun _ => $bp)))
+  quantified (op : Name) (lemma : Name) (f l : Lean.Expr) : TermElabM (Term × Term) := do
+    let (ae, ap) ← walk ns names xs l
+    let (nm, be, bp) ← arm f
+    let nmLit : Term := ⟨Syntax.mkStrLit nm⟩
+    return (← `(Lean2Js.Core.Expr.quantE $(mkIdent (`Lean2Js.Core.QuantOp ++ op)) $ae $nmLit $be),
+            ← `($(mkIdent lemma) _ _ _ $nmLit _ _ _ $ap (fun _ => $bp)))
   /-- A `match` on a type the author declared. Lean compiles it to an auxiliary matcher, so the arms come
   back as lambdas and their correspondence to the constructors is positional — the arity check below is
   all there is to catch a reordered or defaulted arm. -/
@@ -142,6 +196,12 @@ where
     | (``LE.le, #[_, _, l, r]) => binary `le ``Lean2Js.Denote.denotes_le l r
     | (``GT.gt, #[_, _, l, r]) => binary `gt ``Lean2Js.Denote.denotes_gt l r
     | (``GE.ge, #[_, _, l, r]) => binary `ge ``Lean2Js.Denote.denotes_ge l r
+    | (``Eq, #[_, b, t]) =>
+      if t.isConstOf ``Bool.true then
+        let (be, bp) ← walk ns names xs b
+        return (be, ← `(Lean2Js.Denote.denotes_decide_eq_true _ _ _ _ $bp))
+      else
+        throwError "reify: {prop} is outside the subset this walk reads"
     | _ =>
       throwError "reify: {mkApp2 (mkConst ``Decidable.decide) prop inst} is outside the subset \
         this walk reads"
@@ -297,6 +357,50 @@ abbrev saleAmountCore : Decl := reify_decl% saleAmount
 theorem saleAmount_certificate (p : Program) (s : Sale) :
     Denotes p (bindParams saleAmountCore.params [toValue s]) saleAmountCore.body (saleAmount s) :=
   reify_proof% saleAmount
+
+/-! ### Walking an array
+
+`map` / `filter` / `find?` / `all` / `any` / `foldl`. The subset's own forms carry the binder and the body
+rather than a function, which is what makes them reify without a value of function type ever existing. -/
+
+abbrev lineTotalsCore : Decl := reify_decl% lineTotals
+
+example : lineTotalsCore = Example.lineTotals := rfl
+
+theorem lineTotals_certificate (unitPrice : Int) (quantities : List Int) :
+    Denotes Example.program
+      (bindParams lineTotalsCore.params [toValue unitPrice, toValue quantities])
+      lineTotalsCore.body (lineTotals unitPrice quantities) :=
+  reify_proof% lineTotals
+
+abbrev anyOverLimitCore : Decl := reify_decl% anyOverLimit
+
+example : anyOverLimitCore = Example.anyOverLimit := rfl
+
+theorem anyOverLimit_certificate (p : Program) (amounts : List Int) (limit : Int) :
+    Denotes p (bindParams anyOverLimitCore.params [toValue amounts, toValue limit])
+      anyOverLimitCore.body (anyOverLimit amounts limit) :=
+  reify_proof% anyOverLimit
+
+theorem overLimit_certificate (p : Program) (amounts : List Int) (limit : Int) :
+    Denotes p (bindParams (reify_decl% overLimit).params [toValue amounts, toValue limit])
+      (reify_decl% overLimit).body (overLimit amounts limit) :=
+  reify_proof% overLimit
+
+theorem firstOverLimit_certificate (p : Program) (amounts : List Int) (limit : Int) :
+    Denotes p (bindParams (reify_decl% firstOverLimit).params [toValue amounts, toValue limit])
+      (reify_decl% firstOverLimit).body (firstOverLimit amounts limit) :=
+  reify_proof% firstOverLimit
+
+theorem allUnderLimit_certificate (p : Program) (amounts : List Int) (limit : Int) :
+    Denotes p (bindParams (reify_decl% allUnderLimit).params [toValue amounts, toValue limit])
+      (reify_decl% allUnderLimit).body (allUnderLimit amounts limit) :=
+  reify_proof% allUnderLimit
+
+theorem anyUnderLimit_certificate (p : Program) (amounts : List Int) (limit : Int) :
+    Denotes p (bindParams (reify_decl% anyUnderLimit).params [toValue amounts, toValue limit])
+      (reify_decl% anyUnderLimit).body (anyUnderLimit amounts limit) :=
+  reify_proof% anyUnderLimit
 
 end Lean2Js.Denote
 

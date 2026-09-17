@@ -175,6 +175,9 @@ instance [Enc α] : Enc (List α) where
   accepts p xs := ∀ a ∈ xs, accepts p a
   toValue_hasTy h := by rw [hasTy_array]; exact hasElemTy_toValue h
 
+@[simp] theorem toValue_list [Enc α] (xs : List α) :
+    (toValue xs : Value) = .arr (xs.map toValue) := rfl
+
 end Enc
 
 end Lean2Js

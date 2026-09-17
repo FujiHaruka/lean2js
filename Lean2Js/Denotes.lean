@@ -30,6 +30,24 @@ theorem denotes_lit (p : Program) (env : Env) (i : Int) : Denotes p env (.lit (.
   rw [← h]
   rfl
 
+theorem denotes_litBool (p : Program) (env : Env) (b : Bool) :
+    Denotes p env (.lit (.bool b)) b := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_lit] at h
+  simp only [litValue, Except.ok.injEq] at h
+  rw [← h]
+  rfl
+
+theorem denotes_litStr (p : Program) (env : Env) (s : String) :
+    Denotes p env (.lit (.str s)) s := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_lit] at h
+  simp only [litValue, Except.ok.injEq] at h
+  rw [← h]
+  rfl
+
 theorem denotes_var (p : Program) (env : Env) (name : String) {α : Type} [Enc α] (a : α)
     (hl : env.lookup? name = some (toValue a)) : Denotes p env (.var name) a := by
   intro f hf v he
@@ -225,6 +243,270 @@ theorem denotes_matchE_of (p : Program) (env : Env) (scrut : Expr) (alts : List 
     simp only [bind, Except.bind] at h
     rw [hfm] at h
     exact hb (by simp [defaultFuel]) v h
+
+/-- An `if` on a `Bool` tests `b = true`, and the subset's condition is the `Bool` itself. -/
+theorem denotes_decide_eq_true (p : Program) (env : Env) (e : Expr) (b : Bool)
+    (h : Denotes p env e b) : Denotes p env e (decide (b = true)) := by
+  intro f hf v hv
+  have hb : decide (b = true) = b := by cases b <;> rfl
+  rw [hb]
+  exact h hf v hv
+
+/-! ### Walking an array
+
+Each traversal evaluates its body once per element, at the same fuel the node itself ran at, so the
+element lemma is an induction over the list rather than a step in the walk. -/
+
+private theorem evalMapItems_denotes (p : Program) (env : Env) (binder : String) (body : Expr)
+    {β : Type} [Enc β] {α : Type} [Enc α] (g : β → α) {f : Nat} (hf : f ≤ defaultFuel)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (g x)) :
+    ∀ (xs : List β) (vs : List Value),
+      evalMapItems p f env binder body (xs.map toValue) = .ok vs →
+      vs = (xs.map g).map toValue := by
+  intro xs
+  induction xs with
+  | nil => intro vs h; simp [evalMapItems] at h; subst h; simp
+  | cons x rest ih =>
+    intro vs h
+    simp only [List.map_cons, evalMapItems] at h
+    cases hx : evalExpr p f ((binder, toValue x) :: env) body with
+    | error err => rw [hx] at h; simp [bind, Except.bind] at h
+    | ok w =>
+      cases hr : evalMapItems p f env binder body (rest.map toValue) with
+      | error err => rw [hx, hr] at h; simp [bind, Except.bind] at h
+      | ok ws =>
+        rw [hx, hr] at h
+        simp only [bind, Except.bind, Except.ok.injEq] at h
+        rw [← h, hb x hf w hx, ih ws hr]
+        simp
+
+theorem denotes_mapE (p : Program) (env : Env) (arr : Expr) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (xs : List β) {α : Type} [Enc α] (g : β → α)
+    (ha : Denotes p env arr xs)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (g x)) :
+    Denotes p env (.mapE arr binder body) (xs.map g) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_mapE] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind] at h
+    cases hm : evalMapItems p 9999 env binder body (xs.map toValue) with
+    | error err => rw [hm] at h; simp at h
+    | ok vs =>
+      rw [hm] at h
+      simp only [Except.ok.injEq] at h
+      rw [← h, evalMapItems_denotes p env binder body g (by simp [defaultFuel]) hb xs vs hm]
+      rfl
+
+private theorem evalFilterItems_denotes (p : Program) (env : Env) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (q : β → Bool) {f : Nat} (hf : f ≤ defaultFuel)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    ∀ (xs : List β) (vs : List Value),
+      evalFilterItems p f env binder body (xs.map toValue) = .ok vs →
+      vs = (xs.filter q).map toValue := by
+  intro xs
+  induction xs with
+  | nil => intro vs h; simp [evalFilterItems] at h; subst h; simp
+  | cons x rest ih =>
+    intro vs h
+    simp only [List.map_cons, evalFilterItems] at h
+    cases hx : evalExpr p f ((binder, toValue x) :: env) body with
+    | error err => rw [hx] at h; simp [bind, Except.bind] at h
+    | ok w =>
+      rw [hx, hb x hf w hx, toValue_bool] at h
+      cases hq : q x with
+      | false => simp only [hq, bind, Except.bind] at h; rw [ih vs h]; simp [hq]
+      | true =>
+        simp only [hq, bind, Except.bind] at h
+        cases hr : evalFilterItems p f env binder body (rest.map toValue) with
+        | error err => rw [hr] at h; simp at h
+        | ok ws =>
+          rw [hr] at h
+          simp only [Except.ok.injEq] at h
+          rw [← h, ih ws hr]
+          simp [hq]
+
+theorem denotes_filterE (p : Program) (env : Env) (arr : Expr) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (xs : List β) (q : β → Bool)
+    (ha : Denotes p env arr xs)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    Denotes p env (.filterE arr binder body) (xs.filter q) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_filterE] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind] at h
+    cases hm : evalFilterItems p 9999 env binder body (xs.map toValue) with
+    | error err => rw [hm] at h; simp at h
+    | ok vs =>
+      rw [hm] at h
+      simp only [Except.ok.injEq] at h
+      rw [← h, evalFilterItems_denotes p env binder body q (by simp [defaultFuel]) hb xs vs hm]
+      rfl
+
+private theorem evalFindItems_denotes (p : Program) (env : Env) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (q : β → Bool) {f : Nat} (hf : f ≤ defaultFuel)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    ∀ (xs : List β) (v : Value),
+      evalFindItems p f env binder body (xs.map toValue) = .ok v → v = toValue (xs.find? q) := by
+  intro xs
+  induction xs with
+  | nil => intro v h; simp [evalFindItems] at h; subst h; rfl
+  | cons x rest ih =>
+    intro v h
+    simp only [List.map_cons, evalFindItems] at h
+    cases hx : evalExpr p f ((binder, toValue x) :: env) body with
+    | error err => rw [hx] at h; simp [bind, Except.bind] at h
+    | ok w =>
+      rw [hx, hb x hf w hx, toValue_bool] at h
+      cases hq : q x with
+      | false => simp only [hq, bind, Except.bind] at h; rw [ih v h]; simp [hq]
+      | true =>
+        simp only [hq, bind, Except.bind, Except.ok.injEq] at h
+        rw [← h]
+        simp [hq]
+        rfl
+
+theorem denotes_findE (p : Program) (env : Env) (arr : Expr) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (xs : List β) (q : β → Bool)
+    (ha : Denotes p env arr xs)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    Denotes p env (.findE arr binder body) (xs.find? q) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_findE] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind] at h
+    exact evalFindItems_denotes p env binder body q (by simp [defaultFuel]) hb xs v h
+
+/-- `all` and `any` differ in which answer stops the walk, so they are proved apart rather than through
+one lemma with the operator as a parameter. -/
+private theorem evalAllItems_denotes (p : Program) (env : Env) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (q : β → Bool) {f : Nat} (hf : f ≤ defaultFuel)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    ∀ (xs : List β) (v : Value),
+      evalQuantItems p f env .all binder body (xs.map toValue) = .ok v →
+      v = toValue (xs.all q) := by
+  intro xs
+  induction xs with
+  | nil => intro v h; simp [evalQuantItems] at h; subst h; rfl
+  | cons x rest ih =>
+    intro v h
+    simp only [List.map_cons, evalQuantItems] at h
+    cases hx : evalExpr p f ((binder, toValue x) :: env) body with
+    | error err => rw [hx] at h; simp [bind, Except.bind] at h
+    | ok w =>
+      rw [hx, hb x hf w hx, toValue_bool] at h
+      rw [List.all_cons]
+      cases hq : q x with
+      | true => simp only [hq, bind, Except.bind] at h; simpa using ih v h
+      | false =>
+        simp only [hq, bind, Except.bind] at h
+        simp_all
+
+private theorem evalAnyItems_denotes (p : Program) (env : Env) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (q : β → Bool) {f : Nat} (hf : f ≤ defaultFuel)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    ∀ (xs : List β) (v : Value),
+      evalQuantItems p f env .any binder body (xs.map toValue) = .ok v →
+      v = toValue (xs.any q) := by
+  intro xs
+  induction xs with
+  | nil => intro v h; simp [evalQuantItems] at h; subst h; rfl
+  | cons x rest ih =>
+    intro v h
+    simp only [List.map_cons, evalQuantItems] at h
+    cases hx : evalExpr p f ((binder, toValue x) :: env) body with
+    | error err => rw [hx] at h; simp [bind, Except.bind] at h
+    | ok w =>
+      rw [hx, hb x hf w hx, toValue_bool] at h
+      rw [List.any_cons]
+      cases hq : q x with
+      | false => simp only [hq, bind, Except.bind] at h; simpa using ih v h
+      | true =>
+        simp only [hq, bind, Except.bind] at h
+        simp_all
+
+theorem denotes_allE (p : Program) (env : Env) (arr : Expr) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (xs : List β) (q : β → Bool)
+    (ha : Denotes p env arr xs)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    Denotes p env (.quantE .all arr binder body) (xs.all q) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_quantE] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind] at h
+    exact evalAllItems_denotes p env binder body q (by simp [defaultFuel]) hb xs v h
+
+theorem denotes_anyE (p : Program) (env : Env) (arr : Expr) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (xs : List β) (q : β → Bool)
+    (ha : Denotes p env arr xs)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :
+    Denotes p env (.quantE .any arr binder body) (xs.any q) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_quantE] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind] at h
+    exact evalAnyItems_denotes p env binder body q (by simp [defaultFuel]) hb xs v h
+
+private theorem evalReduceItems_denotes (p : Program) (env : Env) (accName elemName : String)
+    (body : Expr) {β : Type} [Enc β] {α : Type} [Enc α] (g : α → β → α) {f : Nat}
+    (hf : f ≤ defaultFuel)
+    (hb : ∀ (a : α) (x : β),
+      Denotes p ((elemName, toValue x) :: (accName, toValue a) :: env) body (g a x)) :
+    ∀ (xs : List β) (a : α) (v : Value),
+      evalReduceItems p f env accName elemName body (toValue a) (xs.map toValue) = .ok v →
+      v = toValue (xs.foldl g a) := by
+  intro xs
+  induction xs with
+  | nil => intro a v h; simp [evalReduceItems] at h; subst h; rfl
+  | cons x rest ih =>
+    intro a v h
+    simp only [List.map_cons, evalReduceItems] at h
+    cases hx : evalExpr p f ((elemName, toValue x) :: (accName, toValue a) :: env) body with
+    | error err => rw [hx] at h; simp [bind, Except.bind] at h
+    | ok w =>
+      rw [hx, hb a x hf w hx] at h
+      simp only [bind, Except.bind] at h
+      rw [List.foldl_cons]
+      exact ih (g a x) v h
+
+theorem denotes_reduceE (p : Program) (env : Env) (arr init : Expr) (accName elemName : String)
+    (body : Expr) {β : Type} [Enc β] {α : Type} [Enc α] (xs : List β) (a : α) (g : α → β → α)
+    (ha : Denotes p env arr xs) (hi : Denotes p env init a)
+    (hb : ∀ (acc : α) (x : β),
+      Denotes p ((elemName, toValue x) :: (accName, toValue acc) :: env) body (g acc x)) :
+    Denotes p env (.reduceE arr init accName elemName body) (xs.foldl g a) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_reduceE] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind] at h
+    cases hj : evalExpr p 9999 env init with
+    | error err => rw [hj] at h; simp at h
+    | ok u =>
+      rw [hj, hi (by simp [defaultFuel]) u hj] at h
+      exact evalReduceItems_denotes p env accName elemName body g (by simp [defaultFuel]) hb xs a v h
 
 /-- The arguments of a call, paired with the values the callee's certificate is stated about. It is a
 list of `Value` rather than of encoded terms because a call's arguments need not share a type. -/

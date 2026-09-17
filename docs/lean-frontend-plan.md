@@ -241,12 +241,27 @@ matcher とは別の補助定義になって単一化しない。`g : T → α` 
 
 入れ子の `match` はまだ読めない。
 
-## Step 3. 走査
+## Step 3. 走査 —— 済
 
-`map` / `filter` / `find` / `all` / `any` / `reduce`。リスト上の帰納と `Except` の畳み込みの対応。
+`List.map` / `filter` / `find?` / `all` / `any` / `foldl` を読む。`reify_decl% lineTotals` と
+`reify_decl% anyOverLimit` は表層構文の `Example.*` と `rfl` で等しい。
 
-`find` / `all` / `any` は `eval` 側が既に短絡しているので、対応補題も答えが決まった時点で止まる形になる。
-後ろの要素で trap する述語がそこまで届かないことは、`eval` 側の既存の性質がそのまま使える。
+### 分かったこと
+
+**要素の補題は walk の一段ではなく、リスト上の帰納。** 走査は本体を要素ごとに、しかも**節点と同じ
+fuel で**回す（`evalMapItems` などが `f` をそのまま渡す）。だから形ごとの補題は 1 本では済まず、
+`evalXItems` についての帰納補題と、それを使う節点の補題の 2 本になる。
+
+**`all` と `any` は分けて証明する。** 演算子をパラメタに取って `if op == .all then … else …` で
+1 本にまとめると、短絡する向きが逆なので場合分けが絡まって `simp` が壊れる。
+
+**`if b then` の条件は `b = true` になる。** 利用者が `Bool` を `if` に置くと Lean は
+`decide (b = true)` を作るので、それを `Bool` 本体に戻す補題が 1 本要る。
+
+**λ を eta 展開してはいけない。** すでに λ のものに `etaExpand` を掛けると β 簡約されない適用が
+できて walk が読めなくなる。
+
+まだ読めない: 配列そのものの形（リテラル・添字・長さ・スライス・反転）。
 
 ## Step 4. 文字列・辞書・prelude
 
@@ -272,7 +287,7 @@ Step 1（符号化 + スカラ）          済 —— `Lean2Js/Enc.lean` / `EncD
   ↓
 Step 2（match）                    済 —— `T.denotes_matchE` を `deriving` が出す
   ↓
-Step 3（走査）                     Step 1 が決めた形に乗る
+Step 3（走査）                     済 —— `denotes_mapE` ほか
   ↓
 Step 4（文字列・辞書・prelude）
   ↓

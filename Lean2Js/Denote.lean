@@ -87,6 +87,24 @@ def saleAmount (sale : Sale) : Int :=
   match sale with
   | .mk _ amount => amount + 1
 
+def lineTotals (unitPrice : Int) (quantities : List Int) : List Int :=
+  quantities.map (fun quantity => lineTotal unitPrice quantity)
+
+def anyOverLimit (amounts : List Int) (limit : Int) : Bool :=
+  amounts.foldl (fun seen amount => if seen then true else amount > limit) false
+
+def overLimit (amounts : List Int) (limit : Int) : List Int :=
+  amounts.filter (fun amount => amount > limit)
+
+def firstOverLimit (amounts : List Int) (limit : Int) : Option Int :=
+  amounts.find? (fun amount => amount > limit)
+
+def allUnderLimit (amounts : List Int) (limit : Int) : Bool :=
+  amounts.all (fun amount => amount ≤ limit)
+
+def anyUnderLimit (amounts : List Int) (limit : Int) : Bool :=
+  amounts.any (fun amount => amount ≤ limit)
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 

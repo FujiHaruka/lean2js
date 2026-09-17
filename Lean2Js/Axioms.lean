@@ -222,3 +222,15 @@ info: 'Lean2Js.Denote.saleAmount_certificate' depends on axioms: [propext, Class
 -/
 #guard_msgs in
 #print axioms Lean2Js.Denote.saleAmount_certificate
+
+/--
+info: 'Lean2Js.Denote.lineTotals_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Lean2Js.Denote.lineTotals_certificate
+
+/--
+info: 'Lean2Js.Denote.anyOverLimit_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Lean2Js.Denote.anyOverLimit_certificate
