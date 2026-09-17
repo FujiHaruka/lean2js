@@ -149,11 +149,15 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 `Option` / `Except` / `List` の instance。`Role` の instance は利用者の型の側の見本として
 `Lean2Js/Denote.lean` にあり、`deriving` が吐くべきものを名指ししている。
 
+walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`・単項 `-`・`<` / `≤` / `>` / `≥`・
+`if`・`let`・呼び出し。`reify_decl% clampQuantity` と `reify_decl% lineTotal` は表層構文で書いた
+`Example.clampQuantity` / `Example.lineTotal` と `rfl` で等しく、`lineTotal` の証明書は
+`clampQuantity` の証明書を引用して組まれる —— 引用するのは reifier で、手では書いていない。
+
 残っているもの:
 
 - 利用者の `inductive` / `structure` への `deriving` —— 符号化、`hasTy` 補題、`match` 対応補題を生成する
-- 補題と walk を 35 形のうち 12 形前後まで広げる（`let`・条件式・単項演算・呼び出し）
-- 断りのメッセージ
+- 断りのメッセージ（位置を出すところ）
 
 ### 分かったこと
 
@@ -174,6 +178,20 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 `accepts : Program → α → Prop` として持つので、`add_ships` の仮定は `Value.hasTy` の等式ではなく
 `Int53` の範囲そのものになった。条件が `True` の型（`Bool` / `String` / …）では仮定ごと消える。
 `Role` のように符号化が全域な型では、条件は値ではなく**プログラムがその型を宣言していること**になる。
+
+**呼び先を名指しした証明書は、プログラムも名指しすることになる。** 引用は `p.find? 呼び先 = some d`
+を通るので、`p` を全称量化したままでは `rfl` が立たない。`add` / `clampQuantity` の証明書は `p` について
+一般だが、`lineTotal` の証明書は `Example.program` についてのものになる。**frontend はまずプログラムを
+組み立て、それから証明書を出す** —— 順番はこれで決まった。
+
+**引用は名前の規約で繋ぐ。** reifier は呼び先の定数 `C` に対して `C_certificate` を環境から探し、
+無ければ「その呼び出しには `C_certificate` が要る」と断る。引数の埋め方は `f ..` ではなく
+**その定理の文に現れる明示引数の数**を数える —— `..` は `Denotes` を展開した先の `∀` まで食う。
+最終形では frontend がこの定理を生成するので、規約は妥協ではなく設計。
+
+**`Prop` は `decide P` の形でしか subset に入らない。** 利用者は `if quantity < 1` と書き、`eval` は
+`Value.bool` で分岐する。だから条件は命題ではなく `decide P` として運び、`if` の側は利用者が書いた
+`Decidable` インスタンスをそのまま担ぐ。比較 1 つにつき `compare` と `decide` を繋ぐ補題が 1 本要る。
 
 **`/` は形として断る。** Lean の `/` は床で、サブセットの `/` は切り捨て（`Eval.lean` の `applyArith`
 がそう書いてある）。利用者には prelude 側の除算を書かせ、素の `/` は reify できないものとして落とす。
