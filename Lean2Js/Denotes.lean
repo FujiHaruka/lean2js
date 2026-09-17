@@ -892,6 +892,228 @@ theorem denotes_geStr (p : Program) (env : Env) (l r : Expr) (a b : String)
   denotes_cmp p env .ge l r a b _ (by rw [show applyBin .ge (toValue a) (toValue b)
     = .ok (.bool (compare a b != Ordering.lt)) from rfl, compare_str_ge]) (by simp) (by simp) hl hr
 
+/-! ### Dictionaries
+
+The keys survive the encoding untouched and the values are encoded one by one, so every form below comes
+down to one equation between a list operation on the author's entries and the same operation on the
+encoded ones. -/
+
+private theorem find?_map_encEntry {β : Type} [Enc β] (k : String) :
+    ∀ es : List (String × β),
+      (((es.map encEntry).find? (·.1 == k)).map (·.2))
+        = ((es.find? (·.1 == k)).map (·.2)).map toValue
+  | [] => rfl
+  | (key, x) :: rest => by
+    rw [List.map_cons, show encEntry (key, x) = (key, toValue x) from rfl]
+    simp only [List.find?_cons]
+    cases key == k
+    · exact find?_map_encEntry k rest
+    · rfl
+
+private theorem any_map_encEntry {β : Type} [Enc β] (k : String) :
+    ∀ es : List (String × β), (es.map encEntry).any (·.1 == k) = es.any (·.1 == k)
+  | [] => rfl
+  | e :: rest => by
+    simp only [List.map_cons, encEntry, List.any_cons]
+    rw [any_map_encEntry k rest]
+
+private theorem filter_map_encEntry {β : Type} [Enc β] (k : String) :
+    ∀ es : List (String × β),
+      (es.map encEntry).filter (·.1 != k) = (es.filter (·.1 != k)).map encEntry
+  | [] => rfl
+  | e :: rest => by
+    simp only [List.map_cons, encEntry, List.filter_cons]
+    by_cases h : e.1 != k
+    · simp [h, filter_map_encEntry k rest, encEntry]
+    · simp [h, filter_map_encEntry k rest]
+
+private theorem overwrite_map_encEntry {β : Type} [Enc β] (k : String) (v : β) :
+    ∀ es : List (String × β),
+      (es.map encEntry).map (fun e => if e.1 == k then (k, toValue v) else e)
+        = (es.map (fun e => if e.1 == k then (k, v) else e)).map encEntry
+  | [] => rfl
+  | (key, x) :: rest => by
+    rw [List.map_cons, show encEntry (key, x) = (key, toValue x) from rfl, List.map_cons,
+      List.map_cons, List.map_cons, overwrite_map_encEntry k v rest]
+    by_cases h : (key == k) = true
+    · rw [if_pos h, if_pos h]
+      rfl
+    · rw [if_neg h, if_neg h]
+      rfl
+
+private theorem dictWith_map_encEntry {β : Type} [Enc β] (k : String) (v : β)
+    (es : List (String × β)) :
+    dictWith (es.map encEntry) k (toValue v) = (Dict.set ⟨es⟩ k v).entries.map encEntry := by
+  rw [dictWith, any_map_encEntry, Dict.set]
+  by_cases h : (es.any (·.1 == k)) = true
+  · rw [if_pos h, if_pos h]
+    exact overwrite_map_encEntry k v es
+  · rw [if_neg h, if_neg h, List.map_append]
+    rfl
+
+theorem denotes_dictGet (p : Program) (env : Env) (d key : Expr) {β : Type} [Enc β] (m : Dict β)
+    (k : String) (hd : Denotes p env d m) (hk : Denotes p env key k) :
+    Denotes p env (.dictGet d key) (Dict.get m k) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictGet] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      rw [hx, hy, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy] at h
+      simp only [toValue_dict, toValue_str, bind, Except.bind, dictLookup, Except.ok.injEq] at h
+      rw [← h, find?_map_encEntry, Dict.get]
+      cases (m.entries.find? (·.1 == k)).map (·.2) <;> rfl
+
+theorem denotes_dictHas (p : Program) (env : Env) (d key : Expr) {β : Type} [Enc β] (m : Dict β)
+    (k : String) (hd : Denotes p env d m) (hk : Denotes p env key k) :
+    Denotes p env (.dictHas d key) (Dict.has m k) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictHas] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      rw [hx, hy, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy] at h
+      simp only [toValue_dict, toValue_str, bind, Except.bind, Except.ok.injEq] at h
+      rw [← h, any_map_encEntry]
+      rfl
+
+theorem denotes_dictSet (p : Program) (env : Env) (d key val : Expr) {β : Type} [Enc β]
+    (m : Dict β) (k : String) (x : β)
+    (hd : Denotes p env d m) (hk : Denotes p env key k) (hv : Denotes p env val x) :
+    Denotes p env (.dictSet d key val) (Dict.set m k x) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictSet] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      cases hz : evalExpr p 9999 env val with
+      | error err => rw [hx, hy, hz] at h; simp [bind, Except.bind] at h
+      | ok z =>
+        rw [hx, hy, hz, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy,
+          hv (by simp [defaultFuel]) z hz] at h
+        simp only [toValue_dict, toValue_str, bind, Except.bind, Except.ok.injEq] at h
+        rw [← h, dictWith_map_encEntry]
+        rfl
+
+theorem denotes_dictDelete (p : Program) (env : Env) (d key : Expr) {β : Type} [Enc β] (m : Dict β)
+    (k : String) (hd : Denotes p env d m) (hk : Denotes p env key k) :
+    Denotes p env (.dictDelete d key) (Dict.erase m k) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictDelete] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      rw [hx, hy, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy] at h
+      simp only [toValue_dict, toValue_str, bind, Except.bind, Except.ok.injEq] at h
+      rw [← h, filter_map_encEntry]
+      rfl
+
+theorem denotes_dictKeys (p : Program) (env : Env) (d : Expr) {β : Type} [Enc β] (m : Dict β)
+    (hd : Denotes p env d m) : Denotes p env (.dictKeys d) (Dict.keys m) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictKeys] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hd (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_dict, bind, Except.bind, Except.ok.injEq] at h
+    rw [← h, toValue_list, Dict.keys]
+    simp [encEntry]
+
+theorem denotes_dictValues (p : Program) (env : Env) (d : Expr) {β : Type} [Enc β] (m : Dict β)
+    (hd : Denotes p env d m) : Denotes p env (.dictValues d) (Dict.values m) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictValues] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hd (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_dict, bind, Except.bind, Except.ok.injEq] at h
+    rw [← h, toValue_list, Dict.values]
+    simp [encEntry]
+
+theorem denotes_lengthDict (p : Program) (env : Env) (d : Expr) {β : Type} [Enc β] (m : Dict β)
+    (hd : Denotes p env d m) : Denotes p env (.length d) (Dict.size m) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_length] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hd (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_dict, bind, Except.bind, List.length_map] at h
+    exact mkInt53_ok h
+
+/-- The entries of a dictionary literal. The keys are part of the form rather than evaluated, so what is
+walked is only the values, and the lemma carries the keys as an equation. -/
+def DenotesEntries (p : Program) (env : Env) {β : Type} [Enc β] :
+    List (String × Expr) → List (String × β) → Prop
+  | [], [] => True
+  | (k, e) :: es, (k', x) :: xs => k = k' ∧ Denotes p env e x ∧ DenotesEntries p env es xs
+  | _, _ => False
+
+theorem denotesEntries_nil (p : Program) (env : Env) {β : Type} [Enc β] :
+    DenotesEntries p env [] ([] : List (String × β)) := trivial
+
+theorem denotesEntries_cons (p : Program) (env : Env) (k : String) (e : Expr)
+    (es : List (String × Expr)) {β : Type} [Enc β] (x : β) (xs : List (String × β))
+    (h : Denotes p env e x) (hs : DenotesEntries p env es xs) :
+    DenotesEntries p env ((k, e) :: es) ((k, x) :: xs) := ⟨rfl, h, hs⟩
+
+private theorem evalArgs_denotesEntries (p : Program) (env : Env) {f : Nat} (hf : f ≤ defaultFuel)
+    {β : Type} [Enc β] :
+    ∀ {entries : List (String × Expr)} {es : List (String × β)} {ws : List Value},
+      DenotesEntries p env entries es → evalArgs p f env (entries.map (·.2)) = .ok ws →
+      (entries.map (·.1)).zip ws = es.map encEntry
+  | [], [], ws, _, he => by
+    rw [List.map_nil, evalArgs_nil] at he; simp only [Except.ok.injEq] at he; rw [← he]; rfl
+  | (k, e) :: entries, (k', x) :: es, ws, ⟨hk, h, hs⟩, he => by
+    subst hk
+    rw [List.map_cons, evalArgs_cons] at he
+    cases hx : evalExpr p f env e with
+    | error err => rw [hx] at he; simp [bind, Except.bind] at he
+    | ok w =>
+      cases hy : evalArgs p f env (entries.map (·.2)) with
+      | error err => rw [hx, hy] at he; simp [bind, Except.bind] at he
+      | ok us =>
+        rw [hx, hy] at he
+        simp only [bind, Except.bind, Except.ok.injEq] at he
+        rw [← he, List.map_cons, List.zip_cons_cons, h hf w hx,
+          evalArgs_denotesEntries p env hf hs hy, List.map_cons]
+        rfl
+
+theorem denotes_dictLit (p : Program) (env : Env) (value : Ty) (entries : List (String × Expr))
+    {β : Type} [Enc β] (es : List (String × β)) (h : DenotesEntries p env entries es) :
+    Denotes p env (.dictLit value entries) (Dict.ofList es) := by
+  intro f hf v he
+  have hv := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictLit] at hv
+  cases hx : evalArgs p 9999 env (entries.map (·.2)) with
+  | error err => rw [hx] at hv; simp [bind, Except.bind] at hv
+  | ok ws =>
+    rw [hx] at hv
+    simp only [bind, Except.bind, Except.ok.injEq] at hv
+    rw [← hv, evalArgs_denotesEntries p env (by simp [defaultFuel]) h hx]
+    rfl
+
 /-- The arguments of a call, paired with the values the callee's certificate is stated about. It is a
 list of `Value` rather than of encoded terms because a call's arguments need not share a type. -/
 def DenotesArgs (p : Program) (env : Env) : List Expr → List Value → Prop

@@ -130,6 +130,26 @@ def truncateLabel (label : String) (limit : Int) : String :=
 def isSpreadsheet (fileName : String) : Bool :=
   Str.endsWith (Str.lower (Str.trim fileName)) ".csv"
 
+def limitsFor (role : Role) : Dict Int :=
+  match role with
+  | .guest => Dict.ofList [("daily", 10), ("monthly", 100)]
+  | .member => Dict.ofList [("daily", 100), ("monthly", 3000)]
+  | .admin => Dict.ofList [("daily", 1000), ("monthly", 30000)]
+
+def priceOf (prices : Dict Int) (sku : String) : Option Int := prices.get sku
+
+def isListed (prices : Dict Int) (sku : String) : Bool := prices.has sku
+
+def repriced (prices : Dict Int) (sku : String) (amount : Int) : Dict Int := prices.set sku amount
+
+def listedSkus (prices : Dict Int) : List String := prices.keys
+
+def listedPrices (prices : Dict Int) : List Int := prices.values
+
+def withdrawn (prices : Dict Int) (sku : String) : Dict Int := prices.erase sku
+
+def catalogueSize (prices : Dict Int) : Int := prices.size
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 

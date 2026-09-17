@@ -109,6 +109,31 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     let (hie, hip) ← walk ns names xs hi
     return (← `(Lean2Js.Core.Expr.substring $ae $loe $hie),
             ← `(Lean2Js.Denote.denotes_substring _ _ _ _ _ _ _ _ $ap $lop $hip))
+  | (``Lean2Js.Dict.ofList, #[α, l]) => dictLit α l
+  | (``Lean2Js.Dict.get, #[_, d, k]) =>
+    dictKeyed `dictGet ``Lean2Js.Denote.denotes_dictGet d k
+  | (``Lean2Js.Dict.has, #[_, d, k]) =>
+    dictKeyed `dictHas ``Lean2Js.Denote.denotes_dictHas d k
+  | (``Lean2Js.Dict.erase, #[_, d, k]) =>
+    dictKeyed `dictDelete ``Lean2Js.Denote.denotes_dictDelete d k
+  | (``Lean2Js.Dict.set, #[_, d, k, v]) =>
+    let (de, dp) ← walk ns names xs d
+    let (ke, kp) ← walk ns names xs k
+    let (ve, vp) ← walk ns names xs v
+    return (← `(Lean2Js.Core.Expr.dictSet $de $ke $ve),
+            ← `(Lean2Js.Denote.denotes_dictSet _ _ _ _ _ _ _ _ $dp $kp $vp))
+  | (``Lean2Js.Dict.keys, #[_, d]) =>
+    let (de, dp) ← walk ns names xs d
+    return (← `(Lean2Js.Core.Expr.dictKeys $de),
+            ← `(Lean2Js.Denote.denotes_dictKeys _ _ _ _ $dp))
+  | (``Lean2Js.Dict.values, #[_, d]) =>
+    let (de, dp) ← walk ns names xs d
+    return (← `(Lean2Js.Core.Expr.dictValues $de),
+            ← `(Lean2Js.Denote.denotes_dictValues _ _ _ _ $dp))
+  | (``Lean2Js.Dict.size, #[_, d]) =>
+    let (de, dp) ← walk ns names xs d
+    return (← `(Lean2Js.Core.Expr.length $de),
+            ← `(Lean2Js.Denote.denotes_lengthDict _ _ _ _ $dp))
   | (``List.map, #[_, _, f, l]) => traverse `mapE ``Lean2Js.Denote.denotes_mapE f l
   | (``List.filter, #[_, f, l]) => traverse `filterE ``Lean2Js.Denote.denotes_filterE f l
   | (``List.find?, #[_, f, l]) => traverse `findE ``Lean2Js.Denote.denotes_findE f l
@@ -211,6 +236,35 @@ where
       proof ← `(Lean2Js.Denote.denotesItems_cons _ _ _ _ _ _ $ip $proof)
     return (← `(Lean2Js.Core.Expr.arrayLit $(← encTy α) [$(itemStx.reverse),*]),
             ← `(Lean2Js.Denote.denotes_arrayLit _ _ _ _ _ $proof))
+  dictKeyed (ctor : Name) (lemma : Name) (d k : Lean.Expr) : TermElabM (Term × Term) := do
+    let (de, dp) ← walk ns names xs d
+    let (ke, kp) ← walk ns names xs k
+    return (← `($(mkIdent (`Lean2Js.Core.Expr ++ ctor)) $de $ke),
+            ← `($(mkIdent lemma) _ _ _ _ _ _ $dp $kp))
+  /-- A dictionary the author spelled out. The keys are part of the form rather than evaluated, so each
+  entry has to be a pair of a string literal and a term, and anything else is not a dictionary the
+  subset has a form for. -/
+  literalEntries (l : Lean.Expr) : TermElabM (Option (Array (String × Term × Term))) := do
+    match l.getAppFnArgs with
+    | (``List.nil, _) => return some #[]
+    | (``List.cons, #[_, e, rest]) =>
+      let (``Prod.mk, #[_, _, keyE, valE]) := e.getAppFnArgs | return none
+      let .lit (.strVal key) := keyE | return none
+      let some tail ← literalEntries rest | return none
+      return some (#[(key, ← walk ns names xs valE)] ++ tail)
+    | _ => return none
+  dictLit (α : Lean.Expr) (l : Lean.Expr) : TermElabM (Term × Term) := do
+    let some parts ← literalEntries l
+      | throwError "reify: {l} is not a dictionary written out key by key, which is the only form the \
+        subset has for one"
+    let mut entryStx := #[]
+    let mut proof ← `(Lean2Js.Denote.denotesEntries_nil _ _)
+    for (key, ve, vp) in parts.reverse do
+      let keyLit : Term := ⟨Syntax.mkStrLit key⟩
+      entryStx := entryStx.push (← `(($keyLit, $ve)))
+      proof ← `(Lean2Js.Denote.denotesEntries_cons _ _ $keyLit _ _ _ _ $vp $proof)
+    return (← `(Lean2Js.Core.Expr.dictLit $(← encTy α) [$(entryStx.reverse),*]),
+            ← `(Lean2Js.Denote.denotes_dictLit _ _ _ _ _ $proof))
   /-- The traversals all carry their binder and body rather than a function, so each reads as the array,
   the binder's name, and the body walked with that name in scope. -/
   arm (f : Lean.Expr) : TermElabM (String × Term × Term) := do
@@ -593,6 +647,83 @@ theorem isSpreadsheet_certificate (p : Program) (fileName : String) :
     Denotes p (bindParams isSpreadsheetCore.params [toValue fileName]) isSpreadsheetCore.body
       (isSpreadsheet fileName) :=
   reify_proof% isSpreadsheet
+
+/-! ### Dictionaries
+
+`Dict` is the prelude's because `List (String × α)` already encodes to an array. A literal is written
+out key by key, and the keys are part of the form rather than terms the walk evaluates. -/
+
+abbrev limitsForCore : Decl := reify_decl% limitsFor
+
+example : limitsForCore = Example.limitsFor := rfl
+
+theorem limitsFor_certificate (p : Program) (role : Role) :
+    Denotes p (bindParams limitsForCore.params [toValue role]) limitsForCore.body
+      (limitsFor role) :=
+  reify_proof% limitsFor
+
+abbrev priceOfCore : Decl := reify_decl% priceOf
+
+example : priceOfCore = Example.priceOf := rfl
+
+theorem priceOf_certificate (p : Program) (prices : Dict Int) (sku : String) :
+    Denotes p (bindParams priceOfCore.params [toValue prices, toValue sku]) priceOfCore.body
+      (priceOf prices sku) :=
+  reify_proof% priceOf
+
+abbrev isListedCore : Decl := reify_decl% isListed
+
+example : isListedCore = Example.isListed := rfl
+
+theorem isListed_certificate (p : Program) (prices : Dict Int) (sku : String) :
+    Denotes p (bindParams isListedCore.params [toValue prices, toValue sku]) isListedCore.body
+      (isListed prices sku) :=
+  reify_proof% isListed
+
+abbrev repricedCore : Decl := reify_decl% repriced
+
+example : repricedCore = Example.repriced := rfl
+
+theorem repriced_certificate (p : Program) (prices : Dict Int) (sku : String) (amount : Int) :
+    Denotes p (bindParams repricedCore.params [toValue prices, toValue sku, toValue amount])
+      repricedCore.body (repriced prices sku amount) :=
+  reify_proof% repriced
+
+abbrev listedSkusCore : Decl := reify_decl% listedSkus
+
+example : listedSkusCore = Example.listedSkus := rfl
+
+theorem listedSkus_certificate (p : Program) (prices : Dict Int) :
+    Denotes p (bindParams listedSkusCore.params [toValue prices]) listedSkusCore.body
+      (listedSkus prices) :=
+  reify_proof% listedSkus
+
+abbrev listedPricesCore : Decl := reify_decl% listedPrices
+
+example : listedPricesCore = Example.listedPrices := rfl
+
+theorem listedPrices_certificate (p : Program) (prices : Dict Int) :
+    Denotes p (bindParams listedPricesCore.params [toValue prices]) listedPricesCore.body
+      (listedPrices prices) :=
+  reify_proof% listedPrices
+
+abbrev withdrawnCore : Decl := reify_decl% withdrawn
+
+example : withdrawnCore = Example.withdrawn := rfl
+
+theorem withdrawn_certificate (p : Program) (prices : Dict Int) (sku : String) :
+    Denotes p (bindParams withdrawnCore.params [toValue prices, toValue sku]) withdrawnCore.body
+      (withdrawn prices sku) :=
+  reify_proof% withdrawn
+
+abbrev catalogueSizeCore : Decl := reify_decl% catalogueSize
+
+example : catalogueSizeCore = Example.catalogueSize := rfl
+
+theorem catalogueSize_certificate (p : Program) (prices : Dict Int) :
+    Denotes p (bindParams catalogueSizeCore.params [toValue prices]) catalogueSizeCore.body
+      (catalogueSize prices) :=
+  reify_proof% catalogueSize
 
 end Lean2Js.Denote
 

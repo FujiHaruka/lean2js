@@ -1,3 +1,4 @@
+import Lean2Js.Enc
 import Lean2Js.Eval
 
 /-!
@@ -17,9 +18,16 @@ does a `substring` whose bounds do not fit. A Lean function is total, so `Arr.ge
 there — the certificate is one-sided, so the answer in the trapping case is never claimed.
 
 `Nat` is not in the subset, so the functions that count answer with `Int`.
+
+Two of the types here exist because a `Value` constructor had no Lean type left to it. `Int` already
+encodes to `Int53` and `List (String × α)` already encodes to an array, so `Value.bigint` and
+`Value.dict` get `BigInt` and `Dict` — wrappers whose only job is to be a different type from the one
+that took the encoding first.
 -/
 
 namespace Lean2Js
+
+open Core
 
 namespace Arr
 
@@ -66,5 +74,88 @@ def substring (s : String) (lo hi : Int) : String :=
   String.ofList ((s.toList.drop lo.toNat).take (hi - lo).toNat)
 
 end Str
+
+/-- A `Map` on the JS side. The entries are a list rather than a set because iteration order is
+observable through `keys`, so the two sides have to agree on it: a write to a key already present leaves
+it where it is, and a write to a new one appends. -/
+structure Dict (α : Type) where
+  entries : List (String × α)
+
+namespace Dict
+
+def ofList (entries : List (String × α)) : Dict α := ⟨entries⟩
+
+def get (d : Dict α) (k : String) : Option α := (d.entries.find? (·.1 == k)).map (·.2)
+
+def has (d : Dict α) (k : String) : Bool := d.entries.any (·.1 == k)
+
+/-- Writing a key already present leaves it where it is; writing a new one appends. -/
+def set (d : Dict α) (k : String) (v : α) : Dict α :=
+  ⟨if d.entries.any (·.1 == k) then d.entries.map (fun e => if e.1 == k then (k, v) else e)
+   else d.entries ++ [(k, v)]⟩
+
+def erase (d : Dict α) (k : String) : Dict α := ⟨d.entries.filter (·.1 != k)⟩
+
+def keys (d : Dict α) : List String := d.entries.map (·.1)
+
+def values (d : Dict α) : List α := d.entries.map (·.2)
+
+/-- How many entries, as the `Int53` the subset counts in. -/
+def size (d : Dict α) : Int := Int.ofNat d.entries.length
+
+end Dict
+
+open Enc in
+/-- The entry an encoded `Dict` carries for one of its own. -/
+def encEntry [Enc α] (e : String × α) : String × Value := (e.1, toValue e.2)
+
+namespace Enc
+
+private def ofEntries [Enc α] : List (String × Value) → Option (List (String × α))
+  | [] => some []
+  | (k, v) :: rest =>
+    match ofValue v, ofEntries rest with
+    | some a, some as => some ((k, a) :: as)
+    | _, _ => none
+
+private theorem ofEntries_map [Enc α] (es : List (String × α)) :
+    ofEntries (es.map encEntry) = some es := by
+  induction es with
+  | nil => rfl
+  | cons e rest ih => simp [ofEntries, encEntry, ofValue_toValue e.2, ih]
+
+private theorem hasEntryTys_toValue [Enc α] {p : Program} :
+    ∀ {es : List (String × α)}, (∀ e ∈ es, accepts p e.2) →
+      Value.hasEntryTys p (es.map encEntry) (ty (α := α)) = true
+  | [], _ => hasEntryTys_nil _ _
+  | e :: rest, h => by
+    rw [List.map_cons, encEntry, hasEntryTys_cons, toValue_hasTy (h e (by simp)),
+      hasEntryTys_toValue (fun b hb => h b (by simp [hb]))]
+    rfl
+
+/-- The keys survive the encoding untouched, which is what lets the entry check ask about the author's
+own dictionary rather than about the encoded one. -/
+theorem keys_encEntry [Enc α] (es : List (String × α)) :
+    (es.map encEntry).map (·.1) = es.map (·.1) := by
+  induction es with
+  | nil => rfl
+  | cons e rest ih => simp [encEntry, ih]
+
+instance [Enc α] : Enc (Dict α) where
+  ty := .dict (ty (α := α))
+  toValue d := .dict (d.entries.map encEntry)
+  ofValue
+    | .dict es => (ofEntries es).map Dict.mk
+    | _ => none
+  ofValue_toValue d := by simp [ofEntries_map d.entries]
+  accepts p d := keysDistinct (d.entries.map (·.1)) = true ∧ ∀ e ∈ d.entries, accepts p e.2
+  toValue_hasTy h := by
+    rw [hasTy_dict, keys_encEntry, h.1, hasEntryTys_toValue h.2]
+    rfl
+
+@[simp] theorem toValue_dict [Enc α] (d : Dict α) :
+    (toValue d : Value) = .dict (d.entries.map encEntry) := rfl
+
+end Enc
 
 end Lean2Js
