@@ -33,7 +33,9 @@ theorem seatCharge_denotes (p : Plan) (s : Int53) :
 書けるし検査できる。変換器はどの規則を適用したか知っているので、AST と一緒にこの証明項を吐ける。
 **証明が通れば AST が正しい。変換器は信頼しなくてよく、trusted base は 1 行も増えない。**
 
-**2 は今も当たっている。** これはこの計画の最大の日程リスクで、Step 2 で正面から相手にする。
+**2 は当たるが、見積りほどではない。** `Lean.Meta.matchMatcherApp?` が入れ子なしの `match` の腕を
+そのまま返すので、reifier が `casesOn` / `brecOn` を手で剥がすことにはならない（Step 0 で実測）。
+残りは Step 2 で相手にする。
 
 ## ゴール
 
@@ -94,25 +96,43 @@ evalCall … = .ok v → v = enc (f args)
 | 証明を吐く reifier（メタプログラム） | 800〜1,500 |
 | prelude（`Int53` / `Str` / `Arr` / `Dict`） | 500〜1,000 |
 
-## Step 0. 縦に 1 本通す —— go / no-go
+## Step 0. 縦に 1 本通す —— 済
 
-`docs/mvp-plan.md` の「幅優先で Core を作らない。まず縦に一本通す」と同じ手順を踏む。
+`Lean2Js/Denote.lean`。`add` と `roleRank` の 2 本を、符号化も証明書も手書きで通した。reifier は無い。
+**合成は閉じる。**
 
-`add` 1 本だけ。`def add (a b : Int) : Int := a + b` を書き、**AST も証明も手書きでよい**。
-reifier はまだ書かない。確かめるのは 3 つ。
+```lean
+def add (a b : Int) : Int := a + b
+theorem add_comm' (a b : Int) : add a b = add b a := Int.add_comm a b
+```
 
-1. 証明書の文が型検査を通るか
-2. 既存の `Decl.decl_correct` / `Decl.decl_traps_at_cost` と合成して、**JS についての 1 本の主張**になるか
-3. その主張が 1 文で言えるか（「投げるか、あなたの関数の値を返すか」）
+この `add_comm'` は `Core.Expr` も `evalCall` も `Value` も知らない。それが `add_denotes`（証明書）と
+`Decl.decl_correct` / `Decl.decl_traps_at_cost` を経由して、出荷した JavaScript についての 1 本の主張に
+なる —— 「**列挙されたコードのどれかを投げるか、`add b a` を返すか、どちらかである**」。
+降ろす手順は `rw [← add_comm']` 1 行で、宣言の形を一切見ていない。
 
-**受け入れ条件**: 利用者側が書いた `theorem add_comm' : add a b = add b a` が、出荷した JavaScript に
-ついての主張へ機械的に降りること。
+### 分かったこと
 
-**合成が閉じなければここで止める。** この計画全体がその 1 点に乗っている。
+**符号化は全域ではない。** `enc : Int → Value` は entry check が撥ねる値（Int53 の外）を作れるので、
+`add_ships` は範囲の仮定を 1 つ持ち歩く。`encRole` は撥ねられる値を作れないので `roleRank_ships` は
+仮定を持たない。つまり `Enc` に `hasTy` を無条件のフィールドとして置くことはできない。
+**整数は prelude の `Int53`（範囲を担いだ部分型）を利用者に書かせる**のが出口で、これは Step 4 ではなく
+Step 1 の仕事になる。そうしないと、整数を返す宣言の定理すべてに範囲の仮定が残る。
+
+**matcher の復元は見積りより軽い。** `Lean.Meta.matchMatcherApp?` が入れ子なしの `match` について
+スクルティニー・腕・`altNumParams` をそのまま返す（`roleRank` で実測: `discrs 1, alts 3,
+altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす必要はない。
+残るのは腕と構成子の対応が位置でしか決まらないことで、`match n { 0 => … | _ => … }` のような
+リテラル・既定パターンは matcher 側の情報を読む必要がある。
+
+**証明側に matcher は出てこない。** 証明書は利用者の型を構成子ごとに `cases` で割って書くので、
+補助 matcher に触らずに済む。Step 2 の難所は reifier の側だけ。
 
 ## Step 1. 符号化層と、スカラの断片
 
 - `Enc` クラス（`toValue` / `ofValue` / `hasTy` が成り立つこと）と、`Value` の 9 コンストラクタぶんの instance
+- prelude の `Int53` —— 範囲を担った部分型。`Enc` の `hasTy` を無条件にできるのはこれがある場合だけで、
+  素の `Int` のままだと整数を返す宣言の定理すべてに範囲の仮定が残る（Step 0 で実測）
 - 利用者の `inductive` / `structure` への `deriving` —— 符号化、`hasTy` 補題、`match` 対応補題を生成する
 - denotation 補題: リテラル・変数・`let`・条件式・単項/二項演算・呼び出し（35 形のうち 12 前後）
 - reifier: 同じ範囲。サブセットの外に出たときは、**利用者が書いた構文の位置で**断る
@@ -135,6 +155,8 @@ Lean は `match` を補助 matcher に潰すので、腕を復元して型ごと
 
 ## Step 4. 文字列・辞書・prelude
 
+`Int53` は Step 1 で入っている。ここで足すのは残り。
+
 **文字列はコードポイントで数える。** 利用者が Lean の `String.length` を直接呼べてはいけない ——
 JS 側は UTF-16 単位なので、補題が偽になる。prelude の `Str` に寄せ、prelude の外の関数は reify できない
 ものとして断る。
@@ -151,9 +173,9 @@ JS 側は UTF-16 単位なので、補題が偽になる。prelude の `Str` に
 ## 順序と依存
 
 ```
-Step 0（縦に 1 本・go / no-go）
-  ↓ 通らなければ中止
-Step 1（符号化 + スカラ）        補題の形と証明項の組み立て方がここで決まる
+Step 0（縦に 1 本）                済 —— `Lean2Js/Denote.lean`
+  ↓
+Step 1（符号化 + `Int53` + スカラ）  補題の形と証明項の組み立て方がここで決まる
   ↓
 Step 2（match） → Step 3（走査）   どちらも Step 1 が決めた形に乗る
   ↓
@@ -166,7 +188,7 @@ Step 5（移行・README の文言）
 
 | リスク | 何が起きるか | 先に何をするか |
 | --- | --- | --- |
-| matcher の復元が重い | Step 2 で日程が超過する。最有力の超過要因 | Step 0 のうちに、入れ子なしの `match` を 1 つだけ手で reify してみる |
+| matcher の復元が重い | Step 2 で日程が超過する | **Step 0 で下がった。** `matchMatcherApp?` が入れ子なしの `match` の腕をそのまま返す。残るのは腕と構成子の対応（位置でしか決まらない）と、入れ子 |
 | 証明がタクティクス頼みになる | 利用者の `def` の展開で長く脆くなり、宣言が増えるほど悪化する | 「reifier が証明項を吐く」を Step 1 で設計として固定する |
 | prelude の外を呼ばれる | 失敗が reify 時になる。**何でも書けてしまうぶん、agent が書く用途では今より悪い**（今はパーサが必ず止める） | エラーメッセージを Step 1 の受け入れ条件に入れる。付け足しにしない |
 | 前半が二重化する | ベクタ・docs・テンプレート・エラーメッセージがすべて 2 系統になる | Step 5 で退役させる前提を崩さない |
