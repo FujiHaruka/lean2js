@@ -303,16 +303,26 @@ lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を�
 表層構文を退役させるには、`Example.lean` が今書けていることが全部書けなければならない。walk が
 まだ読まない形が残っている —— **これが Step 5 の最初の仕事**で、Step 1〜4 のどの節にも入っていなかった。
 
-| 読めない形 | 何が要る |
+| 形 | 状態 |
 | --- | --- |
-| `==` / `!=` | `toValue` が構造的等価を保つこと（型ごとの補題か、`Enc` の法則を 1 本増やす） |
-| `&&` / `\|\|` | 短絡するので `evalExpr_and` / `evalExpr_or` は `bin` を通らない。専用の補題 2 本 |
-| `min` / `max` | Lean の `min` / `max` と `applyMinMax` を繋ぐ補題 |
-| `UInt32` の算術 | `Enc UInt32` はあるが補題が無い。ラップする算術なので `Int` の補題は使えない |
-| 構成子と射影 | 利用者の型を **作る**側。`deriving Enc` は読む側（`denotes_matchE`）しか出していない |
-| `none` / `some` / `ok` / `error` | `Option` / `Except` の構成子。型注釈が形に乗るので `encTy` が要る |
-| 関数を取る引数 | `.fn` に `Enc` instance は立たない。reifier が `@f` を宣言名に落とす |
-| リテラル・`_` の腕、入れ子 `match` | Step 2 で残した既知の穴 |
+| `==` / `!=` | `Enc` の外に `EncBEq`（符号化が等価を保つ）を置いて、`Bool` / `Int` / `String` / `UInt32` / `BigInt` に instance。**利用者の型はまだ** —— `deriving Enc` が instance を出していない |
+| `&&` / `\|\|` | 済。短絡するので `bin` は通らず、専用の補題 2 本 |
+| `min` / `max` | 済（`Int53` のみ。`BigInt` に `Min` instance を置いていないので、walk に届かない） |
+| 構成子と射影 | 済。**構成子はプログラムを名指しする** —— `eval` が型を引いてフィールド名を取るので、`findType?` を `rfl` で通すために証明書が `Example.program` についてのものになる。射影は通らない |
+| `none` / `some` / `ok` / `error` | 済。型注釈が形に乗るので `encTy` を通す |
+| `UInt32` の算術 | **まだ**。`Enc UInt32` はあるが補題が無い。ラップする算術なので `Int` の補題は使えない |
+| 関数を取る引数 | **まだ**。`.fn` に `Enc` instance は立たない。reifier が `@f` を宣言名に落とす |
+| リテラル・`_` の腕、入れ子 `match` | **まだ**。Step 2 で残した既知の穴 |
+| 型パラメタを取る型 | **まだ**。`Paginated<T>` / `Validated<E, A>` は `deriving Enc` が `numParams == 0` しか受けない |
+
+### ここで分かったこと
+
+**`match` を関数として渡すとき、腕が外の変数を読んでいたら一緒に抽象する。** 対応補題は `match` 全体を
+`g x` として取るが、`g` は reifier が `exprToSyntax` で作る。その構文は telescope を抜けたあとで
+elaborate されるので、腕が読む外側の変数（`canRefund` の `role`、`ship` の `trackingId`）は
+その時点で存在しない。**捕捉している変数ごと抽象して、穴として適用し直す** —— 穴は期待型から埋まる。
+`g` を `_` にして推論に任せる手は使えない: `?g ?x =?= ship state trackingId` は引数が 2 つあると
+一次近似が `?g := ship state` を選んで型が合わなくなる。
 
 そのうえで:
 
