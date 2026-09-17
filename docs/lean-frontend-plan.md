@@ -146,8 +146,9 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 1 つも無い。**証明項は組める。**
 
 符号化層も入っている —— `Lean2Js/Enc.lean` の `Enc` クラスと、`Bool` / `Int` / `UInt32` / `String` /
-`Option` / `Except` / `List` の instance。`Role` の instance は利用者の型の側の見本として
-`Lean2Js/Denote.lean` にあり、`deriving` が吐くべきものを名指ししている。
+`Option` / `Except` / `List` の instance。利用者の型は `Lean2Js/EncDeriving.lean` の `deriving Enc` が
+受け持ち、`Core.TypeDef`・符号化・復号・entry check を出す。`Denote.lean` の `Role` はこれで derive した
+もので、出てきた `Role.typeDef` は表層構文で書いた `Example.Role` と `rfl` で等しい。
 
 walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`・単項 `-`・`<` / `≤` / `>` / `≥`・
 `if`・`let`・呼び出し。`reify_decl% clampQuantity` と `reify_decl% lineTotal` は表層構文で書いた
@@ -156,7 +157,8 @@ walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`�
 
 残っているもの:
 
-- 利用者の `inductive` / `structure` への `deriving` —— 符号化、`hasTy` 補題、`match` 対応補題を生成する
+- `deriving Enc` が `match` 対応補題を出すところ —— **Step 2 と一緒でないと形が決まらない**ので、
+  そちらで足す
 
 ### 分かったこと
 
@@ -193,6 +195,21 @@ walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`�
 **`Prop` は `decide P` の形でしか subset に入らない。** 利用者は `if quantity < 1` と書き、`eval` は
 `Value.bool` で分岐する。だから条件は命題ではなく `decide P` として運び、`if` の側は利用者が書いた
 `Decidable` インスタンスをそのまま担ぐ。比較 1 つにつき `compare` と `decide` を繋ぐ補題が 1 本要る。
+
+**`deriving` が出すのは top-level の宣言で、instance はそれを繋ぐ 1 行。** 証明を instance の
+フィールドの中に書くと、構成子ごとの場合分けが `where` の中の戦術になる。`T.toValue` / `T.ofValue` /
+`T.accepts` / `T.ofValue_toValue` / `T.toValue_hasTy` を別々に出しておくと、証明は構成子についての
+ふつうの等式定義になり、instance は 6 行で済む。
+
+**`accepts` は「プログラムがその型を宣言していること」を match の外に出す。** 中に入れると、変数の
+まま（構成子が分かっていないまま）では簡約できず、`hasTy` を使う側がいちいち `cases` することになる。
+外に出しておけば `h.left` で常に取れる。
+
+**生成する宣言の名前は `_root_` で書く。** `deriving` ハンドラは利用者の名前空間の中で走るので、
+`Colour.typeDef` をそのまま宣言すると `利用者の名前空間.Colour.typeDef` になる。
+
+**`exprToSyntax` は `deriving` では使えない。** コマンドを組み立てた `TermElabM` は `elabCommand` の
+前に閉じるので、そこで作った構文は生き残らない。フィールドの型は定数名から構文を書き起こす。
 
 **`/` は形として断る。** Lean の `/` は床で、サブセットの `/` は切り捨て（`Eval.lean` の `applyArith`
 がそう書いてある）。利用者には prelude 側の除算を書かせ、素の `/` は reify できないものとして落とす。
