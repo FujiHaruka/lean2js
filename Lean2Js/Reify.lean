@@ -69,6 +69,32 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     let (ae, ap) ← walk ns names xs a
     return (← `(Lean2Js.Core.Expr.un Lean2Js.Core.UnOp.neg $ae),
             ← `(Lean2Js.Denote.denotes_neg _ _ _ _ $ap))
+  | (``List.nil, #[α]) => arrayLit α e
+  | (``List.cons, #[α, _, _]) => arrayLit α e
+  | (``List.reverse, #[_, l]) =>
+    let (ae, ap) ← walk ns names xs l
+    return (← `(Lean2Js.Core.Expr.arrayReverse $ae),
+            ← `(Lean2Js.Denote.denotes_arrayReverse _ _ _ _ $ap))
+  | (``HAppend.hAppend, #[_, _, _, _, l, r]) =>
+    let (le, lp) ← walk ns names xs l
+    let (re, rp) ← walk ns names xs r
+    return (← `(Lean2Js.Core.Expr.bin Lean2Js.Core.BinOp.concat $le $re),
+            ← `(Lean2Js.Denote.denotes_concatArr _ _ _ _ _ _ $lp $rp))
+  | (``Lean2Js.Arr.length, #[_, l]) =>
+    let (ae, ap) ← walk ns names xs l
+    return (← `(Lean2Js.Core.Expr.length $ae),
+            ← `(Lean2Js.Denote.denotes_lengthArr _ _ _ _ $ap))
+  | (``Lean2Js.Arr.get, #[_, _, l, i]) =>
+    let (ae, ap) ← walk ns names xs l
+    let (ie, ip) ← walk ns names xs i
+    return (← `(Lean2Js.Core.Expr.index $ae $ie),
+            ← `(Lean2Js.Denote.denotes_index _ _ _ _ _ _ $ap $ip))
+  | (``Lean2Js.Arr.slice, #[_, l, lo, hi]) =>
+    let (ae, ap) ← walk ns names xs l
+    let (loe, lop) ← walk ns names xs lo
+    let (hie, hip) ← walk ns names xs hi
+    return (← `(Lean2Js.Core.Expr.arraySlice $ae $loe $hie),
+            ← `(Lean2Js.Denote.denotes_arraySlice _ _ _ _ _ _ _ _ $ap $lop $hip))
   | (``List.map, #[_, _, f, l]) => traverse `mapE ``Lean2Js.Denote.denotes_mapE f l
   | (``List.filter, #[_, f, l]) => traverse `filterE ``Lean2Js.Denote.denotes_filterE f l
   | (``List.find?, #[_, f, l]) => traverse `findE ``Lean2Js.Denote.denotes_findE f l
@@ -127,6 +153,25 @@ where
     if nm.hasMacroScopes then
       throwError "reify: a binder here has no name, and the generated code needs one"
     return nm.toString
+  /-- A list the author spelled out. A `cons` onto something that is not itself spelled out has no
+  counterpart in the subset, so it is not read as an array at all rather than read as something else. -/
+  literalItems (l : Lean.Expr) : TermElabM (Option (Array (Term × Term))) := do
+    match l.getAppFnArgs with
+    | (``List.nil, _) => return some #[]
+    | (``List.cons, #[_, x, rest]) =>
+      let some tail ← literalItems rest | return none
+      return some (#[← walk ns names xs x] ++ tail)
+    | _ => return none
+  arrayLit (α : Lean.Expr) (l : Lean.Expr) : TermElabM (Term × Term) := do
+    let some parts ← literalItems l
+      | throwError "reify: {l} is a list the subset has no form for, since only a literal is an array"
+    let mut itemStx := #[]
+    let mut proof ← `(Lean2Js.Denote.denotesItems_nil _ _)
+    for (ie, ip) in parts.reverse do
+      itemStx := itemStx.push ie
+      proof ← `(Lean2Js.Denote.denotesItems_cons _ _ _ _ _ _ $ip $proof)
+    return (← `(Lean2Js.Core.Expr.arrayLit $(← encTy α) [$(itemStx.reverse),*]),
+            ← `(Lean2Js.Denote.denotes_arrayLit _ _ _ _ _ $proof))
   /-- The traversals all carry their binder and body rather than a function, so each reads as the array,
   the binder's name, and the body walked with that name in scope. -/
   arm (f : Lean.Expr) : TermElabM (String × Term × Term) := do
@@ -401,6 +446,51 @@ theorem anyUnderLimit_certificate (p : Program) (amounts : List Int) (limit : In
     Denotes p (bindParams (reify_decl% anyUnderLimit).params [toValue amounts, toValue limit])
       (reify_decl% anyUnderLimit).body (anyUnderLimit amounts limit) :=
   reify_proof% anyUnderLimit
+
+/-! ### The array itself
+
+Building one, reading one element, measuring, slicing, reversing, joining. `Arr.get` and `Arr.slice` are
+the prelude's, because Lean has no partial function to write where the subset traps. -/
+
+abbrev pageOfCore : Decl := reify_decl% pageOf
+
+example : pageOfCore = Example.pageOf := rfl
+
+theorem pageOf_certificate (p : Program) (xs : List Int) (lo hi : Int) :
+    Denotes p (bindParams pageOfCore.params [toValue xs, toValue lo, toValue hi]) pageOfCore.body
+      (pageOf xs lo hi) :=
+  reify_proof% pageOf
+
+abbrev mostRecentFirstCore : Decl := reify_decl% mostRecentFirst
+
+example : mostRecentFirstCore = Example.mostRecentFirst := rfl
+
+theorem mostRecentFirst_certificate (p : Program) (events : List String) :
+    Denotes p (bindParams mostRecentFirstCore.params [toValue events]) mostRecentFirstCore.body
+      (mostRecentFirst events) :=
+  reify_proof% mostRecentFirst
+
+abbrev combinedCartCore : Decl := reify_decl% combinedCart
+
+example : combinedCartCore = Example.combinedCart := rfl
+
+theorem combinedCart_certificate (p : Program) (saved added : List Int) :
+    Denotes p (bindParams combinedCartCore.params [toValue saved, toValue added])
+      combinedCartCore.body (combinedCart saved added) :=
+  reify_proof% combinedCart
+
+/-- A read that traps when the array is empty, guarded by the length so that it does not. The guard is
+not what the certificate rests on — `Arr.get` answers `default` outside the array and the certificate
+says nothing there — but it is what an author writes. -/
+theorem headOr_certificate (p : Program) (xs : List Int) (fallback : Int) :
+    Denotes p (bindParams (reify_decl% headOr).params [toValue xs, toValue fallback])
+      (reify_decl% headOr).body (headOr xs fallback) :=
+  reify_proof% headOr
+
+theorem bracket_certificate (p : Program) (lo hi : Int) :
+    Denotes p (bindParams (reify_decl% bracket).params [toValue lo, toValue hi])
+      (reify_decl% bracket).body (bracket lo hi) :=
+  reify_proof% bracket
 
 end Lean2Js.Denote
 

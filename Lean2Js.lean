@@ -20,6 +20,7 @@ import Lean2Js.SourceMap
 import Lean2Js.Step
 import Lean2Js.Fuel
 import Lean2Js.Cost
+import Lean2Js.Prelude
 
 /-!
 # What a user's package gets from `import Lean2Js`

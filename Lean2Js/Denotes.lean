@@ -1,5 +1,6 @@
 import Lean2Js.Enc
 import Lean2Js.Fuel
+import Lean2Js.Prelude
 
 /-!
 # What one `Core.Expr` claims about one ordinary Lean term
@@ -59,9 +60,9 @@ theorem denotes_var (p : Program) (env : Env) (name : String) {α : Type} [Enc �
 /-- Every binary form shares the walk down to the operands; what differs is only what `applyBin` is
 allowed to answer. The hypothesis is one-sided for the same reason the whole certificate is: arithmetic
 traps on overflow, so `applyBin` returning at all is part of what is assumed. -/
-private theorem denotes_bin (p : Program) (env : Env) (op : BinOp) (l r : Expr) (a b : Int)
-    {α : Type} [Enc α] (t : α)
-    (hop : ∀ w, applyBin op (.int53 a) (.int53 b) = .ok w → w = toValue t)
+private theorem denotes_bin (p : Program) (env : Env) (op : BinOp) (l r : Expr)
+    {β : Type} [Enc β] (a b : β) {α : Type} [Enc α] (t : α)
+    (hop : ∀ w, applyBin op (toValue a) (toValue b) = .ok w → w = toValue t)
     (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin op l r) t := by
@@ -77,8 +78,7 @@ private theorem denotes_bin (p : Program) (env : Env) (op : BinOp) (l r : Expr) 
     | ok y =>
       rw [hx, hy] at h
       simp only [bind, Except.bind] at h
-      rw [hl (by simp [defaultFuel]) x hx, hr (by simp [defaultFuel]) y hy, toValue_int,
-        toValue_int] at h
+      rw [hl (by simp [defaultFuel]) x hx, hr (by simp [defaultFuel]) y hy] at h
       exact hop v h
 
 private theorem mkInt53_ok {i : Int} {w : Value} (h : mkInt53 i = .ok w) : w = toValue i := by
@@ -92,17 +92,23 @@ private theorem mkInt53_ok {i : Int} {w : Value} (h : mkInt53 i = .ok w) : w = t
 theorem denotes_add (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .add l r) (a + b) :=
-  denotes_bin p env .add l r a b _ (fun _ hw => mkInt53_ok hw) (by simp) (by simp) hl hr
+  denotes_bin p env .add l r a b _
+    (fun _ hw => mkInt53_ok (by rwa [toValue_int, toValue_int] at hw)) (by simp) (by simp)
+    hl hr
 
 theorem denotes_sub (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .sub l r) (a - b) :=
-  denotes_bin p env .sub l r a b _ (fun _ hw => mkInt53_ok hw) (by simp) (by simp) hl hr
+  denotes_bin p env .sub l r a b _
+    (fun _ hw => mkInt53_ok (by rwa [toValue_int, toValue_int] at hw)) (by simp) (by simp)
+    hl hr
 
 theorem denotes_mul (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .mul l r) (a * b) :=
-  denotes_bin p env .mul l r a b _ (fun _ hw => mkInt53_ok hw) (by simp) (by simp) hl hr
+  denotes_bin p env .mul l r a b _
+    (fun _ hw => mkInt53_ok (by rwa [toValue_int, toValue_int] at hw)) (by simp) (by simp)
+    hl hr
 
 /-! ### Comparison, and the branch it decides
 
@@ -138,8 +144,9 @@ private theorem compare_ge (a b : Int) : (compare a b != Ordering.lt) = decide (
   · have hc : compare a b = Ordering.lt := Int.compare_eq_lt.mpr (by omega)
     simp [bne, hc, h]
 
-private theorem denotes_cmp (p : Program) (env : Env) (op : BinOp) (l r : Expr) (a b : Int) (q : Bool)
-    (hop : applyBin op (.int53 a) (.int53 b) = .ok (.bool q))
+private theorem denotes_cmp (p : Program) (env : Env) (op : BinOp) (l r : Expr)
+    {β : Type} [Enc β] (a b : β) (q : Bool)
+    (hop : applyBin op (toValue a) (toValue b) = .ok (.bool q))
     (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin op l r) q :=
@@ -153,25 +160,25 @@ private theorem denotes_cmp (p : Program) (env : Env) (op : BinOp) (l r : Expr) 
 theorem denotes_lt (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .lt l r) (decide (a < b)) :=
-  denotes_cmp p env .lt l r a b _ (by rw [show applyBin .lt (.int53 a) (.int53 b)
+  denotes_cmp p env .lt l r a b _ (by rw [show applyBin .lt (toValue a) (toValue b)
     = .ok (.bool (compare a b == Ordering.lt)) from rfl, compare_lt]) (by simp) (by simp) hl hr
 
 theorem denotes_le (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .le l r) (decide (a ≤ b)) :=
-  denotes_cmp p env .le l r a b _ (by rw [show applyBin .le (.int53 a) (.int53 b)
+  denotes_cmp p env .le l r a b _ (by rw [show applyBin .le (toValue a) (toValue b)
     = .ok (.bool (compare a b != Ordering.gt)) from rfl, compare_le]) (by simp) (by simp) hl hr
 
 theorem denotes_gt (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .gt l r) (decide (a > b)) :=
-  denotes_cmp p env .gt l r a b _ (by rw [show applyBin .gt (.int53 a) (.int53 b)
+  denotes_cmp p env .gt l r a b _ (by rw [show applyBin .gt (toValue a) (toValue b)
     = .ok (.bool (compare a b == Ordering.gt)) from rfl, compare_gt]) (by simp) (by simp) hl hr
 
 theorem denotes_ge (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.bin .ge l r) (decide (a ≥ b)) :=
-  denotes_cmp p env .ge l r a b _ (by rw [show applyBin .ge (.int53 a) (.int53 b)
+  denotes_cmp p env .ge l r a b _ (by rw [show applyBin .ge (toValue a) (toValue b)
     = .ok (.bool (compare a b != Ordering.lt)) from rfl, compare_ge]) (by simp) (by simp) hl hr
 
 /-- The author writes a proposition and `eval` branches on a `Value`, so the condition is carried as
@@ -507,6 +514,149 @@ theorem denotes_reduceE (p : Program) (env : Env) (arr init : Expr) (accName ele
     | ok u =>
       rw [hj, hi (by simp [defaultFuel]) u hj] at h
       exact evalReduceItems_denotes p env accName elemName body g (by simp [defaultFuel]) hb xs a v h
+
+/-! ### The array itself
+
+The traversals walk an array; these are the forms that build one, take one apart, or measure it. Reading
+past the end traps, which is what lets `Arr.get` be a total Lean function: the certificate claims nothing
+in the case the subset refuses to answer in. -/
+
+/-- The elements of an array literal, against the list the author wrote. It is a list of terms of one
+type where `DenotesArgs` is a list of `Value`: a call's arguments need not share a type and an array's
+elements do. -/
+def DenotesItems (p : Program) (env : Env) {β : Type} [Enc β] : List Expr → List β → Prop
+  | [], [] => True
+  | e :: es, x :: xs => Denotes p env e x ∧ DenotesItems p env es xs
+  | _, _ => False
+
+theorem denotesItems_nil (p : Program) (env : Env) {β : Type} [Enc β] :
+    DenotesItems p env [] ([] : List β) := trivial
+
+theorem denotesItems_cons (p : Program) (env : Env) (e : Expr) (es : List Expr)
+    {β : Type} [Enc β] (x : β) (xs : List β)
+    (h : Denotes p env e x) (hs : DenotesItems p env es xs) :
+    DenotesItems p env (e :: es) (x :: xs) := ⟨h, hs⟩
+
+private theorem evalArgs_denotesItems (p : Program) (env : Env) {f : Nat} (hf : f ≤ defaultFuel)
+    {β : Type} [Enc β] :
+    ∀ {es : List Expr} {xs : List β} {ws : List Value},
+      DenotesItems p env es xs → evalArgs p f env es = .ok ws → ws = xs.map toValue
+  | [], [], ws, _, he => by
+    rw [evalArgs_nil] at he; simp only [Except.ok.injEq] at he; rw [← he]; rfl
+  | e :: es, x :: xs, ws, ⟨h, hs⟩, he => by
+    rw [evalArgs_cons] at he
+    cases hx : evalExpr p f env e with
+    | error err => rw [hx] at he; simp [bind, Except.bind] at he
+    | ok w =>
+      cases hy : evalArgs p f env es with
+      | error err => rw [hx, hy] at he; simp [bind, Except.bind] at he
+      | ok us =>
+        rw [hx, hy] at he
+        simp only [bind, Except.bind, Except.ok.injEq] at he
+        rw [← he, h hf w hx, evalArgs_denotesItems p env hf hs hy]
+        rfl
+
+theorem denotes_arrayLit (p : Program) (env : Env) (elem : Ty) (items : List Expr)
+    {β : Type} [Enc β] (xs : List β) (h : DenotesItems p env items xs) :
+    Denotes p env (.arrayLit elem items) xs := by
+  intro f hf v he
+  have hv := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_arrayLit] at hv
+  cases hx : evalArgs p 9999 env items with
+  | error err => rw [hx] at hv; simp [bind, Except.bind] at hv
+  | ok ws =>
+    rw [hx] at hv
+    simp only [bind, Except.bind, Except.ok.injEq] at hv
+    rw [← hv, evalArgs_denotesItems p env (by simp [defaultFuel]) h hx]
+    rfl
+
+theorem denotes_lengthArr (p : Program) (env : Env) (arr : Expr) {β : Type} [Enc β] (xs : List β)
+    (ha : Denotes p env arr xs) : Denotes p env (.length arr) (Arr.length xs) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_length] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind, List.length_map] at h
+    exact mkInt53_ok h
+
+theorem denotes_index (p : Program) (env : Env) (arr idx : Expr) {β : Type} [Enc β] [Inhabited β]
+    (xs : List β) (i : Int) (ha : Denotes p env arr xs) (hi : Denotes p env idx i) :
+    Denotes p env (.index arr idx) (Arr.get xs i) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_index] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env idx with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      rw [hx, hy, ha (by simp [defaultFuel]) w hx, hi (by simp [defaultFuel]) u hy] at h
+      simp only [toValue_list, toValue_int, bind, Except.bind] at h
+      split at h
+      · simp at h
+      · split at h
+        · next w' hw =>
+          simp only [Except.ok.injEq] at h
+          rw [← h, List.getElem?_map] at *
+          cases hxi : xs[i.toNat]? with
+          | none => rw [hxi] at hw; simp at hw
+          | some x =>
+            rw [hxi] at hw
+            simp only [Option.map_some, Option.some.injEq] at hw
+            rw [← hw, Arr.get, List.getD_eq_getElem?_getD, hxi]
+            rfl
+        · simp at h
+
+theorem denotes_arraySlice (p : Program) (env : Env) (arr lo hi : Expr) {β : Type} [Enc β]
+    (xs : List β) (a b : Int) (ha : Denotes p env arr xs)
+    (hlo : Denotes p env lo a) (hhi : Denotes p env hi b) :
+    Denotes p env (.arraySlice arr lo hi) (Arr.slice xs a b) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_arraySlice] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env lo with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      cases hz : evalExpr p 9999 env hi with
+      | error err => rw [hx, hy, hz] at h; simp [bind, Except.bind] at h
+      | ok z =>
+        rw [hx, hy, hz, ha (by simp [defaultFuel]) w hx, hlo (by simp [defaultFuel]) u hy,
+          hhi (by simp [defaultFuel]) z hz] at h
+        simp only [toValue_list, toValue_int, bind, Except.bind, sliceArr] at h
+        split at h
+        · simp at h
+        · simp only [Except.ok.injEq] at h
+          rw [← h, Arr.slice, toValue_list, List.map_take, List.map_drop]
+
+theorem denotes_arrayReverse (p : Program) (env : Env) (arr : Expr) {β : Type} [Enc β]
+    (xs : List β) (ha : Denotes p env arr xs) :
+    Denotes p env (.arrayReverse arr) xs.reverse := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_arrayReverse] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind, Except.ok.injEq] at h
+    rw [← h, toValue_list, List.map_reverse]
+
+theorem denotes_concatArr (p : Program) (env : Env) (l r : Expr) {β : Type} [Enc β]
+    (xs ys : List β) (hl : Denotes p env l xs) (hr : Denotes p env r ys) :
+    Denotes p env (.bin .concat l r) (xs ++ ys) :=
+  denotes_bin p env .concat l r xs ys _
+    (fun w hw => by
+      simp only [toValue_list] at hw
+      simp only [applyBin, Except.ok.injEq] at hw
+      rw [← hw, toValue_list, List.map_append])
+    (by simp) (by simp) hl hr
 
 /-- The arguments of a call, paired with the values the callee's certificate is stated about. It is a
 list of `Value` rather than of encoded terms because a call's arguments need not share a type. -/

@@ -105,6 +105,17 @@ def allUnderLimit (amounts : List Int) (limit : Int) : Bool :=
 def anyUnderLimit (amounts : List Int) (limit : Int) : Bool :=
   amounts.any (fun amount => amount ≤ limit)
 
+def pageOf (xs : List Int) (lo hi : Int) : List Int := Arr.slice xs lo hi
+
+def mostRecentFirst (events : List String) : List String := events.reverse
+
+def combinedCart (saved added : List Int) : List Int := saved ++ added
+
+def headOr (xs : List Int) (fallback : Int) : Int :=
+  if Arr.length xs < 1 then fallback else Arr.get xs 0
+
+def bracket (lo hi : Int) : List Int := [lo, hi]
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 
