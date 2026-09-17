@@ -1,3 +1,4 @@
+import Lean2Js.Enc
 import Lean2Js.Example
 
 /-!
@@ -15,7 +16,7 @@ that one declaration's certificate can cite another's.
 
 namespace Lean2Js.Denote
 
-open Core
+open Core Enc
 
 /-! ### The author's side
 
@@ -43,28 +44,49 @@ def roleRank : Role → Int
 /-! ### The encoding
 
 `Value` is what `eval` returns, so a claim relating the two needs a function from the author's types into
-it. Two of them are enough to settle the shape; Step 1 of the plan turns this into a class with an
-instance per `Value` constructor and a `deriving` for the author's own types.
+it. `Lean2Js/Enc.lean` carries the types that are not the author's; `Role` is the author's, and writing
+its instance by hand is what says what the plan's `deriving` has to produce — the encoding, the decoding,
+and one `rfl` lemma per constructor for the proofs downstream to rewrite with.
 
-`encRole` cannot produce a value the entry check refuses, and `enc` can — `Int` reaches past `Int53`.
-That asymmetry is why the entry check appears as a hypothesis on `add_ships` and not on `roleRank_ships`,
-and why `Enc` cannot carry `hasTy` as an unconditional law. -/
+`Enc Role` cannot produce a value the entry check refuses, and `Enc Int` can — `Int` reaches past
+`Int53`. That asymmetry is why the entry check appears as a hypothesis on `add_ships` and not on
+`roleRank_ships`, and why `Enc` cannot carry `hasTy` as an unconditional law.
 
-def enc (i : Int) : Value := .int53 i
+What `Enc Role` needs of the program instead is that it declares `Role`, which is `accepts`'s other
+half: the boundary asks about the program as well as the value. -/
 
-def encRole : Role → Value
-  | .guest => .obj "guest" []
-  | .member => .obj "member" []
-  | .admin => .obj "admin" []
+instance : Enc Role where
+  ty := .named "Role" []
+  toValue
+    | .guest => .obj "guest" []
+    | .member => .obj "member" []
+    | .admin => .obj "admin" []
+  ofValue
+    | .obj "guest" [] => some .guest
+    | .obj "member" [] => some .member
+    | .obj "admin" [] => some .admin
+    | _ => none
+  ofValue_toValue
+    | .guest | .member | .admin => rfl
+  accepts p _ := p.findType? "Role" = some Example.Role
+  toValue_hasTy := by
+    intro p r h
+    cases r <;>
+      rw [hasTy_named _ _ _ _ _ Example.Role _ h rfl] <;>
+      exact hasFieldTys_nil _
 
-theorem encode_enc (i : Int) : encodeValue (enc i) = .num i := by
-  simp [encodeValue, enc]
+@[simp] theorem toValue_guest : (toValue Role.guest : Value) = .obj "guest" [] := rfl
 
-theorem encRole_hasTy (r : Role) :
-    Value.hasTy Example.program (encRole r) (.named "Role" []) = true := by
-  cases r <;>
-    rw [encRole, hasTy_named _ _ _ _ _ Example.Role _ rfl rfl] <;>
-    exact hasFieldTys_nil _
+@[simp] theorem toValue_member : (toValue Role.member : Value) = .obj "member" [] := rfl
+
+@[simp] theorem toValue_admin : (toValue Role.admin : Value) = .obj "admin" [] := rfl
+
+theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
+  simp [encodeValue]
+
+theorem role_hasTy (r : Role) :
+    Value.hasTy Example.program (toValue r) (.named "Role" []) = true :=
+  toValue_hasTy rfl
 
 /-! ### The certificates
 
@@ -91,12 +113,12 @@ private theorem lookup_cons (k n : String) (v : Value) (rest : Env) :
   split <;> simp_all
 
 theorem add_denotes {f : Nat} (hf : f ≤ defaultFuel) (a b : Int) (v : Value)
-    (he : evalExpr Example.program f (bindParams Example.add.params [enc a, enc b])
+    (he : evalExpr Example.program f (bindParams Example.add.params [toValue a, toValue b])
             Example.add.body = .ok v) :
-    v = enc (add a b) := by
+    v = toValue (add a b) := by
   have h := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ] at h
-  simp [Example.add, enc, bindParams, evalExpr_bin, evalExpr_var, lookup_cons, applyBin,
+  simp [Example.add, toValue_int, bindParams, evalExpr_bin, evalExpr_var, lookup_cons, applyBin,
     applyArith, mkInt53, bind, Except.bind] at h
   split at h
   · simp at h
@@ -105,26 +127,26 @@ theorem add_denotes {f : Nat} (hf : f ≤ defaultFuel) (a b : Int) (v : Value)
     rfl
 
 theorem clampQuantity_denotes {f : Nat} (hf : f ≤ defaultFuel) (q u : Int) (v : Value)
-    (he : evalExpr Example.program f (bindParams Example.clampQuantity.params [enc q, enc u])
+    (he : evalExpr Example.program f (bindParams Example.clampQuantity.params [toValue q, toValue u])
             Example.clampQuantity.body = .ok v) :
-    v = enc (clampQuantity q u) := by
+    v = toValue (clampQuantity q u) := by
   have h := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ] at h
-  simp [Example.clampQuantity, enc, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var,
+  simp [Example.clampQuantity, toValue_int, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var,
     evalExpr_lit, lookup_cons, litValue, applyBin, compareValues, compareValues.orderBy, bind,
     Except.bind] at h
   by_cases h1 : q < 1
   · simp [Int.compare_eq_lt.mpr h1] at h
-    simp [← h, enc, clampQuantity, h1]
+    simp [← h, toValue_int, clampQuantity, h1]
   · have e1 : (compare q 1 == Ordering.lt) = false :=
       beq_eq_false_iff_ne.mpr (Int.compare_ne_lt.mpr (by omega))
     by_cases h2 : u < q
     · simp [e1, Int.compare_eq_gt.mpr h2] at h
-      simp [← h, enc, clampQuantity, h1, h2]
+      simp [← h, toValue_int, clampQuantity, h1, h2]
     · have e2 : (compare q u == Ordering.gt) = false :=
         beq_eq_false_iff_ne.mpr (Int.compare_ne_gt.mpr (by omega))
       simp [e1, e2] at h
-      simp [← h, enc, clampQuantity, h1, h2]
+      simp [← h, toValue_int, clampQuantity, h1, h2]
 
 private theorem find_clampQuantity :
     Example.program.find? "clampQuantity" = some Example.clampQuantity := rfl
@@ -133,12 +155,12 @@ private theorem find_clampQuantity :
 crosses the call is `clampQuantity_denotes` applied at the fuel left over. -/
 theorem lineTotal_denotes {f : Nat} (hf : f ≤ defaultFuel) (unitPrice quantity : Int) (v : Value)
     (he : evalExpr Example.program f
-            (bindParams Example.lineTotal.params [enc unitPrice, enc quantity])
+            (bindParams Example.lineTotal.params [toValue unitPrice, toValue quantity])
             Example.lineTotal.body = .ok v) :
-    v = enc (lineTotal unitPrice quantity) := by
+    v = toValue (lineTotal unitPrice quantity) := by
   have h := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ] at h
-  simp [Example.lineTotal, bindParams, enc, evalExpr_bin, evalExpr_var, evalExpr_call,
+  simp [Example.lineTotal, bindParams, toValue_int, evalExpr_bin, evalExpr_var, evalExpr_call,
     evalArgs_cons, evalArgs_nil, evalExpr_lit, lookup_nil, lookup_cons, litValue, calleeOf,
     find_clampQuantity, bind, Except.bind] at h
   rw [if_pos (show Example.clampQuantity.params.length = 2 from rfl)] at h
@@ -148,10 +170,10 @@ theorem lineTotal_denotes {f : Nat} (hf : f ≤ defaultFuel) (unitPrice quantity
   | error e => rw [hc] at h; simp at h
   | ok w =>
     rw [hc] at h
-    have hw : w = enc (clampQuantity quantity 999) :=
+    have hw : w = toValue (clampQuantity quantity 999) :=
       clampQuantity_denotes (by simp [defaultFuel]) quantity 999 w hc
     subst hw
-    simp [enc, applyBin, applyArith, mkInt53] at h
+    simp [toValue_int, applyBin, applyArith, mkInt53] at h
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h
@@ -159,16 +181,16 @@ theorem lineTotal_denotes {f : Nat} (hf : f ≤ defaultFuel) (unitPrice quantity
       rfl
 
 theorem roleRank_denotes {f : Nat} (hf : f ≤ defaultFuel) (r : Role) (v : Value)
-    (he : evalExpr Example.program f (bindParams Example.roleRank.params [encRole r])
+    (he : evalExpr Example.program f (bindParams Example.roleRank.params [toValue r])
             Example.roleRank.body = .ok v) :
-    v = enc (roleRank r) := by
+    v = toValue (roleRank r) := by
   have h := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ] at h
   cases r <;>
-    simp [Example.roleRank, encRole, bindParams, evalExpr_matchE, evalExpr_var, evalExpr_lit,
+    simp [Example.roleRank, bindParams, evalExpr_matchE, evalExpr_var, evalExpr_lit,
       lookup_cons, firstMatch, matchPat, matchPats, litValue, Alt.pat, Alt.body, bind,
       Except.bind] at h <;>
-    simp [← h, enc, roleRank]
+    simp [← h, toValue_int, roleRank]
 
 /-! ### The composition
 
@@ -192,57 +214,58 @@ private theorem find_lineTotal : Example.program.find? "lineTotal" = some Exampl
 private theorem find_roleRank : Example.program.find? "roleRank" = some Example.roleRank := rfl
 
 private theorem args_encode (a b : Int) :
-    ([enc a, enc b] : List Value).map encodeValue = [Js.JsValue.num a, .num b] := by
-  simp [encode_enc]
+    ([toValue a, toValue b] : List Value).map encodeValue = [Js.JsValue.num a, .num b] := by
+  simp [encodeValue]
 
 theorem add_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
-    (a b : Int)
-    (ha : Value.hasTy Example.program (enc a) .int53 = true)
-    (hb : Value.hasTy Example.program (enc b) .int53 = true) :
+    (a b : Int) (ha : accepts Example.program a) (hb : accepts Example.program b) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" [.num a, .num b] = .ok (.num (add a b))
       ∨ ∃ err : Err, Js.callFunctionAt m g' "add" [.num a, .num b] = .error err.code := by
-  cases he : evalCall Example.program "add" [enc a, enc b] with
+  cases he : evalCall Example.program "add" [toValue a, toValue b] with
   | ok v =>
     obtain ⟨g, hg⟩ :=
-      Decl.decl_correct Example.program m "add" Example.add [enc a, enc b] v hm find_add he
+      Decl.decl_correct Example.program m "add" Example.add [toValue a, toValue b] v hm find_add he
     refine ⟨g, fun g' hle => Or.inl ?_⟩
     have h := hg g' hle
     rw [args_encode] at h
     rw [h, add_denotes (Nat.le_refl _) a b v
-      (body_of_call find_add rfl (by simp [Example.add, ha, hb]) he), encode_enc]
+      (body_of_call find_add rfl
+        (by simp [Example.add]; exact ⟨toValue_hasTy ha, toValue_hasTy hb⟩) he), encode_toValue]
   | error err =>
     obtain ⟨g, hg⟩ :=
-      Decl.decl_traps_at_cost Example.program m "add" Example.add [enc a, enc b] err hm find_add rfl
-        Example.program_progOk Example.program_cost_fits rfl ⟨ha, hb, trivial⟩ he
+      Decl.decl_traps_at_cost Example.program m "add" Example.add [toValue a, toValue b] err hm
+        find_add rfl Example.program_progOk Example.program_cost_fits rfl
+        ⟨toValue_hasTy ha, toValue_hasTy hb, trivial⟩ he
     refine ⟨g, fun g' hle => Or.inr ⟨err, ?_⟩⟩
     have h := hg g' hle
     rwa [args_encode] at h
 
 theorem lineTotal_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
     (unitPrice quantity : Int)
-    (hp : Value.hasTy Example.program (enc unitPrice) .int53 = true)
-    (hq : Value.hasTy Example.program (enc quantity) .int53 = true) :
+    (hp : accepts Example.program unitPrice) (hq : accepts Example.program quantity) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "lineTotal" [.num unitPrice, .num quantity]
           = .ok (.num (lineTotal unitPrice quantity))
       ∨ ∃ err : Err,
           Js.callFunctionAt m g' "lineTotal" [.num unitPrice, .num quantity] = .error err.code := by
-  cases he : evalCall Example.program "lineTotal" [enc unitPrice, enc quantity] with
+  cases he : evalCall Example.program "lineTotal" [toValue unitPrice, toValue quantity] with
   | ok v =>
     obtain ⟨g, hg⟩ :=
       Decl.decl_correct Example.program m "lineTotal" Example.lineTotal
-        [enc unitPrice, enc quantity] v hm find_lineTotal he
+        [toValue unitPrice, toValue quantity] v hm find_lineTotal he
     refine ⟨g, fun g' hle => Or.inl ?_⟩
     have h := hg g' hle
     rw [args_encode] at h
     rw [h, lineTotal_denotes (Nat.le_refl _) unitPrice quantity v
-      (body_of_call find_lineTotal rfl (by simp [Example.lineTotal, hp, hq]) he), encode_enc]
+      (body_of_call find_lineTotal rfl
+        (by simp [Example.lineTotal]; exact ⟨toValue_hasTy hp, toValue_hasTy hq⟩) he),
+      encode_toValue]
   | error err =>
     obtain ⟨g, hg⟩ :=
       Decl.decl_traps_at_cost Example.program m "lineTotal" Example.lineTotal
-        [enc unitPrice, enc quantity] err hm find_lineTotal rfl Example.program_progOk
-        Example.program_cost_fits rfl ⟨hp, hq, trivial⟩ he
+        [toValue unitPrice, toValue quantity] err hm find_lineTotal rfl Example.program_progOk
+        Example.program_cost_fits rfl ⟨toValue_hasTy hp, toValue_hasTy hq, trivial⟩ he
     refine ⟨g, fun g' hle => Or.inr ⟨err, ?_⟩⟩
     have h := hg g' hle
     rwa [args_encode] at h
@@ -250,25 +273,25 @@ theorem lineTotal_ships (m : Js.Module) (hm : Compile.compileProgram Example.pro
 theorem roleRank_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
     (r : Role) :
     ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "roleRank" [encodeValue (encRole r)] = .ok (.num (roleRank r))
+      Js.callFunctionAt m g' "roleRank" [encodeValue (toValue r)] = .ok (.num (roleRank r))
       ∨ ∃ err : Err,
-          Js.callFunctionAt m g' "roleRank" [encodeValue (encRole r)] = .error err.code := by
-  cases he : evalCall Example.program "roleRank" [encRole r] with
+          Js.callFunctionAt m g' "roleRank" [encodeValue (toValue r)] = .error err.code := by
+  cases he : evalCall Example.program "roleRank" [toValue r] with
   | ok v =>
     obtain ⟨g, hg⟩ :=
-      Decl.decl_correct Example.program m "roleRank" Example.roleRank [encRole r] v hm find_roleRank
+      Decl.decl_correct Example.program m "roleRank" Example.roleRank [toValue r] v hm find_roleRank
         he
     refine ⟨g, fun g' hle => Or.inl ?_⟩
     have h := hg g' hle
     simp only [List.map_cons, List.map_nil] at h
     rw [h, roleRank_denotes (Nat.le_refl _) r v
-      (body_of_call find_roleRank rfl (by simpa [Example.roleRank] using encRole_hasTy r) he),
-      encode_enc]
+      (body_of_call find_roleRank rfl (by simpa [Example.roleRank] using role_hasTy r) he),
+      encode_toValue]
   | error err =>
     obtain ⟨g, hg⟩ :=
-      Decl.decl_traps_at_cost Example.program m "roleRank" Example.roleRank [encRole r] err hm
+      Decl.decl_traps_at_cost Example.program m "roleRank" Example.roleRank [toValue r] err hm
         find_roleRank rfl Example.program_progOk Example.program_cost_fits rfl
-        ⟨encRole_hasTy r, trivial⟩ he
+        ⟨role_hasTy r, trivial⟩ he
     refine ⟨g, fun g' hle => Or.inr ⟨err, ?_⟩⟩
     have h := hg g' hle
     simpa only [List.map_cons, List.map_nil] using h
@@ -279,9 +302,7 @@ theorem roleRank_ships (m : Js.Module) (hm : Compile.compileProgram Example.prog
 step below knows what the declaration looks like. -/
 
 theorem add_comm_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
-    (a b : Int)
-    (ha : Value.hasTy Example.program (enc a) .int53 = true)
-    (hb : Value.hasTy Example.program (enc b) .int53 = true) :
+    (a b : Int) (ha : accepts Example.program a) (hb : accepts Example.program b) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" [.num a, .num b] = .ok (.num (add b a))
       ∨ ∃ err : Err, Js.callFunctionAt m g' "add" [.num a, .num b] = .error err.code := by

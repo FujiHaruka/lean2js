@@ -15,13 +15,13 @@ together from the rules the walk applied, without a tactic anywhere in the emitt
 
 namespace Lean2Js.Denote
 
-open Core
+open Core Enc
 
 /-- What one subterm of the author's `def` claims about one `Core.Expr`: if the expression returns, it
 returns the encoding of the term. Fuel is universally quantified because a call runs its callee on what
 is left over. -/
-def Denotes (p : Program) (env : Env) (e : Expr) (t : Int) : Prop :=
-  ∀ {f : Nat}, f ≤ defaultFuel → ∀ v, evalExpr p f env e = .ok v → v = enc t
+def Denotes (p : Program) (env : Env) (e : Expr) {α : Type} [Enc α] (t : α) : Prop :=
+  ∀ {f : Nat}, f ≤ defaultFuel → ∀ v, evalExpr p f env e = .ok v → v = toValue t
 
 theorem denotes_lit (p : Program) (env : Env) (i : Int) : Denotes p env (.lit (.int53 i)) i := by
   intro f hf v he
@@ -31,8 +31,8 @@ theorem denotes_lit (p : Program) (env : Env) (i : Int) : Denotes p env (.lit (.
   rw [← h]
   rfl
 
-theorem denotes_var (p : Program) (env : Env) (name : String) (i : Int)
-    (hl : env.lookup? name = some (enc i)) : Denotes p env (.var name) i := by
+theorem denotes_var (p : Program) (env : Env) (name : String) {α : Type} [Enc α] (a : α)
+    (hl : env.lookup? name = some (toValue a)) : Denotes p env (.var name) a := by
   intro f hf v he
   have h := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ, evalExpr_var, hl] at h
@@ -59,8 +59,8 @@ private theorem denotes_arith (p : Program) (env : Env) (op : BinOp) (l r : Expr
     | ok y =>
       rw [hx, hy] at h
       simp only [bind, Except.bind] at h
-      rw [hl (by simp [defaultFuel]) x hx, hr (by simp [defaultFuel]) y hy, enc, enc, hop,
-        mkInt53] at h
+      rw [hl (by simp [defaultFuel]) x hx, hr (by simp [defaultFuel]) y hy, toValue_int,
+        toValue_int, hop, mkInt53] at h
       split at h
       · simp at h
       · simp only [Except.ok.injEq] at h
@@ -159,21 +159,21 @@ end Lean2Js.Reify
 
 namespace Lean2Js.Denote
 
-open Core Lean2Js.Reify
+open Core Enc Lean2Js.Reify
 
 abbrev addCore : Decl := reify_decl% add
 
 example : addCore = Example.add := rfl
 
 theorem add_reified_denotes (p : Program) (a b : Int) :
-    Denotes p (bindParams addCore.params [enc a, enc b]) addCore.body (add a b) :=
+    Denotes p (bindParams addCore.params [toValue a, toValue b]) addCore.body (add a b) :=
   reify_proof% add
 
 /-- What `add_ships` consumes, now supplied by the reifier. -/
 example {f : Nat} (hf : f ≤ defaultFuel) (a b : Int) (v : Value)
-    (he : evalExpr Example.program f (bindParams Example.add.params [enc a, enc b])
+    (he : evalExpr Example.program f (bindParams Example.add.params [toValue a, toValue b])
             Example.add.body = .ok v) :
-    v = enc (add a b) :=
+    v = toValue (add a b) :=
   add_reified_denotes Example.program a b hf v he
 
 /-- Three forms deep, with a literal, to show the walk composes rather than pattern-matching one shape. -/
@@ -182,7 +182,7 @@ def netFee (base rate : Int) : Int := base * rate - 1
 abbrev netFeeCore : Decl := reify_decl% netFee
 
 theorem netFee_reified_denotes (p : Program) (base rate : Int) :
-    Denotes p (bindParams netFeeCore.params [enc base, enc rate]) netFeeCore.body
+    Denotes p (bindParams netFeeCore.params [toValue base, toValue rate]) netFeeCore.body
       (netFee base rate) :=
   reify_proof% netFee
 
