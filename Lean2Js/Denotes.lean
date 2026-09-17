@@ -110,6 +110,31 @@ theorem denotes_mul (p : Program) (env : Env) (l r : Expr) (a b : Int)
     (fun _ hw => mkInt53_ok (by rwa [toValue_int, toValue_int] at hw)) (by simp) (by simp)
     hl hr
 
+private theorem denotes_arith_guarded (p : Program) (env : Env) (op : BinOp) (l r : Expr)
+    (a b : Int) (i : Int)
+    (hop : applyBin op (toValue a) (toValue b)
+      = (if b == 0 then .error .divByZero else mkInt53 i))
+    (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin op l r) i :=
+  denotes_bin p env op l r a b i
+    (fun _ hw => by
+      rw [hop] at hw
+      split at hw
+      · simp at hw
+      · exact mkInt53_ok hw)
+    hne hor hl hr
+
+theorem denotes_div (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .div l r) (Int53.div a b) :=
+  denotes_arith_guarded p env .div l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_mod (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .mod l r) (Int53.mod a b) :=
+  denotes_arith_guarded p env .mod l r a b _ rfl (by simp) (by simp) hl hr
+
 /-! ### Comparison, and the branch it decides
 
 `compareValues` answers with an `Ordering` and the author writes a `Prop`, so each comparison form needs
@@ -205,8 +230,10 @@ theorem denotes_ite (p : Program) (env : Env) (c t e : Expr) (P : Prop) [Decidab
 
 /-! ### The forms that bind, and the one that crosses a call -/
 
-theorem denotes_neg (p : Program) (env : Env) (e : Expr) (a : Int) (h : Denotes p env e a) :
-    Denotes p env (.un .neg e) (-a) := by
+private theorem denotes_un (p : Program) (env : Env) (op : UnOp) (e : Expr)
+    {β : Type} [Enc β] (a : β) {α : Type} [Enc α] (t : α)
+    (hop : ∀ w, applyUn op (toValue a) = .ok w → w = toValue t)
+    (h : Denotes p env e a) : Denotes p env (.un op e) t := by
   intro f hf v he
   have hv := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ, evalExpr_un] at hv
@@ -214,8 +241,16 @@ theorem denotes_neg (p : Program) (env : Env) (e : Expr) (a : Int) (h : Denotes 
   | error err => rw [hx] at hv; simp [bind, Except.bind] at hv
   | ok w =>
     rw [hx, h (by simp [defaultFuel]) w hx] at hv
-    simp only [toValue_int, bind, Except.bind] at hv
-    exact mkInt53_ok hv
+    simp only [bind, Except.bind] at hv
+    exact hop v hv
+
+theorem denotes_neg (p : Program) (env : Env) (e : Expr) (a : Int) (h : Denotes p env e a) :
+    Denotes p env (.un .neg e) (-a) :=
+  denotes_un p env .neg e a _ (fun _ hw => mkInt53_ok (by rwa [toValue_int] at hw)) h
+
+theorem denotes_abs (p : Program) (env : Env) (e : Expr) (a : Int) (h : Denotes p env e a) :
+    Denotes p env (.un .abs e) (Int53.abs a) :=
+  denotes_un p env .abs e a _ (fun _ hw => mkInt53_ok (by rwa [toValue_int] at hw)) h
 
 theorem denotes_letE (p : Program) (env : Env) (name : String) (ty : Ty) (val body : Expr)
     {β : Type} [Enc β] (x : β) {α : Type} [Enc α] (t : α)
@@ -1113,6 +1148,124 @@ theorem denotes_dictLit (p : Program) (env : Env) (value : Ty) (entries : List (
     simp only [bind, Except.bind, Except.ok.injEq] at hv
     rw [← hv, evalArgs_denotesEntries p env (by simp [defaultFuel]) h hx]
     rfl
+
+/-! ### BigInt
+
+`Int` took the encoding into `Int53`, so the integer that need not fit in a JS number is a type of its
+own. Nothing here traps on a bound — the only form that still refuses is a zero divisor. -/
+
+theorem denotes_litBig (p : Program) (env : Env) (i : Int) :
+    Denotes p env (.lit (.bigint i)) (BigInt.mk i) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_lit] at h
+  simp only [litValue, Except.ok.injEq] at h
+  rw [← h]
+  rfl
+
+private theorem denotes_bigArith (p : Program) (env : Env) (op : BinOp) (l r : Expr)
+    (a b : BigInt) (i : Int)
+    (hop : applyBin op (toValue a) (toValue b) = .ok (.bigint i))
+    (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin op l r) (BigInt.mk i) :=
+  denotes_bin p env op l r a b _
+    (fun _ hw => by
+      rw [hop] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw]
+      rfl)
+    hne hor hl hr
+
+private theorem denotes_bigGuarded (p : Program) (env : Env) (op : BinOp) (l r : Expr)
+    (a b : BigInt) (i : Int)
+    (hop : applyBin op (toValue a) (toValue b)
+      = (if b.val == 0 then .error .divByZero else .ok (.bigint i)))
+    (hne : op ≠ BinOp.and) (hor : op ≠ BinOp.or)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin op l r) (BigInt.mk i) :=
+  denotes_bin p env op l r a b _
+    (fun _ hw => by
+      rw [hop] at hw
+      split at hw
+      · simp at hw
+      · simp only [Except.ok.injEq] at hw
+        rw [← hw]
+        rfl)
+    hne hor hl hr
+
+theorem denotes_addBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .add l r) (a + b) :=
+  denotes_bigArith p env .add l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_subBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .sub l r) (a - b) :=
+  denotes_bigArith p env .sub l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_mulBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .mul l r) (a * b) :=
+  denotes_bigArith p env .mul l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_divBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .div l r) (BigInt.div a b) :=
+  denotes_bigGuarded p env .div l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_modBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .mod l r) (BigInt.mod a b) :=
+  denotes_bigGuarded p env .mod l r a b _ rfl (by simp) (by simp) hl hr
+
+theorem denotes_negBig (p : Program) (env : Env) (e : Expr) (a : BigInt) (h : Denotes p env e a) :
+    Denotes p env (.un .neg e) (-a) :=
+  denotes_un p env .neg e a _
+    (fun _ hw => by
+      rw [show applyUn .neg (toValue a) = Except.ok (Value.bigint (-a.val)) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw]
+      rfl)
+    h
+
+theorem denotes_absBig (p : Program) (env : Env) (e : Expr) (a : BigInt) (h : Denotes p env e a) :
+    Denotes p env (.un .abs e) (BigInt.abs a) :=
+  denotes_un p env .abs e a _
+    (fun _ hw => by
+      rw [show applyUn .abs (toValue a) = Except.ok (Value.bigint a.val.natAbs) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw]
+      rfl)
+    h
+
+theorem denotes_ltBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .lt l r) (decide (a < b)) :=
+  denotes_cmp p env .lt l r a b _ (by rw [show applyBin .lt (toValue a) (toValue b)
+    = .ok (.bool (compare a.val b.val == Ordering.lt)) from rfl, compare_lt]; rfl) (by simp) (by simp)
+    hl hr
+
+theorem denotes_leBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .le l r) (decide (a ≤ b)) :=
+  denotes_cmp p env .le l r a b _ (by rw [show applyBin .le (toValue a) (toValue b)
+    = .ok (.bool (compare a.val b.val != Ordering.gt)) from rfl, compare_le]; rfl) (by simp) (by simp)
+    hl hr
+
+theorem denotes_gtBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .gt l r) (decide (a > b)) :=
+  denotes_cmp p env .gt l r a b _ (by rw [show applyBin .gt (toValue a) (toValue b)
+    = .ok (.bool (compare a.val b.val == Ordering.gt)) from rfl, compare_gt]; rfl) (by simp) (by simp)
+    hl hr
+
+theorem denotes_geBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .ge l r) (decide (a ≥ b)) :=
+  denotes_cmp p env .ge l r a b _ (by rw [show applyBin .ge (toValue a) (toValue b)
+    = .ok (.bool (compare a.val b.val != Ordering.lt)) from rfl, compare_ge]; rfl) (by simp) (by simp)
+    hl hr
 
 /-- The arguments of a call, paired with the values the callee's certificate is stated about. It is a
 list of `Value` rather than of encoded terms because a call's arguments need not share a type. -/

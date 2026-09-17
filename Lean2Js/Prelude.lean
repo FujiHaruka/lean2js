@@ -75,6 +75,46 @@ def substring (s : String) (lo hi : Int) : String :=
 
 end Str
 
+namespace Int53
+
+/-- Truncating division, which is what the generated `Math.trunc` performs. Lean's `/` on `Int` rounds
+towards negative infinity, so `-7 / 2` is `-4` there and `-3` here. A zero divisor traps. -/
+def div (a b : Int) : Int := a.tdiv b
+
+/-- The remainder that goes with `div`. A zero divisor traps. -/
+def mod (a b : Int) : Int := a.tmod b
+
+def abs (a : Int) : Int := a.natAbs
+
+end Int53
+
+/-- The subset's arbitrary-precision integer. `Int` is already the one that has to fit in a JS number, so
+the one that does not is a wrapper: the two are told apart by their type, never by their values. -/
+structure BigInt where
+  val : Int
+  deriving DecidableEq, Inhabited, Repr
+
+namespace BigInt
+
+instance : Add BigInt := ⟨fun a b => ⟨a.val + b.val⟩⟩
+instance : Sub BigInt := ⟨fun a b => ⟨a.val - b.val⟩⟩
+instance : Mul BigInt := ⟨fun a b => ⟨a.val * b.val⟩⟩
+instance : Neg BigInt := ⟨fun a => ⟨-a.val⟩⟩
+instance : LT BigInt := ⟨fun a b => a.val < b.val⟩
+instance : LE BigInt := ⟨fun a b => a.val ≤ b.val⟩
+instance (a b : BigInt) : Decidable (a < b) := inferInstanceAs (Decidable (a.val < b.val))
+instance (a b : BigInt) : Decidable (a ≤ b) := inferInstanceAs (Decidable (a.val ≤ b.val))
+instance : OfNat BigInt n := ⟨⟨(n : Int)⟩⟩
+
+/-- Truncating division, as on `Int53`. A zero divisor traps. -/
+def div (a b : BigInt) : BigInt := ⟨a.val.tdiv b.val⟩
+
+def mod (a b : BigInt) : BigInt := ⟨a.val.tmod b.val⟩
+
+def abs (a : BigInt) : BigInt := ⟨a.val.natAbs⟩
+
+end BigInt
+
 /-- A `Map` on the JS side. The entries are a list rather than a set because iteration order is
 observable through `keys`, so the two sides have to agree on it: a write to a key already present leaves
 it where it is, and a write to a new one appends. -/
@@ -155,6 +195,18 @@ instance [Enc α] : Enc (Dict α) where
 
 @[simp] theorem toValue_dict [Enc α] (d : Dict α) :
     (toValue d : Value) = .dict (d.entries.map encEntry) := rfl
+
+instance : Enc BigInt where
+  ty := .bigint
+  toValue b := .bigint b.val
+  ofValue
+    | .bigint i => some ⟨i⟩
+    | _ => none
+  ofValue_toValue _ := rfl
+  accepts _ _ := True
+  toValue_hasTy := by intro p b _; exact hasTy_bigint p b.val
+
+@[simp] theorem toValue_bigint (b : BigInt) : (toValue b : Value) = .bigint b.val := rfl
 
 end Enc
 

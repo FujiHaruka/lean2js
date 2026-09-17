@@ -52,8 +52,14 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     if n < 0 then
       throwError "reify: {e} is a negative literal, which this walk does not read"
     let lit : Term := ⟨Syntax.mkNumLit (toString n)⟩
-    return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.int53 $lit)),
-            ← `(Lean2Js.Denote.denotes_lit _ _ $lit))
+    match ← whnf (← inferType e) with
+    | .const ``Int _ =>
+      return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.int53 $lit)),
+              ← `(Lean2Js.Denote.denotes_lit _ _ $lit))
+    | .const ``Lean2Js.BigInt _ =>
+      return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.bigint $lit)),
+              ← `(Lean2Js.Denote.denotes_litBig _ _ $lit))
+    | t => throwError "reify: {e} is a numeral of type {t}, which the subset has no literal for"
   if let .letE nm ty val body _ := e then
     let (ve, vp) ← walk ns names xs val
     let (be, bp) ← walk ns (names.push nm.toString) (xs.push val) (body.instantiate1 val)
@@ -62,13 +68,20 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
   if let some app ← matchMatcherApp? e then
     return ← matched app e
   match e.getAppFnArgs with
-  | (``HAdd.hAdd, #[_, _, _, _, l, r]) => binary `add ``Lean2Js.Denote.denotes_add l r
-  | (``HSub.hSub, #[_, _, _, _, l, r]) => binary `sub ``Lean2Js.Denote.denotes_sub l r
-  | (``HMul.hMul, #[_, _, _, _, l, r]) => binary `mul ``Lean2Js.Denote.denotes_mul l r
-  | (``Neg.neg, #[_, _, a]) =>
-    let (ae, ap) ← walk ns names xs a
-    return (← `(Lean2Js.Core.Expr.un Lean2Js.Core.UnOp.neg $ae),
-            ← `(Lean2Js.Denote.denotes_neg _ _ _ _ $ap))
+  | (``HAdd.hAdd, #[α, _, _, _, l, r]) =>
+    binary `add (← numeric α ``Lean2Js.Denote.denotes_add ``Lean2Js.Denote.denotes_addBig) l r
+  | (``HSub.hSub, #[α, _, _, _, l, r]) =>
+    binary `sub (← numeric α ``Lean2Js.Denote.denotes_sub ``Lean2Js.Denote.denotes_subBig) l r
+  | (``HMul.hMul, #[α, _, _, _, l, r]) =>
+    binary `mul (← numeric α ``Lean2Js.Denote.denotes_mul ``Lean2Js.Denote.denotes_mulBig) l r
+  | (``Neg.neg, #[α, _, a]) =>
+    unary `neg (← numeric α ``Lean2Js.Denote.denotes_neg ``Lean2Js.Denote.denotes_negBig) a
+  | (``Lean2Js.Int53.div, #[l, r]) => binary `div ``Lean2Js.Denote.denotes_div l r
+  | (``Lean2Js.Int53.mod, #[l, r]) => binary `mod ``Lean2Js.Denote.denotes_mod l r
+  | (``Lean2Js.Int53.abs, #[a]) => unary `abs ``Lean2Js.Denote.denotes_abs a
+  | (``Lean2Js.BigInt.div, #[l, r]) => binary `div ``Lean2Js.Denote.denotes_divBig l r
+  | (``Lean2Js.BigInt.mod, #[l, r]) => binary `mod ``Lean2Js.Denote.denotes_modBig l r
+  | (``Lean2Js.BigInt.abs, #[a]) => unary `abs ``Lean2Js.Denote.denotes_absBig a
   | (``List.nil, #[α]) => arrayLit α e
   | (``List.cons, #[α, _, _]) => arrayLit α e
   | (``List.reverse, #[_, l]) =>
@@ -193,13 +206,25 @@ where
     | t =>
       if t.isAppOf ``List then binary `concat ``Lean2Js.Denote.denotes_concatArr l r
       else throwError "reify: {t} is not a type this walk knows how to join"
-  /-- `Int53` and `String` are ordered by different functions on both sides, so a comparison reads as the
-  lemma for the type being compared. -/
-  cmp (α : Lean.Expr) (op : Name) (intLemma strLemma : Name) (l r : Lean.Expr) :
+  unary (op : Name) (lemma : Name) (a : Lean.Expr) : TermElabM (Term × Term) := do
+    let (ae, ap) ← walk ns names xs a
+    return (← `(Lean2Js.Core.Expr.un $(mkIdent (`Lean2Js.Core.UnOp ++ op)) $ae),
+            ← `($(mkIdent lemma) _ _ _ _ $ap))
+  /-- `Int` and `BigInt` are both Lean `Int`s underneath and are told apart only by their type, so the
+  operators they share reach the right lemma by what they were applied to. -/
+  numeric (α : Lean.Expr) (intLemma bigLemma : Name) : TermElabM Name := do
+    match ← whnf α with
+    | .const ``Int _ => return intLemma
+    | .const ``Lean2Js.BigInt _ => return bigLemma
+    | t => throwError "reify: arithmetic on {t} is outside the subset this walk reads"
+  /-- `Int53`, `BigInt` and `String` are ordered by different functions on both sides, so a comparison
+  reads as the lemma for the type being compared. -/
+  cmp (α : Lean.Expr) (op : Name) (intLemma strLemma bigLemma : Name) (l r : Lean.Expr) :
       TermElabM (Term × Term) := do
     match ← whnf α with
     | .const ``Int _ => binary op intLemma l r
     | .const ``String _ => binary op strLemma l r
+    | .const ``Lean2Js.BigInt _ => binary op bigLemma l r
     | t => throwError "reify: comparing two values of type {t} is outside the subset this walk reads"
   strUn (op : Name) (lemma : Name) (l : Lean.Expr) : TermElabM (Term × Term) := do
     let (ae, ap) ← walk ns names xs l
@@ -331,13 +356,17 @@ where
   decided (prop inst : Lean.Expr) : TermElabM (Term × Term) := do
     match prop.getAppFnArgs with
     | (``LT.lt, #[α, _, l, r]) =>
-      cmp α `lt ``Lean2Js.Denote.denotes_lt ``Lean2Js.Denote.denotes_ltStr l r
+      cmp α `lt ``Lean2Js.Denote.denotes_lt ``Lean2Js.Denote.denotes_ltStr
+        ``Lean2Js.Denote.denotes_ltBig l r
     | (``LE.le, #[α, _, l, r]) =>
-      cmp α `le ``Lean2Js.Denote.denotes_le ``Lean2Js.Denote.denotes_leStr l r
+      cmp α `le ``Lean2Js.Denote.denotes_le ``Lean2Js.Denote.denotes_leStr
+        ``Lean2Js.Denote.denotes_leBig l r
     | (``GT.gt, #[α, _, l, r]) =>
-      cmp α `gt ``Lean2Js.Denote.denotes_gt ``Lean2Js.Denote.denotes_gtStr l r
+      cmp α `gt ``Lean2Js.Denote.denotes_gt ``Lean2Js.Denote.denotes_gtStr
+        ``Lean2Js.Denote.denotes_gtBig l r
     | (``GE.ge, #[α, _, l, r]) =>
-      cmp α `ge ``Lean2Js.Denote.denotes_ge ``Lean2Js.Denote.denotes_geStr l r
+      cmp α `ge ``Lean2Js.Denote.denotes_ge ``Lean2Js.Denote.denotes_geStr
+        ``Lean2Js.Denote.denotes_geBig l r
     | (``Eq, #[_, b, t]) =>
       if t.isConstOf ``Bool.true then
         let (be, bp) ← walk ns names xs b
@@ -724,6 +753,82 @@ theorem catalogueSize_certificate (p : Program) (prices : Dict Int) :
     Denotes p (bindParams catalogueSizeCore.params [toValue prices]) catalogueSizeCore.body
       (catalogueSize prices) :=
   reify_proof% catalogueSize
+
+/-! ### Dividing, and the integer that does not have to fit
+
+Lean's `/` on `Int` rounds towards negative infinity and the subset's truncates, so division is the
+prelude's on both `Int53` and `BigInt`. Everything else an author writes with the ordinary operators,
+and which lemma the walk reaches for follows from the type. -/
+
+abbrev divideCore : Decl := reify_decl% divide
+
+example : divideCore = Example.divide := rfl
+
+theorem divide_certificate (p : Program) (a b : Int) :
+    Denotes p (bindParams divideCore.params [toValue a, toValue b]) divideCore.body (divide a b) :=
+  reify_proof% divide
+
+abbrev remainderCore : Decl := reify_decl% remainder
+
+example : remainderCore = Example.remainder := rfl
+
+theorem remainder_certificate (p : Program) (a b : Int) :
+    Denotes p (bindParams remainderCore.params [toValue a, toValue b]) remainderCore.body
+      (remainder a b) :=
+  reify_proof% remainder
+
+abbrev negateCore : Decl := reify_decl% negate
+
+example : negateCore = Example.negate := rfl
+
+theorem negate_certificate (p : Program) (a : Int) :
+    Denotes p (bindParams negateCore.params [toValue a]) negateCore.body (negate a) :=
+  reify_proof% negate
+
+abbrev priceGapCore : Decl := reify_decl% priceGap
+
+example : priceGapCore = Example.priceGap := rfl
+
+theorem priceGap_certificate (p : Program) (a b : Int) :
+    Denotes p (bindParams priceGapCore.params [toValue a, toValue b]) priceGapCore.body
+      (priceGap a b) :=
+  reify_proof% priceGap
+
+abbrev discountedCore : Decl := reify_decl% discounted
+
+example : discountedCore = Example.discounted := rfl
+
+theorem discounted_certificate (p : Program) (amount percent : Int) :
+    Denotes p (bindParams discountedCore.params [toValue amount, toValue percent])
+      discountedCore.body (discounted amount percent) :=
+  reify_proof% discounted
+
+abbrev tenPercentOffCore : Decl := reify_decl% tenPercentOff
+
+example : tenPercentOffCore = Example.tenPercentOff := rfl
+
+theorem tenPercentOff_certificate (p : Program) (amount : Int) :
+    Denotes p (bindParams tenPercentOffCore.params [toValue amount]) tenPercentOffCore.body
+      (tenPercentOff amount) :=
+  reify_proof% tenPercentOff
+
+abbrev scaleFeeCore : Decl := reify_decl% scaleFee
+
+example : scaleFeeCore = Example.scaleFee := rfl
+
+theorem scaleFee_certificate (p : Program) (fee factor : BigInt) :
+    Denotes p (bindParams scaleFeeCore.params [toValue fee, toValue factor]) scaleFeeCore.body
+      (scaleFee fee factor) :=
+  reify_proof% scaleFee
+
+abbrev bigQuotientCore : Decl := reify_decl% bigQuotient
+
+example : bigQuotientCore = Example.bigQuotient := rfl
+
+theorem bigQuotient_certificate (p : Program) (a b : BigInt) :
+    Denotes p (bindParams bigQuotientCore.params [toValue a, toValue b]) bigQuotientCore.body
+      (bigQuotient a b) :=
+  reify_proof% bigQuotient
 
 end Lean2Js.Denote
 

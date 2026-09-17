@@ -150,6 +150,24 @@ def withdrawn (prices : Dict Int) (sku : String) : Dict Int := prices.erase sku
 
 def catalogueSize (prices : Dict Int) : Int := prices.size
 
+def divide (a b : Int) : Int := Int53.div a b
+
+def remainder (a b : Int) : Int := Int53.mod a b
+
+def negate (a : Int) : Int := -a
+
+def priceGap (a b : Int) : Int := Int53.abs (a - b)
+
+def discounted (amount percent : Int) : Int :=
+  let rate : Int := 100 - (if percent < 0 then 0 else if percent > 100 then 100 else percent)
+  Int53.div (amount * rate) 100
+
+def tenPercentOff (amount : Int) : Int := amount - Int53.div amount 10
+
+def scaleFee (fee factor : BigInt) : BigInt := fee * factor - 1
+
+def bigQuotient (a b : BigInt) : BigInt := BigInt.div a b
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 
