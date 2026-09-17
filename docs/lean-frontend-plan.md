@@ -91,7 +91,7 @@ evalCall … = .ok v → v = enc (f args)
 
 | 部品 | 見積り |
 | --- | --- |
-| 符号化層 —— `Enc` クラス、`Value` の 9 コンストラクタぶんの instance、利用者の型への `deriving` | 700〜1,400 |
+| 符号化層 —— `Enc` クラス、`Value` の 7 コンストラクタぶんの instance、利用者の型への `deriving` | 700〜1,400 |
 | 形ごとの denotation 補題（35 形） | 1,500〜3,000 |
 | 証明を吐く reifier（メタプログラム） | 800〜1,500 |
 | prelude（`Int53` / `Str` / `Arr` / `Dict`） | 500〜1,000 |
@@ -145,10 +145,12 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 `Example.add`（表層構文で書いたもの）と `rfl` で等しく、`reify_proof% add` が出す証明にタクティクスは
 1 つも無い。**証明項は組める。**
 
+符号化層も入っている —— `Lean2Js/Enc.lean` の `Enc` クラスと、`Bool` / `Int` / `UInt32` / `String` /
+`Option` / `Except` / `List` の instance。`Role` の instance は利用者の型の側の見本として
+`Lean2Js/Denote.lean` にあり、`deriving` が吐くべきものを名指ししている。
+
 残っているもの:
 
-- `Enc` クラス（`toValue` / `ofValue`、および `hasTy` —— 符号化が全域でない型では条件つき）と、
-  `Value` の 9 コンストラクタぶんの instance
 - 利用者の `inductive` / `structure` への `deriving` —— 符号化、`hasTy` 補題、`match` 対応補題を生成する
 - 補題と walk を 35 形のうち 12 形前後まで広げる（`let`・条件式・単項演算・呼び出し）
 - 断りのメッセージ
@@ -162,6 +164,16 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 **断りの位置は自動では出ない。** `Lean.Expr` は位置を持たないので、いまは `reify_decl%` を書いた位置で
 断る。利用者の `def` の中の `/` を指すには decl range と、項から構文への対応が別に要る。
 **受け入れ条件はこれを見込む** —— 付け足しでは出ない。
+
+**instance が立つのは 9 コンストラクタのうち 7 つで、`Value.fn` には永久に立たない。** `.fn` は宣言を
+名指しする値で、Lean の関数値は自分がどの宣言かを知らない —— 高階の引数は reifier が宣言名に落とす話で、
+利用者の型の符号化ではない。`.bigint` と `.dict` は立つが、いま `Int` が `Int53` を、
+`List (String × α)` が配列を先に取っているので、別の Lean 型が要る。**どちらも prelude（Step 4）の側。**
+
+**`hasTy` の仮定は `accepts` に化けて利用者の定理から消える。** `Enc` は「境界が受け付ける条件」を
+`accepts : Program → α → Prop` として持つので、`add_ships` の仮定は `Value.hasTy` の等式ではなく
+`Int53` の範囲そのものになった。条件が `True` の型（`Bool` / `String` / …）では仮定ごと消える。
+`Role` のように符号化が全域な型では、条件は値ではなく**プログラムがその型を宣言していること**になる。
 
 **`/` は形として断る。** Lean の `/` は床で、サブセットの `/` は切り捨て（`Eval.lean` の `applyArith`
 がそう書いてある）。利用者には prelude 側の除算を書かせ、素の `/` は reify できないものとして落とす。
