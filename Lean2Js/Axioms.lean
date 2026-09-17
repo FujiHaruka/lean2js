@@ -210,3 +210,15 @@ info: 'Lean2Js.Denote.lineTotal_certificate' depends on axioms: [propext, Classi
 -/
 #guard_msgs in
 #print axioms Lean2Js.Denote.lineTotal_certificate
+
+/--
+info: 'Lean2Js.Denote.roleRank_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Lean2Js.Denote.roleRank_certificate
+
+/--
+info: 'Lean2Js.Denote.saleAmount_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Lean2Js.Denote.saleAmount_certificate

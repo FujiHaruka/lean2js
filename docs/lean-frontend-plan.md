@@ -157,8 +157,7 @@ walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`�
 
 残っているもの:
 
-- `deriving Enc` が `match` 対応補題を出すところ —— **Step 2 と一緒でないと形が決まらない**ので、
-  そちらで足す
+（残りは無い。`deriving Enc` の `match` 対応補題は Step 2 で足した。）
 
 ### 分かったこと
 
@@ -215,12 +214,32 @@ walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`�
 がそう書いてある）。利用者には prelude 側の除算を書かせ、素の `/` は reify できないものとして落とす。
 `Reify.lean` の `#guard_msgs` がその断りを固定している。
 
-## Step 2. `match`
+## Step 2. `match` —— 済
 
-Lean は `match` を補助 matcher に潰すので、腕を復元して型ごとの対応補題を当てる。
-**`docs/mvp-plan.md` の Approach が挙げた `casesOn` のノイズは、ここで正面から相手にする。**
+`deriving Enc` が型ごとに `T.denotes_matchE` を出し、reifier が `matchMatcherApp?` で腕を復元して
+それを引用する。`reify_decl% roleRank` は表層構文の `Example.roleRank` と `rfl` で等しく、
+フィールドを束縛する腕（`Sale`）も通る。**`casesOn` を手で剥がす場面は無かった。**
 
-入れ子なし・単一スクルティニーから始める。入れ子は、それが通ってから。
+### 分かったこと
+
+**`match` 全体は `g x` として運ぶ。** 対応補題の結論に `match` をもう 1 つ書くと、それは利用者が書いた
+matcher とは別の補助定義になって単一化しない。`g : T → α` を取って結論を `Denotes … (g x)` にすると
+利用者が書いた形にそのまま当たり、腕の仮定は `g (.ctor y…)` —— 構成子に当てれば ι で腕に落ちる。
+
+**何も束縛しない腕もパラメタを 1 つ取る。** matcher は空の腕に `Unit` の引数を付けるので、
+`altNumParams` は `max 1 フィールド数`。
+
+**腕と構成子の対応は位置でしか決まらない。** 腕の数が構成子の数と一致し、各腕のパラメタ数が
+`max 1 フィールド数` と一致することしか確かめられない。`_` の腕や並べ替えた腕はこの検査を
+すり抜けうる —— **入れ子の `match` と合わせて、ここは残っている穴**。
+
+**パターンが束縛する名前は利用者のものではなく `TypeDef` のもの。** 生成される JS の変数名は
+フィールド名になる。利用者が `| .mk buyer _ =>` と書いても、AST 上は `buyer` はフィールド名で束縛される。
+
+**利用者は引数に名前を付けなければならない。** `def roleRank : Role → Int | .guest => 0` の形だと
+パラメタ名が `x✝` になり、生成する関数の引数名にならない。reifier はこれを断る。
+
+入れ子の `match` はまだ読めない。
 
 ## Step 3. 走査
 
@@ -251,7 +270,9 @@ Step 0（縦に 1 本）                済 —— `Lean2Js/Denote.lean`
   ↓
 Step 1（符号化 + スカラ）          済 —— `Lean2Js/Enc.lean` / `EncDeriving.lean` / `Reify.lean`
   ↓
-Step 2（match） → Step 3（走査）   どちらも Step 1 が決めた形に乗る
+Step 2（match）                    済 —— `T.denotes_matchE` を `deriving` が出す
+  ↓
+Step 3（走査）                     Step 1 が決めた形に乗る
   ↓
 Step 4（文字列・辞書・prelude）
   ↓

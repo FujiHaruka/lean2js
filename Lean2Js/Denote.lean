@@ -37,7 +37,8 @@ inductive Role where
   | admin
   deriving Enc
 
-def roleRank : Role → Int
+def roleRank (role : Role) : Int :=
+  match role with
   | .guest => 0
   | .member => 1
   | .admin => 2
@@ -81,6 +82,10 @@ example (r : Role) (a : Int) : Sale.ofValue (toValue (Sale.mk r a)) = some (Sale
 example (p : Program) (r : Role) (a : Int) (h : accepts p (Sale.mk r a)) :
     Value.hasTy p (toValue (Sale.mk r a)) (.named "Sale" []) = true :=
   toValue_hasTy h
+
+def saleAmount (sale : Sale) : Int :=
+  match sale with
+  | .mk _ amount => amount + 1
 
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
