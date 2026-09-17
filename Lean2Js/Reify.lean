@@ -363,10 +363,27 @@ private structure Reified where
   ast : Term
   proof : Term
 
+/-- Where to put a refusal. `Lean.Expr` carries no source positions, so the closest a refusal can come to
+the term it is about is the `def` the term was read out of — and only when that `def` is in the file being
+elaborated, since a position means nothing in another module. -/
+private def declRange? (n : Name) : TermElabM (Option Syntax) := do
+  if ((← getEnv).getModuleIdxFor? n).isSome then return none
+  let some ranges ← findDeclarationRanges? n | return none
+  let fm ← getFileMap
+  return some (Syntax.ofRange ⟨fm.ofPosition ranges.range.pos, fm.ofPosition ranges.range.endPos⟩)
+
 private def reifyTarget (stx : Syntax) : TermElabM Reified := do
   let n ← realizeGlobalConstNoOverload stx
   let some (.defnInfo di) := (← getEnv).find? n
     | throwError "reify: {n} is not a definition"
+  try
+    reifyValue n di
+  catch ex =>
+    match ← declRange? n with
+    | some at? => throwErrorAt at? ex.toMessageData
+    | none => throw ex
+where
+  reifyValue (n : Name) (di : DefinitionVal) : TermElabM Reified := do
   lambdaTelescope di.value fun xs body => do
     let mut names := #[]
     let mut params := #[]
