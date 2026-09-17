@@ -87,6 +87,27 @@ instance : Enc String where
 
 @[simp] theorem toValue_str (s : String) : (toValue s : Value) = .str s := rfl
 
+/-- The types the subset compares for equality. `eval` compares encodings and the author writes `==` on
+their own type, so the two agree exactly when the encoding neither folds two terms together nor splits
+one apart. It is a class of its own rather than a law of `Enc` because `Value.fn`-free encodings are not
+the only ones: a type with no `BEq` has nothing to state. -/
+class EncBEq (α : Type) [Enc α] [BEq α] where
+  beq_toValue (a b : α) : (toValue a == toValue b) = (a == b)
+
+instance : EncBEq Bool where
+  beq_toValue a b := by simp [BEq.beq, Value.beq]
+
+instance : EncBEq Int where
+  beq_toValue a b := by simp [BEq.beq, Value.beq]
+
+instance : EncBEq String where
+  beq_toValue a b := by simp [BEq.beq, Value.beq]
+
+instance : EncBEq UInt32 where
+  beq_toValue a b := by
+    show Value.beq (.uint32 a) (.uint32 b) = (a == b)
+    rw [Value.beq]
+
 /-! ### The shapes built out of another type -/
 
 instance [Enc α] : Enc (Option α) where

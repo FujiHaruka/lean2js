@@ -1267,6 +1267,101 @@ theorem denotes_geBig (p : Program) (env : Env) (l r : Expr) (a b : BigInt)
     = .ok (.bool (compare a.val b.val != Ordering.lt)) from rfl, compare_ge]; rfl) (by simp) (by simp)
     hl hr
 
+/-! ### Equality, the short-circuiting connectives, and the two that pick a side
+
+`&&` and `||` do not go through `applyBin` at all: `eval` stops before the right operand when the left
+one settles the answer, so each has a lemma of its own. Lean's `&&` stops too, but for a different
+reason — its right operand is a value, and there is nothing there to stop. -/
+
+theorem denotes_eq (p : Program) (env : Env) (l r : Expr) {β : Type} [Enc β] [BEq β] [EncBEq β]
+    (a b : β) (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .eq l r) (a == b) :=
+  denotes_cmp p env .eq l r a b _
+    (by rw [show applyBin .eq (toValue a) (toValue b)
+      = .ok (.bool (toValue a == toValue b)) from rfl, EncBEq.beq_toValue])
+    (by simp) (by simp) hl hr
+
+theorem denotes_ne (p : Program) (env : Env) (l r : Expr) {β : Type} [Enc β] [BEq β] [EncBEq β]
+    (a b : β) (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .ne l r) (a != b) :=
+  denotes_cmp p env .ne l r a b _
+    (by rw [show applyBin .ne (toValue a) (toValue b)
+      = .ok (.bool (toValue a != toValue b)) from rfl]
+        simp only [bne, EncBEq.beq_toValue])
+    (by simp) (by simp) hl hr
+
+theorem denotes_and (p : Program) (env : Env) (l r : Expr) (a b : Bool)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .and l r) (a && b) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_and] at h
+  cases hx : evalExpr p 9999 env l with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hl (by simp [defaultFuel]) w hx, toValue_bool] at h
+    cases a with
+    | false =>
+      simp only [bind, Except.bind, Except.ok.injEq] at h
+      rw [← h]
+      rfl
+    | true =>
+      cases hy : evalExpr p 9999 env r with
+      | error err => rw [hy] at h; simp [bind, Except.bind] at h
+      | ok u =>
+        rw [hy, hr (by simp [defaultFuel]) u hy, toValue_bool] at h
+        simp only [bind, Except.bind, asBool, Except.ok.injEq] at h
+        rw [← h]
+        rfl
+
+theorem denotes_or (p : Program) (env : Env) (l r : Expr) (a b : Bool)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .or l r) (a || b) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_or] at h
+  cases hx : evalExpr p 9999 env l with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hl (by simp [defaultFuel]) w hx, toValue_bool] at h
+    cases a with
+    | true =>
+      simp only [bind, Except.bind, Except.ok.injEq] at h
+      rw [← h]
+      rfl
+    | false =>
+      cases hy : evalExpr p 9999 env r with
+      | error err => rw [hy] at h; simp [bind, Except.bind] at h
+      | ok u =>
+        rw [hy, hr (by simp [defaultFuel]) u hy, toValue_bool] at h
+        simp only [bind, Except.bind, asBool, Except.ok.injEq] at h
+        rw [← h]
+        rfl
+
+theorem denotes_min (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .min l r) (min a b) :=
+  denotes_bin p env .min l r a b _
+    (fun _ hw => by
+      rw [show applyBin .min (toValue a) (toValue b)
+        = .ok (if (decide (a ≤ b)) = true then Value.int53 a else Value.int53 b) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_int]
+      by_cases h : a ≤ b <;> simp [h, Int.min_def])
+    (by simp) (by simp) hl hr
+
+theorem denotes_max (p : Program) (env : Env) (l r : Expr) (a b : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .max l r) (max a b) :=
+  denotes_bin p env .max l r a b _
+    (fun _ hw => by
+      rw [show applyBin .max (toValue a) (toValue b)
+        = .ok (if (decide (a ≤ b)) = true then Value.int53 b else Value.int53 a) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_int]
+      by_cases h : a ≤ b <;> simp [h, Int.max_def])
+    (by simp) (by simp) hl hr
+
 /-- The arguments of a call, paired with the values the callee's certificate is stated about. It is a
 list of `Value` rather than of encoded terms because a call's arguments need not share a type. -/
 def DenotesArgs (p : Program) (env : Env) : List Expr → List Value → Prop

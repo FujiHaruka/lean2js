@@ -76,6 +76,14 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     binary `mul (← numeric α ``Lean2Js.Denote.denotes_mul ``Lean2Js.Denote.denotes_mulBig) l r
   | (``Neg.neg, #[α, _, a]) =>
     unary `neg (← numeric α ``Lean2Js.Denote.denotes_neg ``Lean2Js.Denote.denotes_negBig) a
+  | (``BEq.beq, #[_, _, l, r]) => binary `eq ``Lean2Js.Denote.denotes_eq l r
+  | (``bne, #[_, _, l, r]) => binary `ne ``Lean2Js.Denote.denotes_ne l r
+  | (``Bool.and, #[l, r]) => binary `and ``Lean2Js.Denote.denotes_and l r
+  | (``Bool.or, #[l, r]) => binary `or ``Lean2Js.Denote.denotes_or l r
+  | (``Min.min, #[α, _, l, r]) =>
+    binary `min (← int53Only α "min" ``Lean2Js.Denote.denotes_min) l r
+  | (``Max.max, #[α, _, l, r]) =>
+    binary `max (← int53Only α "max" ``Lean2Js.Denote.denotes_max) l r
   | (``Lean2Js.Int53.div, #[l, r]) => binary `div ``Lean2Js.Denote.denotes_div l r
   | (``Lean2Js.Int53.mod, #[l, r]) => binary `mod ``Lean2Js.Denote.denotes_mod l r
   | (``Lean2Js.Int53.abs, #[a]) => unary `abs ``Lean2Js.Denote.denotes_abs a
@@ -210,6 +218,12 @@ where
     let (ae, ap) ← walk ns names xs a
     return (← `(Lean2Js.Core.Expr.un $(mkIdent (`Lean2Js.Core.UnOp ++ op)) $ae),
             ← `($(mkIdent lemma) _ _ _ _ $ap))
+  /-- `eval` takes a `min` of two `BigInt`s, but nothing here reads one: the prelude gives `BigInt` no
+  `Min`, so a `min` reaching this walk is on `Int53`. -/
+  int53Only (α : Lean.Expr) (what : String) (lemma : Name) : TermElabM Name := do
+    match ← whnf α with
+    | .const ``Int _ => return lemma
+    | t => throwError "reify: {what} on {t} is outside the subset this walk reads"
   /-- `Int` and `BigInt` are both Lean `Int`s underneath and are told apart only by their type, so the
   operators they share reach the right lemma by what they were applied to. -/
   numeric (α : Lean.Expr) (intLemma bigLemma : Name) : TermElabM Name := do
@@ -829,6 +843,59 @@ theorem bigQuotient_certificate (p : Program) (a b : BigInt) :
     Denotes p (bindParams bigQuotientCore.params [toValue a, toValue b]) bigQuotientCore.body
       (bigQuotient a b) :=
   reify_proof% bigQuotient
+
+/-! ### Equality, the connectives, and picking a side
+
+`&&` and `||` stop before the right operand once the left one settles the answer, on both sides but for
+different reasons. `==` is the one form that asks something of the encoding rather than of the walk: it
+compares the encodings, so the type has to be one whose encoding neither folds two terms together nor
+splits one apart. -/
+
+abbrev sameLabelCore : Decl := reify_decl% sameLabel
+
+example : sameLabelCore = Example.sameLabel := rfl
+
+theorem sameLabel_certificate (p : Program) (a b : String) :
+    Denotes p (bindParams sameLabelCore.params [toValue a, toValue b]) sameLabelCore.body
+      (sameLabel a b) :=
+  reify_proof% sameLabel
+
+abbrev safeQuotientIsPositiveCore : Decl := reify_decl% safeQuotientIsPositive
+
+example : safeQuotientIsPositiveCore = Example.safeQuotientIsPositive := rfl
+
+theorem safeQuotientIsPositive_certificate (p : Program) (a b : Int) :
+    Denotes p (bindParams safeQuotientIsPositiveCore.params [toValue a, toValue b])
+      safeQuotientIsPositiveCore.body (safeQuotientIsPositive a b) :=
+  reify_proof% safeQuotientIsPositive
+
+abbrev canCheckoutCore : Decl := reify_decl% canCheckout
+
+example : canCheckoutCore = Example.canCheckout := rfl
+
+theorem canCheckout_certificate (p : Program) (signedIn : Bool) (cartTotal stock : Int) :
+    Denotes p (bindParams canCheckoutCore.params
+        [toValue signedIn, toValue cartTotal, toValue stock])
+      canCheckoutCore.body (canCheckout signedIn cartTotal stock) :=
+  reify_proof% canCheckout
+
+abbrev cappedChargeCore : Decl := reify_decl% cappedCharge
+
+example : cappedChargeCore = Example.cappedCharge := rfl
+
+theorem cappedCharge_certificate (p : Program) (amount budget : Int) :
+    Denotes p (bindParams cappedChargeCore.params [toValue amount, toValue budget])
+      cappedChargeCore.body (cappedCharge amount budget) :=
+  reify_proof% cappedCharge
+
+abbrev atLeastCore : Decl := reify_decl% atLeast
+
+example : atLeastCore = Example.atLeast := rfl
+
+theorem atLeast_certificate (p : Program) (amount floor : Int) :
+    Denotes p (bindParams atLeastCore.params [toValue amount, toValue floor]) atLeastCore.body
+      (atLeast amount floor) :=
+  reify_proof% atLeast
 
 end Lean2Js.Denote
 

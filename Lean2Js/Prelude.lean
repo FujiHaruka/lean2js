@@ -96,6 +96,10 @@ structure BigInt where
 
 namespace BigInt
 
+/-- `==` is the subset's equality, so it is the one on the value rather than the one `DecidableEq`
+would derive through the wrapper. -/
+instance (priority := high) : BEq BigInt := ⟨fun a b => a.val == b.val⟩
+
 instance : Add BigInt := ⟨fun a b => ⟨a.val + b.val⟩⟩
 instance : Sub BigInt := ⟨fun a b => ⟨a.val - b.val⟩⟩
 instance : Mul BigInt := ⟨fun a b => ⟨a.val * b.val⟩⟩
@@ -207,6 +211,13 @@ instance : Enc BigInt where
   toValue_hasTy := by intro p b _; exact hasTy_bigint p b.val
 
 @[simp] theorem toValue_bigint (b : BigInt) : (toValue b : Value) = .bigint b.val := rfl
+
+instance : EncBEq BigInt where
+  beq_toValue
+    | ⟨x⟩, ⟨y⟩ => by
+      show Value.beq (.bigint x) (.bigint y) = (BigInt.mk x == BigInt.mk y)
+      rw [Value.beq]
+      rfl
 
 end Enc
 

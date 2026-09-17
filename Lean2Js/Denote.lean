@@ -168,6 +168,17 @@ def scaleFee (fee factor : BigInt) : BigInt := fee * factor - 1
 
 def bigQuotient (a b : BigInt) : BigInt := BigInt.div a b
 
+def sameLabel (a b : String) : Bool := a == b
+
+def safeQuotientIsPositive (a b : Int) : Bool := b != 0 && Int53.div a b > 0
+
+def canCheckout (signedIn : Bool) (cartTotal stock : Int) : Bool :=
+  signedIn && cartTotal > 0 && stock ≥ 1
+
+def cappedCharge (amount budget : Int) : Int := min amount budget
+
+def atLeast (amount floor : Int) : Int := max amount floor
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 
