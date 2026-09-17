@@ -1,4 +1,4 @@
-import Lean2Js.Enc
+import Lean2Js.EncDeriving
 import Lean2Js.Example
 
 /-!
@@ -35,6 +35,7 @@ inductive Role where
   | guest
   | member
   | admin
+  deriving Enc
 
 def roleRank : Role → Int
   | .guest => 0
@@ -45,8 +46,8 @@ def roleRank : Role → Int
 
 `Value` is what `eval` returns, so a claim relating the two needs a function from the author's types into
 it. `Lean2Js/Enc.lean` carries the types that are not the author's; `Role` is the author's, and writing
-its instance by hand is what says what the plan's `deriving` has to produce — the encoding, the decoding,
-and one `rfl` lemma per constructor for the proofs downstream to rewrite with.
+its instance is `deriving Enc`'s job — the `Core.TypeDef` the program declares it as, the encoding, the
+decoding, and the entry check.
 
 `Enc Role` cannot produce a value the entry check refuses, and `Enc Int` can — `Int` reaches past
 `Int53`. That asymmetry is why the entry check appears as a hypothesis on `add_ships` and not on
@@ -55,38 +56,34 @@ and one `rfl` lemma per constructor for the proofs downstream to rewrite with.
 What `Enc Role` needs of the program instead is that it declares `Role`, which is `accepts`'s other
 half: the boundary asks about the program as well as the value. -/
 
-instance : Enc Role where
-  ty := .named "Role" []
-  toValue
-    | .guest => .obj "guest" []
-    | .member => .obj "member" []
-    | .admin => .obj "admin" []
-  ofValue
-    | .obj "guest" [] => some .guest
-    | .obj "member" [] => some .member
-    | .obj "admin" [] => some .admin
-    | _ => none
-  ofValue_toValue
-    | .guest | .member | .admin => rfl
-  accepts p _ := p.findType? "Role" = some Example.Role
-  toValue_hasTy := by
-    intro p r h
-    cases r <;>
-      rw [hasTy_named _ _ _ _ _ Example.Role _ h rfl] <;>
-      exact hasFieldTys_nil _
+example : Role.typeDef = Example.Role := rfl
 
-@[simp] theorem toValue_guest : (toValue Role.guest : Value) = .obj "guest" [] := rfl
+/-! A constructor with fields is the case `Role` does not cover: the `TypeDef` carries each field's subset
+type, the decoding threads `Option` through them, and the entry check becomes the fields' own. Nothing
+declares `Line` yet — the walk cannot read a field projection until Step 2. -/
 
-@[simp] theorem toValue_member : (toValue Role.member : Value) = .obj "member" [] := rfl
+structure Line where
+  unitPrice : Int
+  quantity : Int
+  deriving Enc
 
-@[simp] theorem toValue_admin : (toValue Role.admin : Value) = .obj "admin" [] := rfl
+example : Line.typeDef =
+    { name := "Line", ctors := [⟨"mk", [⟨"unitPrice", .int53⟩, ⟨"quantity", .int53⟩]⟩] } := rfl
+
+example (a b : Int) : (toValue (Line.mk a b) : Value)
+    = .obj "mk" [("unitPrice", .int53 a), ("quantity", .int53 b)] := by
+  simp
+
+example (p : Program) (a b : Int) (h : accepts p (Line.mk a b)) :
+    Value.hasTy p (toValue (Line.mk a b)) (.named "Line" []) = true :=
+  toValue_hasTy h
 
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 
 theorem role_hasTy (r : Role) :
-    Value.hasTy Example.program (toValue r) (.named "Role" []) = true :=
-  toValue_hasTy rfl
+    Value.hasTy Example.program (toValue r) (.named "Role" []) = true := by
+  cases r <;> exact toValue_hasTy ⟨rfl, trivial⟩
 
 /-! ### The certificates
 

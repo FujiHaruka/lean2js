@@ -156,6 +156,15 @@ private theorem hasElemTy_toValue [Enc α] {p : Program} :
       hasElemTy_toValue (fun b hb => h b (by simp [hb]))]
     rfl
 
+/-- One field of a constructor, for the instance a `deriving Enc` writes: the entry check on an object
+is the checks on its fields, and each field's is its own `Enc`'s. -/
+theorem hasFieldTys_toValue (p : Program) (key : String) {α : Type} [Enc α] (x : α)
+    (rest : List (String × Value)) (tys : List (String × Ty))
+    (hx : accepts p x) (hrest : Value.hasFieldTys p rest tys = true) :
+    Value.hasFieldTys p ((key, toValue x) :: rest) ((key, ty (α := α)) :: tys) = true := by
+  rw [hasFieldTys_cons, toValue_hasTy hx, hrest]
+  simp
+
 instance [Enc α] : Enc (List α) where
   ty := .array (ty (α := α))
   toValue xs := .arr (xs.map toValue)
