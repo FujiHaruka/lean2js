@@ -263,15 +263,58 @@ fuel で**回す（`evalMapItems` などが `f` をそのまま渡す）。だ�
 
 まだ読めない: 配列そのものの形（リテラル・添字・長さ・スライス・反転）。
 
-## Step 4. 文字列・辞書・prelude
+## Step 4. 文字列・辞書・prelude —— 済
 
-**文字列はコードポイントで数える。** 利用者が Lean の `String.length` を直接呼べてはいけない ——
-JS 側は UTF-16 単位なので、補題が偽になる。prelude の `Str` に寄せ、prelude の外の関数は reify できない
-ものとして断る。
+`Lean2Js/Prelude.lean`。`Arr` / `Str` / `Int53` / `Dict` / `BigInt`。walk が読む形は 13 + 6 から
+配列 6 形（リテラル・添字・長さ・スライス・反転・連結）・文字列 9 形・辞書 8 形・除算と絶対値・
+`BigInt` の算術と比較まで伸び、`Example.lean` の表層構文で書いた宣言 20 本と `rfl` で等しい。
 
-辞書と配列も同じ理由で prelude 側の型に寄せる。
+### 分かったこと
+
+**prelude は型ではなく関数から生えた。** 最初の分岐は「`Int` → `Int53`、`String` → `Str` に寄せるのか、
+prelude 型を別に足すのか」だったが、**どちらでもない**のが答えだった。`Enc` の instance を動かす理由が
+あるのは `Value` のコンストラクタに Lean 型が残っていないときだけで、それは `.bigint` と `.dict` の
+2 つしかない（`Int` が `.int53` を、`List (String × α)` が配列を先に取っている）。`Int` と `String` は
+instance をそのまま残し、**違うのは関数のほうだけ**なので prelude は関数を持つ。
+
+**文字列で違うのは長さではなく、大小文字と trim と順序。** 計画は「Lean の `String.length` は
+呼べない、JS は UTF-16 単位だから」と書いていたが、これは層を取り違えていた —— JS と `eval` の一致は
+`Agree` が受け持っていて、証明書の層が言うのは `eval` と利用者の `def` の一致だけ。`eval` の
+`.length` は `s.toList.length` で、Lean の `String.length` と同じものを数える。本当にずれるのは
+`String.trim`（JS は NBSP・BOM・行区切りも取る）と `String.toUpper`（`ß` → `SS` で長さが変わる）で、
+そこだけ `Str.trim` / `Str.upper` が subset の側を名指しする。
+
+**総関数で書けないところが prelude の残り半分。** 配列の添字・スライス・`substring` は範囲外で trap
+するので、Lean 側は総関数にせざるを得ない。`Arr.get` は範囲外で `default` を返すが、**証明書が
+片側なので、その場合について何も主張しない** —— 溢れた `Int` と同じ形で、片側性がそのまま総関数を
+許している。
+
+**型が同じ演算子は、適用された型で lemma を選ぶ。** `+` は `Int` と `BigInt` で別の `Value` に降り、
+`<` は `Int` / `String` / `BigInt` で別の順序に降りる。walk は `HAdd.hAdd` の第 1 引数を `whnf` して
+lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を見ないので `(5 : BigInt)` も拾ってしまう。
+リテラルの枝は `inferType` を見てから `.int53` か `.bigint` かを決める。
+
+**`Dict` の entry check はキーの一意性を含む。** `Value.hasTy` の `.dict` は `keysDistinct` を見るので、
+`Enc (Dict α)` の `accepts` は「キーが重複しない」かつ「値がそれぞれ受け付けられる」。キーは符号化を
+素通りする（`keys_encEntry`）ので、この条件は利用者の辞書についてそのまま述べられる。
 
 ## Step 5. 移行
+
+表層構文を退役させるには、`Example.lean` が今書けていることが全部書けなければならない。walk が
+まだ読まない形が残っている —— **これが Step 5 の最初の仕事**で、Step 1〜4 のどの節にも入っていなかった。
+
+| 読めない形 | 何が要る |
+| --- | --- |
+| `==` / `!=` | `toValue` が構造的等価を保つこと（型ごとの補題か、`Enc` の法則を 1 本増やす） |
+| `&&` / `\|\|` | 短絡するので `evalExpr_and` / `evalExpr_or` は `bin` を通らない。専用の補題 2 本 |
+| `min` / `max` | Lean の `min` / `max` と `applyMinMax` を繋ぐ補題 |
+| `UInt32` の算術 | `Enc UInt32` はあるが補題が無い。ラップする算術なので `Int` の補題は使えない |
+| 構成子と射影 | 利用者の型を **作る**側。`deriving Enc` は読む側（`denotes_matchE`）しか出していない |
+| `none` / `some` / `ok` / `error` | `Option` / `Except` の構成子。型注釈が形に乗るので `encTy` が要る |
+| 関数を取る引数 | `.fn` に `Enc` instance は立たない。reifier が `@f` を宣言名に落とす |
+| リテラル・`_` の腕、入れ子 `match` | Step 2 で残した既知の穴 |
+
+そのうえで:
 
 - `Example.lean` を新しい形に書き直す（定理 4 本と、その証明書）
 - `templates/verified-package/` と `SYNTAX.md` を「受け付ける Lean」の説明に書き換える
@@ -289,7 +332,7 @@ Step 2（match）                    済 —— `T.denotes_matchE` を `deriving
   ↓
 Step 3（走査）                     済 —— `denotes_mapE` ほか
   ↓
-Step 4（文字列・辞書・prelude）
+Step 4（文字列・辞書・prelude）    済 —— `Lean2Js/Prelude.lean`
   ↓
 Step 5（移行・README の文言）
 ```

@@ -14,10 +14,10 @@ only of the values `accepts` admits, and `accepts` is what an author sees as a h
 theorem. A type whose encoding cannot reach outside its subset type carries `accepts _ _ := True` and the
 hypothesis disappears.
 
-`Value.bigint` and `Value.dict` have no instance here: both need a Lean type that is not already spoken
-for (`Int` encodes to `Int53`, and `List (String × α)` would be an array), which is the prelude's job.
-`Value.fn` gets none at all — it names a declaration, and no Lean function value knows which declaration
-it is.
+`Value.bigint` and `Value.dict` are instanced in `Lean2Js/Prelude.lean` rather than here: both need a
+Lean type that is not already spoken for, since `Int` encodes to `Int53` and `List (String × α)` would be
+an array. `Value.fn` gets none at all — it names a declaration, and no Lean function value knows which
+declaration it is.
 -/
 
 namespace Lean2Js
