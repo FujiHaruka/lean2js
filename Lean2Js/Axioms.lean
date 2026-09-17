@@ -191,10 +191,22 @@ than a person wrote: nothing ships on them yet, but the plan they decide does.
 #guard_msgs in
 #print axioms Lean2Js.Denote.lineTotal_ships
 
-/-- info: 'Lean2Js.Denote.add_reified_denotes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Lean2Js.Denote.add_certificate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Lean2Js.Denote.add_reified_denotes
+#print axioms Lean2Js.Denote.add_certificate
 
-/-- info: 'Lean2Js.Denote.netFee_reified_denotes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Lean2Js.Denote.netFee_certificate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Lean2Js.Denote.netFee_reified_denotes
+#print axioms Lean2Js.Denote.netFee_certificate
+
+/--
+info: 'Lean2Js.Denote.clampQuantity_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Lean2Js.Denote.clampQuantity_certificate
+
+/--
+info: 'Lean2Js.Denote.lineTotal_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Lean2Js.Denote.lineTotal_certificate
