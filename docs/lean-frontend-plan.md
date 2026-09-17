@@ -138,7 +138,7 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 **証明側に matcher は出てこない。** 証明書は利用者の型を構成子ごとに `cases` で割って書くので、
 補助 matcher に触らずに済む。Step 2 の難所は reifier の側だけ。
 
-## Step 1. 符号化層と、スカラの断片
+## Step 1. 符号化層と、スカラの断片 —— 済
 
 核は `Lean2Js/Reify.lean` に spike として入っている —— `Denotes`、形ごとの補題（リテラル・変数・
 `+` / `-` / `*`）、AST と証明を同じ walk で出す reifier、その出力。`reify_decl% add` が作る `Decl` は
@@ -249,7 +249,7 @@ JS 側は UTF-16 単位なので、補題が偽になる。prelude の `Str` に
 ```
 Step 0（縦に 1 本）                済 —— `Lean2Js/Denote.lean`
   ↓
-Step 1（符号化 + スカラ）          核は spike 済 —— `Lean2Js/Reify.lean`
+Step 1（符号化 + スカラ）          済 —— `Lean2Js/Enc.lean` / `EncDeriving.lean` / `Reify.lean`
   ↓
 Step 2（match） → Step 3（走査）   どちらも Step 1 が決めた形に乗る
   ↓
