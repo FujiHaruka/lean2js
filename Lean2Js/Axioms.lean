@@ -19,11 +19,13 @@ plugged with `sorry` through with a warning. Pinning the axiom set makes the bui
 
 The roundtrip is pinned here too, ahead of the manifest carrying it: it is the only thing standing
 between the trees the proofs are about and the text that ships. So is the small-step machine's agreement
-with `eval`. So are the claims `Lean2Js.Denote` reaches, including the ones a reifier assembled rather
-than a person wrote: nothing ships on them yet, but the plan they decide does.
+with `eval`. So is the descent `Lean2Js.Denote` makes from a theorem about an author's function to a claim about the
+generated module. The certificates the walk assembles are public theorems of `Lean2Js.Example`, so the
+sweep at the end of this file is what pins them: there is one per shipped declaration and naming them
+one by one would drift the moment a declaration is added.
 -/
 
-/-- info: 'Lean2Js.Example.add_comm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Lean2Js.Example.add_comm' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.add_comm
 
@@ -91,11 +93,11 @@ than a person wrote: nothing ships on them yet, but the plan they decide does.
 #guard_msgs in
 #print axioms Lean2Js.Example.memberPrice_calls_agree
 
-/-- info: 'Lean2Js.Example.program_progOk' depends on axioms: [propext] -/
+/-- info: 'Lean2Js.Example.program_progOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.program_progOk
 
-/-- info: 'Lean2Js.Example.program_cost_fits' depends on axioms: [propext] -/
+/-- info: 'Lean2Js.Example.program_cost_fits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.program_cost_fits
 
@@ -139,7 +141,7 @@ than a person wrote: nothing ships on them yet, but the plan they decide does.
 #guard_msgs in
 #print axioms Lean2Js.HelperSem.helper_agrees
 
-/-- info: 'Lean2Js.Example.entry_check_fits_dts' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Lean2Js.Example.entry_check_fits_dts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.entry_check_fits_dts
 
@@ -191,46 +193,21 @@ than a person wrote: nothing ships on them yet, but the plan they decide does.
 #guard_msgs in
 #print axioms Lean2Js.Denote.lineTotal_ships
 
-/-- info: 'Lean2Js.Denote.add_certificate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Lean2Js.Denote.add_certificate
+/-! Every public theorem of `Lean2Js.Example` ships as a claim, and the certificates are among them. The
+sweep reads the same axioms `lean2js` reads before it writes, so a proof plugged with `sorry` fails the
+build rather than only the emit. -/
 
-/-- info: 'Lean2Js.Denote.netFee_certificate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Lean2Js.Denote.netFee_certificate
-
-/--
-info: 'Lean2Js.Denote.clampQuantity_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs in
-#print axioms Lean2Js.Denote.clampQuantity_certificate
-
-/--
-info: 'Lean2Js.Denote.lineTotal_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs in
-#print axioms Lean2Js.Denote.lineTotal_certificate
-
-/--
-info: 'Lean2Js.Denote.roleRank_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs in
-#print axioms Lean2Js.Denote.roleRank_certificate
-
-/--
-info: 'Lean2Js.Denote.saleAmount_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs in
-#print axioms Lean2Js.Denote.saleAmount_certificate
-
-/--
-info: 'Lean2Js.Denote.lineTotals_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs in
-#print axioms Lean2Js.Denote.lineTotals_certificate
-
-/--
-info: 'Lean2Js.Denote.anyOverLimit_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs in
-#print axioms Lean2Js.Denote.anyOverLimit_certificate
+open Lean in
+run_meta do
+  let allowed : List Name := [``propext, ``Classical.choice, ``Quot.sound]
+  let mut checked := 0
+  for (n, info) in (← getEnv).constants.toList do
+    unless n.getPrefix == `Lean2Js.Example && !n.isInternalDetail do continue
+    unless info matches .thmInfo _ do continue
+    let axioms ← collectAxioms n
+    let unproved := axioms.filter (!allowed.contains ·)
+    unless unproved.isEmpty do
+      throwError "{n} rests on {unproved.toList}"
+    checked := checked + 1
+  if checked < 70 then
+    throwError "the sweep found only {checked} public theorems in Lean2Js.Example"

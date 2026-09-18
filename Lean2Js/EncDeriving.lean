@@ -145,6 +145,7 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
   let roundTripId := mkIdent (`_root_ ++ t ++ `ofValue_toValue)
   let hasTyId := mkIdent (`_root_ ++ t ++ `toValue_hasTy)
   let bridgeId := mkIdent (`_root_ ++ t ++ `toValue_eq)
+  let tyId := mkIdent (`_root_ ++ t ++ `ty_eq)
   let p := mkIdent `p
   let cmds ← liftTermElabM do
     let typeId ← if paramIds.isEmpty then `($(mkIdent t)) else `($(mkIdent t) $paramIds*)
@@ -190,7 +191,9 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
             accepts := $acceptsId
             toValue_hasTy := $hasTyId),
       ← `(command| @[simp] theorem $bridgeId $carried* :
-            (Lean2Js.Enc.toValue : $typeId → Lean2Js.Value) = $toValueId := rfl)
+            (Lean2Js.Enc.toValue : $typeId → Lean2Js.Value) = $toValueId := rfl),
+      ← `(command| @[simp] theorem $tyId $carried* :
+            (Lean2Js.Enc.ty (α := $typeId)) = $tyStx := rfl)
     ]
   cmds.forM elabCommand
   return true

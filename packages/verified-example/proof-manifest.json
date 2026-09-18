@@ -24,152 +24,12 @@
       "signature": "(unitPrice : Int53, quantity : Int53) → Int53"
     },
     {
-      "name": "discounted",
-      "signature": "(amount : Int53, percent : Int53) → Int53"
-    },
-    {
-      "name": "divide",
-      "signature": "(a : Int53, b : Int53) → Int53"
-    },
-    {
-      "name": "remainder",
-      "signature": "(a : Int53, b : Int53) → Int53"
-    },
-    {
-      "name": "negate",
-      "signature": "(a : Int53) → Int53"
-    },
-    {
-      "name": "priceGap",
-      "signature": "(a : Int53, b : Int53) → Int53"
-    },
-    {
-      "name": "cappedCharge",
-      "signature": "(amount : Int53, budget : Int53) → Int53"
-    },
-    {
-      "name": "atLeast",
-      "signature": "(amount : Int53, floor : Int53) → Int53"
-    },
-    {
-      "name": "noDiscount",
-      "signature": "(amount : Int53) → Int53"
-    },
-    {
-      "name": "tenPercentOff",
-      "signature": "(amount : Int53) → Int53"
-    },
-    {
-      "name": "memberPrice",
-      "signature": "(amount : Int53) → Int53"
-    },
-    {
-      "name": "guestPrice",
-      "signature": "(amount : Int53) → Int53"
-    },
-    {
-      "name": "safeQuotientIsPositive",
-      "signature": "(a : Int53, b : Int53) → Bool"
-    },
-    {
-      "name": "canCheckout",
-      "signature": "(signedIn : Bool, cartTotal : Int53, stock : Int53) → Bool"
-    },
-    {
-      "name": "mixChannels",
-      "signature": "(a : UInt32, b : UInt32) → UInt32"
-    },
-    {
-      "name": "bucketOf",
-      "signature": "(key : UInt32, buckets : UInt32) → UInt32"
-    },
-    {
-      "name": "scaleFee",
-      "signature": "(fee : BigInt, factor : BigInt) → BigInt"
-    },
-    {
-      "name": "bigQuotient",
-      "signature": "(a : BigInt, b : BigInt) → BigInt"
-    },
-    {
-      "name": "slugOf",
-      "signature": "(prefix : String, name : String) → String"
-    },
-    {
-      "name": "sortsBefore",
-      "signature": "(a : String, b : String) → Bool"
-    },
-    {
-      "name": "sameLabel",
-      "signature": "(a : String, b : String) → Bool"
-    },
-    {
-      "name": "rebindTwice",
-      "signature": "(amount : Int53) → Int53"
-    },
-    {
       "name": "roleRank",
       "signature": "(role : Role) → Int53"
     },
     {
-      "name": "addMoney",
-      "signature": "(a : Money, b : Money) → Result Money String"
-    },
-    {
-      "name": "sameMoney",
-      "signature": "(a : Money, b : Money) → Bool"
-    },
-    {
-      "name": "ship",
-      "signature": "(state : OrderState, trackingId : String) → Result OrderState String"
-    },
-    {
-      "name": "trackingOf",
-      "signature": "(state : OrderState) → Option String"
-    },
-    {
-      "name": "canRefund",
-      "signature": "(role : Role, state : OrderState) → Bool"
-    },
-    {
-      "name": "total",
-      "signature": "(xs : Array Int53) → Int53"
-    },
-    {
-      "name": "headOr",
-      "signature": "(xs : Array Int53, fallback : Int53) → Int53"
-    },
-    {
-      "name": "firstTracking",
-      "signature": "(states : Array OrderState) → Option String"
-    },
-    {
-      "name": "pageOf",
-      "signature": "(xs : Array Int53, lo : Int53, hi : Int53) → Array Int53"
-    },
-    {
-      "name": "mostRecentFirst",
-      "signature": "(events : Array String) → Array String"
-    },
-    {
-      "name": "combinedCart",
-      "signature": "(saved : Array Int53, added : Array Int53) → Array Int53"
-    },
-    {
       "name": "lineTotals",
       "signature": "(unitPrice : Int53, quantities : Array Int53) → Array Int53"
-    },
-    {
-      "name": "currenciesOf",
-      "signature": "(items : Array Money) → Array String"
-    },
-    {
-      "name": "refundableOnly",
-      "signature": "(role : Role, states : Array OrderState) → Array OrderState"
-    },
-    {
-      "name": "cartTotal",
-      "signature": "(items : Array Money) → Int53"
     },
     {
       "name": "anyOverLimit",
@@ -188,36 +48,32 @@
       "signature": "(amounts : Array Int53) → Bool"
     },
     {
-      "name": "quantityLabel",
-      "signature": "(quantity : Int53) → String"
+      "name": "pageOf",
+      "signature": "(xs : Array Int53, lo : Int53, hi : Int53) → Array Int53"
     },
     {
-      "name": "renewalLabel",
-      "signature": "(autoRenew : Bool) → String"
+      "name": "mostRecentFirst",
+      "signature": "(events : Array String) → Array String"
     },
     {
-      "name": "chargeable",
-      "signature": "(amount : Money) → Bool"
+      "name": "combinedCart",
+      "signature": "(saved : Array Int53, added : Array Int53) → Array Int53"
     },
     {
-      "name": "settleMessage",
-      "signature": "(outcome : Result OrderState String) → String"
+      "name": "headOr",
+      "signature": "(xs : Array Int53, fallback : Int53) → Int53"
     },
     {
-      "name": "remainingItems",
-      "signature": "(page : Paginated Money) → Int53"
+      "name": "slugOf",
+      "signature": "(prefix : String, name : String) → String"
     },
     {
-      "name": "firstPage",
-      "signature": "(amounts : Array Int53) → Paginated Int53"
+      "name": "sortsBefore",
+      "signature": "(a : String, b : String) → Bool"
     },
     {
-      "name": "validateQuantity",
-      "signature": "(quantity : Int53) → Validated String Int53"
-    },
-    {
-      "name": "validationMessage",
-      "signature": "(outcome : Validated String Int53) → String"
+      "name": "mentionsTerm",
+      "signature": "(text : String, term : String) → Bool"
     },
     {
       "name": "storedCoupon",
@@ -226,10 +82,6 @@
     {
       "name": "couponApplies",
       "signature": "(code : String, campaign : String) → Bool"
-    },
-    {
-      "name": "mentionsTerm",
-      "signature": "(text : String, term : String) → Bool"
     },
     {
       "name": "fieldCount",
@@ -246,10 +98,6 @@
     {
       "name": "limitsFor",
       "signature": "(role : Role) → Dict Int53"
-    },
-    {
-      "name": "dailyLimit",
-      "signature": "(role : Role) → Int53"
     },
     {
       "name": "priceOf",
@@ -278,18 +126,170 @@
     {
       "name": "catalogueSize",
       "signature": "(prices : Dict Int53) → Int53"
+    },
+    {
+      "name": "divide",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "remainder",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "negate",
+      "signature": "(a : Int53) → Int53"
+    },
+    {
+      "name": "priceGap",
+      "signature": "(a : Int53, b : Int53) → Int53"
+    },
+    {
+      "name": "discounted",
+      "signature": "(amount : Int53, percent : Int53) → Int53"
+    },
+    {
+      "name": "tenPercentOff",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "rebindTwice",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "noDiscount",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "memberPrice",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "guestPrice",
+      "signature": "(amount : Int53) → Int53"
+    },
+    {
+      "name": "mixChannels",
+      "signature": "(a : UInt32, b : UInt32) → UInt32"
+    },
+    {
+      "name": "bucketOf",
+      "signature": "(key : UInt32, buckets : UInt32) → UInt32"
+    },
+    {
+      "name": "scaleFee",
+      "signature": "(fee : BigInt, factor : BigInt) → BigInt"
+    },
+    {
+      "name": "bigQuotient",
+      "signature": "(a : BigInt, b : BigInt) → BigInt"
+    },
+    {
+      "name": "sameLabel",
+      "signature": "(a : String, b : String) → Bool"
+    },
+    {
+      "name": "safeQuotientIsPositive",
+      "signature": "(a : Int53, b : Int53) → Bool"
+    },
+    {
+      "name": "canCheckout",
+      "signature": "(signedIn : Bool, cartTotal : Int53, stock : Int53) → Bool"
+    },
+    {
+      "name": "cappedCharge",
+      "signature": "(amount : Int53, budget : Int53) → Int53"
+    },
+    {
+      "name": "atLeast",
+      "signature": "(amount : Int53, floor : Int53) → Int53"
+    },
+    {
+      "name": "addMoney",
+      "signature": "(a : Money, b : Money) → Result Money String"
+    },
+    {
+      "name": "sameMoney",
+      "signature": "(a : Money, b : Money) → Bool"
+    },
+    {
+      "name": "currenciesOf",
+      "signature": "(items : Array Money) → Array String"
+    },
+    {
+      "name": "cartTotal",
+      "signature": "(items : Array Money) → Int53"
+    },
+    {
+      "name": "total",
+      "signature": "(xs : Array Int53) → Int53"
+    },
+    {
+      "name": "trackingOf",
+      "signature": "(state : OrderState) → Option String"
+    },
+    {
+      "name": "canRefund",
+      "signature": "(role : Role, state : OrderState) → Bool"
+    },
+    {
+      "name": "firstTracking",
+      "signature": "(states : Array OrderState) → Option String"
+    },
+    {
+      "name": "refundableOnly",
+      "signature": "(role : Role, states : Array OrderState) → Array OrderState"
+    },
+    {
+      "name": "ship",
+      "signature": "(state : OrderState, trackingId : String) → Result OrderState String"
+    },
+    {
+      "name": "quantityLabel",
+      "signature": "(quantity : Int53) → String"
+    },
+    {
+      "name": "renewalLabel",
+      "signature": "(autoRenew : Bool) → String"
+    },
+    {
+      "name": "chargeable",
+      "signature": "(amount : Money) → Bool"
+    },
+    {
+      "name": "settleMessage",
+      "signature": "(outcome : Result OrderState String) → String"
+    },
+    {
+      "name": "dailyLimit",
+      "signature": "(role : Role) → Int53"
+    },
+    {
+      "name": "remainingItems",
+      "signature": "(page : Paginated Money) → Int53"
+    },
+    {
+      "name": "firstPage",
+      "signature": "(amounts : Array Int53) → Paginated Int53"
+    },
+    {
+      "name": "validateQuantity",
+      "signature": "(quantity : Int53) → Validated String Int53"
+    },
+    {
+      "name": "validationMessage",
+      "signature": "(outcome : Validated String Int53) → String"
     }
   ],
   "theorems": [
     {
       "name": "add_comm",
-      "statement": "add_comm (a b : Int) :\n  evalCall program \"add\" [Value.int53 a, Value.int53 b] = evalCall program \"add\" [Value.int53 b, Value.int53 a]",
-      "doc": "Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same\nsum, or fail the same way."
+      "statement": "add_comm (a b : Int) : add a b = add b a",
+      "doc": "Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same\nsum."
     },
     {
       "name": "draft_never_ships",
       "statement": "draft_never_ships (trackingId : String) :\n  evalCall program \"ship\" [Value.obj \"draft\" [], Value.str trackingId] =\n    Except.ok (Value.obj \"error\" [(\"error\", Value.str \"a draft order cannot ship\")])",
-      "doc": "A draft order cannot ship, whatever tracking id comes with it."
+      "doc": "A draft order cannot shipDecl, whatever tracking id comes with it."
     },
     {
       "name": "clamped_quantity_in_range",
@@ -299,12 +299,12 @@
     {
       "name": "same_currency_adds",
       "statement": "same_currency_adds (x y : Int) (currency : String) (hx : int53Min ≤ x ∧ x ≤ int53Max) (hy : int53Min ≤ y ∧ y ≤ int53Max)\n  (hsum : int53Min ≤ x + y ∧ x + y ≤ int53Max) :\n  evalCall program \"addMoney\" [money x currency, money y currency] =\n    Except.ok (Value.obj \"ok\" [(\"value\", money (x + y) currency)])",
-      "doc": "Two amounts in the same currency add up, as long as their sum stays within `Int53`."
+      "doc": "Two amounts in the same currency addDecl up, as long as their sum stays within `Int53`."
     },
     {
       "name": "add_calls_agree",
       "statement": "add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"add\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" (List.map encodeValue args) = Except.ok (encodeValue v)",
-      "doc": "Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body\nis a single binary operation."
+      "doc": "Whatever arguments the entry check accepts, the generated `addDecl` returns what `eval` returns. Its body\nis a single binary operation."
     },
     {
       "name": "discounted_calls_agree",
@@ -319,7 +319,7 @@
     {
       "name": "memberPrice_calls_agree",
       "statement": "memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"memberPrice\" args = Except.ok v) :\n  ∃ g,\n    ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"memberPrice\" (List.map encodeValue args) = Except.ok (encodeValue v)",
-      "doc": "And for a body that calls another declaration, handing it a third by name. The call is where the\nproof leaves the expression it is looking at: `priced` applies the function it was given, so the claim\nabout `memberPrice` rests on the same claim about `tenPercentOff`."
+      "doc": "And for a body that calls another declaration, handing it a third by name. The call is where the\nproof leaves the expression it is looking at: `priced` applies the function it was given, so the claim\nabout `memberPriceDecl` rests on the same claim about `tenPercentOff`."
     },
     {
       "name": "program_progOk",
@@ -333,8 +333,8 @@
     },
     {
       "name": "add_traps",
-      "statement": "add_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : add.params.length = args.length) (htyped : ParamsTyped program add.params args)\n  (he : evalCall program \"add\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" (List.map encodeValue args) = Except.error err.code",
-      "doc": "Whenever `eval` refuses to return a value for `add`, the generated function throws the code `eval`\nthrew. Its body can reach `int53Overflow`. Running out of fuel is not among the answers: the two checks\nabove rule it out for this program."
+      "statement": "add_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : addDecl.params.length = args.length) (htyped : ParamsTyped program addDecl.params args)\n  (he : evalCall program \"add\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" (List.map encodeValue args) = Except.error err.code",
+      "doc": "Whenever `eval` refuses to return a value for `addDecl`, the generated function throws the code `eval`\nthrew. Its body can reach `int53Overflow`. Running out of fuel is not among the answers: the two checks\nabove rule it out for this program."
     },
     {
       "name": "add_overflow_throws",
@@ -344,27 +344,27 @@
     {
       "name": "addMoney_calls_agree",
       "statement": "addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"addMoney\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" (List.map encodeValue args) = Except.ok (encodeValue v)",
-      "doc": "The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,\nand builds a `Result` around a constructor."
+      "doc": "The fragment reaches business logic, not just arithmetic: `addMoneyDecl` reads two fields, compares them,\nand builds a `Result` around a constructor."
     },
     {
       "name": "ship_calls_agree",
       "statement": "ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"ship\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"ship\" (List.map encodeValue args) = Except.ok (encodeValue v)",
-      "doc": "The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads\nthe fields that arm binds."
+      "doc": "The fragment reaches a `match`: `shipDecl` chooses an arm by the constructor of its scrutinee and reads\nthe fields that arm binds."
     },
     {
       "name": "cartTotal_calls_agree",
       "statement": "cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"cartTotal\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" (List.map encodeValue args) = Except.ok (encodeValue v)",
-      "doc": "And an array traversal: `cartTotal` folds a body over the elements, each under its own binding."
+      "doc": "And an array traversal: `cartTotalDecl` folds a body over the elements, each under its own binding."
     },
     {
       "name": "cartTotal_traps",
-      "statement": "cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : cartTotal.params.length = args.length) (htyped : ParamsTyped program cartTotal.params args)\n  (he : evalCall program \"cartTotal\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" (List.map encodeValue args) = Except.error err.code",
+      "statement": "cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : cartTotalDecl.params.length = args.length) (htyped : ParamsTyped program cartTotalDecl.params args)\n  (he : evalCall program \"cartTotal\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" (List.map encodeValue args) = Except.error err.code",
       "doc": "The trap side of a traversal: a fold whose running sum leaves `Int53` throws where `eval` does, at\nthe element that overflowed rather than at the end."
     },
     {
       "name": "add_refuses",
-      "statement": "add_refuses (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (hk : Js.dictKeysDistinctList jargs = true) (hno : ¬Decl.EvalAccepts program add jargs) :\n  Js.callFunction m \"add\" jargs = Except.error \"typeError\"",
-      "doc": "Whatever `add` is handed, if no reading of those JS values is a pair of `Int53`s, the generated\nfunction throws instead of computing."
+      "statement": "add_refuses (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (hk : Js.dictKeysDistinctList jargs = true) (hno : ¬Decl.EvalAccepts program addDecl jargs) :\n  Js.callFunction m \"add\" jargs = Except.error \"typeError\"",
+      "doc": "Whatever `addDecl` is handed, if no reading of those JS values is a pair of `Int53`s, the generated\nfunction throws instead of computing."
     },
     {
       "name": "add_refuses_string",
@@ -373,8 +373,8 @@
     },
     {
       "name": "addMoney_traps",
-      "statement": "addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : addMoney.params.length = args.length) (htyped : ParamsTyped program addMoney.params args)\n  (he : evalCall program \"addMoney\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" (List.map encodeValue args) = Except.error err.code",
-      "doc": "The same for `addMoney`: the only way its body throws is the `Int53` overflow of the sum, and the\ngenerated function throws that code."
+      "statement": "addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : addMoneyDecl.params.length = args.length) (htyped : ParamsTyped program addMoneyDecl.params args)\n  (he : evalCall program \"addMoney\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" (List.map encodeValue args) = Except.error err.code",
+      "doc": "The same for `addMoneyDecl`: the only way its body throws is the `Int53` overflow of the sum, and the\ngenerated function throws that code."
     },
     {
       "name": "file_reads_back",

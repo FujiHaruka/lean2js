@@ -66,7 +66,12 @@ private def statementOf (ns n : Name) : MetaM String := do
 
 /-- Every public theorem in the manifest's namespace is a claim, so each one's axioms are read here:
 `lake build` is no help, since a proof plugged with `sorry` is still a term and the build passes with a
-warning. -/
+warning.
+
+The certificates are the exception the manifest does not list one by one. There is exactly one per
+shipped declaration, saying it computes the `def` it was read from, so what a reader wants is that they
+are all there rather than seventy restatements of the same shape — and a declaration without one does not
+ship at all. -/
 private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
   let ns := inv.manifestConst.getPrefix
   let manifest ← evalConstCheck Manifest ``Manifest inv.manifestConst
@@ -86,6 +91,14 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
     unless program.types.any (·.name == t.name) do
       throwError "{n} is not in {programConst}, so it would not ship: program% gathers only what is \
         declared above it"
+  let mut certificates : Array Name := #[]
+  for (n, _) in members do
+    unless Core.Dsl.verifiedAttr.hasTag (← getEnv) n do continue
+    let cert := Core.Dsl.certificateNameFor n
+    unless ((← getEnv).find? cert) matches some (.thmInfo _) do
+      throwError "{n} is marked `@[verified]` but {cert} is not in scope, so nothing says the \
+        declaration the program carries computes it: `certificates%` writes it"
+    certificates := certificates.push cert
   let allowed := String.intercalate ", " (allowedAxioms.map toString)
   let theorems := members.filterMap fun (n, info) =>
     if info matches ConstantInfo.thmInfo _ then some n else none
@@ -98,7 +111,7 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
         every public theorem in {ns} ships as a claim, and a claim ships only when its proof reaches no \
         further than {allowed}"
     used := used ++ axioms
-  let claims : List Claim ← theorems.toList.mapM fun n => do
+  let claims : List Claim ← (theorems.filter (!certificates.contains ·)).toList.mapM fun n => do
     return { name := toString (n.replacePrefix ns .anonymous), statement := ← statementOf ns n,
              doc := (← findDocString? (← getEnv) n).map (·.trimAscii.copy) }
   let axioms := ((used.map toString).qsort (fun a b => decide (a < b))).toList.eraseDups

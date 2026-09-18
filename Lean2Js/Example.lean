@@ -1,398 +1,424 @@
 import Lean2Js.Decl
-import Lean2Js.Eval
 import Lean2Js.Dts
 import Lean2Js.HelperAgree
 import Lean2Js.Manifest
 import Lean2Js.Renderable
 import Lean2Js.StepAgree
-import Lean2Js.Syntax
+import Lean2Js.Verified
 
 /-!
-# Business logic written in the subset, and the theorems proved about it
+# Business logic written in Lean, and the theorems proved about it
 
-Business logic written in the subset, and the theorems proved about it.
+Ordinary Lean `def`s, each marked `@[verified]`, and the theorems proved about them. `declarations%`
+reads a declaration out of every marked `def`, `program%` gathers them, and `certificates%` writes the
+proof that each declaration denotes the `def` it was read from.
 
 The `program` placed here is what ships as `packages/verified-example`.
 -/
 
 namespace Lean2Js.Example
 
-open Core Core.Dsl
+open Core Core.Dsl Enc
 
-def Money : TypeDef := type% Money := Money(amount : Int53, currency : String)
-
-def Role : TypeDef := type% Role := guest | member | admin
-
-def OrderState : TypeDef := type%
-  OrderState :=
-      draft
-    | placed(orderId : Int53)
-    | shipped(orderId : Int53, trackingId : String)
-    | cancelled(reason : String)
-
-/-- One page of results together with how many there are in all. -/
-def Paginated : TypeDef := type%
-  Paginated<T> := Paginated(items : Array<T>, total : Int53)
-
-/-- What a check concluded: the value it accepted, or the reasons it refused. `E` is named by only one of
-the two constructors, so a `valid` term cannot be read off for it and every use carries both arguments. -/
-def Validated : TypeDef := type%
-  Validated<E, A> := valid(value : A) | invalid(errors : Array<E>)
-
-def add : Decl := decl% add(a : Int53, b : Int53) : Int53 := a + b
+@[verified]
+def add (a b : Int) : Int := a + b
 
 /-- Clamps a quantity to at least 1 and at most upper. -/
-def clampQuantity : Decl := decl%
-  clampQuantity(quantity : Int53, upper : Int53) : Int53 :=
-    if quantity < 1 then 1 else if quantity > upper then upper else quantity
+@[verified]
+def clampQuantity (quantity upper : Int) : Int :=
+  if quantity < 1 then 1 else if quantity > upper then upper else quantity
 
 /-- The amount of a line item. The quantity is clamped before multiplying, so a negative quantity never
 makes the amount negative. -/
-def lineTotal : Decl := decl%
-  lineTotal(unitPrice : Int53, quantity : Int53) : Int53 :=
-    unitPrice * clampQuantity(quantity, 999)
+@[verified]
+def lineTotal (unitPrice quantity : Int) : Int := unitPrice * clampQuantity quantity 999
 
-/-- The amount after a percent% discount. The remainder is truncated. -/
-def discounted : Decl := decl%
-  discounted(amount : Int53, percent : Int53) : Int53 :=
-    let rate : Int53 :=
-      100 - (if percent < 0 then 0 else if percent > 100 then 100 else percent);
-    amount * rate / 100
+inductive Role where
+  | guest
+  | member
+  | admin
+  deriving Enc
 
-/-- Truncating division. Division by zero traps on the JS side too. -/
-def divide : Decl := decl% divide(a : Int53, b : Int53) : Int53 := a / b
-
-def remainder : Decl := decl% remainder(a : Int53, b : Int53) : Int53 := a % b
-
-def negate : Decl := decl% negate(a : Int53) : Int53 := -a
-
-def priceGap : Decl := decl% priceGap(a : Int53, b : Int53) : Int53 := (a - b).abs()
-
-def cappedCharge : Decl := decl%
-  cappedCharge(amount : Int53, budget : Int53) : Int53 := amount.min(budget)
-
-def atLeast : Decl := decl%
-  atLeast(amount : Int53, floor : Int53) : Int53 := amount.max(floor)
-
-def noDiscount : Decl := decl% noDiscount(amount : Int53) : Int53 := amount
-
-def tenPercentOff : Decl := decl%
-  tenPercentOff(amount : Int53) : Int53 := amount - amount / 10
-
-/-- Charges an amount under a pricing rule the caller picks. Taking a function keeps it off the public
-API: there is no way to check at the boundary that one handed in from JS is pure. -/
-def priced : Decl := decl%
-  priced(rule : (Int53) => Int53, amount : Int53) : Int53 := rule(amount)
-
-def memberPrice : Decl := decl%
-  memberPrice(amount : Int53) : Int53 := priced(@tenPercentOff, amount)
-
-def guestPrice : Decl := decl%
-  guestPrice(amount : Int53) : Int53 := priced(@noDiscount, amount)
-
-/-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
-def safeQuotientIsPositive : Decl := decl%
-  safeQuotientIsPositive(a : Int53, b : Int53) : Bool := b != 0 && a / b > 0
-
-def canCheckout : Decl := decl%
-  canCheckout(signedIn : Bool, cartTotal : Int53, stock : Int53) : Bool :=
-    signedIn && cartTotal > 0 && stock >= 1
-
-def mixChannels : Decl := decl%
-  mixChannels(a : UInt32, b : UInt32) : UInt32 := a * b + (a - b)
-
-def bucketOf : Decl := decl%
-  bucketOf(key : UInt32, buckets : UInt32) : UInt32 := key % buckets
-
-def scaleFee : Decl := decl%
-  scaleFee(fee : BigInt, factor : BigInt) : BigInt := fee * factor - big(1)
-
-def bigQuotient : Decl := decl% bigQuotient(a : BigInt, b : BigInt) : BigInt := a / b
-
-def slugOf : Decl := decl%
-  slugOf(«prefix» : String, name : String) : String := «prefix» ++ "-" ++ name
-
-/-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
-def sortsBefore : Decl := decl% sortsBefore(a : String, b : String) : Bool := a < b
-
-def sameLabel : Decl := decl% sameLabel(a : String, b : String) : Bool := a == b
-
-/-- Binds the same name twice. ESM runs in strict mode, so emitting `const` twice would fail at import
-time. -/
-def rebindTwice : Decl := decl%
-  rebindTwice(amount : Int53) : Int53 :=
-    let amount : Int53 := amount + 1; let amount : Int53 := amount * 2; amount
-
-def roleRank : Decl := decl%
-  roleRank(role : Role) : Int53 :=
-    match role { guest() => 0 | member() => 1 | admin() => 2 }
-
-/-- Amounts in different currencies cannot be added. `===` is unusable on the JS side, so a structural
-equality helper is called. -/
-def addMoney : Decl := decl%
-  addMoney(a : Money, b : Money) : Result<Money, String> :=
-    if a.currency != b.currency then error<Money>("currency mismatch")
-    else ok<String>(Money::Money(a.amount + b.amount, a.currency))
-
-def sameMoney : Decl := decl% sameMoney(a : Money, b : Money) : Bool := a == b
-
-/-- The state transition to shipped. Rejects states that cannot transition and an empty tracking id. -/
-def ship : Decl := decl%
-  ship(state : OrderState, trackingId : String) : Result<OrderState, String> :=
-    match state {
-        draft() => error<OrderState>("a draft order cannot ship")
-      | placed(orderId) =>
-          if trackingId == "" then error<OrderState>("a tracking id is required")
-          else ok<String>(OrderState::shipped(orderId, trackingId))
-      | shipped(_, _) => error<OrderState>("the order has already shipped")
-      | cancelled(_) => error<OrderState>("a cancelled order cannot ship")
-    }
-
-def trackingOf : Decl := decl%
-  trackingOf(state : OrderState) : Option<String> :=
-    match state {
-        draft() => none<String>
-      | placed(_) => none<String>
-      | shipped(_, trackingId) => some(trackingId)
-      | cancelled(_) => none<String>
-    }
-
-def canRefund : Decl := decl%
-  canRefund(role : Role, state : OrderState) : Bool :=
-    match state {
-        draft() => false
-      | placed(_) => roleRank(role) >= 1
-      | shipped(_, _) => roleRank(role) >= 2
-      | cancelled(_) => false
-    }
-
-def total : Decl := decl%
-  total(xs : Array<Int53>) : Int53 := xs.reduce(0, fun (sum, x) => sum + x)
-
-/-- An out-of-range read traps rather than yielding `undefined`. -/
-def headOr : Decl := decl%
-  headOr(xs : Array<Int53>, fallback : Int53) : Int53 :=
-    if xs.length == 0 then fallback else xs[0]
-
-def firstTracking : Decl := decl%
-  firstTracking(states : Array<OrderState>) : Option<String> :=
-    if states.length == 0 then none<String> else trackingOf(states[0])
-
-/-- One window of a list. A window reaching past the end is refused rather than shortened. -/
-def pageOf : Decl := decl%
-  pageOf(xs : Array<Int53>, lo : Int53, hi : Int53) : Array<Int53> := xs.slice(lo, hi)
-
-def mostRecentFirst : Decl := decl%
-  mostRecentFirst(events : Array<String>) : Array<String> := events.reverse()
-
-def combinedCart : Decl := decl%
-  combinedCart(saved : Array<Int53>, added : Array<Int53>) : Array<Int53> := saved ++ added
+@[verified]
+def roleRank (role : Role) : Int :=
+  match role with
+  | .guest => 0
+  | .member => 1
+  | .admin => 2
 
 /-- The amount of every line of an order at one unit price. -/
-def lineTotals : Decl := decl%
-  lineTotals(unitPrice : Int53, quantities : Array<Int53>) : Array<Int53> :=
-    quantities.map(fun quantity => lineTotal(unitPrice, quantity))
+@[verified]
+def lineTotals (unitPrice : Int) (quantities : List Int) : List Int :=
+  quantities.map (fun quantity => lineTotal unitPrice quantity)
 
-def currenciesOf : Decl := decl%
-  currenciesOf(items : Array<Money>) : Array<String> :=
-    items.map(fun item => item.currency)
-
-/-- The orders this role may still refund. The predicate reads `role` from outside the lambda. -/
-def refundableOnly : Decl := decl%
-  refundableOnly(role : Role, states : Array<OrderState>) : Array<OrderState> :=
-    states.filter(fun state => canRefund(role, state))
-
-/-- Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix
-them. -/
-def cartTotal : Decl := decl%
-  cartTotal(items : Array<Money>) : Int53 :=
-    items.reduce(0, fun (subtotal, item) => subtotal + item.amount)
-
-def anyOverLimit : Decl := decl%
-  anyOverLimit(amounts : Array<Int53>, limit : Int53) : Bool :=
-    amounts.reduce(false, fun (seen, amount) => if seen then true else amount > limit)
+@[verified]
+def anyOverLimit (amounts : List Int) (limit : Int) : Bool :=
+  amounts.foldl (fun seen amount => if seen then true else amount > limit) false
 
 /-- The first line that breaks the limit. Lines after it are never looked at. -/
-def firstOverLimit : Decl := decl%
-  firstOverLimit(amounts : Array<Int53>, limit : Int53) : Option<Int53> :=
-    amounts.find(fun amount => amount > limit)
+@[verified]
+def firstOverLimit (amounts : List Int) (limit : Int) : Option Int :=
+  amounts.find? (fun amount => amount > limit)
 
-def everyLineWithinLimit : Decl := decl%
-  everyLineWithinLimit(amounts : Array<Int53>, limit : Int53) : Bool :=
-    amounts.all(fun amount => amount <= limit)
+@[verified]
+def everyLineWithinLimit (amounts : List Int) (limit : Int) : Bool :=
+  amounts.all (fun amount => amount ≤ limit)
 
-def someLineIsFree : Decl := decl%
-  someLineIsFree(amounts : Array<Int53>) : Bool := amounts.any(fun amount => amount == 0)
+@[verified]
+def someLineIsFree (amounts : List Int) : Bool := amounts.any (fun amount => amount == 0)
 
-/-- The label shown next to a line item. -/
-def quantityLabel : Decl := decl%
-  quantityLabel(quantity : Int53) : String :=
-    match quantity { 0 => "out of stock" | 1 => "last one" | _ => "in stock" }
+/-- One window of a list. A window reaching past the end is refused rather than shortened. -/
+@[verified]
+def pageOf (xs : List Int) (lo hi : Int) : List Int := Arr.slice xs lo hi
 
-/-- Whether a subscription carries on. Both cases are named, so no fallback is needed. -/
-def renewalLabel : Decl := decl%
-  renewalLabel(autoRenew : Bool) : String :=
-    match autoRenew { true => "renews" | false => "ends" }
+@[verified]
+def mostRecentFirst (events : List String) : List String := events.reverse
 
-/-- An amount of zero is free whatever the currency, and an amount carrying no currency cannot be
-charged at all. -/
-def chargeable : Decl := decl%
-  chargeable(amount : Money) : Bool :=
-    match amount {
-        Money(0, _) => false
-      | Money(_, "") => false
-      | Money(value, _) => value > 0
-    }
+@[verified]
+def combinedCart (saved added : List Int) : List Int := saved ++ added
 
-/-- The shipping line shown once a transition has been attempted. A draft or cancelled order has nothing
-to show, so one arm reaches past `ok` and leaves the state itself open. -/
-def settleMessage : Decl := decl%
-  settleMessage(outcome : Result<OrderState, String>) : String :=
-    match outcome {
-        ok(shipped(_, trackingId)) => trackingId
-      | ok(placed(_)) => "awaiting shipment"
-      | ok(_) => "no update"
-      | error(message) => message
-    }
+/-- An out-of-range read traps rather than yielding `undefined`. -/
+@[verified]
+def headOr (xs : List Int) (fallback : Int) : Int :=
+  if Arr.length xs < 1 then fallback else Arr.get xs 0
 
-/-- How many results lie beyond the page in hand. -/
-def remainingItems : Decl := decl%
-  remainingItems(page : Paginated<Money>) : Int53 := page.total - page.items.length
+@[verified]
+def slugOf («prefix» name : String) : String := «prefix» ++ "-" ++ name
 
-/-- The whole list served as a single page. -/
-def firstPage : Decl := decl%
-  firstPage(amounts : Array<Int53>) : Paginated<Int53> :=
-    Paginated<Int53>::Paginated(amounts, amounts.length)
+/-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
+@[verified]
+def sortsBefore (a b : String) : Bool := a < b
 
-/-- Accepts an order quantity or says why it was refused. -/
-def validateQuantity : Decl := decl%
-  validateQuantity(quantity : Int53) : Validated<String, Int53> :=
-    if quantity < 1 then
-      Validated<String, Int53>::invalid(Array<String>{"a quantity must be at least 1"})
-    else if quantity > 999 then
-      Validated<String, Int53>::invalid(Array<String>{"a quantity may not exceed 999"})
-    else Validated<String, Int53>::valid(quantity)
-
-/-- The line shown once a quantity has been checked. -/
-def validationMessage : Decl := decl%
-  validationMessage(outcome : Validated<String, Int53>) : String :=
-    match outcome {
-        valid(value) => quantityLabel(value)
-      | invalid(errors) => if errors.length == 0 then "refused" else errors[0]
-    }
+/-- Whether a free-text note mentions a search term, ignoring case. -/
+@[verified]
+def mentionsTerm (text term : String) : Bool := Str.includes (Str.lower text) (Str.lower term)
 
 /-- A coupon code as it is stored: the campaign prefix and what the customer typed, upper-cased and with
 the surrounding whitespace gone. -/
-def storedCoupon : Decl := decl%
-  storedCoupon(campaign : String, entered : String) : String :=
-    (campaign ++ entered).trim().toUpper()
+@[verified]
+def storedCoupon (campaign entered : String) : String := Str.upper (Str.trim (campaign ++ entered))
 
 /-- Whether a coupon belongs to a campaign, comparing the way the codes are stored. -/
-def couponApplies : Decl := decl%
-  couponApplies(code : String, campaign : String) : Bool :=
-    code.trim().toLower().startsWith(campaign.trim().toLower())
-
-/-- Whether a free-text note mentions a search term, ignoring case. -/
-def mentionsTerm : Decl := decl%
-  mentionsTerm(text : String, term : String) : Bool :=
-    text.toLower().includes(term.toLower())
+@[verified]
+def couponApplies (code campaign : String) : Bool :=
+  Str.startsWith (Str.lower (Str.trim code)) (Str.lower (Str.trim campaign))
 
 /-- How many columns a line of an uploaded file carries. An empty separator leaves the line whole rather
 than cutting it into characters. -/
-def fieldCount : Decl := decl%
-  fieldCount(row : String, separator : String) : Int53 := row.split(separator).length
+@[verified]
+def fieldCount (row separator : String) : Int := Arr.length (Str.split row separator)
 
 /-- A label cut to fit, counted in code points so a surrogate pair is never split in half. A negative
 limit has no string to return and fails the way an out-of-range index does. -/
-def truncateLabel : Decl := decl%
-  truncateLabel(label : String, limit : Int53) : String :=
-    if label.length <= limit then label else label.substring(0, limit) ++ "..."
+@[verified]
+def truncateLabel (label : String) (limit : Int) : String :=
+  if Str.length label ≤ limit then label else Str.substring label 0 limit ++ "..."
 
 /-- Whether an uploaded file is a spreadsheet, compared the way the names are stored. -/
-def isSpreadsheet : Decl := decl%
-  isSpreadsheet(fileName : String) : Bool := fileName.trim().toLower().endsWith(".csv")
+@[verified]
+def isSpreadsheet (fileName : String) : Bool :=
+  Str.endsWith (Str.lower (Str.trim fileName)) ".csv"
 
 /-- What a role may do in a day and in a month. -/
-def limitsFor : Decl := decl%
-  limitsFor(role : Role) : Dict<Int53> :=
-    match role {
-        guest() => Dict<Int53>{"daily": 10, "monthly": 100}
-      | member() => Dict<Int53>{"daily": 100, "monthly": 3000}
-      | admin() => Dict<Int53>{"daily": 1000, "monthly": 30000}
-    }
+@[verified]
+def limitsFor (role : Role) : Dict Int :=
+  match role with
+  | .guest => Dict.ofList [("daily", 10), ("monthly", 100)]
+  | .member => Dict.ofList [("daily", 100), ("monthly", 3000)]
+  | .admin => Dict.ofList [("daily", 1000), ("monthly", 30000)]
 
-/-- A role with no daily limit recorded may do nothing. -/
-def dailyLimit : Decl := decl%
-  dailyLimit(role : Role) : Int53 :=
-    match limitsFor(role).get("daily") { some(value) => value | none() => 0 }
+@[verified]
+def priceOf (prices : Dict Int) (sku : String) : Option Int := prices.get sku
 
-def priceOf : Decl := decl%
-  priceOf(prices : Dict<Int53>, sku : String) : Option<Int53> := prices.get(sku)
-
-def isListed : Decl := decl%
-  isListed(prices : Dict<Int53>, sku : String) : Bool := prices.has(sku)
+@[verified]
+def isListed (prices : Dict Int) (sku : String) : Bool := prices.has sku
 
 /-- The price book after one price change. A sku already in the book keeps its place. -/
-def repriced : Decl := decl%
-  repriced(prices : Dict<Int53>, sku : String, amount : Int53) : Dict<Int53> :=
-    prices.set(sku, amount)
+@[verified]
+def repriced (prices : Dict Int) (sku : String) (amount : Int) : Dict Int := prices.set sku amount
 
-def listedSkus : Decl := decl%
-  listedSkus(prices : Dict<Int53>) : Array<String> := prices.keys()
+@[verified]
+def listedSkus (prices : Dict Int) : List String := prices.keys
 
-def listedPrices : Decl := decl%
-  listedPrices(prices : Dict<Int53>) : Array<Int53> := prices.values()
+@[verified]
+def listedPrices (prices : Dict Int) : List Int := prices.values
 
 /-- The price book after a sku is withdrawn. A sku that was never listed leaves the book unchanged. -/
-def withdrawn : Decl := decl%
-  withdrawn(prices : Dict<Int53>, sku : String) : Dict<Int53> := prices.delete(sku)
+@[verified]
+def withdrawn (prices : Dict Int) (sku : String) : Dict Int := prices.erase sku
 
-def catalogueSize : Decl := decl%
-  catalogueSize(prices : Dict<Int53>) : Int53 := prices.length
+@[verified]
+def catalogueSize (prices : Dict Int) : Int := prices.size
+
+/-- Truncating division. Division by zero traps on the JS side too. -/
+@[verified]
+def divide (a b : Int) : Int := Int53.div a b
+
+@[verified]
+def remainder (a b : Int) : Int := Int53.mod a b
+
+@[verified]
+def negate (a : Int) : Int := -a
+
+@[verified]
+def priceGap (a b : Int) : Int := Int53.abs (a - b)
+
+/-- The amount after a percent% discount. The remainder is truncated. -/
+@[verified]
+def discounted (amount percent : Int) : Int :=
+  let rate : Int := 100 - (if percent < 0 then 0 else if percent > 100 then 100 else percent)
+  Int53.div (amount * rate) 100
+
+@[verified]
+def tenPercentOff (amount : Int) : Int := amount - Int53.div amount 10
+
+/-- Binds the same name twice. ESM runs in strict mode, so emitting `const` twice would fail at import
+time. -/
+@[verified]
+def rebindTwice (amount : Int) : Int :=
+  let amount := amount + 1
+  let amount := amount * 2
+  amount
+
+@[verified]
+def noDiscount (amount : Int) : Int := amount
+
+/-- Charges an amount under a pricing rule the caller picks. Taking a function keeps it off the public
+API: there is no way to check at the boundary that one handed in from JS is pure. -/
+@[verified]
+def priced (rule : Int → Int) (amount : Int) : Int := rule amount
+
+@[verified]
+def memberPrice (amount : Int) : Int := priced tenPercentOff amount
+
+@[verified]
+def guestPrice (amount : Int) : Int := priced noDiscount amount
+
+@[verified]
+def mixChannels (a b : UInt32) : UInt32 := a * b + (a - b)
+
+@[verified]
+def bucketOf (key buckets : UInt32) : UInt32 := key % buckets
+
+@[verified]
+def scaleFee (fee factor : BigInt) : BigInt := fee * factor - 1
+
+@[verified]
+def bigQuotient (a b : BigInt) : BigInt := BigInt.div a b
+
+@[verified]
+def sameLabel (a b : String) : Bool := a == b
+
+/-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
+@[verified]
+def safeQuotientIsPositive (a b : Int) : Bool := b != 0 && Int53.div a b > 0
+
+@[verified]
+def canCheckout (signedIn : Bool) (cartTotal stock : Int) : Bool :=
+  signedIn && cartTotal > 0 && stock ≥ 1
+
+@[verified]
+def cappedCharge (amount budget : Int) : Int := min amount budget
+
+@[verified]
+def atLeast (amount floor : Int) : Int := max amount floor
+
+/-- The constructor is named so that the subset reads it as `Money`; Lean's default `mk` would make the
+generated object's tag `mk`. -/
+structure Money where
+  Money ::
+  amount : Int
+  currency : String
+  deriving DecidableEq, Enc
+
+inductive OrderState where
+  | draft
+  | placed (orderId : Int)
+  | shipped (orderId : Int) (trackingId : String)
+  | cancelled (reason : String)
+  deriving Inhabited, Enc
+
+/-- Amounts in different currencies cannot be added. `===` is unusable on the JS side, so a structural
+equality helper is called. -/
+@[verified]
+def addMoney (a b : Money) : Except String Money :=
+  if a.currency != b.currency then .error "currency mismatch"
+  else .ok (Money.Money (a.amount + b.amount) a.currency)
+
+@[verified]
+def sameMoney (a b : Money) : Bool := a == b
+
+@[verified]
+def currenciesOf (items : List Money) : List String := items.map (fun item => item.currency)
+
+/-- Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix
+them. -/
+@[verified]
+def cartTotal (items : List Money) : Int :=
+  items.foldl (fun subtotal item => subtotal + item.amount) 0
+
+@[verified]
+def total (xs : List Int) : Int := xs.foldl (fun sum x => sum + x) 0
+
+@[verified]
+def trackingOf (state : OrderState) : Option String :=
+  match state with
+  | .draft => none
+  | .placed _ => none
+  | .shipped _ trackingId => some trackingId
+  | .cancelled _ => none
+
+@[verified]
+def canRefund (role : Role) (state : OrderState) : Bool :=
+  match state with
+  | .draft => false
+  | .placed _ => roleRank role ≥ 1
+  | .shipped _ _ => roleRank role ≥ 2
+  | .cancelled _ => false
+
+@[verified]
+def firstTracking (states : List OrderState) : Option String :=
+  if Arr.length states == 0 then none else trackingOf (Arr.get states 0)
+
+/-- The orders this role may still refund. The predicate reads `role` from outside the lambda. -/
+@[verified]
+def refundableOnly (role : Role) (states : List OrderState) : List OrderState :=
+  states.filter (fun state => canRefund role state)
+
+/-- The state transition to shipped. Rejects states that cannot transition and an empty tracking id. -/
+@[verified]
+def ship (state : OrderState) (trackingId : String) : Except String OrderState :=
+  match state with
+  | .draft => .error "a draft order cannot ship"
+  | .placed orderId =>
+    if trackingId == "" then .error "a tracking id is required"
+    else .ok (OrderState.shipped orderId trackingId)
+  | .shipped _ _ => .error "the order has already shipped"
+  | .cancelled _ => .error "a cancelled order cannot ship"
+
+/-- The label shown next to a line item. -/
+@[verified]
+def quantityLabel (quantity : Int) : String :=
+  match quantity with
+  | 0 => "out of stock"
+  | 1 => "last one"
+  | _ => "in stock"
+
+/-- Whether a subscription carries on. Both cases are named, so no fallback is needed. -/
+@[verified]
+def renewalLabel (autoRenew : Bool) : String :=
+  match autoRenew with
+  | true => "renews"
+  | false => "ends"
+
+/-- An amount of zero is free whatever the currency, and an amount carrying no currency cannot be
+charged at all. -/
+@[verified]
+def chargeable (amount : Money) : Bool :=
+  match amount with
+  | Money.Money 0 _ => false
+  | Money.Money _ "" => false
+  | Money.Money value _ => value > 0
+
+/-- The shipping line shown once a transition has been attempted. A draft or cancelled order has nothing
+to show, so one arm reaches past `ok` and leaves the state itself open. -/
+@[verified]
+def settleMessage (outcome : Except String OrderState) : String :=
+  match outcome with
+  | .ok (OrderState.shipped _ trackingId) => trackingId
+  | .ok (OrderState.placed _) => "awaiting shipment"
+  | .ok _ => "no update"
+  | .error message => message
+
+/-- A role with no daily limit recorded may do nothing. -/
+@[verified]
+def dailyLimit (role : Role) : Int :=
+  match (limitsFor role).get "daily" with
+  | some value => value
+  | none => 0
+
+/-- One page of results together with how many there are in all. The subset carries the parameter as a
+`Ty.var` and a use substitutes what it was applied to, so the name here is the one the generated type
+reads as. -/
+structure Paginated (T : Type) where
+  Paginated ::
+  items : List T
+  total : Int
+  deriving Enc
+
+/-- What a check concluded: the value it accepted, or the reasons it refused. `E` is named by only one of
+the two constructors, so a `valid` term cannot be read off for it and every use carries both arguments. -/
+inductive Validated (E A : Type) where
+  | valid (value : A)
+  | invalid (errors : List E)
+  deriving Enc
+
+/-- How many results lie beyond the page in hand. -/
+@[verified]
+def remainingItems (page : Paginated Money) : Int := page.total - Arr.length page.items
+
+/-- The whole list served as a single page. -/
+@[verified]
+def firstPage (amounts : List Int) : Paginated Int :=
+  Paginated.Paginated amounts (Arr.length amounts)
+
+/-- Accepts an order quantity or says why it was refused. -/
+@[verified]
+def validateQuantity (quantity : Int) : Validated String Int :=
+  if quantity < 1 then .invalid ["a quantity must be at least 1"]
+  else if quantity > 999 then .invalid ["a quantity may not exceed 999"]
+  else .valid quantity
+
+/-- The line shown once a quantity has been checked. -/
+@[verified]
+def validationMessage (outcome : Validated String Int) : String :=
+  match outcome with
+  | .valid value => quantityLabel value
+  | .invalid errors => if Arr.length errors == 0 then "refused" else Arr.get errors 0
+
+declarations%
 
 def program : Program := program%
 
-private theorem find_add : program.find? "add" = some add := rfl
+certificates%
+
+
+private theorem find_add : program.find? "add" = some addDecl := rfl
 
 /-- Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same
-sum, or fail the same way. -/
-theorem add_comm (a b : Int) :
-    evalCall program "add" [.int53 a, .int53 b]
-      = evalCall program "add" [.int53 b, .int53 a] := by
-  simp [evalCall, find_add, add, Env.lookup?, bindParams, Value.hasTy,
-    evalExpr.eq_def, defaultFuel, applyBin, applyArith, bind, Except.bind, Int.add_comm,
-    or_comm, or_assoc, or_left_comm]
+sum. -/
+theorem add_comm (a b : Int) : add a b = add b a := Int.add_comm a b
 
-private theorem find_clampQuantity : program.find? "clampQuantity" = some clampQuantity := rfl
+private theorem find_clampQuantity : program.find? "clampQuantity" = some clampQuantityDecl := rfl
 
-private theorem find_ship : program.find? "ship" = some ship := rfl
+private theorem find_ship : program.find? "ship" = some shipDecl := rfl
 
-private theorem find_addMoney : program.find? "addMoney" = some addMoney := rfl
+private theorem find_addMoney : program.find? "addMoney" = some addMoneyDecl := rfl
 
-private theorem findType_OrderState : program.findType? "OrderState" = some OrderState := rfl
+private theorem findType_OrderState : program.findType? "OrderState" = some OrderState.typeDef := rfl
 
-private theorem findType_Money : program.findType? "Money" = some Money := rfl
+private theorem findType_Money : program.findType? "Money" = some Money.typeDef := rfl
 
-private theorem findAt_draft : OrderState.findAt? [] "draft" = some ⟨"draft", []⟩ := rfl
+private theorem findAt_draft : OrderState.typeDef.findAt? [] "draft" = some ⟨"draft", []⟩ := rfl
 
 private theorem ctor_Money :
-    Money.find? "Money" = some ⟨"Money", [⟨"amount", .int53⟩, ⟨"currency", .string⟩]⟩ := rfl
+    Money.typeDef.find? "Money" = some ⟨"Money", [⟨"amount", .int53⟩, ⟨"currency", .string⟩]⟩ := rfl
 
 private theorem findAt_Money :
-    Money.findAt? [] "Money" = some ⟨"Money", [⟨"amount", .int53⟩, ⟨"currency", .string⟩]⟩ := rfl
+    Money.typeDef.findAt? [] "Money" = some ⟨"Money", [⟨"amount", .int53⟩, ⟨"currency", .string⟩]⟩ := rfl
 
 /-- An amount of money as it crosses the boundary. -/
 def money (amount : Int) (currency : String) : Value :=
   .obj "Money" [("amount", .int53 amount), ("currency", .str currency)]
 
-/-- A draft order cannot ship, whatever tracking id comes with it. -/
+/-- A draft order cannot shipDecl, whatever tracking id comes with it. -/
 theorem draft_never_ships (trackingId : String) :
     evalCall program "ship" [.obj "draft" [], .str trackingId]
       = .ok (.obj "error" [("error", .str "a draft order cannot ship")]) := by
   rw [evalCall_eq find_ship rfl
-    (by simp [ship, hasTy_named, findType_OrderState, findAt_draft, hasFieldTys_nil, hasTy_str]),
+    (by simp [shipDecl, hasTy_named, findType_OrderState, findAt_draft, hasFieldTys_nil, hasTy_str]),
     defaultFuel_succ]
-  simp [ship, bindParams, evalExpr_matchE, evalExpr_var, evalExpr_errorE, evalExpr_lit,
+  simp [shipDecl, bindParams, evalExpr_matchE, evalExpr_var, evalExpr_errorE, evalExpr_lit,
     Env.lookup?, firstMatch, matchPat, matchPats, litValue, Alt.pat, Alt.body, bind, Except.bind]
 
 /-- Clamping any `Int53` quantity to at most 999 lands between 1 and 999. -/
@@ -403,11 +429,11 @@ theorem clamped_quantity_in_range (quantity : Int)
   simp only [int53Min, int53Max] at hlo hhi
   rw [evalCall_eq find_clampQuantity rfl
     (by
-      simp [clampQuantity, hasTy_int53, int53Min, int53Max]
+      simp [clampQuantityDecl, hasTy_int53, int53Min, int53Max]
       repeat' apply And.intro
       all_goals exact decide_eq_true (by omega)),
     defaultFuel_succ]
-  simp [clampQuantity, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_lit,
+  simp [clampQuantityDecl, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_lit,
     Env.lookup?, litValue, applyBin, compareValues, compareValues.orderBy, bind, Except.bind]
   by_cases h1 : quantity < 1
   · exact ⟨1, by simp [Int.compare_eq_lt.mpr h1], by omega, by omega⟩
@@ -422,7 +448,7 @@ theorem clamped_quantity_in_range (quantity : Int)
         beq_eq_false_iff_ne.mpr (Int.compare_ne_gt.mpr (by omega))
       simp [e1, e2]
 
-/-- Two amounts in the same currency add up, as long as their sum stays within `Int53`. -/
+/-- Two amounts in the same currency addDecl up, as long as their sum stays within `Int53`. -/
 theorem same_currency_adds (x y : Int) (currency : String)
     (hx : int53Min ≤ x ∧ x ≤ int53Max) (hy : int53Min ≤ y ∧ y ≤ int53Max)
     (hsum : int53Min ≤ x + y ∧ x + y ≤ int53Max) :
@@ -434,7 +460,7 @@ theorem same_currency_adds (x y : Int) (currency : String)
   simp only [int53Min, int53Max] at hxlo hxhi hylo hyhi hslo hshi
   rw [evalCall_eq find_addMoney rfl
     (by
-      simp [addMoney, money, hasTy_named, findType_Money, findAt_Money, hasFieldTys_cons,
+      simp [addMoneyDecl, money, hasTy_named, findType_Money, findAt_Money, hasFieldTys_cons,
         hasFieldTys_nil, hasTy_int53, hasTy_str, int53Min, int53Max]
       repeat' apply And.intro
       all_goals exact decide_eq_true (by omega)),
@@ -447,7 +473,7 @@ theorem same_currency_adds (x y : Int) (currency : String)
     simp [Value.beq]
   have hne : (Value.str currency != Value.str currency) = false := by
     simp [bne, hbeq]
-  simp [addMoney, money, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_proj,
+  simp [addMoneyDecl, money, bindParams, evalExpr_cond, evalExpr_bin, evalExpr_var, evalExpr_proj,
     evalExpr_okE, evalExpr_ctor, evalArgs_nil, evalArgs_cons, Env.lookup?, applyBin, applyArith,
     mkInt53, hne, findType_Money, ctor_Money, hno, bind, Except.bind]
 
@@ -457,26 +483,26 @@ theorem same_currency_adds (x y : Int) (currency : String)
 the generated function, entry check and all. It holds of every declaration the program has: the fragment
 covers the whole subset. -/
 
-private theorem find_discounted : program.find? "discounted" = some discounted := rfl
+private theorem find_discounted : program.find? "discounted" = some discountedDecl := rfl
 
-private theorem find_rebindTwice : program.find? "rebindTwice" = some rebindTwice := rfl
+private theorem find_rebindTwice : program.find? "rebindTwice" = some rebindTwiceDecl := rfl
 
-private theorem find_cartTotal : program.find? "cartTotal" = some cartTotal := rfl
+private theorem find_cartTotal : program.find? "cartTotal" = some cartTotalDecl := rfl
 
-/-- Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
+/-- Whatever arguments the entry check accepts, the generated `addDecl` returns what `eval` returns. Its body
 is a single binary operation. -/
 theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "add" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "add" add args v hm find_add he
+  Decl.decl_correct program m "add" addDecl args v hm find_add he
 
 /-- The same for a body that opens with a `let`, which the compiler emits as a `const` statement. -/
 theorem discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "discounted" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "discounted" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "discounted" discounted args v hm find_discounted he
+  Decl.decl_correct program m "discounted" discountedDecl args v hm find_discounted he
 
 /-- And for a body whose second `let` rebinds a name already in scope, which the compiler leaves as an
 expression rather than a statement. -/
@@ -484,18 +510,18 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
     (args : List Value) (v : Value) (he : evalCall program "rebindTwice" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "rebindTwice" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "rebindTwice" rebindTwice args v hm find_rebindTwice he
+  Decl.decl_correct program m "rebindTwice" rebindTwiceDecl args v hm find_rebindTwice he
 
-private theorem find_memberPrice : program.find? "memberPrice" = some memberPrice := rfl
+private theorem find_memberPrice : program.find? "memberPrice" = some memberPriceDecl := rfl
 
 /-- And for a body that calls another declaration, handing it a third by name. The call is where the
 proof leaves the expression it is looking at: `priced` applies the function it was given, so the claim
-about `memberPrice` rests on the same claim about `tenPercentOff`. -/
+about `memberPriceDecl` rests on the same claim about `tenPercentOff`. -/
 theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "memberPrice" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "memberPrice" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "memberPrice" memberPrice args v hm find_memberPrice he
+  Decl.decl_correct program m "memberPrice" memberPriceDecl args v hm find_memberPrice he
 
 /-! ### Throwing what the reference semantics throws
 
@@ -510,17 +536,17 @@ set_option maxRecDepth 8000 in
 /-- The second: the fuel the artifact runs at covers the deepest call this program can make. -/
 theorem program_cost_fits : Cost.cost program ≤ defaultFuel := Nat.le_of_ble_eq_true rfl
 
-/-- Whenever `eval` refuses to return a value for `add`, the generated function throws the code `eval`
+/-- Whenever `eval` refuses to return a value for `addDecl`, the generated function throws the code `eval`
 threw. Its body can reach `int53Overflow`. Running out of fuel is not among the answers: the two checks
 above rule it out for this program. -/
 theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
-    (hlen : add.params.length = args.length)
-    (htyped : ParamsTyped program add.params args)
+    (hlen : addDecl.params.length = args.length)
+    (htyped : ParamsTyped program addDecl.params args)
     (he : evalCall program "add" args = .error err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps_at_cost program m "add" add args err hm find_add rfl program_progOk
+  Decl.decl_traps_at_cost program m "add" addDecl args err hm find_add rfl program_progOk
     program_cost_fits hlen htyped he
 
 /-- The trap is reachable, and reached the same way on both sides: one past the top of `Int53` throws
@@ -529,7 +555,7 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" [.num int53Max, .num 1] = .error "int53Overflow" := by
   have hcall : evalCall program "add" [.int53 int53Max, .int53 1] = .error .int53Overflow := by
-    simp [evalCall, find_add, add, Env.lookup?, bindParams, Value.hasTy, evalExpr.eq_def,
+    simp [evalCall, find_add, addDecl, Env.lookup?, bindParams, Value.hasTy, evalExpr.eq_def,
       defaultFuel, applyBin, applyArith, mkInt53, bind, Except.bind, int53Min, int53Max]
   have hty : Value.hasTy program (.int53 int53Max) .int53 = true ∧
       Value.hasTy program (.int53 1) .int53 = true := by
@@ -538,39 +564,39 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
     ⟨hty.1, hty.2, trivial⟩ hcall
   simpa [encodeValue, Err.code] using h
 
-/-- The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
+/-- The fragment reaches business logic, not just arithmetic: `addMoneyDecl` reads two fields, compares them,
 and builds a `Result` around a constructor. -/
 theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "addMoney" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "addMoney" addMoney args v hm find_addMoney he
+  Decl.decl_correct program m "addMoney" addMoneyDecl args v hm find_addMoney he
 
-/-- The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads
+/-- The fragment reaches a `match`: `shipDecl` chooses an arm by the constructor of its scrutinee and reads
 the fields that arm binds. -/
 theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "ship" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "ship" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "ship" ship args v hm find_ship he
+  Decl.decl_correct program m "ship" shipDecl args v hm find_ship he
 
-/-- And an array traversal: `cartTotal` folds a body over the elements, each under its own binding. -/
+/-- And an array traversal: `cartTotalDecl` folds a body over the elements, each under its own binding. -/
 theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "cartTotal" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "cartTotal" cartTotal args v hm find_cartTotal he
+  Decl.decl_correct program m "cartTotal" cartTotalDecl args v hm find_cartTotal he
 
 /-- The trap side of a traversal: a fold whose running sum leaves `Int53` throws where `eval` does, at
 the element that overflowed rather than at the end. -/
 theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
-    (hlen : cartTotal.params.length = args.length)
-    (htyped : ParamsTyped program cartTotal.params args)
+    (hlen : cartTotalDecl.params.length = args.length)
+    (htyped : ParamsTyped program cartTotalDecl.params args)
     (he : evalCall program "cartTotal" args = .error err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps_at_cost program m "cartTotal" cartTotal args err hm find_cartTotal rfl
+  Decl.decl_traps_at_cost program m "cartTotal" cartTotalDecl args err hm find_cartTotal rfl
     program_progOk program_cost_fits hlen htyped he
 
 /-! ### Refusing what the reference semantics refuses
@@ -578,13 +604,13 @@ theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .
 `Decl.decl_refuses` needs no `InFragment`: the entry check does not look at the body, so this direction
 covers every public declaration rather than the six-form fragment. -/
 
-/-- Whatever `add` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
+/-- Whatever `addDecl` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
 function throws instead of computing. -/
 theorem add_refuses (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (jargs : List Js.JsValue) (hk : Js.dictKeysDistinctList jargs = true)
-    (hno : ¬ Decl.EvalAccepts program add jargs) :
+    (hno : ¬ Decl.EvalAccepts program addDecl jargs) :
     Js.callFunction m "add" jargs = .error "typeError" :=
-  Decl.decl_refuses_call program m "add" add jargs hm find_add rfl hk hno
+  Decl.decl_refuses_call program m "add" addDecl jargs hm find_add rfl hk hno
 
 /-- The hypothesis discharged on a concrete call: a string where an `Int53` was declared throws, because
 no `Int53` encodes to one. -/
@@ -601,16 +627,16 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
     rw [Js.normTy.eq_def, encodeValue.eq_def] at hnorm
     simp at hnorm
 
-/-- The same for `addMoney`: the only way its body throws is the `Int53` overflow of the sum, and the
+/-- The same for `addMoneyDecl`: the only way its body throws is the `Int53` overflow of the sum, and the
 generated function throws that code. -/
 theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
-    (hlen : addMoney.params.length = args.length)
-    (htyped : ParamsTyped program addMoney.params args)
+    (hlen : addMoneyDecl.params.length = args.length)
+    (htyped : ParamsTyped program addMoneyDecl.params args)
     (he : evalCall program "addMoney" args = .error err) :
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps_at_cost program m "addMoney" addMoney args err hm find_addMoney rfl
+  Decl.decl_traps_at_cost program m "addMoney" addMoneyDecl args err hm find_addMoney rfl
     program_progOk program_cost_fits hlen htyped he
 
 /-- The text `lean2js` writes for this program reads back as the module the compiler built. Nothing in

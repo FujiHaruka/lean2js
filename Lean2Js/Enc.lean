@@ -48,6 +48,8 @@ instance : Enc Bool where
   accepts _ _ := True
   toValue_hasTy := by intro p b _; exact hasTy_bool p b
 
+@[simp] theorem ty_bool : (ty Bool) = .bool := rfl
+
 @[simp] theorem toValue_bool (b : Bool) : (toValue b : Value) = .bool b := rfl
 
 instance : Enc Int where
@@ -63,6 +65,8 @@ instance : Enc Int where
     rw [hasTy_int53]
     simp [h.1, h.2]
 
+@[simp] theorem ty_int : (ty Int) = .int53 := rfl
+
 @[simp] theorem toValue_int (i : Int) : (toValue i : Value) = .int53 i := rfl
 
 instance : Enc UInt32 where
@@ -75,6 +79,8 @@ instance : Enc UInt32 where
   accepts _ _ := True
   toValue_hasTy := by intro p n _; exact hasTy_uint32 p n
 
+@[simp] theorem ty_uint32 : (ty UInt32) = .uint32 := rfl
+
 instance : Enc String where
   ty := .string
   toValue := .str
@@ -84,6 +90,8 @@ instance : Enc String where
   ofValue_toValue _ := rfl
   accepts _ _ := True
   toValue_hasTy := by intro p s _; exact hasTy_str p s
+
+@[simp] theorem ty_string : (ty String) = .string := rfl
 
 @[simp] theorem toValue_str (s : String) : (toValue s : Value) = .str s := rfl
 
@@ -139,9 +147,11 @@ instance [Enc α] : Enc (Option α) where
       rw [hasTy_some, hasFieldTys_cons, toValue_hasTy h, hasFieldTys_nil]
       rfl
 
-/-! Neither shape carries a `@[simp]` lemma the way the scalars do, because nothing in the subset's own
-forms needs its encoding rewritten; what needs it is a `match` on one, whose arm has to reach the tag the
-pattern tests. -/
+/-! The subset type is normalised the way the scalars are, because a declaration's parameter carries it
+as this projection. The encoding is not: nothing in the subset's own forms needs it rewritten, and what
+does is a `match` on one, whose arm has to reach the tag the pattern tests. -/
+
+@[simp] theorem ty_option [Enc α] : (ty (Option α)) = .option (ty (α := α)) := rfl
 
 theorem toValue_none [Enc α] : (toValue (none : Option α) : Value) = .obj "none" [] := rfl
 
@@ -172,6 +182,9 @@ instance [Enc ε] [Enc α] : Enc (Except ε α) where
     | error e =>
       rw [hasTy_error, hasFieldTys_cons, toValue_hasTy h, hasFieldTys_nil]
       rfl
+
+@[simp] theorem ty_except [Enc ε] [Enc α] :
+    (ty (Except ε α)) = .result (ty (α := α)) (ty (α := ε)) := rfl
 
 theorem toValue_ok [Enc ε] [Enc α] (a : α) :
     (toValue (.ok a : Except ε α) : Value) = .obj "ok" [("value", toValue a)] := rfl
@@ -218,6 +231,8 @@ instance [Enc α] : Enc (List α) where
   ofValue_toValue := ofValues_map
   accepts p xs := ∀ a ∈ xs, accepts p a
   toValue_hasTy h := by rw [hasTy_array]; exact hasElemTy_toValue h
+
+@[simp] theorem ty_list [Enc α] : (ty (List α)) = .array (ty (α := α)) := rfl
 
 @[simp] theorem toValue_list [Enc α] (xs : List α) :
     (toValue xs : Value) = .arr (xs.map toValue) := rfl

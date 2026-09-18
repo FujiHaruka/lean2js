@@ -8,12 +8,12 @@ export type Result<T, E> =
   | { readonly tag: "ok"; readonly value: T }
   | { readonly tag: "error"; readonly error: E };
 
-export type Money = { readonly tag: "Money"; readonly amount: number; readonly currency: string };
-
 export type Role =
   | { readonly tag: "guest" }
   | { readonly tag: "member" }
   | { readonly tag: "admin" };
+
+export type Money = { readonly tag: "Money"; readonly amount: number; readonly currency: string };
 
 export type OrderState =
   | { readonly tag: "draft" }
@@ -33,79 +33,9 @@ export declare function clampQuantity(quantity: number, upper: number): number;
 
 export declare function lineTotal(unitPrice: number, quantity: number): number;
 
-export declare function discounted(amount: number, percent: number): number;
-
-export declare function divide(a: number, b: number): number;
-
-export declare function remainder(a: number, b: number): number;
-
-export declare function negate(a: number): number;
-
-export declare function priceGap(a: number, b: number): number;
-
-export declare function cappedCharge(amount: number, budget: number): number;
-
-export declare function atLeast(amount: number, floor: number): number;
-
-export declare function noDiscount(amount: number): number;
-
-export declare function tenPercentOff(amount: number): number;
-
-export declare function memberPrice(amount: number): number;
-
-export declare function guestPrice(amount: number): number;
-
-export declare function safeQuotientIsPositive(a: number, b: number): boolean;
-
-export declare function canCheckout(signedIn: boolean, cartTotal: number, stock: number): boolean;
-
-export declare function mixChannels(a: number, b: number): number;
-
-export declare function bucketOf(key: number, buckets: number): number;
-
-export declare function scaleFee(fee: bigint, factor: bigint): bigint;
-
-export declare function bigQuotient(a: bigint, b: bigint): bigint;
-
-export declare function slugOf(prefix: string, name: string): string;
-
-export declare function sortsBefore(a: string, b: string): boolean;
-
-export declare function sameLabel(a: string, b: string): boolean;
-
-export declare function rebindTwice(amount: number): number;
-
 export declare function roleRank(role: Role): number;
 
-export declare function addMoney(a: Money, b: Money): Result<Money, string>;
-
-export declare function sameMoney(a: Money, b: Money): boolean;
-
-export declare function ship(state: OrderState, trackingId: string): Result<OrderState, string>;
-
-export declare function trackingOf(state: OrderState): Option<string>;
-
-export declare function canRefund(role: Role, state: OrderState): boolean;
-
-export declare function total(xs: readonly number[]): number;
-
-export declare function headOr(xs: readonly number[], fallback: number): number;
-
-export declare function firstTracking(states: readonly OrderState[]): Option<string>;
-
-export declare function pageOf(xs: readonly number[], lo: number, hi: number): readonly number[];
-
-export declare function mostRecentFirst(events: readonly string[]): readonly string[];
-
-export declare function combinedCart(saved: readonly number[], added: readonly number[]): readonly number[];
-
 export declare function lineTotals(unitPrice: number, quantities: readonly number[]): readonly number[];
-
-export declare function currenciesOf(items: readonly Money[]): readonly string[];
-
-export declare function refundableOnly(role: Role, states: readonly OrderState[]): readonly OrderState[];
-
-export declare function cartTotal(items: readonly Money[]): number;
 
 export declare function anyOverLimit(amounts: readonly number[], limit: number): boolean;
 
@@ -115,27 +45,23 @@ export declare function everyLineWithinLimit(amounts: readonly number[], limit: 
 
 export declare function someLineIsFree(amounts: readonly number[]): boolean;
 
-export declare function quantityLabel(quantity: number): string;
+export declare function pageOf(xs: readonly number[], lo: number, hi: number): readonly number[];
 
-export declare function renewalLabel(autoRenew: boolean): string;
+export declare function mostRecentFirst(events: readonly string[]): readonly string[];
 
-export declare function chargeable(amount: Money): boolean;
+export declare function combinedCart(saved: readonly number[], added: readonly number[]): readonly number[];
 
-export declare function settleMessage(outcome: Result<OrderState, string>): string;
+export declare function headOr(xs: readonly number[], fallback: number): number;
 
-export declare function remainingItems(page: Paginated<Money>): number;
+export declare function slugOf(prefix: string, name: string): string;
 
-export declare function firstPage(amounts: readonly number[]): Paginated<number>;
+export declare function sortsBefore(a: string, b: string): boolean;
 
-export declare function validateQuantity(quantity: number): Validated<string, number>;
-
-export declare function validationMessage(outcome: Validated<string, number>): string;
+export declare function mentionsTerm(text: string, term: string): boolean;
 
 export declare function storedCoupon(campaign: string, entered: string): string;
 
 export declare function couponApplies(code: string, campaign: string): boolean;
-
-export declare function mentionsTerm(text: string, term: string): boolean;
 
 export declare function fieldCount(row: string, separator: string): number;
 
@@ -144,8 +70,6 @@ export declare function truncateLabel(label: string, limit: number): string;
 export declare function isSpreadsheet(fileName: string): boolean;
 
 export declare function limitsFor(role: Role): ReadonlyMap<string, number>;
-
-export declare function dailyLimit(role: Role): number;
 
 export declare function priceOf(prices: ReadonlyMap<string, number>, sku: string): Option<number>;
 
@@ -160,3 +84,79 @@ export declare function listedPrices(prices: ReadonlyMap<string, number>): reado
 export declare function withdrawn(prices: ReadonlyMap<string, number>, sku: string): ReadonlyMap<string, number>;
 
 export declare function catalogueSize(prices: ReadonlyMap<string, number>): number;
+
+export declare function divide(a: number, b: number): number;
+
+export declare function remainder(a: number, b: number): number;
+
+export declare function negate(a: number): number;
+
+export declare function priceGap(a: number, b: number): number;
+
+export declare function discounted(amount: number, percent: number): number;
+
+export declare function tenPercentOff(amount: number): number;
+
+export declare function rebindTwice(amount: number): number;
+
+export declare function noDiscount(amount: number): number;
+
+export declare function memberPrice(amount: number): number;
+
+export declare function guestPrice(amount: number): number;
+
+export declare function mixChannels(a: number, b: number): number;
+
+export declare function bucketOf(key: number, buckets: number): number;
+
+export declare function scaleFee(fee: bigint, factor: bigint): bigint;
+
+export declare function bigQuotient(a: bigint, b: bigint): bigint;
+
+export declare function sameLabel(a: string, b: string): boolean;
+
+export declare function safeQuotientIsPositive(a: number, b: number): boolean;
+
+export declare function canCheckout(signedIn: boolean, cartTotal: number, stock: number): boolean;
+
+export declare function cappedCharge(amount: number, budget: number): number;
+
+export declare function atLeast(amount: number, floor: number): number;
+
+export declare function addMoney(a: Money, b: Money): Result<Money, string>;
+
+export declare function sameMoney(a: Money, b: Money): boolean;
+
+export declare function currenciesOf(items: readonly Money[]): readonly string[];
+
+export declare function cartTotal(items: readonly Money[]): number;
+
+export declare function total(xs: readonly number[]): number;
+
+export declare function trackingOf(state: OrderState): Option<string>;
+
+export declare function canRefund(role: Role, state: OrderState): boolean;
+
+export declare function firstTracking(states: readonly OrderState[]): Option<string>;
+
+export declare function refundableOnly(role: Role, states: readonly OrderState[]): readonly OrderState[];
+
+export declare function ship(state: OrderState, trackingId: string): Result<OrderState, string>;
+
+export declare function quantityLabel(quantity: number): string;
+
+export declare function renewalLabel(autoRenew: boolean): string;
+
+export declare function chargeable(amount: Money): boolean;
+
+export declare function settleMessage(outcome: Result<OrderState, string>): string;
+
+export declare function dailyLimit(role: Role): number;
+
+export declare function remainingItems(page: Paginated<Money>): number;
+
+export declare function firstPage(amounts: readonly number[]): Paginated<number>;
+
+export declare function validateQuantity(quantity: number): Validated<string, number>;
+
+export declare function validationMessage(outcome: Validated<string, number>): string;

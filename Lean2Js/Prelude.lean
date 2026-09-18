@@ -203,6 +203,8 @@ instance [Enc α] : Enc (Dict α) where
     rw [hasTy_dict, keys_encEntry, h.1, hasEntryTys_toValue h.2]
     rfl
 
+@[simp] theorem ty_dict [Enc α] : (ty (Dict α)) = .dict (ty (α := α)) := rfl
+
 @[simp] theorem toValue_dict [Enc α] (d : Dict α) :
     (toValue d : Value) = .dict (d.entries.map encEntry) := rfl
 
@@ -215,6 +217,8 @@ instance : Enc BigInt where
   ofValue_toValue _ := rfl
   accepts _ _ := True
   toValue_hasTy := by intro p b _; exact hasTy_bigint p b.val
+
+@[simp] theorem ty_bigint : (ty BigInt) = .bigint := rfl
 
 @[simp] theorem toValue_bigint (b : BigInt) : (toValue b : Value) = .bigint b.val := rfl
 
