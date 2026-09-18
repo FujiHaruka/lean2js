@@ -331,6 +331,26 @@ elaborate されるので、腕が読む外側の変数（`canRefund` の `role`
 `beq_refl` / `eq_of_beq`（`Ty` に同じ形がある）で、利用者の型は `deriving DecidableEq` で
 `LawfulBEq` に届く —— `deriving BEq` だけでは届かない。
 
+**残り 3 つの `match` は 1 本の道で閉じる —— matcher の splitter と等式。**
+`Match.getEquationsFor app.matcherName` が splitter と腕ごとの等式を返し、splitter の型が腕ごとに
+`(パターン束縛子…) → (先の腕が外れた条件…) → motive <パターン>` になっている。**パターンは
+`motive` の引数として `Expr` で読める** —— リテラルも入れ子の構成子も、`_` も同じ形で出てくる。
+束縛子は先頭 `altNumParams[i]` 本がパターン束縛子で、残りが外れた条件。`app.alts[i]` の λ も
+同じ順に同じ束縛子を取るので、本体を歩くときの名前はそこから取れる。
+
+- **名前は利用者のものになる。** パターン束縛子のうち `_` は macro scope 付きなので `Pat.wild` に、
+  名前の付いたものは `Pat.bind` に落ちる。**いまの実装は `TypeDef` のフィールド名で束縛している**ので、
+  ここを変えると `Example.trackingOf` / `canRefund` / `saleAmount` との `rfl` がずれる ——
+  `Denote.lean` の腕で束縛子に名前を付け直せば戻り、生成される JS の変数名は利用者が書いたものになる。
+- **証明は splitter を引用する。** motive は
+  `fun y => Denotes _ _ scrut y → Denotes _ _ (matchE scrut alts) (g y)`。
+  `hs` を motive の中に入れないと、腕の中で `Denotes … scrut <パターン>` が作れない。
+  `p` と `env` は穴でよい —— 最後に `hs` を当てた時点で決まる。
+- 腕ごとに `denotes_matchE_of` を使い、`firstMatch` が同じ腕を選ぶことを外れた条件から出す。
+  重なりのない腕は `g <パターン>` が ι で腕の本体に落ちるが、**重なる腕は落ちない**ので
+  `eq_i` を `simp only` で当てる（外れた条件は仮定として文脈にあるので discharger が拾う）。
+- これが通ると `deriving Enc` の `matchLemma` を引く道が無くなる。二重化を避けるなら置き換える。
+
 そのうえで:
 
 - `Example.lean` を新しい形に書き直す（定理 4 本と、その証明書）
