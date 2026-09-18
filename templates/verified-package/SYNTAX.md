@@ -197,6 +197,24 @@ A lambda may be written **only** as the argument of `.map` / `.filter` / `.find?
 (`states.filter (fun state => canRefund role state)`). In that position the name of a shipped
 declaration works too (`quantities.map clampToTen`).
 
+**A `match` written inside that lambda may not certify.** The walk reads it, and then `ship_package`
+fails on the certificate with a type mismatch rather than a `reify:` refusal. Write the branch with `if`
+where the condition allows, or move the `match` into a `@[ship] def` of its own and call that:
+
+```lean
+@[ship]
+def addSome (running : Int) (o : Option Int) : Int :=
+  match o with
+  | none => running
+  | some v => running + v
+
+@[ship]
+def sumSome (xs : List (Option Int)) : Int := xs.foldl (fun running o => addSome running o) 0
+```
+
+`@[expand]` does not help here: the expansion puts the `match` back inside the lambda. The helper has to
+be a declaration the package ships.
+
 ## Rules that are not syntax
 
 - **Calls cannot cycle.** Lean refuses mutually recursive `def`s, so a cycle stops before this does.
@@ -253,8 +271,8 @@ def join (parts : List String) (sep : String) : String :=
 ```
 
 Reading the accumulator with a `match` rather than an `==` is what would make that exact, and a `match`
-inside a traversal's function is a form the walk reads but cannot yet certify. Until it can, an operation
-that has to tell "nothing yet" from a value belongs on the TypeScript side.
+inside a traversal's function is the form that may not certify (above). The exact version is writable by
+moving that `match` into a `@[ship] def`, at the cost of one more exported function.
 
 ## When you leave the subset
 

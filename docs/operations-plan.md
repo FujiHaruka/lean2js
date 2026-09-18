@@ -135,6 +135,34 @@
 **触る場所**: `Prelude.lean`（語彙を `@[expand] def` として）、`Example.lean`（語彙ごとに公開宣言を
 1 本）、`SYNTAX.md`。`Reify.lean` は Step 1 の機構が効くので動かない。
 
+### 先に知っておくこと（2026-09-18 に測った）
+
+**表のうち 6 つは今の `Reify` では書けない。**
+
+- `indexOf?` — 組を畳み込む形が要るが、`Ty` に組が無く `Prod.mk` は断られる。`structure` を
+  `Prelude` に宣言しても、`shippedTypes` は利用者の名前空間しか集めないのでプログラムの `types` に入らない。**外す。**
+- `min?` `max?` `groupBy` `Dict.map` `Dict.filter` — どれも**走査の関数の中の `match`** を要求する。
+
+**走査の関数の中に `match` を書くと、walk は読むが証明書が型が合わない。** `reify:` の拒否ではなく
+`ship_package` での Type mismatch になる。`Example.lean` にはこの形が 1 つも無く、踏んだのは初めて。
+
+- 原因の見当: `Reify.matched` が splitter の major premise を `_` で渡す。最上位では期待型が
+  具体なので `denotes_var` の `rfl` が `env.lookup?` を計算して埋めるが、`denotes_reduceE` の
+  `(fun _ _ => …)` の下では埋まらない。
+- **試して落ちた手 2 つ**（同じことをやらないこと）。① motive から fuel / env を外に括り出す ——
+  env が束縛変数になり `lookup?` が計算できなくなって悪化する。② major premise を `matchedFn` と同じ
+  自由変数の抽象で渡す —— 孔が埋まらず同じところで落ちる。
+- **回避策は測ってある**: `match` を自分の `@[ship] def` に出し、ラムダからそれを呼ぶと通る。
+  **`@[expand]` では通らない** —— 展開が `match` をラムダの中へ戻すから。つまりこの 5 つは
+  「公開関数を 1 本余分に出す」形でなら今でも書けるが、層 0 の語彙としては出せない。
+
+**だから Step 2 は残りを先に入れる。** 入ることが測って確かめてあるのは
+`take` `drop` `isEmpty` `contains` `sum` `count` `head?` `last?` `flatten` `flatMap` `Str.isEmpty`、
+`Dict.getD` `Dict.ofPairs`、`Opt.*` / `Except.*`（`match` が `def` の直下なので通る）。
+`Option` の語彙は `Opt.*` に置く —— Lean の `Option.getD` は import 済みで、`TagAttribute` は
+import 済みの宣言に付けられない（測った）。`?` で終わる名前は `@[ship]` だと
+`validateIdent` で落ちるが、`@[expand]` はコンパイラに届かないので `Arr.head?` と書ける。
+
 **保証の境界**: 変わらない。`Core.Expr` は 35 形のまま。
 
 ## Step 3. 数値 ⇄ 文字列
