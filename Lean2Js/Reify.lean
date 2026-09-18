@@ -53,6 +53,11 @@ private partial def encTy (α : Lean.Expr) : TermElabM Term := do
     throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
   `(Lean2Js.Enc.ty (α := $(← exprToSyntax α)))
 
+/-- An `Int` as the term the AST carries. A numeral is written without a sign, so a negative one is the
+negation of its magnitude — the same shape `renderInt` writes and `parseInt` reads back. -/
+private def intLit (n : Int) : TermElabM Term := do
+  if n < 0 then `(-$(⟨Syntax.mkNumLit (toString (-n))⟩)) else pure ⟨Syntax.mkNumLit (toString n)⟩
+
 /-- The subset's pattern for the one an arm of the matcher matched, read off the `motive`'s argument in
 the splitter's type: a literal, a nested constructor and a wildcard all arrive there the same way.
 
@@ -71,9 +76,7 @@ private partial def patternOf (binders : Array Lean.Expr) (binderNames : Array N
   if let .lit (.strVal str) := pat then
     return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.str $(⟨Syntax.mkStrLit str⟩))), #[])
   if let some n := pat.int? then
-    if n < 0 then
-      throwError "reify: {pat} is a negative literal, which this walk does not read"
-    let lit : Term := ⟨Syntax.mkNumLit (toString n)⟩
+    let lit ← intLit n
     match ← whnf (← inferType pat) with
     | .const ``Int _ => return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.int53 $lit)), #[])
     | .const ``Lean2Js.BigInt _ =>
@@ -143,6 +146,9 @@ refusal worth naming, because the author's remedy — reify the callee first —
 anything else the walk turns away. -/
 private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs : Array Lean.Expr)
     (e : Lean.Expr) : TermElabM (Term × Term) := do
+  -- writing out an `@[expand]` def that takes a function leaves the function applied to the argument
+  -- where the body called it, and it is the applied form, not the lambda, that the subset reads
+  let e := e.headBeta
   if let some i := xs.findIdx? (· == e) then
     if (← whnf (← inferType e)).isArrow then
       throwError "reify: {names[i]!} is a function, and a function reaches the subset only where it \
@@ -158,9 +164,7 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.str $lit)),
             ← `(Lean2Js.Denote.denotes_litStr _ _ $lit))
   if let some n := e.int? then
-    if n < 0 then
-      throwError "reify: {e} is a negative literal, which this walk does not read"
-    let lit : Term := ⟨Syntax.mkNumLit (toString n)⟩
+    let lit ← intLit n
     match ← whnf (← inferType e) with
     | .const ``Int _ =>
       return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.int53 $lit)),
@@ -309,8 +313,8 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     let accLit : Term := ⟨Syntax.mkStrLit accName⟩
     let elemLit : Term := ⟨Syntax.mkStrLit elemName⟩
     return (← `(Lean2Js.Core.Expr.reduceE $ae $ie $accLit $elemLit $be),
-            ← `(Lean2Js.Denote.denotes_reduceE _ _ _ _ $accLit $elemLit _ _ _ _ $ap $ip
-                  (fun _ _ => $bp)))
+            ← `(Lean2Js.Denote.denotes_reduceE _ _ _ _ $accLit $elemLit _ _ _ $(← closedOver f)
+                  $ap $ip (fun _ _ => $bp)))
   | (``Option.none, #[α]) =>
     return (← `(Lean2Js.Core.Expr.noneE $(← encTy α)),
             ← `(Lean2Js.Denote.denotes_noneE _ _ _))
@@ -511,7 +515,12 @@ where
   An arm may read a variable bound outside the `match`, and that variable does not exist where this
   syntax is elaborated, so those are abstracted and handed back as holes for the expected type to fill. -/
   matchedFn (app : MatcherApp) (scrut : Lean.Expr) : TermElabM Term := do
-    let core := .lam `y (← inferType scrut) ({ app with discrs := #[.bvar 0] }.toExpr) .default
+    closedOver (.lam `y (← inferType scrut) ({ app with discrs := #[.bvar 0] }.toExpr) .default)
+  /-- A Lean term the proof has to name, as syntax the elaborator can read where the proof is placed.
+  The term may mention the binders the walk is under, and those are this elaboration's own variables
+  rather than the ones in scope where the proof lands, so they are abstracted out and applied back as
+  holes that unification fills with whatever stands in their place there. -/
+  closedOver (core : Lean.Expr) : TermElabM Term := do
     let free := xs.filter fun y => y.isFVar && core.hasAnyFVar (· == y.fvarId!)
     let stx ← exprToSyntax (← mkLambdaFVars free core)
     if free.isEmpty then return stx
@@ -587,13 +596,13 @@ where
     let (nm, be, bp) ← arm f
     let nmLit : Term := ⟨Syntax.mkStrLit nm⟩
     return (← `($(mkIdent (`Lean2Js.Core.Expr ++ ctor)) $ae $nmLit $be),
-            ← `($(mkIdent lemma) _ _ _ $nmLit _ _ _ $ap (fun _ => $bp)))
+            ← `($(mkIdent lemma) _ _ _ $nmLit _ _ $(← closedOver f) $ap (fun _ => $bp)))
   quantified (op : Name) (lemma : Name) (f l : Lean.Expr) : TermElabM (Term × Term) := do
     let (ae, ap) ← walk citing ns names xs l
     let (nm, be, bp) ← arm f
     let nmLit : Term := ⟨Syntax.mkStrLit nm⟩
     return (← `(Lean2Js.Core.Expr.quantE $(mkIdent (`Lean2Js.Core.QuantOp ++ op)) $ae $nmLit $be),
-            ← `($(mkIdent lemma) _ _ _ $nmLit _ _ _ $ap (fun _ => $bp)))
+            ← `($(mkIdent lemma) _ _ _ $nmLit _ _ $(← closedOver f) $ap (fun _ => $bp)))
   /-- A `match`, read through the matcher's splitter. Lean compiles a `match` to an auxiliary matcher,
   and the splitter is the case analysis that matcher was built from: it carries each arm's pattern as the
   `motive`'s argument, and it hands the arm the conditions that put it after the arms before it. Those

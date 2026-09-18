@@ -1153,4 +1153,28 @@ export function settledMoney(__p0) {
   return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "some", "value": a }))((__s).value) : { "tag": "none" })))(outcome);
 }
 
+/** trackingIds : (states : Array OrderState) → Array String */
+export function trackingIds(__p0) {
+  const states = __ck(__p0, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
+  return __map(states, (state) => (((__s) => ((((__s).tag === "shipped") ? ((trackingId) => (trackingId))((__s).trackingId) : "")))(state)));
+}
+
+/** refundCount : (amounts : Array Int53) → Int53 */
+export function refundCount(__p0) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __reduce(amounts, 0, (running, y) => (((y < 0) ? __i53((running + 1)) : running)));
+}
+
+/** creditNoteAmount : (amount : Int53) → Int53 */
+export function creditNoteAmount(__p0) {
+  const amount = __ck(__p0, ["int53"]);
+  return __i53((-1 * __max(amount, 0)));
+}
+
+/** directionLabel : (sign : Int53) → String */
+export function directionLabel(__p0) {
+  const sign = __ck(__p0, ["int53"]);
+  return ((__s) => (((__s === -1) ? "credit" : ((__s === 1) ? "debit" : "none"))))(sign);
+}
+
 //# sourceMappingURL=index.js.map

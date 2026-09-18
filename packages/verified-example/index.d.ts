@@ -655,3 +655,32 @@ export declare function loudRefusal(outcome: Result<Money, string>): Result<Mone
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
  */
 export declare function settledMoney(outcome: Result<Money, string>): Option<Money>;
+
+/**
+ * The tracking id of every order that has one, and an empty string for the rest. The `match` is inside
+ * the traversal's own function rather than in a declaration of its own.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function trackingIds(states: readonly OrderState[]): readonly string[];
+
+/**
+ * How many of the amounts are refunds, with the test written where the count is.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function refundCount(amounts: readonly number[]): number;
+
+/**
+ * A charge as it appears on a credit note, where money leaving is written negative.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function creditNoteAmount(amount: number): number;
+
+/**
+ * What the sign on a statement line means.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function directionLabel(sign: number): string;

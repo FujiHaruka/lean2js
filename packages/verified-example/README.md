@@ -163,6 +163,14 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `loudRefusal(outcome: Result<Money, string>): Result<Money, string>`
   The refusal upper-cased. What the settlement accepted is handed back untouched.
 - `settledMoney(outcome: Result<Money, string>): Option<Money>`
+- `trackingIds(states: readonly OrderState[]): readonly string[]`
+  The tracking id of every order that has one, and an empty string for the rest. The `match` is inside the traversal's own function rather than in a declaration of its own.
+- `refundCount(amounts: readonly number[]): number`
+  How many of the amounts are refunds, with the test written where the count is.
+- `creditNoteAmount(amount: number): number`
+  A charge as it appears on a credit note, where money leaving is written negative.
+- `directionLabel(sign: number): string`
+  What the sign on a statement line means.
 
 ## Errors
 

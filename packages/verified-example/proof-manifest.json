@@ -567,6 +567,30 @@
       "name": "settledMoney",
       "signature": "(outcome : Result Money String) → Option Money",
       "declaration": "settledMoney(outcome: Result<Money, string>): Option<Money>"
+    },
+    {
+      "name": "trackingIds",
+      "signature": "(states : Array OrderState) → Array String",
+      "declaration": "trackingIds(states: readonly OrderState[]): readonly string[]",
+      "doc": "The tracking id of every order that has one, and an empty string for the rest. The `match` is inside\nthe traversal's own function rather than in a declaration of its own."
+    },
+    {
+      "name": "refundCount",
+      "signature": "(amounts : Array Int53) → Int53",
+      "declaration": "refundCount(amounts: readonly number[]): number",
+      "doc": "How many of the amounts are refunds, with the test written where the count is."
+    },
+    {
+      "name": "creditNoteAmount",
+      "signature": "(amount : Int53) → Int53",
+      "declaration": "creditNoteAmount(amount: number): number",
+      "doc": "A charge as it appears on a credit note, where money leaving is written negative."
+    },
+    {
+      "name": "directionLabel",
+      "signature": "(sign : Int53) → String",
+      "declaration": "directionLabel(sign: number): string",
+      "doc": "What the sign on a statement line means."
     }
   ],
   "theorems": [

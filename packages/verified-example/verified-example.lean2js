@@ -316,3 +316,15 @@ def loudRefusal(outcome : Result Money String) : Result Money String =
 def settledMoney(outcome : Result Money String) : Option Money =
   match outcome { ok(a) => some(a) | error(_) => none[Money] }
 
+def trackingIds(states : Array OrderState) : Array String =
+  states.map(state => match state { shipped(_, trackingId) => trackingId | _ => "" })
+
+def refundCount(amounts : Array Int53) : Int53 =
+  amounts.reduce(0, (running, y) => if (y < 0) then (running + 1) else running)
+
+def creditNoteAmount(amount : Int53) : Int53 =
+  (-1 * amount.max(0))
+
+def directionLabel(sign : Int53) : String =
+  match sign { -1 => "credit" | 1 => "debit" | _ => "none" }
+

@@ -521,6 +521,31 @@ def loudRefusal (outcome : Except String Money) : Except String Money :=
 @[ship]
 def settledMoney (outcome : Except String Money) : Option Money := Exc.toOption outcome
 
+/-- The tracking id of every order that has one, and an empty string for the rest. The `match` is inside
+the traversal's own function rather than in a declaration of its own. -/
+@[ship]
+def trackingIds (states : List OrderState) : List String :=
+  states.map fun state =>
+    match state with
+    | .shipped _ trackingId => trackingId
+    | _ => ""
+
+/-- How many of the amounts are refunds, with the test written where the count is. -/
+@[ship]
+def refundCount (amounts : List Int) : Int := Arr.count amounts (fun amount => amount < 0)
+
+/-- A charge as it appears on a credit note, where money leaving is written negative. -/
+@[ship]
+def creditNoteAmount (amount : Int) : Int := -1 * max amount 0
+
+/-- What the sign on a statement line means. -/
+@[ship]
+def directionLabel (sign : Int) : String :=
+  match sign with
+  | -1 => "credit"
+  | 1 => "debit"
+  | _ => "none"
+
 ship_package
 
 
