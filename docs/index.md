@@ -1,15 +1,18 @@
-Lean 4 で証明した業務ロジックを、普通の npm パッケージとして JavaScript / TypeScript へ届けるための処理系。
-このサイトは `Lean2Js` のモジュールと、そこに書かれた定理・定義のリファレンスで、ソースは
-[GitHub のリポジトリ](https://github.com/FujiHaruka/lean2js)にある。
+A compiler for carrying business logic proved in Lean 4 to JavaScript / TypeScript as an ordinary npm
+package. This site is the reference for the modules of `Lean2Js` and the theorems and definitions in
+them; the source is [the repository on GitHub](https://github.com/FujiHaruka/lean2js).
 
-読みはじめる場所:
+Where to start reading:
 
-- **`Lean2Js.Core`** — JS へ運ぶ Lean のサブセットの構文
-- **`Lean2Js.Reify`** — 利用者の `def` を歩いて、Core 項と「この AST はこの関数を表す」の証明項を同時に組み立てる。`Lean2Js.Denotes` が形ごとの補題
-- **`Lean2Js.Eval`** — サブセットのリファレンス意味論。すべての保証はこことの一致として述べられる
-- **`Lean2Js.Compile`** — Core から JS への変換。型検査と生成を一本のパスで行う
-- **`Lean2Js.Correct`** / **`Lean2Js.Sound`** / **`Lean2Js.Decl`** — コンパイラ正当性・型の健全性・公開関数単位の主張
-- **`Lean2Js.Example`** — 出荷するプログラムと、それについての定理
+- **`Lean2Js.Core`** — the syntax of the Lean subset that is carried to JS
+- **`Lean2Js.Reify`** — walks a user's `def`, building the Core term and the proof that this AST denotes
+  that function in the same pass. `Lean2Js.Denotes` has the lemma for each form
+- **`Lean2Js.Eval`** — the reference semantics of the subset. Every guarantee is stated as agreement with
+  it
+- **`Lean2Js.Compile`** — Core to JS, type-checking and generating in a single pass
+- **`Lean2Js.Correct`** / **`Lean2Js.Sound`** / **`Lean2Js.Decl`** — compiler correctness, type
+  soundness, and the statements made per public function
+- **`Lean2Js.Example`** — the program that ships, and the theorems about it
 
-証明が届く範囲と、その外を受け持つ実行時検査・Node 上の差分テストの組み立ては
-[保証の組み立て](https://github.com/FujiHaruka/lean2js/blob/main/docs/guarantees.md)にある。
+How the proofs, the run-time checks and the differential run on Node fit together is in
+[how the guarantee is assembled](https://github.com/FujiHaruka/lean2js/blob/main/docs/guarantees.md).

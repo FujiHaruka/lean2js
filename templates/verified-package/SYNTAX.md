@@ -1,16 +1,16 @@
-# 受け付ける Lean
+# The Lean a shipped `def` may be written in
 
-`@[ship]` を付けた `def` の中に書けるのは、Lean の中の**狭い部分集合**だけ。`Array` や `String` の
-API、Lean のラムダ、再帰、`do`、型クラス、依存型はここには入らない。このページがその部分集合の全部。
+What goes inside a `def` marked `@[ship]` is a **narrow subset** of Lean. Lean's `Array` and `String`
+APIs, recursion, `do`, type classes and dependent types are not in it. This page is all of it.
 
-読めない形に当たると、**その `def` を名指しして**、止まった項ごと断る。
+A form the walk cannot read is refused **by the name of the `def`**, with the term it stopped at.
 
-## 宣言
+## Declarations
 
 ```lean
 open Lean2Js Lean2Js.Core Lean2Js.Enc
 
-/-- 取り扱う通貨と金額。 -/
+/-- Money as it crosses the boundary. -/
 structure Money where
   Money ::
   amount : Int
@@ -35,68 +35,77 @@ def orderTotal (unitPrice quantity : Int) : Int := unitPrice * quantity
 ship_package
 ```
 
-- **`@[ship]` を付けた `def` だけが出荷される。** 付けない `def` は補助として使えるが、
-  呼び出すと「証明書が無い」と断られる。
-- **型は `deriving Enc` が要る。** `Enc` が、その型が `Value` のどこに載るかを書き、
-  `TypeDef` をプログラムに出す。`==` を使うなら `deriving DecidableEq, Enc`。
-- 引数には名前が要る。`def f : Role → Int | .guest => 0` の形はパラメタ名が付かないので断られる。
-- 印を付けると、その場で宣言が読み出される。`ship_package` はそれより上の宣言を集めて呼び出しが
-  前へ進む順に並べ（書く順序は問わない）、宣言 1 本につき「この宣言はこの `def` を計算する」の証明を
-  書く。**証明書の無い宣言は `lean2js` が出荷しない。**
-- `ship_package` は、`lean2js` がベクタを走らせる前に断る条件も `lake build` の側で先に見る。
+- **Only a `def` marked `@[ship]` ships.** An unmarked `def` is fine as a Lean helper, but calling one
+  from a shipped `def` is refused: it has no certificate.
+- **A type needs `deriving Enc`.** `Enc` says where the type sits in `Value` and puts a `TypeDef` into
+  the program. Add `DecidableEq` as well if you compare values of it with `==`.
+- **A `structure` has to name its constructor** (`Money ::`). The constructor's name is the `tag` a
+  consumer reads in the generated TypeScript, and Lean's default name, `mk`, says nothing to them. A
+  structure without the line is refused.
+- Parameters need names. `def f : Role → Int | .guest => 0` has none, so it is refused.
+- **Write a declaration before you call it**, as anywhere else in Lean. `ship_package` decides the order
+  the declarations are *emitted* in — every call reaching backwards — but Lean still resolves names in
+  the order the file is written.
+- Marking a `def` reads the declaration out of it there and then. `ship_package` gathers what is above
+  it and writes, per declaration, the proof that the declaration computes that `def`. **A declaration
+  with no certificate does not ship.**
+- `ship_package` also runs, at `lake build` time, the checks `lean2js` would otherwise only make when it
+  emits: the fuel bound, and that every gathered declaration compiles.
 
-## 型
+## Types
 
-| Lean | JS / TS に出る形 |
+| Lean | What a consumer sees |
 | --- | --- |
 | `Bool` | `boolean` |
-| `Int` | `number`（±2^53-1 の整数。溢れは trap） |
-| `UInt32` | `number`（0..2^32-1） |
+| `Int` | `number` (an integer in ±2^53-1; leaving that traps) |
+| `UInt32` | `number` (0..2^32-1) |
 | `BigInt` | `bigint` |
 | `String` | `string` |
 | `Option T` | `{ tag: "none" } \| { tag: "some", value: T }` |
 | `Except E A` | `{ tag: "ok", value: A } \| { tag: "error", error: E }` |
 | `List T` | `readonly T[]` |
-| `Dict V` | `Map`（`.d.ts` では `ReadonlyMap<string, V>`） |
-| `deriving Enc` した自分の型 | タグ付きオブジェクト |
-| `Int → Int` | 公開できない。関数を取る宣言は内部専用になる |
+| `Dict V` | `ReadonlyMap<string, V>` |
+| your own type with `deriving Enc` | a tagged object |
+| `Int → Int` | cannot be published; a declaration taking a function is internal |
 
-`Int` はそのまま `Int53` に写る。Lean の `Int` は無限で `Int53` は有限なので、証明書が言うのは
-「返るなら一致する」の片側だけ —— 溢れた側は `decl_traps` が受け持つ。
+`Int` maps to `Int53`. Lean's `Int` is unbounded and `Int53` is not, so the certificate states one
+direction only — **if it returns, the two agree** — and the overflowing side is what `decl_traps`
+carries.
 
-## 式
+## Expressions
 
-### リテラル
+### Literals
 
 ```lean
-123            Int（期待される型が BigInt なら BigInt）
+123            Int (or BigInt where that is the expected type)
 "text"         String
 true  false    Bool
 ```
 
-負のリテラルは書けない（`0 - 1` と書く）。`UInt32` のリテラルは読めないので、引数か別の宣言から
-受け取る。
+A negative literal cannot be written (`0 - 1` can). `UInt32` has no literal: take one as a parameter or
+from another declaration.
 
-### 演算子
+### Operators
 
-| 演算 | 書ける型 |
+| Operation | Types it reads on |
 | --- | --- |
 | `+` `-` `*` | `Int` / `UInt32` / `BigInt` |
-| `/` `%` | `UInt32` だけ。`Int` は `Int53.div` / `Int53.mod`、`BigInt` は `BigInt.div` / `BigInt.mod` |
+| `/` `%` | `UInt32` only. `Int` takes `Int53.div` / `Int53.mod`, `BigInt` takes `BigInt.div` / `BigInt.mod` |
 | `-x` | `Int` / `BigInt` |
 | `<` `≤` `>` `≥` | `Int` / `UInt32` / `String` / `BigInt` |
-| `==` `!=` | `Enc` と `LawfulBEq` のある型（自分の型は `deriving DecidableEq, Enc`） |
-| `&&` `\|\|` | `Bool`。JS と同じに短絡する |
+| `==` `!=` | a type with `Enc` and `LawfulBEq` (your own: `deriving DecidableEq, Enc`) |
+| `&&` `\|\|` | `Bool`, short-circuiting as JavaScript does |
 | `++` | `String` / `List` |
 | `min` `max` | `Int` |
 
-**`/` を `Int` に書くと断られる。** Lean の `/` は床で、サブセットの `/` は切り捨てなので、
-同じ記号のまま通すと意味が変わる。`Int53.div` / `Int53.abs` / `Int53.mod` を書く。
+**`/` on `Int` is refused.** Lean's `/` floors and the subset's division truncates, so reading the same
+symbol as the other operation would silently change what the function means. Write `Int53.div`,
+`Int53.mod` or `Int53.abs`.
 
-ゼロ除算・`Int53` の溢れ・範囲外アクセス（`Arr.get` / `Arr.slice` / `Str.substring`）は trap で、
-リファレンス意味論と生成コードが同じコードで落ちる。
+Division by zero, `Int53` overflow and out-of-range access (`Arr.get` / `Arr.slice` / `Str.substring`)
+trap: the reference semantics stops, and the generated code throws the same code at the same point.
 
-### 条件・束縛・分岐
+### Conditions, bindings, branches
 
 ```lean
 if quantity < 1 then 0 else quantity
@@ -111,72 +120,88 @@ match state with
 | .cancelled reason => reason
 ```
 
-- パターンは `_` / 数値 / 文字列 / `true` / `false` / コンストラクタ / 名前（束縛）。入れ子にできる。
-- **`_` と書いた束縛子は生成コードにも出ない。** 名前を付けた束縛子は、その名前がそのまま
-  生成される JS の変数名になる。
-- 腕は網羅していなければならない（Lean がそれを見る）。網羅なら最後の腕はテストなしで取られる。
-- `Option` や `Except` の `match` も同じ道で読める。
-- 走査する値は変数でなくてよく（呼び出しの答えでもよい）、腕の中でその値そのものを読み直してもよい。
+- A pattern is `_`, a number, a string, `true` / `false`, a constructor, or a name that binds. Patterns
+  nest, and a wildcard may follow an arm that binds (`| .some price => price | _ => 0`).
+- **A binder written `_` does not appear in the generated code.** A named binder becomes a variable of
+  that name in the generated JavaScript.
+- Arms have to be exhaustive, which is Lean's own rule. Where they are, the last arm is taken without a
+  test.
+- `match` on `Option` and `Except` reads the same way, as does `if let`.
+- What is matched need not be a variable — the answer of a call will do — and an arm may read that value
+  again.
 
-### 呼び出しと値の組み立て
+### Calls and building values
 
 ```lean
-clampQuantity quantity 999            宣言の呼び出し
-Money.Money amount "JPY"              コンストラクタ
-Paginated.Paginated xs n              型パラメタのあるコンストラクタ
+clampQuantity quantity 999            a call to another shipped declaration
+Money.Money amount "JPY"              a constructor
+Paginated.Paginated xs n              a constructor with type parameters
+{ amount := 100, currency := "JPY" }  the same thing in structure-instance syntax
 some x    (none : Option String)      Option
 (.ok x : Except String Money)         Except
-[1, 2, 3]                             配列リテラル
-Dict.ofList [("daily", 10)]           辞書リテラル（キーは文字列リテラル）
-page.total                            フィールド
-Arr.length xs                         長さ
-Arr.get xs 0                          添字
-priced tenPercentOff amount           宣言を関数として渡す
+[1, 2, 3]                             an array literal
+Dict.ofList [("daily", 10)]           a dictionary literal (keys are string literals)
+page.total                            a field
+Arr.length xs                         a length
+Arr.get xs 0                          an index
+priced tenPercentOff amount           handing a declaration to a call
 ```
 
-- 呼び出せるのは、**同じ名前空間の `@[ship] def`** だけ。`ship_package` が呼ばれる順に並べるので、
-  書く順序は問わない。
-- 関数として渡せるのは**宣言の名前だけ**。その場のラムダは渡せない。
+- What you may call is a **`@[ship] def` in the same namespace**. `ship_package` puts them in the order
+  every call reaches backwards in.
+- What you may hand to a call as a function is **the name of a declaration**, not a lambda written in
+  place.
 
-### 配列・文字列・辞書
+### Arrays, strings, dictionaries
 
-| 受け手 | 書けるもの |
+| On | What you may write |
 | --- | --- |
 | `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` |
 | `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.split` `Str.substring` `Str.length` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
-| `Dict V` | `.get`（`Option V` が返る） `.set` `.has` `.erase` `.keys` `.values` `.size` |
+| `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` |
 
-`Arr.length` / `Arr.get` / `Arr.slice` と `Str.*` は prelude のもので、Lean の `List.length` や
-`String.length` ではない。範囲外で trap するところを総関数として書くために別に置いてある。
+`Arr.length` / `Arr.get` / `Arr.slice` and the `Str.*` functions are the prelude's, not Lean's
+`List.length` or `String.length`. They are separate so that what traps out of range can still be written
+as a total function.
 
-ラムダが書けるのは `.map` / `.filter` / `.find?` / `.all` / `.any` / `.foldl` の引数の位置**だけ**で、
-本体からは外側の引数を読める（`states.filter (fun state => canRefund role state)`）。
+A lambda may be written **only** as the argument of `.map` / `.filter` / `.find?` / `.all` / `.any` /
+`.foldl`, and its body may read the enclosing parameters
+(`states.filter (fun state => canRefund role state)`). In that position the name of a shipped
+declaration works too (`quantities.map clampToTen`).
 
-## 文法の外にある規則
+## Rules that are not syntax
 
-- **呼び出しは循環できない。** Lean 自身が相互再帰の `def` を断るので、循環は書く前に止まる。
-  繰り返しは配列の走査（`.map` / `.filter` / `.foldl` …）が受け持つ。
-- **関数は値にならない。** 渡せるのは宣言の名前だけで、`ship_package` は渡される宣言を渡し先の宣言より
-  前に並べる。`xs.map double` は書けない —— 走査が取るのはラムダの構文であって値ではない。
-- **関数を引数に取る宣言は公開されない。** 公開境界に関数型は出せないので、`.d.ts` にも
-  `index.js` の輸出にも現れず、内部からだけ呼ばれる。取れる関数は 1 引数のものだけ。
-- **型パラメタは `Type` だけ。** `Paginated (T : Type)` は書けるが、`Type 1` や型クラス制約は入らない。
-- **燃料の上限。** 必要な燃料は式の深さと宣言の本数から決まり、10000 を超えるプログラムは書き出せない。
-  `ship_package` がこれを見る。
+- **Calls cannot cycle.** Lean refuses mutually recursive `def`s, so a cycle stops before this does.
+  Repetition is what the array traversals are for (`.map` / `.filter` / `.foldl` …).
+- **A function is not a value.** What may be handed over is the name of a declaration, and
+  `ship_package` places a declaration that is handed over before the one that takes it. A function may
+  take at most one argument.
+- **A declaration that takes a function is not published.** No function type crosses the public
+  boundary, so it appears in neither `index.d.ts` nor the exports of `index.js`, and only other
+  declarations call it.
+- **A type parameter is a `Type`.** `Paginated (T : Type)` is fine; `Type 1` and class constraints are
+  not.
+- **There is a fuel ceiling.** The fuel a program needs follows from the depth of its expressions and
+  the number of its declarations; past 10000 it cannot be written out. `ship_package` checks this.
 
-## サブセットの外に出たとき
+## When you leave the subset
 
-| 書いたもの | 返るもの |
+| What you wrote | What comes back |
 | --- | --- |
-| `Int` の `/` | `reify: a / b is outside the subset this walk reads` |
-| 証明書の無い宣言の呼び出し | `reify: the call to f needs f_certificate, which is not in scope` |
-| `deriving DecidableEq` の無い型の `==` | `reify: comparing two values of type T needs EncBEq T, ...` |
-| その場のラムダを関数として渡す | `reify: fun x => x is a function that is not a declaration, ...` |
-| 関数をそのまま返す | `reify: rule is a function, and a function reaches the subset only where it is called or handed to a call` |
-| `deriving Enc` の無い型 | `reify: T has no Enc instance, so there is no subset type to give it` |
-| その他 | `reify: <項> is outside the subset this walk reads` |
+| `/` on `Int` | `reify: a / b is outside the subset this walk reads` |
+| a call to a declaration with no certificate | `reify: the call to f needs f_certificate, which is not in scope` |
+| `==` on a type without `deriving DecidableEq` | `reify: comparing two values of type T needs EncBEq T, ...` |
+| a lambda handed over as a function | `reify: fun x => x is a function that is not a declaration, ...` |
+| a function returned as a value | `reify: rule is a function, and a function reaches the subset only where it is called or handed to a call` |
+| a tuple | `reify: Prod.mk builds a tuple, and the subset has no tuple type: declare a structure with deriving Enc and build that instead` |
+| `Nat` | `reify: Nat is not a subset type; the subset's integer is Int, ...` |
+| `Float` | `reify: Float is not a subset type; the subset has no floating point, ...` |
+| any other type without `deriving Enc` | `reify: T has no Enc instance, so there is no subset type to give it` |
+| a `structure` whose constructor is not named | `deriving Enc: T.mk would ship as the tag "mk", ...` |
+| anything else | `reify: <term> is outside the subset this walk reads` |
 
-**断りは `def` を名指しする。** `Lean.Expr` は位置を持たないので、指せるのは読んだ `def` までで、
-その中のどの項で止まったかは文言の中に出る。サブセットのどこにいるか分からなくなったら、
-コンパイラの `Lean2Js/Example.lean` が全部の形をひととおり使っている。
+**A refusal names the `def`.** `Lean.Expr` carries no position, so the furthest it can point is the
+`def` that was read; which term inside it stopped the walk is in the message.
+
+Once the logic is written, [`PROVING.md`](PROVING.md) is what you may prove about it with.

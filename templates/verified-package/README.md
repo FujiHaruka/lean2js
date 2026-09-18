@@ -1,68 +1,83 @@
-# verified-package テンプレート
+# verified-package template
 
-Lean で書いた業務ロジックと、それについての定理から、npm パッケージを生成するパッケージの雛形。
-**出荷されるのは処理系ではなくあなたの成果物**で、このディレクトリはその出発点になる。
+The starting point for a package that ships business logic written in Lean, together with the theorems
+proved about it. **What ships is your work, not the compiler**, and this directory is where it starts.
 
-## 使い方
+## Use
 
 ```sh
 cp -R templates/verified-package my-logic && cd my-logic
-lake build                          # ロジックと定理を検査する
-lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケージを書き出す
+lake build                           # checks the logic and the theorems
+lake exe lean2js MyLogic --out dist   # checks them again, then writes the npm package into dist/
 ```
 
-`lean2js` は `Lean2Js` が持つ実行ファイルで、`lake exe` が依存から解決する。渡すのはモジュール名で、
-そのモジュールの `manifest` と、同じ名前空間にある `Program` と公開定理を実行時に読んで書き出す
-（`--manifest` で別の定数を指せる）。
+`lean2js` is an executable the `Lean2Js` library owns, and `lake exe` resolves it out of the dependency.
+What it takes is a module name; it reads that module's `manifest`, and the `Program` and public theorems
+beside it, at run time (`--manifest` points it at a different constant).
 
-`lake exe lean2js` は書き出す前に照合する。公開関数ごとに生成した差分ベクタの全件について、Lean の
-リファレンス意味論と生成した JavaScript の模型が一致しなければ、パッケージは書き出されずに落ちる。そのうえで、組み立てたパッケージを Node で読み込み、同じ全件を
-本物の JavaScript で呼ぶ。ここで食い違っても書き出されない。だから `node` が PATH に要る。
+It checks before it writes. For every public function, every generated vector has to agree between
+Lean's reference semantics and the model of the generated JavaScript, or the package is not written. Then
+it assembles the package, loads it into Node, and calls the same vectors in real JavaScript. A
+disagreement there stops it too — which is why `node` has to be on your `PATH`.
 
-名前空間の公開定理も、どれも書き出す前に証明を見る。`propext` / `Classical.choice` / `Quot.sound` 以外の
-公理に依っていれば落ちる —— `sorry` で塞いだ証明は `lake build` を警告だけで通るので、止まるのはここ。
+Every public theorem in the namespace is looked at before anything is written. A proof resting on an
+axiom other than `propext` / `Classical.choice` / `Quot.sound` fails the run — a proof plugged with
+`sorry` gets through `lake build` with only a warning, so this is where it stops.
 
-## 中身
+## What is in here
 
-| ファイル | 役割 |
+| File | What it is |
 | --- | --- |
-| `lakefile.toml` | `Lean2Js` への依存。`rev` を固定すると処理系の版が固定される |
-| `MyLogic.lean` | 業務ロジック（普通の Lean の `def`）、定理、`lean2js` が読む manifest |
-| [`SYNTAX.md`](SYNTAX.md) | `@[ship]` を付けた `def` の中に書ける Lean の全部 |
+| `lakefile.toml` | The dependency on `Lean2Js`. Pinning `rev` pins the compiler |
+| `MyLogic.lean` | The business logic (ordinary Lean `def`s), the theorems, and the manifest `lean2js` reads |
+| [`SYNTAX.md`](SYNTAX.md) | Everything a `def` marked `@[ship]` may be written in |
+| [`PROVING.md`](PROVING.md) | What you are proving with, and the shapes a theorem takes |
 
-`dist/` に出るのは `index.js` / `index.js.map` / `index.d.ts` / `<パッケージ名の末尾>.lean2js` /
-`proof-manifest.json` / `README.md` / `package.json`。生成される `README.md` は
-公開 API と定理と公理の一覧で、npm のページに出るのはこれ。
+`dist/` gets `index.js`, `index.js.map`, `index.d.ts`, `<last segment of the package name>.lean2js`,
+`proof-manifest.json`, `README.md` and `package.json`. The generated `README.md` is the public API, what
+a call throws, and the theorems and axioms — that is the page npm shows.
 
-## 書き換えるところ
+## What to change
 
-- `MyLogic.lean` の `def`（`invoiceFor` と、それが呼ぶ `invoiceLines` / `discountOn` …）を自分のものに
-  置き換える。出荷するものには `@[ship]` を付ける —— 印を付けた時点で宣言が読み出され、
-  `ship_package` がそれを集めて呼び出しが前へ進む順に並べ、宣言ごとの証明書を書く。
-  この行より下に書いた `def` は集まらず、`lean2js` が落ちる。
-  書ける Lean は [`SYNTAX.md`](SYNTAX.md) —— **受け付けるのは Lean の狭い部分集合**で、
-  読めない形は `def` を名指しして断られる
-- `ship_package` はそのまま残す。`lean2js` がベクタを走らせる前に断る条件（燃料の上限、
-  コンパイルできない宣言）を `lake build` の側で先に落とすのも、この行
-- 定理を書く。**名前空間の公開定理はすべて、成果物の定理として載る。** 文言は Lean が定理に対して
-  印字するシグネチャで、docstring があれば説明として添えられる。載せたくない補題は `private` にする
-- `manifest` の `package` / `version` が、生成される `package.json` にそのまま入る
-- `compiler` / `lean` / `source` も、定理の一覧と文言も書かない —— `lean2js` が入れる。手書きだと、
-  成果物が何でビルドされ何が証明されたかについて、事実と違うことを言えてしまう
-- 公開するなら `isPrivate := false` を書く。既定は `true` で、生成される `package.json` に
-  `"private": true` が入る（事故で publish されない側に倒してある）。`license` /
-  `repository` も `manifest` に置くと `package.json` に入る
+- **The `def`s in `MyLogic.lean`.** Replace `invoiceFor` and what it calls with your own. Mark what
+  ships with `@[ship]`: marking reads the declaration out of the `def` there and then, and
+  `ship_package` gathers those, orders them so every call reaches backwards, and writes a certificate
+  per declaration. A `def` written **below** `ship_package` is not gathered, and `lean2js` refuses to
+  write a package that is missing it. What you may write inside a marked `def` is [`SYNTAX.md`](SYNTAX.md)
+  — a narrow subset, where an unreadable form is refused by the name of the `def`.
+- **Leave `ship_package` where it is.** It is also what makes `lake build` refuse, ahead of the vectors,
+  a program past the fuel ceiling or one the compiler cannot take.
+- **The theorems.** Every public theorem in the namespace ships as a claim: the wording is the signature
+  Lean prints for it, and the docstring becomes its description. Make a lemma you do not want published
+  `private`. [`PROVING.md`](PROVING.md) is how.
+- **`manifest`.** `package` and `version` go straight into the generated `package.json`. Do not write
+  `compiler`, `lean`, `source`, or the list of theorems — `lean2js` fills those in, and a hand-written
+  one could say something about the build that is not true.
 
-## 定理の書き方
+## Publishing it
 
-**自分の `def` についての普通の Lean の等式を書く。** 解釈器も AST も出てこない。`@[ship]` が宣言を
-読み出したときに `ship_package` が書く証明書が「パッケージが export する関数はこの `def` を計算する」
-と言うので、`def` についての等式がそのまま出荷物についての主張になる。
+The generated `package.json` carries `"private": true` until you say otherwise, so that nothing is
+published by accident. To publish:
 
-`MyLogic.lean` の 4 本が、よく要る形をひととおり踏んでいる —— 引数が具体値で計算だけで閉じるもの
-（`enterprise_includes_its_seats`、`decide`）、`match` の腕が定数のもの（`no_discount_takes_nothing`、
-`rfl`）、`def` を展開して閉じるもの（`free_plan_is_never_charged`、`simp [seatCharge, seatPrice]`）、
-入口の `if` を仮説で倒すもの（`negative_seats_are_refused`、`simp [invoiceFor, hneg]`）。
+```lean
+def manifest : Manifest := {
+  package := "@your-scope/your-logic"
+  version := "0.1.0"
+  isPrivate := false
+  license := some "MIT"
+  repository := some "https://github.com/you/your-logic"
+}
+```
 
-生成した JavaScript がリファレンス意味論と同じ値を返すこと・同じコードで落ちること・入口で弾くことは、
-`Lean2Js` の側で一度だけ、すべてのプログラムについて証明してある。ここで書く必要は無い。
+`license` and `repository` land in `package.json` as written. Then:
+
+```sh
+lake exe lean2js MyLogic --out dist
+cd dist && npm publish --access public
+```
+
+The package has no dependencies, no build step and no Lean in it: what a consumer installs is
+`index.js`, `index.d.ts` and the files above.
+
+To use it inside a monorepo without publishing, point the workspace at the output directory — `dist/` is
+a complete package — and keep `isPrivate := true`.

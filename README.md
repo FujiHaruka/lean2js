@@ -4,6 +4,10 @@ Prove your business logic in Lean 4, and ship it as an ordinary npm package.
 
 Adding formal verification does not mean replacing your stack. It means adding one package.
 
+**One person writes the Lean; everyone else writes TypeScript.** What the rest of your team installs is
+a dependency with no build step, no runtime and no Lean in it — so the cost of the proofs is paid once,
+by whoever writes the logic, and not by the code that calls it.
+
 ```
 Ordinary Lean    →  verified compiler  →  npm package  →  React / Next / Node
 def + theorem        semantics              index.js         ordinary import
@@ -69,6 +73,12 @@ seatCharge({ tag: "team" }, 9007199254740991); // Error: int53Overflow
 
 You need [elan](https://github.com/leanprover/elan) (Lean 4.33.1) and `node` on your `PATH`:
 `lean2js` runs every generated vector against the assembled package on Node before it writes anything.
+New to Lean? [Functional Programming in Lean](https://lean-lang.org/functional_programming_in_lean/) is
+enough — the subset below is a small part of what it covers, and none of it is dependent types.
+
+The first `lake build` fetches and builds this library from source: on an M-series Mac that is about a
+minute, the emit that follows about half of one, and `.lake` ends up around 270MB. Everything after that
+is incremental.
 
 A package is three files.
 
@@ -158,6 +168,9 @@ artifact runs at. Nothing lands in `--out` when it refuses, and the vectors are 
 invoice assembled from line items, validation that refuses a negative seat count, and four theorems.
 Copy it and start replacing declarations.
 
+You can also start without proving anything: a package with no theorems is written all the same, and its
+README says plainly that it ships none. The proofs can come once the shape of the logic has settled.
+
 ## Writing the logic
 
 **You write ordinary Lean, and `@[ship]` marks what ships.** The subset is narrow — no `Array` or
@@ -228,7 +241,10 @@ Where JavaScript and Lean disagree, the generated code follows neither silently:
 
 Theorems are about your own `def`s. Neither the interpreter nor the AST appears in them, and the
 proofs are the ones you would write about any Lean function — `Lean2Js/Example.lean` is the exception
-that proves it, because the compiler's own example carries the compiler's guarantees too:
+that proves it, because the compiler's own example carries the compiler's guarantees too.
+**There is no Mathlib here**: what you prove with is Lean's own `rfl`, `decide`, `simp`, `omega` and
+`cases`, which is what the shapes in [`PROVING.md`](templates/verified-package/PROVING.md) are written
+around.
 
 ```lean
 /-- A workspace on the free plan is never billed for seats, whatever seat count it reports. -/
@@ -277,9 +293,33 @@ inside what the theorems state: reordered and undeclared keys normalise to the s
 same theorem carries the call. The one shape left out is one no caller can build — a dictionary
 holding the same key twice, which this model writes as a list and a `Map` cannot hold.
 
+What is still trusted, and is worth knowing before you put this in front of anyone: how TypeScript
+reads the printed `.d.ts` text, Lean's own kernel and elaborator, and Node. And what no proof here can
+tell you is whether the rule you wrote down is the rule the business wanted — a wrong rule ships proved.
+
 [`docs/guarantees.md`](docs/guarantees.md) has the whole assembly, and the
 [Lean reference](https://fujiharuka.github.io/lean2js/) has the statements, their hypotheses and the
 proofs.
+
+## Publishing what it writes
+
+`dist/` is a complete package: no dependencies, no build step, nothing to configure. The generated
+`package.json` carries `"private": true` until the manifest says otherwise, so nothing is published by
+accident.
+
+```lean
+def manifest : Manifest := {
+  package := "@your-scope/your-logic"
+  version := "0.1.0"
+  isPrivate := false
+  license := some "MIT"
+  repository := some "https://github.com/you/your-logic"
+}
+```
+
+`license` and `repository` go into `package.json` as written. Then `cd dist && npm publish --access
+public`. Inside a monorepo, point the workspace at the output directory instead and leave
+`isPrivate := true`.
 
 ## License
 

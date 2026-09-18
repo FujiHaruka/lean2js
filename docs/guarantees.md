@@ -1,72 +1,85 @@
-# 保証の組み立て
+# How the guarantee is assembled
 
-`lean2js` が出荷するパッケージについて、証明が届く範囲と、その外を受け持つ実行時検査の全体。
-README の What is guaranteed はこのページの要約で、定理の主張・仮定・証明の構成は
-[Lean のリファレンス](https://fujiharuka.github.io/lean2js/)にある。
+What the proofs reach in a package `lean2js` writes, and what the run-time checks carry outside that.
+The README's *What is guaranteed* is the summary of this page; the statements, their hypotheses and the
+structure of the proofs are in the [Lean reference](https://fujiharuka.github.io/lean2js/).
 
 ```
-利用者の Lean の def  ──証明書（宣言ごと 1 本・出荷する 71 本すべて）──  リファレンス意味論
-        │
-        └──利用者の定理は、この def についての普通の Lean の等式
+your Lean def  ──certificate (one per declaration, all 71 shipped)──  reference semantics
+      │
+      └──your theorems are ordinary Lean equations about this def
 
-Lean のリファレンス意味論  ──証明（式のすべての形・公開関数 70 本すべて）──  生成した JS
-        │                                        │
-        │                       └──実行時検査（成果物の全ベクタ）──┘
-        │
-        └──証明（十分なステップを与えたすべての呼び出し）──  small-step 意味論
+reference semantics  ──proof (every expression form, all 70 public functions)──  generated JS
+      │                                        │
+      │                       └──run-time check (every vector of the artifact)──┘
+      │
+      └──proof (every call given enough steps)──  small-step semantics
 
-生成した JS  ──証明（往復）──  出荷する index.js のテキスト
+generated JS  ──proof (round trip)──  the text of the index.js that ships
 
-生成した JS の模型  ──実行時検査（Node 上・成果物の全ベクタ）──  本物の JavaScript
+model of the generated JS  ──run-time check (on Node, every vector)──  real JavaScript
 ```
 
-- **利用者の関数と出荷する宣言** — 宣言は利用者の `def` から**歩いて読み出され**、同じ歩きが
-  「この宣言はこの `def` を計算する」の証明項を組み立てる（`Denotes`）。変換器は信頼していない ——
-  証明が通らなければ宣言は存在しない。`lean2js` は**証明書の無い宣言を出荷しない**ので、
-  AST を手で渡して迂回する道は無い。だから利用者の定理は `seatCharge .free seats = 0` のような
-  自分の関数についての等式でよく、それがそのまま出荷物についての主張になる
-- **証明が届く範囲** — `Core.Expr` の **35 形すべて**と、公開関数 **70 本すべて**。`eval` が値を返すなら
-  生成した同名関数が同じ値を返し（[`decl_correct`]）、`eval` が落ちるなら**同じコード**で落ち
-  （[`decl_traps`]）、`eval` が受け取らない引数は本体に入る前に `typeError` になる（[`decl_refuses`]）。
-  値を返す側に「宣言した型を満たす引数について」という但し書きは無い —— 型が合っていることは `eval` が
-  値を返したこと自体から出る。落ちる側は宣言した型を仮定し、入口で弾く側は公開宣言であることを
-  仮定する。**同じキーを 2 度持つ辞書を除いて、3 方向とも引数は入口検査が通す綴りすべてについて言う**
-  （`ArgsDecode`）—— キーの並びも宣言に無いキーも、正規の綴りと同じ定理が受け持つ。除いたその 1 形は
-  模型が辞書を連想リストで持つから書けるだけで、実行時に渡ってくる `Map` には作れない。`eval` 側の燃料切れは
-  どの向きでも答えに入らない（[`cost`] が必要な燃料の上界を構文から計算し、
-  [`progOk`] が呼び出しが前へしか進まないことを見る。出荷時の上限 10000 に対してこの例題は 503）
-- **その土台** — 生成コードが被演算子の型で分岐できるのは型の健全性（[`typeSound`]）、`match` の最後の腕を
-  テストなしで取れるのは網羅性（[`firstMatch_isSome`]、Maranget の usefulness 検査の健全性）による。
-  評価順序と短絡評価を継続として明示した small-step 意味論も、公開関数へのすべての呼び出しで `eval` と
-  同じ答えに着く（[`stepCall_agrees`]）
-- **出荷物そのもの** — 書き出した `index.js` は**そのまま同じ AST に読み戻る**
-  （[`parseModule_render_of_compileProgram`]、但し書き無し）。生成コードが呼ぶ `__` 接頭辞の実行時
-  ヘルパ 49 本は手で書いてあるが、模型が仮定しているぶんは**すべて**、印字器の書き出すソースの計算と
-  一致する —— 表 35 行の全行（[`helpers_ship_as_modelled`]）と、表ではなく模型の評価規則として
-  持っている `__ck` と走査ヘルパ 6 本（[`calls_ck_checkTy`]、[`calls_map`] ほか）。残りは他のヘルパから
-  呼ばれるだけで、その証明の中で展開される
-- **`.d.ts`** — 入口検査を通る引数は `.d.ts` の型を満たし（[`entry_check_fits_dts`]）、`.d.ts` の型を
-  満たす引数は、下の範囲の但し書きを除いて入口検査を通る（[`dts_fits_entry_check`]）。返る側も同じ
-  （[`encoded_values_fit_dts`]）。`.d.ts` は利用者が実際に読む唯一の型なので、**両方向とも manifest に
-  載っている**。3 本が `.d.ts` 側と呼んでいるのは `Dts.TsSat` —— 宣言した型を Lean で読んだ述語で、
-  印字した `.d.ts` のテキストを TypeScript がどう読むかは、ここだけ信頼している
-- **証明の外** — 成果物ごとに生成する全ベクタ（この例題で 25511 件）を、`lean2js` が書き出す前に
-  2 通りで確かめる。`eval` と JS の模型の一致（[`checkAgreement`]）と、組み立てたパッケージを一時
-  ディレクトリで Node に読み込ませた本物の JavaScript との一致。1 件でも食い違えば出力先には何も書かない
-- **一覧が証明とずれないこと** — manifest に載る定理は手で書かない。`lean2js` が同じ名前空間の公開定理を
-  すべて集め、Lean が印字するシグネチャを文言にする。宣言ごとの証明書は 1 本ずつは載らない ——
-  出荷する宣言と 1 対 1 で、1 本でも欠ければ書き出さないので、載せるのは「あること」であって
-  71 通りの言い換えではない。どの定理も `propext` / `Classical.choice` /
-  `Quot.sound` 以外の公理に依らないことも書き出す前に確かめる —— `sorry` で塞いだ証明は `lake build` を
-  警告だけで通ってしまうので、止めているのはこちら
+- **Your function and the declaration that ships** — a declaration is **walked out of** your `def`, and
+  the same walk assembles the proof term for "this declaration computes this `def`" (`Denotes`). The
+  translator is not trusted: where the proof does not go through, the declaration does not exist.
+  `lean2js` **will not ship a declaration without a certificate**, so there is no way round it by handing
+  over an AST. That is why your theorems can be equations about your own functions, like
+  `seatCharge .free seats = 0`, and still be claims about what ships.
+- **What the proofs reach** — **all 35 forms** of `Core.Expr` and **all 70 public functions**. Where
+  `eval` returns a value the generated function of the same name returns the same value
+  ([`decl_correct`]); where `eval` traps the generated code throws **the same code** ([`decl_traps`]);
+  an argument `eval` would not take becomes a `typeError` before the body runs ([`decl_refuses`]). The
+  returning direction carries no "for arguments meeting the declared type" caveat — that the types match
+  follows from `eval` having returned at all. The trapping direction assumes the declared type, and the
+  refusing one assumes the declaration is public. **Except for a dictionary holding the same key twice,
+  all three directions speak for every spelling of the arguments the entry check accepts**
+  (`ArgsDecode`) — the order of keys and keys the declaration does not name are carried by the same
+  theorems as the canonical spelling. That one excluded shape exists only because the model holds a
+  dictionary as an association list; a `Map` arriving at run time cannot be built that way. Running out
+  of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on the fuel
+  needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against the
+  ceiling of 10000 the artifact runs at, this example needs 503).
+- **What that rests on** — the generated code may branch on the type of an operand because of type
+  soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
+  exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
+  semantics, which makes evaluation order and short-circuiting explicit as continuations, reaches the
+  same answer as `eval` for every call to a public function ([`stepCall_agrees`]).
+- **The artifact itself** — the `index.js` that is written **reads back as the same AST**
+  ([`parseModule_render_of_compileProgram`], no caveat). The 49 run-time helpers the generated code
+  calls under the `__` prefix are hand-written, but **everything the model assumes of them** agrees with
+  what the printer writes out: every one of the 35 rows of the table ([`helpers_ship_as_modelled`]), and
+  `__ck` and the six traversal helpers, which the model holds as evaluation rules rather than as table
+  rows ([`calls_ck_checkTy`], [`calls_map`] and the rest). The others are only called by helpers, and
+  are unfolded inside those proofs.
+- **The `.d.ts`** — an argument the entry check accepts satisfies the `.d.ts` type
+  ([`entry_check_fits_dts`]), and an argument satisfying the `.d.ts` type passes the entry check, with
+  the range caveat below ([`dts_fits_entry_check`]). The returning side is the same
+  ([`encoded_values_fit_dts`]). The `.d.ts` is the only type a consumer actually reads, so **both
+  directions are in the manifest**. What those three call the `.d.ts` side is `Dts.TsSat` — the declared
+  type read as a predicate in Lean. How TypeScript reads the printed `.d.ts` text is the one thing
+  trusted here.
+- **Outside the proofs** — every vector generated for the artifact (25511 of them for this example) is
+  checked two ways before anything is written: `eval` against the model of the generated JavaScript
+  ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
+  real JavaScript. One disagreement and nothing is written to the output directory.
+- **The list not drifting from the proofs** — the theorems in the manifest are not written by hand.
+  `lean2js` collects every public theorem in the same namespace and uses the signature Lean prints as the
+  wording. The per-declaration certificates are not listed one by one: they correspond one-to-one with
+  the shipped declarations and nothing is written if one is missing, so what is published is that they
+  are all there rather than 71 restatements of one shape. That no theorem rests on an axiom beyond
+  `propext` / `Classical.choice` / `Quot.sound` is also checked before anything is written — a proof
+  plugged with `sorry` gets through `lake build` with only a warning, so this is where it is stopped.
 
-**`.d.ts` の型が通れば入口検査も通る。但し書きは 1 点だけ。** `Int53` と `UInt32` はどちらも `number`
-に写るので、整数でない数も範囲を外れた数も TS では通り、渡せば `typeError` になる。それ以外は縛らない
-—— オブジェクトのフィールドは名前で読むので並びは自由で、宣言に無いキーが載っていても通り、本体に
-届く前に落ちる。**その綴りで呼んだときに同じ値が返ることも証明の中にある** —— `{currency, amount}` と
-`{amount, currency}` は同じ値に正規化され、一致と trap の主張がそのまま受け持つ（`ArgsDecode`）。
-別の綴りは `shapes` としてベクタにも載るが、そこで見ているのは Lean の模型と本物の JavaScript が同じ
-答えを返すことで、綴りの範囲ではない。
+**An argument that satisfies the `.d.ts` passes the entry check, with one caveat.** `Int53` and `UInt32`
+both map to `number`, so a number that is not an integer, or is outside the range, satisfies TypeScript
+and becomes a `typeError` when passed. Nothing else is narrower than it looks — the fields of an object
+are read by name, so their order is free, and a key the declaration does not name is accepted and dropped
+before the body sees it. **That the same value comes back for those spellings is inside the proofs too**:
+`{currency, amount}` and `{amount, currency}` normalise to the same value, and the agreement and trap
+statements carry them (`ArgsDecode`). The other spellings are in the vectors as well, under `shapes`, but
+what is checked there is that the Lean model and real JavaScript answer alike, not the range of
+spellings.
 
 [`decl_correct`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_correct
 [`decl_traps`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_traps

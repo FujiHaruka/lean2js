@@ -44,6 +44,12 @@ private partial def encTy (α : Lean.Expr) : TermElabM Term := do
         where it takes one"
     return ← `(Lean2Js.Core.Ty.fn [$(← encTy α.bindingDomain!)] $(← encTy ret))
   unless (← synthInstance? (mkApp (mkConst ``Lean2Js.Enc) α)).isSome do
+    if α.isConstOf ``Nat then
+      throwError "reify: Nat is not a subset type; the subset's integer is Int, which is the one that \
+        maps to a JavaScript number and traps rather than wrapping"
+    if α.isConstOf ``Float then
+      throwError "reify: Float is not a subset type; the subset has no floating point, so an amount is \
+        an Int in minor units"
     throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
   `(Lean2Js.Enc.ty (α := $(← exprToSyntax α)))
 
