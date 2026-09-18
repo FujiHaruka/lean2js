@@ -1,13 +1,14 @@
 # 普通の Lean を入力に取る frontend 計画
 
-利用者が `decl%` の表層構文ではなく**普通の Lean の `def`** を書き、**普通の Lean の定理**を証明し、
-それがそのまま出荷物についての主張になるようにするための計画。
+利用者が表層構文ではなく**普通の Lean の `def`** を書き、**普通の Lean の定理**を証明し、
+それがそのまま出荷物についての主張になるようにするための計画。**済** —— Step 0 から 5 まで
+通っていて、以下は各段で何を決め、何が分かったかの記録。
 
 ## 文脈
 
-いま利用者が `decl%` の中に書いているのは Lean ではない。Lean のパーサだけ借りた別の文法で、
-`Core.Expr` の 35 形へマクロが展開する。だから定理は利用者の関数についてではなく、
-**プログラムを解釈器にかけた結果**について述べることになる。
+この計画の前は、利用者が書いていたのは Lean ではなかった。Lean のパーサだけ借りた別の文法
+（`decl%` / `type%`）で、`Core.Expr` の 35 形へマクロが展開する。だから定理は利用者の関数について
+ではなく、**プログラムを解釈器にかけた結果**について述べることになっていた。
 
 ```lean
 evalCall program "seatCharge" [.obj "free" [], .int53 seats] = .ok (.int53 0)
@@ -16,7 +17,7 @@ evalCall program "seatCharge" [.obj "free" [], .int53 seats] = .ok (.int53 0)
 これが `seatCharge .free seats = 0` になる、というのがこの計画の目的。表現力ではなく**証明の書き味**が
 主眼で、対外的な「Lean を JS に変換する」が字義どおりになるのはその副産物。
 
-`docs/mvp-plan.md` の Approach は、この frontend を明示的に後回しにしている。理由は 2 つ挙がっていた。
+`docs/mvp-plan.md` の Approach は、この frontend を明示的に後回しにしていた。理由は 2 つ挙がっていた。
 
 1. **`Lean.Expr` を入力に取ると、証明すべき命題そのものが書けない** —— ソース側の意味論が Lean 本体の
    elaborator に委ねられるため
@@ -51,7 +52,7 @@ theorem seatCharge_denotes (p : Plan) (s : Int53) :
 | 表現力を広げること | 受け付ける集合は 35 形のまま。再帰も Mathlib も型クラスも依存型も入らない。**狭さは消えない。消えるのは構文だけ**で、「何が書けるか」の説明責任は残る |
 | 一度に全プログラムについての変換正当性 | Lean 自身の意味論を Lean で形式化することになる。`docs/mvp-plan.md` の Approach の判断はこの点では生きている |
 | trap しないことを自動で証明すること | 「返るなら一致する」は片側。「この入力では落ちない」は別建ての宿題で、この計画には入れない |
-| 表層構文との恒久的な併存 | ベクタも docs もテンプレートもエラーメッセージも二重になる。移行が済んだら退役させる |
+| 表層構文との恒久的な併存 | ベクタも docs もテンプレートもエラーメッセージも二重になる。移行が済んだので退役させた |
 
 ## Approach
 
@@ -140,24 +141,16 @@ altNumParams [1, 1, 1]`）。reifier が `casesOn` / `brecOn` を手で剥がす
 
 ## Step 1. 符号化層と、スカラの断片 —— 済
 
-核は `Lean2Js/Reify.lean` に spike として入っている —— `Denotes`、形ごとの補題（リテラル・変数・
-`+` / `-` / `*`）、AST と証明を同じ walk で出す reifier、その出力。`reify_decl% add` が作る `Decl` は
-`Example.add`（表層構文で書いたもの）と `rfl` で等しく、`reify_proof% add` が出す証明にタクティクスは
-1 つも無い。**証明項は組める。**
+核は `Lean2Js/Denotes.lean` と `Lean2Js/Reify.lean` —— `Denotes`、形ごとの補題、AST と証明を同じ
+walk で出す reifier。`reify_proof% add` が出す証明にタクティクスは 1 つも無い。**証明項は組める。**
 
 符号化層も入っている —— `Lean2Js/Enc.lean` の `Enc` クラスと、`Bool` / `Int` / `UInt32` / `String` /
 `Option` / `Except` / `List` の instance。利用者の型は `Lean2Js/EncDeriving.lean` の `deriving Enc` が
-受け持ち、`Core.TypeDef`・符号化・復号・entry check を出す。`Denote.lean` の `Role` はこれで derive した
-もので、出てきた `Role.typeDef` は表層構文で書いた `Example.Role` と `rfl` で等しい。
+受け持ち、`Core.TypeDef`・符号化・復号・entry check を出す。
 
-walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`・単項 `-`・`<` / `≤` / `>` / `≥`・
-`if`・`let`・呼び出し。`reify_decl% clampQuantity` と `reify_decl% lineTotal` は表層構文で書いた
-`Example.clampQuantity` / `Example.lineTotal` と `rfl` で等しく、`lineTotal` の証明書は
-`clampQuantity` の証明書を引用して組まれる —— 引用するのは reifier で、手では書いていない。
-
-残っているもの:
-
-（残りは無い。`deriving Enc` の `match` 対応補題は Step 2 で足した。）
+この段で walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`・単項 `-`・
+`<` / `≤` / `>` / `≥`・`if`・`let`・呼び出し。`lineTotal` の証明書は `clampQuantity` の証明書を
+引用して組まれる —— 引用するのは reifier で、手では書いていない。
 
 ### 分かったこと
 
@@ -253,12 +246,9 @@ reifier は `matchMatcherApp?` で matcher を見つけ、その **splitter** �
 **利用者は引数に名前を付けなければならない。** `def roleRank : Role → Int | .guest => 0` の形だと
 パラメタ名が `x✝` になり、生成する関数の引数名にならない。reifier はこれを断る。
 
-入れ子の `match` はまだ読めない。
-
 ## Step 3. 走査 —— 済
 
-`List.map` / `filter` / `find?` / `all` / `any` / `foldl` を読む。`reify_decl% lineTotals` と
-`reify_decl% anyOverLimit` は表層構文の `Example.*` と `rfl` で等しい。
+`List.map` / `filter` / `find?` / `all` / `any` / `foldl` を読む。
 
 ### 分かったこと
 
@@ -275,13 +265,11 @@ fuel で**回す（`evalMapItems` などが `f` をそのまま渡す）。だ�
 **λ を eta 展開してはいけない。** すでに λ のものに `etaExpand` を掛けると β 簡約されない適用が
 できて walk が読めなくなる。
 
-まだ読めない: 配列そのものの形（リテラル・添字・長さ・スライス・反転）。
-
 ## Step 4. 文字列・辞書・prelude —— 済
 
 `Lean2Js/Prelude.lean`。`Arr` / `Str` / `Int53` / `Dict` / `BigInt`。walk が読む形は 13 + 6 から
 配列 6 形（リテラル・添字・長さ・スライス・反転・連結）・文字列 9 形・辞書 8 形・除算と絶対値・
-`BigInt` の算術と比較まで伸び、`Example.lean` の表層構文で書いた宣言 20 本と `rfl` で等しい。
+`BigInt` の算術と比較まで伸びた。
 
 ### 分かったこと
 
