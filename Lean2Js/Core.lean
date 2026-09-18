@@ -176,6 +176,7 @@ inductive StrBinOp where
   | endsWith
   | includes
   | split
+  | indexOf
   deriving Repr, BEq, Inhabited
 
 def StrUnOp.name : StrUnOp → String
@@ -189,6 +190,7 @@ def StrBinOp.name : StrBinOp → String
   | .endsWith => "endsWith"
   | .includes => "includes"
   | .split => "split"
+  | .indexOf => "indexOf"
 
 /-- `all` and `any` differ only in which answer ends the walk, so they share one form. `find` does not
 join them: it answers with the element rather than with a Bool. -/

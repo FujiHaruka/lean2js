@@ -852,6 +852,31 @@ theorem denotes_split (p : Program) (env : Env) (l r : Expr) (a b : String)
       rfl)
     hl hr
 
+theorem denotes_indexOf (p : Program) (env : Env) (l r : Expr) (a b : String)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.strBin .indexOf l r) (Str.indexOf? a b) :=
+  denotes_strBin p env .indexOf l r a b _
+    (fun w hw => by
+      rw [show applyStrBin .indexOf (toValue a) (toValue b)
+            = (match indexOfChars a.toList b.toList with
+               | some n =>
+                 if int53Max < (n : Int) then Except.error Err.int53Overflow
+                 else Except.ok (Value.obj "some" [("value", .int53 n)])
+               | none => Except.ok (Value.obj "none" [])) from rfl] at hw
+      simp only [Str.indexOf?]
+      split at hw
+      · rename_i n hp
+        split at hw
+        · simp at hw
+        · simp only [Except.ok.injEq] at hw
+          rw [← hw, hp]
+          rfl
+      · rename_i hp
+        simp only [Except.ok.injEq] at hw
+        rw [← hw, hp]
+        rfl)
+    hl hr
+
 theorem denotes_substring (p : Program) (env : Env) (e lo hi : Expr) (s : String) (a b : Int)
     (hs : Denotes p env e s) (hlo : Denotes p env lo a) (hhi : Denotes p env hi b) :
     Denotes p env (.substring e lo hi) (Str.substring s a b) := by

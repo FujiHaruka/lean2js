@@ -586,13 +586,34 @@ theorem applyStrUn_hasTy {p : Program} {op : StrUnOp} {w v : Value}
 theorem applyStrBin_hasTy {p : Program} {op : StrBinOp} {a b v : Value}
     (h : applyStrBin op a b = .ok v) :
     Value.hasTy p v (Compile.strBinResult op) = true := by
-  cases op <;> cases a <;> cases b <;>
-    first
-      | (exfalso; simp [applyStrBin] at h; done)
-      | (simp only [applyStrBin, Except.ok.injEq] at h; subst h
-         exact hasTy_bool p _)
-      | (simp only [applyStrBin, Except.ok.injEq] at h; subst h
-         simpa [Compile.strBinResult, hasTy_array] using hasElemTy_map_str p _)
+  cases op with
+  | indexOf =>
+    cases a <;> cases b <;>
+      first
+        | (exfalso; simp [applyStrBin] at h; done)
+        | (simp only [applyStrBin] at h
+           split at h
+           · split at h
+             · exact absurd h (by simp)
+             · rename_i _ n _ hr
+               simp only [Except.ok.injEq] at h
+               subst h
+               simp only [int53Max, Int.not_lt] at hr
+               have h1 : int53Min ≤ (n : Int) := by simp only [int53Min]; omega
+               have h2 : (n : Int) ≤ int53Max := by simp only [int53Max]; omega
+               simp [Compile.strBinResult, hasTy_some, hasFieldTys_cons, hasFieldTys_nil,
+                 hasTy_int53, h1, h2]
+           · simp only [Except.ok.injEq] at h
+             subst h
+             simp [Compile.strBinResult, hasTy_none])
+  | _ =>
+    cases a <;> cases b <;>
+      first
+        | (exfalso; simp [applyStrBin] at h; done)
+        | (simp only [applyStrBin, Except.ok.injEq] at h; subst h
+           exact hasTy_bool p _)
+        | (simp only [applyStrBin, Except.ok.injEq] at h; subst h
+           simpa [Compile.strBinResult, hasTy_array] using hasElemTy_map_str p _)
 
 theorem sliceStr_hasTy {p : Program} {s lo hi v : Value} (h : sliceStr s lo hi = .ok v) :
     Value.hasTy p v .string = true := by

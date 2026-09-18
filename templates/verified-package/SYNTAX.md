@@ -187,7 +187,7 @@ priced tenPercentOff amount           handing a declaration to a call
 | On | What you may write |
 | --- | --- |
 | `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` `Int53.toString` |
-| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.split` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
+| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
 | `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` |
@@ -200,6 +200,10 @@ as a total function.
 
 `Str.toInt?` answers only on the strings `Int53.toString` prints, so `"007"`, `" 5"`, `"+5"` and `"-0"`
 are refused along with anything outside the `Int53` range. JavaScript's `Number()` reads all four.
+
+`Str.indexOf? s t` counts code points and answers `none` for absence, where JavaScript's `indexOf`
+counts UTF-16 units and answers `-1`. The empty needle sits at `0`, in both. The answer is an index
+`Str.substring` accepts.
 
 `Opt` and `Exc` are named apart from `Option` and `Except` because Lean's `Option.getD` and `Except.map`
 already exist; writing `o.getD fallback` reaches Lean's, which the walk does not read.
@@ -265,7 +269,7 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | `join` | `foldl`, where no part is empty (below). |
 | `replace` / `replaceAll` | `Str.split` and then the `join` recipe. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |
 | `padStart` / `padEnd` / `repeat` | TypeScript. Repeating a string a variable number of times needs recursion, and the subset has none. |
-| regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
+| regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out. |
 | `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure. |

@@ -1016,6 +1016,117 @@ theorem calls_substring (ext : Ext) (x : String) (lo hi : Int) (f : Nat) :
       if_neg (fun hc => h1 ⟨hc.1, hc.2.1⟩)]
     rfl
 
+theorem find_startsAt : Helper.defs.find? (·.name == "__startsAt") = some Helper.startsAt := rfl
+theorem find_indexOf : Helper.defs.find? (·.name == "__indexOf") = some Helper.indexOf := rfl
+
+theorem calls_startsAt (ext : Ext) (cs : List Char) (t : String) (f : Nat) :
+    callDef ext (f + 8) "__startsAt" [.arr (cs.map fun c => Val.str c.toString), .str t]
+      = .ok (.bool (t.toList.isPrefixOf cs)) := by
+  rw [show f + 8 = (f + 7) + 1 from rfl, callDef_expr find_startsAt rfl rfl]
+  simp only [Helper.startsAt]
+  walk
+  rw [joinStrs_chars]
+  walk
+  simp [String.toList_ofList]
+
+/-- How far the loop in `__indexOf` walks: to the first position the needle sits at, or off the end. -/
+def scanSteps (t : List Char) : List Char → Nat
+  | [] => 0
+  | c :: rest => if t.isPrefixOf (c :: rest) then 0 else scanSteps t rest + 1
+
+theorem strIndexOfChars_eq (cs t : List Char) :
+    strIndexOfChars cs t =
+      (if t.isPrefixOf (cs.drop (scanSteps t cs)) then some (scanSteps t cs) else none) := by
+  induction cs with
+  | nil => simp [strIndexOfChars, scanSteps]
+  | cons c rest ih =>
+    simp only [strIndexOfChars, scanSteps]
+    by_cases hp : t.isPrefixOf (c :: rest) = true
+    · simp [hp]
+    · rw [Bool.not_eq_true] at hp
+      simp only [hp, Bool.false_eq_true, if_false, ih, List.drop_succ_cons]
+      cases t.isPrefixOf (rest.drop (scanSteps t rest)) <;> simp
+
+theorem dropTake1 (a : Val) (l : List Val) :
+    List.take ((((a :: l).length : Int)) - 1).toNat (List.drop 1 (a :: l)) = l := by simp
+
+theorem indexOf_loop (ext : Ext) (cs : List Char) (t : String) (k : Int) (X S : Val) (f : Nat) :
+    evalFor ext (f + cs.length + 14)
+        [("n", .num k), ("ys", .arr (cs.map fun c => Val.str c.toString)), ("xs", X),
+         ("s", S), ("t", .str t)] "c" (cs.map fun c => Val.str c.toString)
+        [.ifThen (.call "__startsAt" [.var "ys", .var "t"]) [.brk],
+         .setVar "ys" (.method (.var "ys") "slice" [.num 1, .field (.var "ys") "length"]),
+         .setVar "n" (.bin "+" (.var "n") (.num 1))]
+      = .ok (.next [("n", .num (k + (scanSteps t.toList cs : Nat))),
+          ("ys", .arr ((cs.drop (scanSteps t.toList cs)).map fun c => Val.str c.toString)),
+          ("xs", X), ("s", S), ("t", .str t)]) := by
+  induction cs generalizing k with
+  | nil =>
+    walk
+    simp [scanSteps]
+  | cons c rest ih =>
+    rw [show f + (c :: rest).length + 14 = (f + rest.length + 14) + 1 from by simp; omega]
+    walk
+    rw [show (Val.str c.toString :: List.map (fun c => Val.str c.toString) rest)
+          = List.map (fun c => Val.str c.toString) (c :: rest) from rfl]
+    rw [show f + rest.length + 12 = (f + rest.length + 4) + 8 from by omega, calls_startsAt]
+    walk
+    by_cases hp : t.toList.isPrefixOf (c :: rest) = true
+    · simp only [hp]
+      walk
+      simp [scanSteps, hp]
+    · rw [Bool.not_eq_true] at hp
+      simp only [hp]
+      rw [if_neg (by simp; omega), Int.toNat_one, dropTake1]
+      walk
+      simp only [Option.getD]
+      rw [ih]
+      simp only [scanSteps, hp, Bool.false_eq_true, if_false, List.drop_succ_cons]
+      have harith : k + 1 + ((scanSteps t.toList rest : Nat) : Int)
+          = k + (((scanSteps t.toList rest + 1 : Nat)) : Int) := by omega
+      rw [harith]
+
+theorem calls_indexOf (ext : Ext) (x t : String) (f : Nat) :
+    callDef ext (f + x.toList.length + 40) "__indexOf" [.str x, .str t]
+      = (match strIndexOfChars x.toList t.toList with
+         | some n =>
+           if safeMax < (n : Int) then .thrown "int53Overflow"
+           else .ok (.obj [("tag", .str "some"), ("value", .num n)])
+         | none => .ok (.obj [("tag", .str "none")])) := by
+  rw [show f + x.toList.length + 40 = (f + x.toList.length + 39) + 1 from rfl,
+    callDef_block find_indexOf rfl rfl]
+  simp only [Helper.indexOf, Helper.lengthOf]
+  walk
+  rw [show f + x.toList.length + 37 = (f + x.toList.length + 32) + 5 from by omega, calls_chars]
+  walk
+  rw [show f + x.toList.length + 35 = (f + 21) + x.toList.length + 14 from by omega, indexOf_loop]
+  walk
+  rw [show f + x.toList.length + 32 = (f + x.toList.length + 24) + 8 from by omega, calls_startsAt]
+  walk
+  rw [strIndexOfChars_eq]
+  by_cases hp : t.toList.isPrefixOf (x.toList.drop (scanSteps t.toList x.toList)) = true
+  · rw [hp]
+    walk
+    rw [show f + x.toList.length + 29 = (f + x.toList.length + 21) + 8 from by omega, calls_i53,
+      Int.zero_add]
+    by_cases hb : safeMax < ((scanSteps t.toList x.toList : Nat) : Int)
+    · rw [show i53 ((scanSteps t.toList x.toList : Nat) : Int) = .error "int53Overflow" from by
+        unfold i53 fail
+        rw [if_pos (by simp only [Bool.or_eq_true, decide_eq_true_eq]; exact Or.inr hb)]]
+      walk
+      rw [if_pos hb]
+    · rw [show i53 ((scanSteps t.toList x.toList : Nat) : Int)
+            = .ok (.num ((scanSteps t.toList x.toList : Nat) : Int)) from by
+        unfold i53
+        rw [if_neg (by
+          simp only [Bool.or_eq_true, decide_eq_true_eq, not_or]
+          exact ⟨by simp only [safeMin]; omega, hb⟩)]]
+      walk
+      rw [if_neg hb]
+  · rw [Bool.not_eq_true] at hp
+    rw [hp]
+    walk
+
 private theorem compare_cons_ne {a b : Char} (l m : List Char) (h : a ≠ b) :
     compare (a :: l) (b :: m) = compare a b := by
   simp only [compare, List.compareLex, compareOfLessAndEq]

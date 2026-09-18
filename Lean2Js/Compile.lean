@@ -115,10 +115,12 @@ def strBinHelper : StrBinOp → String
   | .endsWith => "__endsWith"
   | .includes => "__includes"
   | .split => "__split"
+  | .indexOf => "__indexOf"
 
 def strBinResult : StrBinOp → Ty
   | .startsWith | .endsWith | .includes => .bool
   | .split => .array .string
+  | .indexOf => .option .int53
 
 def orderSymbol : BinOp → Option String
   | .lt => some "<"

@@ -327,12 +327,45 @@ private def doubleAll : Decl :=
 #guard !compiles
   (decl "starts" [("s", .string), ("n", .int53)] .bool (startsWith (v "s") (v "n")))
 #guard compiles (decl "has" [("s", .string)] .bool (includes (v "s") (str "a")))
+#guard compiles (decl "at" [("s", .string)] (.option .int53) (indexOf (v "s") (str "-")))
+#guard !compiles (decl "at" [("s", .string)] .int53 (indexOf (v "s") (str "-")))
+#guard !compiles
+  (decl "at" [("s", .string), ("n", .int53)] (.option .int53) (indexOf (v "s") (v "n")))
 #guard compiles
   (decl "slice" [("s", .string)] .string (substring (v "s") (int53 0) (int53 1)))
 #guard !compiles
   (decl "slice" [("s", .string)] .string (substring (v "s") (int53 0) (str "1")))
 #guard !compiles
   (decl "slice" [("n", .int53)] .string (substring (v "n") (int53 0) (int53 1)))
+
+/-! ## What the string readers refuse
+
+`Str.toInt?` and `Str.indexOf?` carry their acceptance set in their own answers rather than in the
+compiler's tables, so without these the only place it is pinned is the emitted vectors. -/
+
+private def astralThenA : String := String.ofList [Char.ofNat 0x1F363, 'a']
+
+#guard Str.toInt? "5" == some 5
+#guard Str.toInt? "-5" == some (-5)
+#guard Str.toInt? "0" == some 0
+#guard Str.toInt? "007" == none
+#guard Str.toInt? "+5" == none
+#guard Str.toInt? " 5" == none
+#guard Str.toInt? "-0" == none
+#guard Str.toInt? "" == none
+#guard Str.toInt? "9007199254740991" == some 9007199254740991
+#guard Str.toInt? "9007199254740992" == none
+
+#guard Str.indexOf? "abc" "c" == some 2
+#guard Str.indexOf? "abcabc" "bc" == some 1
+#guard Str.indexOf? "abc" "abc" == some 0
+#guard Str.indexOf? "abc" "d" == none
+#guard Str.indexOf? "abc" "abcd" == none
+#guard Str.indexOf? "abc" "" == some 0
+#guard Str.indexOf? "" "" == some 0
+#guard Str.indexOf? "" "a" == none
+#guard Str.length astralThenA == 2
+#guard Str.indexOf? astralThenA "a" == some 1
 
 private def Box : TypeDef :=
   struct "Box" [("value", Ty.var "T")] (params := ["T"])

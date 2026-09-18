@@ -129,6 +129,13 @@ def hasInfix (needle : List Char) : List Char → Bool
   | [] => needle.isEmpty
   | c :: rest => needle.isPrefixOf (c :: rest) || hasInfix needle rest
 
+/-- Where `needle` first sits in the haystack, counted in code points. The empty needle sits at 0, so
+this answers `some 0` on the empty haystack too. -/
+def indexOfChars : List Char → List Char → Option Nat
+  | [], needle => if needle.isPrefixOf [] then some 0 else none
+  | c :: rest, needle =>
+    if needle.isPrefixOf (c :: rest) then some 0 else (indexOfChars rest needle).map (· + 1)
+
 /-- Splitting on the empty separator gives back the whole string. JS's `split("")` instead returns the
 UTF-16 units, which is why the generated code cannot call it unguarded. -/
 def splitStr (s sep : String) : List String :=
@@ -190,6 +197,12 @@ def applyStrBin : StrBinOp → Value → Value → Except Err Value
   | .endsWith, .str s, .str t => .ok (.bool (t.toList.reverse.isPrefixOf s.toList.reverse))
   | .includes, .str s, .str t => .ok (.bool (hasInfix t.toList s.toList))
   | .split, .str s, .str sep => .ok (.arr ((splitStr s sep).map Value.str))
+  | .indexOf, .str s, .str t =>
+    match indexOfChars s.toList t.toList with
+    | some n =>
+      if int53Max < (n : Int) then .error .int53Overflow
+      else .ok (.obj "some" [("value", .int53 n)])
+    | none => .ok (.obj "none" [])
   | op, _, _ => .error (.typeError s!"{op.name} expects two Strings")
 
 /-- Indices count code points, and one outside the string traps the way an array read does. Clamping is

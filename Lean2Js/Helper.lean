@@ -396,6 +396,28 @@ def split : Def :=
     body := .expr (.cond (.bin "===" (.var "sep") (.str "")) (.arrayLit [(.var "s")])
       (.method (.var "s") "split" [.var "sep"])) }
 
+def startsAt : Def :=
+
+  { name := "__startsAt", params := ["ys", "t"]
+    body := .expr (.method (.method (.var "ys") "join" [.str ""]) "startsWith" [(.var "t")]) }
+
+def indexOf : Def :=
+
+  { name := "__indexOf", params := ["s", "t"]
+    doc := ["Native indexOf counts UTF-16 units and answers -1 for absence, where this counts code",
+            "points and answers an option."]
+    body := .block [
+      .const "xs" (.call "__chars" [(.var "s")]),
+      .letMut "ys" (.var "xs"),
+      .letMut "n" (.num 0),
+      .forOf "c" (.var "xs") [
+        .ifThen (.call "__startsAt" [(.var "ys"), (.var "t")]) [.brk],
+        .setVar "ys" (.method (.var "ys") "slice" [.num 1, lengthOf (.var "ys")]),
+        .setVar "n" (.bin "+" (.var "n") (.num 1))],
+      .ifThen (.not (.call "__startsAt" [(.var "ys"), (.var "t")]))
+        [.ret (.objLit [("tag", .str "none")])],
+      .ret (.objLit [("tag", .str "some"), ("value", .call "__i53" [(.var "n")])])] }
+
 def substring : Def :=
 
   { name := "__substring", params := ["s", "lo", "hi"]
@@ -738,8 +760,8 @@ def ck : Def :=
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
   str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
-  substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues, ddelete, eq, map,
-  filter, find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
+  startsAt, indexOf, substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues,
+  ddelete, eq, map, filter, find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
 ]
 
 def runtime : String := renderAll defs

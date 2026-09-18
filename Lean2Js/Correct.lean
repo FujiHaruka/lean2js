@@ -441,20 +441,65 @@ theorem helper_strUn {op : StrUnOp} {s : String} {v : Value}
     simp only [encodeValue]
     exact rfl
 
+theorem indexOfChars_eq (t : List Char) :
+    ∀ cs, Js.Runtime.strIndexOfChars cs t = indexOfChars cs t
+  | [] => rfl
+  | _ :: rest => by
+    rw [Js.Runtime.strIndexOfChars, indexOfChars, indexOfChars_eq t rest]
+
 theorem helper_strBin {op : StrBinOp} {a b : String} {v : Value}
     (h : applyStrBin op (.str a) (.str b) = .ok v) :
     Js.helper (Compile.strBinHelper op) [.str a, .str b] = some (.ok (encodeValue v)) := by
-  cases op <;> simp only [applyStrBin, Except.ok.injEq] at h <;> subst h
-  · simp only [encodeValue]; exact rfl
-  · simp only [encodeValue]; exact rfl
-  · simp only [encodeValue, hasInfix_eq]; exact rfl
-  · simp only [encodeValue, encodeList_map_str]; exact rfl
+  cases op with
+  | indexOf =>
+    simp only [applyStrBin] at h
+    rw [show Js.helper (Compile.strBinHelper StrBinOp.indexOf) [Js.JsValue.str a, Js.JsValue.str b]
+        = some (Js.Runtime.strIndexOf a b) from rfl]
+    simp only [Js.Runtime.strIndexOf, indexOfChars_eq]
+    cases hp : indexOfChars a.toList b.toList with
+    | none =>
+      simp only [hp] at h ⊢
+      simp only [Except.ok.injEq] at h
+      subst h
+      simp [encodeValue, encodeFields]
+    | some n =>
+      simp only [hp] at h ⊢
+      by_cases hr : int53Max < (n : Int)
+      · rw [if_pos hr] at h; simp at h
+      · rw [if_neg hr] at h
+        simp only [Except.ok.injEq] at h
+        subst h
+        rw [if_neg (show ¬ (Js.Runtime.safeMax < ((n : Nat) : Int)) from hr)]
+        simp [encodeValue, encodeFields]
+  | _ =>
+    simp only [applyStrBin, Except.ok.injEq] at h
+    subst h
+    first
+      | (simp only [encodeValue]; exact rfl)
+      | (simp only [encodeValue, hasInfix_eq]; exact rfl)
+      | (simp only [encodeValue, encodeList_map_str]; exact rfl)
+
+/-- `indexOf` is the one string pair that can fail: a position past the safe integers traps the way a
+length does. -/
+theorem strBin_err_indexOf {a b : String} {err : Err}
+    (h : applyStrBin .indexOf (.str a) (.str b) = .error err) :
+    err = .int53Overflow ∧ Js.helper (Compile.strBinHelper .indexOf) [.str a, .str b]
+      = some (.error "int53Overflow") := by
+  simp only [applyStrBin] at h
+  rw [show Js.helper (Compile.strBinHelper StrBinOp.indexOf) [Js.JsValue.str a, Js.JsValue.str b]
+      = some (Js.Runtime.strIndexOf a b) from rfl]
+  simp only [Js.Runtime.strIndexOf, indexOfChars_eq]
+  cases hp : indexOfChars a.toList b.toList with
+  | none => simp only [hp] at h; simp at h
+  | some n =>
+    simp only [hp] at h ⊢
+    by_cases hr : int53Max < (n : Int)
+    · rw [if_pos hr] at h
+      obtain rfl : err = Err.int53Overflow := (Except.error.inj h).symm
+      exact ⟨rfl, by rw [if_pos (show Js.Runtime.safeMax < ((n : Nat) : Int) from hr)]; rfl⟩
+    · rw [if_neg hr] at h; simp at h
 
 theorem applyStrUn_str (op : StrUnOp) (s : String) : ∃ v, applyStrUn op (.str s) = .ok v := by
-  cases op <;> exact ⟨_, rfl⟩
-
-theorem applyStrBin_str (op : StrBinOp) (a b : String) :
-    ∃ v, applyStrBin op (.str a) (.str b) = .ok v := by
   cases op <;> exact ⟨_, rfl⟩
 
 /-- `substring` counts code points on both sides. The model's extra guard against a bound outside the
@@ -7208,9 +7253,13 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     rename_i bv hbv
     obtain ⟨sb, rfl⟩ := hasTy_string_inv
       (typeSound p hprog f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
-    obtain ⟨u, hok⟩ := applyStrBin_str op sa sb
-    rw [hok] at he
-    simp at he
+    have hrv : Eventually m jenv jr (.str sb) := by
+      simpa [encodeValue] using iha hr henv hjenv hcr hbv
+    cases op with
+    | indexOf =>
+      obtain ⟨rfl, hh⟩ := strBin_err_indexOf he
+      exact eventuallyErr_call2_helper hlv hrv hh
+    | _ => simp [applyStrBin] at he
   | substring hs hlo hhi =>
     rename_i strE loE hiE
     have ihs := ih hs

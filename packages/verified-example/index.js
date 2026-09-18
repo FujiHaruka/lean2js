@@ -131,6 +131,27 @@ const __includes = (s, t) => (s).includes(t);
 // split("") returns the UTF-16 units, where eval returns the whole string.
 const __split = (s, sep) => ((sep === "") ? [s] : (s).split(sep));
 
+const __startsAt = (ys, t) => ((ys).join("")).startsWith(t);
+
+// Native indexOf counts UTF-16 units and answers -1 for absence, where this counts code
+// points and answers an option.
+const __indexOf = (s, t) => {
+  const xs = __chars(s);
+  let ys = xs;
+  let n = 0;
+  for (const c of xs) {
+    if (__startsAt(ys, t)) {
+      break;
+    }
+    ys = (ys).slice(1, (ys).length);
+    n = (n + 1);
+  }
+  if ((!__startsAt(ys, t))) {
+    return { tag: "none" };
+  }
+  return { tag: "some", value: __i53(n) };
+};
+
 // Indices count code points, and one outside the string fails rather than being clamped.
 const __substring = (s, lo, hi) => {
   const xs = __chars(s);
@@ -550,6 +571,19 @@ export function amountOr(__p0, __p1) {
   const field = __ck(__p0, ["string"]);
   const fallback = __ck(__p1, ["int53"]);
   return ((__s) => ((((__s).tag === "some") ? ((a) => (a))((__s).value) : fallback)))(__toInt(field));
+}
+
+/** separatorAt : (reference : String, sep : String) → Option Int53 */
+export function separatorAt(__p0, __p1) {
+  const reference = __ck(__p0, ["string"]);
+  const sep = __ck(__p1, ["string"]);
+  return __indexOf(reference, sep);
+}
+
+/** referencePrefix : (reference : String) → String */
+export function referencePrefix(__p0) {
+  const reference = __ck(__p0, ["string"]);
+  return ((__s) => ((((__s).tag === "some") ? ((i) => (__substring(reference, 0, i)))((__s).value) : reference)))(__indexOf(reference, "-"));
 }
 
 /** sortsBefore : (a : String, b : String) → Bool */

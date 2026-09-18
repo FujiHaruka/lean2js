@@ -36,6 +36,10 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   The amount a line carries, read back from the string the caller was handed. `none` unless the string is exactly the decimal spelling of an Int53, so `"007"`, `" 5"` and `"+5"` are refused.
 - `amountOr(field: string, fallback: number): number`
   The same amount, with a fallback for a field that does not spell one.
+- `separatorAt(reference: string, sep: string): Option<number>`
+  Where the separator first sits in a reference, counted in code points. `none` when the reference carries none. JS's own `indexOf` counts UTF-16 units and answers `-1`.
+- `referencePrefix(reference: string): string`
+  The part of a reference before its first separator, or the whole reference when it carries none.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`

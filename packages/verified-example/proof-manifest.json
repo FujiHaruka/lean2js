@@ -106,6 +106,18 @@
       "doc": "The same amount, with a fallback for a field that does not spell one."
     },
     {
+      "name": "separatorAt",
+      "signature": "(reference : String, sep : String) → Option Int53",
+      "declaration": "separatorAt(reference: string, sep: string): Option<number>",
+      "doc": "Where the separator first sits in a reference, counted in code points. `none` when the reference\ncarries none. JS's own `indexOf` counts UTF-16 units and answers `-1`."
+    },
+    {
+      "name": "referencePrefix",
+      "signature": "(reference : String) → String",
+      "declaration": "referencePrefix(reference: string): string",
+      "doc": "The part of a reference before its first separator, or the whole reference when it carries none."
+    },
+    {
       "name": "sortsBefore",
       "signature": "(a : String, b : String) → Bool",
       "declaration": "sortsBefore(a: string, b: string): boolean",

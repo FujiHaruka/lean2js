@@ -149,6 +149,20 @@ def strIncludes (needle : List Char) : List Char → Bool
   | [] => needle.isEmpty
   | c :: rest => needle.isPrefixOf (c :: rest) || strIncludes needle rest
 
+/-- Where `needle` first sits in the haystack, counted in code points. The empty needle sits at 0. -/
+def strIndexOfChars : List Char → List Char → Option Nat
+  | [], needle => if needle.isPrefixOf [] then some 0 else none
+  | c :: rest, needle =>
+    if needle.isPrefixOf (c :: rest) then some 0 else (strIndexOfChars rest needle).map (· + 1)
+
+/-- A position past the safe integers is what `__i53` refuses, exactly as a length is. -/
+def strIndexOf (s t : String) : JsResult :=
+  match strIndexOfChars s.toList t.toList with
+  | some n =>
+    if safeMax < (n : Int) then fail "int53Overflow"
+    else .ok (.obj [("tag", .str "some"), ("value", .num n)])
+  | none => .ok (.obj [("tag", .str "none")])
+
 def strSplit (s sep : String) : List JsValue :=
   (if sep.isEmpty then [s] else s.splitOn sep).map JsValue.str
 
@@ -235,6 +249,7 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
     some (.ok (.bool (t.toList.reverse.isPrefixOf s.toList.reverse)))
   | "__includes", [.str s, .str t] => some (.ok (.bool (strIncludes t.toList s.toList)))
   | "__split", [.str s, .str sep] => some (.ok (.arr (strSplit s sep)))
+  | "__indexOf", [.str s, .str t] => some (strIndexOf s t)
   | "__substring", [.str s, .num a, .num b] => some (strSlice s a b)
   | _, _ => none
 
@@ -280,6 +295,7 @@ inductive HelperRow : String → List JsValue → Prop where
   | endsWith (s t : String) : HelperRow "__endsWith" [.str s, .str t]
   | includes (s t : String) : HelperRow "__includes" [.str s, .str t]
   | split (s sep : String) : HelperRow "__split" [.str s, .str sep]
+  | indexOf (s t : String) : HelperRow "__indexOf" [.str s, .str t]
   | substring (s : String) (a b : Int) : HelperRow "__substring" [.str s, .num a, .num b]
 
 theorem helper_row {name : String} {args : List JsValue} {r : JsResult}

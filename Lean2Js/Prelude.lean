@@ -121,6 +121,10 @@ refused along with everything outside the Int53 range, because none of them is w
 have written. JS's own `Number()` reads all four. -/
 def toInt? (s : String) : Option Int := parseInt53 s
 
+/-- Where `t` first sits in `s`, counted in code points, or `none` when it does not sit there at all.
+The empty needle sits at 0. JS's own `indexOf` counts UTF-16 units and answers `-1` for absence. -/
+def indexOf? (s t : String) : Option Int := (indexOfChars s.toList t.toList).map Int.ofNat
+
 @[expand] def isEmpty (s : String) : Bool := length s == 0
 
 end Str

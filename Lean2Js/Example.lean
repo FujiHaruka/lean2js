@@ -99,6 +99,18 @@ def amountOf (field : String) : Option Int := Str.toInt? field
 @[ship]
 def amountOr (field : String) (fallback : Int) : Int := Opt.getD (Str.toInt? field) fallback
 
+/-- Where the separator first sits in a reference, counted in code points. `none` when the reference
+carries none. JS's own `indexOf` counts UTF-16 units and answers `-1`. -/
+@[ship]
+def separatorAt (reference sep : String) : Option Int := Str.indexOf? reference sep
+
+/-- The part of a reference before its first separator, or the whole reference when it carries none. -/
+@[ship]
+def referencePrefix (reference : String) : String :=
+  match Str.indexOf? reference "-" with
+  | some i => Str.substring reference 0 i
+  | none => reference
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b

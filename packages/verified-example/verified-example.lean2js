@@ -61,6 +61,12 @@ def amountOf(field : String) : Option Int53 =
 def amountOr(field : String, fallback : Int53) : Int53 =
   match field.toInt() { some(a) => a | none => fallback }
 
+def separatorAt(reference : String, sep : String) : Option Int53 =
+  reference.indexOf(sep)
+
+def referencePrefix(reference : String) : String =
+  match reference.indexOf("-") { some(i) => reference.substring(0, i) | none => reference }
+
 def sortsBefore(a : String, b : String) : Bool =
   (a < b)
 

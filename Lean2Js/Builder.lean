@@ -86,6 +86,8 @@ def lower (e : Expr) : Expr := .strUn .lower e
 def toInt (e : Expr) : Expr := .strUn .toInt e
 def startsWith (s prefix' : Expr) : Expr := .strBin .startsWith s prefix'
 
+def indexOf (s needle : Expr) : Expr := .strBin .indexOf s needle
+
 def endsWith (s suffix : Expr) : Expr := .strBin .endsWith s suffix
 def includes (s needle : Expr) : Expr := .strBin .includes s needle
 def split (s sep : Expr) : Expr := .strBin .split s sep

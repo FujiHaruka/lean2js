@@ -133,6 +133,21 @@ export declare function amountOf(field: string): Option<number>;
 export declare function amountOr(field: string, fallback: number): number;
 
 /**
+ * Where the separator first sits in a reference, counted in code points. `none` when the reference
+ * carries none. JS's own `indexOf` counts UTF-16 units and answers `-1`.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function separatorAt(reference: string, sep: string): Option<number>;
+
+/**
+ * The part of a reference before its first separator, or the whole reference when it carries none.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function referencePrefix(reference: string): string;
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.

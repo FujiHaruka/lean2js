@@ -221,7 +221,7 @@ a small trusted base and a correctness proof affordable:
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
 | Pure `def`s marked `@[ship]` | Recursion / non-termination / DOM access |
 | A declaration passed to another as a function | Functions as values: lambdas outside traversals, closures, function types on the public boundary |
-| Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.split` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
+| Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
 | `Dict V` (string keys, emitted as a `Map`: `get` / `set` / `has` / `erase` / `keys` / `values`) | Plain objects used as dictionaries |
 
 Where JavaScript and Lean disagree, the generated code follows neither silently:
@@ -231,8 +231,8 @@ Where JavaScript and Lean disagree, the generated code follows neither silently:
   generated code throws the same code at the same point.
 - **`/` truncates**, as JavaScript does, rather than flooring as Lean's `/` does — which is why the
   subset refuses Lean's `/` on `Int` and has you write `Int53.div`.
-- **String length is counted in code points**, not UTF-16 units, so a surrogate pair is one character
-  and `substring` never splits one in half.
+- **String length is counted in code points**, not UTF-16 units, so a surrogate pair is one character,
+  `substring` never splits one in half, and `Str.indexOf?` answers in the same unit.
 - **Equality is structural and generated per type.** `===` cannot compare two records.
 - **`-0` is normalised to `0`.** `Int53` is a mathematical integer; JavaScript produces `-0` for
   `0 - 0` and `-4 % 2`.
