@@ -28,6 +28,60 @@ private def encTy (α : Lean.Expr) : TermElabM Term := do
     throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
   `(Lean2Js.Enc.ty (α := $(← exprToSyntax α)))
 
+/-- The subset's pattern for the one an arm of the matcher matched, read off the `motive`'s argument in
+the splitter's type: a literal, a nested constructor and a wildcard all arrive there the same way.
+
+A binder the author wrote as `_` comes back macro-scoped, and that is what tells a wildcard from a name.
+The names come back in the order `matchPat` binds them, which is the order they are written in. -/
+private partial def patternOf (binders : Array Lean.Expr) (binderNames : Array Name)
+    (pat : Lean.Expr) : TermElabM (Term × Array (String × Nat)) := do
+  if let some j := binders.findIdx? (· == pat) then
+    if binderNames[j]!.hasMacroScopes then
+      return (← `(Lean2Js.Core.Pat.wild), #[])
+    let nm := binderNames[j]!.toString
+    return (← `(Lean2Js.Core.Pat.bind $(⟨Syntax.mkStrLit nm⟩)), #[(nm, j)])
+  if pat.isConstOf ``Bool.true || pat.isConstOf ``Bool.false then
+    let lit := mkIdent (if pat.isConstOf ``Bool.true then `Bool.true else `Bool.false)
+    return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.bool $lit)), #[])
+  if let .lit (.strVal str) := pat then
+    return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.str $(⟨Syntax.mkStrLit str⟩))), #[])
+  if let some n := pat.int? then
+    if n < 0 then
+      throwError "reify: {pat} is a negative literal, which this walk does not read"
+    let lit : Term := ⟨Syntax.mkNumLit (toString n)⟩
+    match ← whnf (← inferType pat) with
+    | .const ``Int _ => return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.int53 $lit)), #[])
+    | .const ``Lean2Js.BigInt _ =>
+      return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.bigint $lit)), #[])
+    | t => throwError "reify: {pat} is a numeral of type {t}, which the subset has no pattern for"
+  let (ctorName, args) : String × Array Lean.Expr ← match pat.getAppFnArgs with
+    | (``Option.none, _) => pure ("none", #[])
+    | (``Option.some, #[_, a]) => pure ("some", #[a])
+    | (``Except.ok, #[_, _, a]) => pure ("ok", #[a])
+    | (``Except.error, #[_, _, a]) => pure ("error", #[a])
+    | (c, args) => do
+      let some (.ctorInfo ci) := (← getEnv).find? c
+        | throwError "reify: {pat} is a pattern this walk does not read"
+      unless (← getEnv).contains (ci.induct ++ `typeDef) do
+        throwError "reify: {pat} matches on a {ci.induct}, which needs `deriving Enc` before the \
+          subset has a type for it"
+      pure (ci.name.getString!, args)
+  let mut pats := #[]
+  let mut bound := #[]
+  for a in args do
+    let (pa, b) ← patternOf binders binderNames a
+    pats := pats.push pa
+    bound := bound ++ b
+  return (← `(Lean2Js.Core.Pat.ctor $(⟨Syntax.mkStrLit ctorName⟩) [$pats,*]), bound)
+
+/-- The simp set a proof that the subset picks the same arm runs in: what `firstMatch` is, what a pattern
+compares with, and the encodings whose tag a pattern tests. -/
+private def matchedSimp : TermElabM (Array Term) :=
+  #[``Lean2Js.firstMatch, ``Lean2Js.matchPat, ``Lean2Js.matchPats, ``Lean2Js.Core.Alt.pat,
+    ``Lean2Js.Core.Alt.body, ``Lean2Js.litValue, ``Lean2Js.Value.beq_def, ``Lean2Js.Value.beq,
+    ``Lean2Js.Enc.toValue_none, ``Lean2Js.Enc.toValue_some, ``Lean2Js.Enc.toValue_ok,
+    ``Lean2Js.Enc.toValue_error].mapM fun n => `($(mkCIdent n))
+
 /-- One subterm of the author's `def`, as the AST it reifies to and the proof that the AST denotes it.
 The two are built in the same pass so that a rule can never be applied to the AST without its lemma
 being applied to the proof.
@@ -334,13 +388,13 @@ where
       proof ← `(Lean2Js.Denote.denotesItems_cons _ _ _ _ _ _ $ip $proof)
     return (← `(Lean2Js.Core.Expr.arrayLit $(← encTy α) [$(itemStx.reverse),*]),
             ← `(Lean2Js.Denote.denotes_arrayLit _ _ _ _ _ $proof))
-  /-- The `match` as a function of its scrutinee, which is what the correspondence lemma unifies against
-  the author's own matcher. An arm may read a variable bound outside the `match`, and that variable does
+  /-- The `match` as a function of its scrutinee, which is what the splitter's motive is stated over. The
+  scrutinee is a term rather than a variable — an author may match on what a call answered — so it is
+  abstracted by occurrence. An arm may read a variable bound outside the `match`, and that variable does
   not exist where this syntax is elaborated, so those are abstracted too and handed back as holes for the
   expected type to fill. -/
   matchedFn (scrut : Lean.Expr) (e : Lean.Expr) : TermElabM Term := do
-    unless scrut.isFVar do return ← `(_)
-    let core ← mkLambdaFVars #[scrut] e
+    let core := .lam `y (← inferType scrut) (← kabstract e scrut) .default
     let free := xs.filter fun y => y.isFVar && core.hasAnyFVar (· == y.fvarId!)
     let stx ← exprToSyntax (← mkLambdaFVars free core)
     if free.isEmpty then return stx
@@ -417,47 +471,82 @@ where
     let nmLit : Term := ⟨Syntax.mkStrLit nm⟩
     return (← `(Lean2Js.Core.Expr.quantE $(mkIdent (`Lean2Js.Core.QuantOp ++ op)) $ae $nmLit $be),
             ← `($(mkIdent lemma) _ _ _ $nmLit _ _ _ $ap (fun _ => $bp)))
-  /-- A `match` on a type the author declared. Lean compiles it to an auxiliary matcher, so the arms come
-  back as lambdas and their correspondence to the constructors is positional — the arity check below is
-  all there is to catch a reordered or defaulted arm. -/
+  /-- A `match`, read through the matcher's splitter. Lean compiles a `match` to an auxiliary matcher,
+  and the splitter is the case analysis that matcher was built from: it carries each arm's pattern as the
+  `motive`'s argument, and it hands the arm the conditions that put it after the arms before it. Those
+  conditions are what a proof that the subset picks the same arm runs on, so nesting, a literal and a
+  wildcard all read without a rule of their own. -/
   matched (app : MatcherApp) (e : Lean.Expr) : TermElabM (Term × Term) := do
     unless app.discrs.size == 1 && app.remaining.isEmpty do
       throwError "reify: {e} matches on more than one value, which this walk does not read"
     let scrut := app.discrs[0]!
-    let .const tName _ := (← whnf (← inferType scrut)).getAppFn
-      | throwError "reify: {e} matches on a value whose type this walk cannot name"
-    let some (.inductInfo ind) := (← getEnv).find? tName
-      | throwError "reify: {e} matches on {tName}, which is not an inductive type"
-    let lemmaName := tName ++ `denotes_matchE
-    unless (← getEnv).contains lemmaName do
-      throwError "reify: the match on {tName} needs {lemmaName}, which is not in scope — \
-        `deriving Enc` writes it"
-    let ctors ← ind.ctors.toArray.mapM fun c => do
-      let ci ← getConstInfoCtor c
-      forallTelescopeReducing ci.type fun args _ =>
-        return (c.getString!, ← args.mapM fun a => return (← a.fvarId!.getUserName).toString)
-    -- an arm that binds nothing still takes one parameter, which the matcher gives type `Unit`
-    unless app.alts.size == ctors.size
-        && (Array.range ctors.size).all
-             (fun i => app.altNumParams[i]! == max 1 ctors[i]!.2.size) do
-      throwError "reify: the match on {tName} does not have one arm per constructor, which is the \
-        only shape this walk can line up with the constructors"
     let (se, sp) ← walk ns names xs scrut
-    let mut altStx := #[]
-    let mut armProofs := #[]
-    for i in [0:ctors.size] do
-      let (ctorName, fieldNames) := ctors[i]!
-      let (be, bp) ← lambdaBoundedTelescope app.alts[i]! app.altNumParams[i]! fun ys body =>
-        walk ns (names ++ fieldNames) (xs ++ ys.take fieldNames.size) body
-      let pats ← fieldNames.mapM fun nm => `(Lean2Js.Core.Pat.bind $(⟨Syntax.mkStrLit nm⟩))
-      altStx := altStx.push
-        (← `((Lean2Js.Core.Pat.ctor $(⟨Syntax.mkStrLit ctorName⟩) [$pats,*], $be)))
-      let holes : Array Term ← (Array.range fieldNames.size).mapM fun _ => `(_)
-      armProofs := armProofs.push (← if holes.isEmpty then pure bp else `(fun $holes* => $bp))
+    let eqns ← Match.getEquationsFor app.matcherName
+    let splitter ← getConstInfo eqns.splitterName
+    let firstAlt := eqns.splitterMatchInfo.getFirstAltPos
+    let (altStx, armProofs) ← forallTelescopeReducing splitter.type fun sargs _ => do
+      let mut altStx := #[]
+      let mut armProofs := #[]
+      for i in [0:app.alts.size] do
+        let (a, pr) ← matchArm app i sargs[firstAlt + i]! eqns.eqnNames[i]!
+        altStx := altStx.push a
+        armProofs := armProofs.push pr
+      return (altStx, armProofs)
+    let ast ← `(Lean2Js.Core.Expr.matchE $se [$altStx,*])
     let gStx ← matchedFn scrut e
-    let bodyHoles : Array Term ← (Array.range ctors.size).mapM fun _ => `(_)
-    return (← `(Lean2Js.Core.Expr.matchE $se [$altStx,*]),
-            ← `($(mkIdent lemmaName) _ _ _ _ $gStx $bodyHoles* $armProofs* $sp))
+    let motive ← `(fun y => Lean2Js.Denote.Denotes _ _ $se y →
+      Lean2Js.Denote.Denotes _ _ $ast ($gStx y))
+    return (ast, ← `($(mkCIdent eqns.splitterName) (motive := $motive) _ $armProofs* $sp))
+  /-- One arm, as the alternative the AST carries and the proof that the subset's `firstMatch` reaches
+  the same body. The splitter's binders are the pattern's own followed by the conditions; the matcher's
+  arm takes the pattern's in the same order, so the body is walked under the names the author wrote. -/
+  matchArm (app : MatcherApp) (i : Nat) (salt : Lean.Expr) (eqn : Name) :
+      TermElabM (Term × Term) := do
+    let nb := app.altNumParams[i]!
+    -- a matcher is shared between definitions that match the same way, and its binders are named after
+    -- whichever one reached it first, so the names have to come from the arm the author wrote
+    let binderNames ← lambdaBoundedTelescope app.alts[i]! nb fun ys _ =>
+      ys.mapM fun y => y.fvarId!.getUserName
+    forallTelescopeReducing (← inferType salt) fun bs concl => do
+      let (patStx, bound) ← patternOf (bs.extract 0 nb) binderNames concl.appArg!
+      let (be, bp) ← lambdaBoundedTelescope app.alts[i]! nb fun ys body =>
+        walk ns (names ++ bound.map (·.1)) (xs ++ bound.map (fun (_, j) => ys[j]!)) body
+      let conds := bs.extract nb bs.size
+      let yIds : Array Ident := (Array.range nb).map fun j => mkIdent (Name.mkSimple s!"y{j}")
+      let cIds : Array Ident := (Array.range conds.size).map fun j =>
+        mkIdent (Name.mkSimple s!"c{j}")
+      let hId := mkIdent `harm
+      let bindsStx ← bound.mapM fun (nm, j) =>
+        `(($(⟨Syntax.mkStrLit nm⟩), Lean2Js.Enc.toValue $(yIds[j]!)))
+      -- a condition on one value states the inequality the other way round from what `matchPat` needs
+      let mut extra ← matchedSimp
+      for j in [0:conds.size] do
+        let ty ← inferType conds[j]!
+        if ty.isArrow && ty.bindingDomain!.isAppOf ``Eq then
+          extra := extra.push (← `(Lean2Js.Denote.ne_of_missed $(cIds[j]!)))
+      let simpArgs ← extra.mapM fun t => `(Lean.Parser.Tactic.simpLemma| $t:term)
+      let mut tac ← `(tactic| simp_all [$simpArgs,*])
+      for j in (← casesOn conds bs nb).reverse do
+        tac ← `(tactic| cases $(yIds[j]!):term <;> $tac)
+      -- the arms that overlap do not reduce on their pattern, and the equation is what says which fired
+      let hb ← if conds.isEmpty then pure bp
+        else `((by simp only [$(mkCIdent eqn):term]; exact $bp))
+      return (← `(($patStx, $be)),
+              ← `(fun $yIds* $cIds* $hId => Lean2Js.Denote.denotes_matchE_of _ _ _ _ _ _ $hId
+                    [$bindsStx,*] $be (by $tac:tactic) $hb))
+  /-- The pattern binders a condition is about and whose type the program declares. What the condition
+  says is that the value is not one of the constructors an earlier arm named, and the subset's side of
+  that is a tag, so the proof has to reach the constructors. -/
+  casesOn (conds bs : Array Lean.Expr) (nb : Nat) : TermElabM (Array Nat) := do
+    let mut idx := #[]
+    for j in [0:nb] do
+      let .const tName _ := (← whnf (← inferType bs[j]!)).getAppFn | continue
+      unless (← getEnv).contains (tName ++ `typeDef) do continue
+      for c in conds do
+        if (← inferType c).containsFVar bs[j]!.fvarId! then
+          idx := idx.push j
+          break
+    return idx
   /-- A proposition reaches the subset only as the `Bool` a comparison decides, so the decidable
   instance is walked rather than the proposition. -/
   decided (prop inst : Lean.Expr) : TermElabM (Term × Term) := do
@@ -1105,6 +1194,59 @@ theorem ship_certificate (state : OrderState) (trackingId : String) :
     Denotes Example.program (bindParams shipCore.params [toValue state, toValue trackingId])
       shipCore.body (ship state trackingId) :=
   reify_proof% ship
+
+/-! ### The arms that are not one constructor each
+
+An arm may test a literal, name nothing, or reach past the outer constructor into the one inside. The
+matcher's splitter carries all three the same way, so what tells them apart is the pattern it hands back
+rather than a rule per shape. -/
+
+abbrev quantityLabelCore : Decl := reify_decl% quantityLabel
+
+example : quantityLabelCore = Example.quantityLabel := rfl
+
+theorem quantityLabel_certificate (p : Program) (quantity : Int) :
+    Denotes p (bindParams quantityLabelCore.params [toValue quantity]) quantityLabelCore.body
+      (quantityLabel quantity) :=
+  reify_proof% quantityLabel
+
+abbrev renewalLabelCore : Decl := reify_decl% renewalLabel
+
+example : renewalLabelCore = Example.renewalLabel := rfl
+
+theorem renewalLabel_certificate (p : Program) (autoRenew : Bool) :
+    Denotes p (bindParams renewalLabelCore.params [toValue autoRenew]) renewalLabelCore.body
+      (renewalLabel autoRenew) :=
+  reify_proof% renewalLabel
+
+abbrev chargeableCore : Decl := reify_decl% chargeable
+
+example : chargeableCore = Example.chargeable := rfl
+
+theorem chargeable_certificate (p : Program) (amount : Money) :
+    Denotes p (bindParams chargeableCore.params [toValue amount]) chargeableCore.body
+      (chargeable amount) :=
+  reify_proof% chargeable
+
+abbrev settleMessageCore : Decl := reify_decl% settleMessage
+
+example : settleMessageCore = Example.settleMessage := rfl
+
+theorem settleMessage_certificate (p : Program) (outcome : Except String OrderState) :
+    Denotes p (bindParams settleMessageCore.params [toValue outcome]) settleMessageCore.body
+      (settleMessage outcome) :=
+  reify_proof% settleMessage
+
+/-- A `match` on an `Option`, which is not a type the program declares: the splitter reaches the arms of
+one the same way it reaches an author's own. -/
+abbrev dailyLimitCore : Decl := reify_decl% dailyLimit
+
+example : dailyLimitCore = Example.dailyLimit := rfl
+
+theorem dailyLimit_certificate (role : Role) :
+    Denotes Example.program (bindParams dailyLimitCore.params [toValue role]) dailyLimitCore.body
+      (dailyLimit role) :=
+  reify_proof% dailyLimit
 
 end Lean2Js.Denote
 

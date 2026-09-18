@@ -144,26 +144,26 @@ def ship : Decl := decl%
       | placed(orderId) =>
           if trackingId == "" then error<OrderState>("a tracking id is required")
           else ok<String>(OrderState::shipped(orderId, trackingId))
-      | shipped(orderId, trackingId) => error<OrderState>("the order has already shipped")
-      | cancelled(reason) => error<OrderState>("a cancelled order cannot ship")
+      | shipped(_, _) => error<OrderState>("the order has already shipped")
+      | cancelled(_) => error<OrderState>("a cancelled order cannot ship")
     }
 
 def trackingOf : Decl := decl%
   trackingOf(state : OrderState) : Option<String> :=
     match state {
         draft() => none<String>
-      | placed(orderId) => none<String>
-      | shipped(orderId, trackingId) => some(trackingId)
-      | cancelled(reason) => none<String>
+      | placed(_) => none<String>
+      | shipped(_, trackingId) => some(trackingId)
+      | cancelled(_) => none<String>
     }
 
 def canRefund : Decl := decl%
   canRefund(role : Role, state : OrderState) : Bool :=
     match state {
         draft() => false
-      | placed(orderId) => roleRank(role) >= 1
-      | shipped(orderId, trackingId) => roleRank(role) >= 2
-      | cancelled(reason) => false
+      | placed(_) => roleRank(role) >= 1
+      | shipped(_, _) => roleRank(role) >= 2
+      | cancelled(_) => false
     }
 
 def total : Decl := decl%

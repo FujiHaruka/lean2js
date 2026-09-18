@@ -237,6 +237,35 @@ def ship (state : OrderState) (trackingId : String) : Except String OrderState :
   | .shipped _ _ => .error "the order has already shipped"
   | .cancelled _ => .error "a cancelled order cannot ship"
 
+def quantityLabel (quantity : Int) : String :=
+  match quantity with
+  | 0 => "out of stock"
+  | 1 => "last one"
+  | _ => "in stock"
+
+def renewalLabel (autoRenew : Bool) : String :=
+  match autoRenew with
+  | true => "renews"
+  | false => "ends"
+
+def chargeable (amount : Money) : Bool :=
+  match amount with
+  | Money.Money 0 _ => false
+  | Money.Money _ "" => false
+  | Money.Money value _ => value > 0
+
+def settleMessage (outcome : Except String OrderState) : String :=
+  match outcome with
+  | .ok (OrderState.shipped _ trackingId) => trackingId
+  | .ok (OrderState.placed _) => "awaiting shipment"
+  | .ok _ => "no update"
+  | .error message => message
+
+def dailyLimit (role : Role) : Int :=
+  match (limitsFor role).get "daily" with
+  | some value => value
+  | none => 0
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 

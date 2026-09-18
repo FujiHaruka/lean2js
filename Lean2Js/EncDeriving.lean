@@ -104,53 +104,6 @@ private def hasTyAlt (typeDef : Ident) (nameLit : Term) (ctorDef : Term) (s : Ct
       (Lean2Js.hasTy_named _ $(ctorLit s) _ $nameLit [] $typeDef $ctorDef $declared rfl).trans
         $fields)
 
-/-- The lemma a reified `match` cites: one arm hypothesis per constructor, with the arm's fields bound in
-the environment under the names the `TypeDef` gives them.
-
-The whole `match` is carried as `g x` rather than as a `match` of its own. An author's `match` elaborates
-to its own auxiliary matcher, and a second one written here would not be that one; `g x` unifies with
-whatever the author wrote, and `g` applied to a constructor reduces to the arm. -/
-private def matchLemma (matchId typeId p env scrut x g hs : Ident) (shapes : Array CtorShape) :
-    TermElabM Command := do
-  let bs := shapes.mapIdx fun i _ => mkIdent (Name.mkSimple s!"b{i}")
-  let hs' := shapes.mapIdx fun i _ => mkIdent (Name.mkSimple s!"h{i}")
-  let mut alts := #[]
-  let mut proofAlts := #[]
-  let mut hypTys := #[]
-  for i in [0:shapes.size] do
-    let s := shapes[i]!
-    let ys := binders s
-    let pat ← ctorPat s
-    let pats ← s.fields.mapM fun (nm, _) => `(Lean2Js.Core.Pat.bind $(⟨Syntax.mkStrLit nm⟩))
-    alts := alts.push (← `((Lean2Js.Core.Pat.ctor $(ctorLit s) [$pats,*], $(bs[i]!))))
-    let mut bindsList := #[]
-    for ((nm, _), y) in s.fields.zip ys do
-      bindsList := bindsList.push (← `(($(⟨Syntax.mkStrLit nm⟩), Lean2Js.Enc.toValue $y)))
-    let mut envStx ← `($env)
-    for e in bindsList.reverse do
-      envStx ← `($e :: $envStx)
-    let mut hypTy ← `(Lean2Js.Denote.Denotes $p $envStx $(bs[i]!) ($g $pat))
-    for ((_, ty), y) in (s.fields.zip ys).reverse do
-      hypTy ← `(∀ ($y : $(← typeStx ty)), $hypTy)
-    hypTys := hypTys.push hypTy
-    let cited ← if ys.isEmpty then `($(hs'[i]!)) else `($(hs'[i]!) $ys*)
-    proofAlts := proofAlts.push (← `(matchAltExpr| | $pat:term => fun $hs =>
-      Lean2Js.Denote.denotes_matchE_of $p $env $scrut _ _ _ $hs [$bindsList,*] $(bs[i]!)
-        (by simp [Lean2Js.firstMatch, Lean2Js.matchPat, Lean2Js.matchPats,
-            Lean2Js.Core.Alt.pat, Lean2Js.Core.Alt.body]) $cited))
-  let mut ty ← `(Lean2Js.Denote.Denotes $p $env
-    (Lean2Js.Core.Expr.matchE $scrut [$alts,*]) ($g $x))
-  ty ← `(∀ ($hs : Lean2Js.Denote.Denotes $p $env $scrut $x), $ty)
-  for (h, hty) in (hs'.zip hypTys).reverse do
-    ty ← `(∀ ($h : $hty), $ty)
-  for b in bs.reverse do
-    ty ← `(∀ ($b : Lean2Js.Core.Expr), $ty)
-  ty ← `(∀ {α : Type} [Lean2Js.Enc α] ($p : Lean2Js.Core.Program) ($env : Lean2Js.Env)
-    ($scrut : Lean2Js.Core.Expr) ($x : $typeId) ($g : $typeId → α), $ty)
-  let args := #[p, env, scrut, x, g] ++ bs ++ hs'
-  let proof ← `(fun $args* => match $x:ident with $proofAlts:matchAlt*)
-  `(command| theorem $matchId : $ty := $proof)
-
 private def encHandler (types : Array Name) : CommandElabM Bool := do
   let [t] := types.toList | return false
   let indVal ← liftCoreM <| getConstInfoInduct t
@@ -205,9 +158,7 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
             accepts := $acceptsId
             toValue_hasTy := $hasTyId),
       ← `(command| @[simp] theorem $bridgeId :
-            (Lean2Js.Enc.toValue : $typeId → Lean2Js.Value) = $toValueId := rfl),
-      ← matchLemma (mkIdent (`_root_ ++ t ++ `denotes_matchE)) typeId p (mkIdent `env)
-          (mkIdent `scrut) x (mkIdent `g) (mkIdent `hs) shapes
+            (Lean2Js.Enc.toValue : $typeId → Lean2Js.Value) = $toValueId := rfl)
     ]
   cmds.forM elabCommand
   return true

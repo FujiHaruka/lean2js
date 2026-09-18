@@ -139,6 +139,15 @@ instance [Enc α] : Enc (Option α) where
       rw [hasTy_some, hasFieldTys_cons, toValue_hasTy h, hasFieldTys_nil]
       rfl
 
+/-! Neither shape carries a `@[simp]` lemma the way the scalars do, because nothing in the subset's own
+forms needs its encoding rewritten; what needs it is a `match` on one, whose arm has to reach the tag the
+pattern tests. -/
+
+theorem toValue_none [Enc α] : (toValue (none : Option α) : Value) = .obj "none" [] := rfl
+
+theorem toValue_some [Enc α] (a : α) :
+    (toValue (some a) : Value) = .obj "some" [("value", toValue a)] := rfl
+
 instance [Enc ε] [Enc α] : Enc (Except ε α) where
   ty := .result (ty (α := α)) (ty (α := ε))
   toValue
@@ -163,6 +172,12 @@ instance [Enc ε] [Enc α] : Enc (Except ε α) where
     | error e =>
       rw [hasTy_error, hasFieldTys_cons, toValue_hasTy h, hasFieldTys_nil]
       rfl
+
+theorem toValue_ok [Enc ε] [Enc α] (a : α) :
+    (toValue (.ok a : Except ε α) : Value) = .obj "ok" [("value", toValue a)] := rfl
+
+theorem toValue_error [Enc ε] [Enc α] (e : ε) :
+    (toValue (.error e : Except ε α) : Value) = .obj "error" [("error", toValue e)] := rfl
 
 private def ofValues [Enc α] : List Value → Option (List α)
   | [] => some []

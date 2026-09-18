@@ -91,6 +91,10 @@ end
 instance : BEq Value where
   beq := Value.beq
 
+/-- Where a proof about matching a pattern literal starts: `matchPat` compares with `==`, and what
+reduces on a literal is `Value.beq`. -/
+theorem Value.beq_def (a b : Value) : (a == b) = Value.beq a b := rfl
+
 /-! `Value.beq` is structural equality, and the two halves of saying so are what lets a claim about
 `==` on an author's own type be settled by comparing encodings. -/
 

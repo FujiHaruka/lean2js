@@ -608,20 +608,20 @@ export function sameMoney(__p0, __p1) {
 export function ship(__p0, __p1) {
   const state = __ck(__p0, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
   const trackingId = __ck(__p1, ["string"]);
-  return ((__s) => ((((__s).tag === "draft") ? { "tag": "error", "error": "a draft order cannot ship" } : (((__s).tag === "placed") ? ((orderId) => (((trackingId === "") ? { "tag": "error", "error": "a tracking id is required" } : { "tag": "ok", "value": { "tag": "shipped", "orderId": orderId, "trackingId": trackingId } })))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ({ "tag": "error", "error": "the order has already shipped" }))((__s).orderId, (__s).trackingId) : ((reason) => ({ "tag": "error", "error": "a cancelled order cannot ship" }))((__s).reason))))))(state);
+  return ((__s) => ((((__s).tag === "draft") ? { "tag": "error", "error": "a draft order cannot ship" } : (((__s).tag === "placed") ? ((orderId) => (((trackingId === "") ? { "tag": "error", "error": "a tracking id is required" } : { "tag": "ok", "value": { "tag": "shipped", "orderId": orderId, "trackingId": trackingId } })))((__s).orderId) : (((__s).tag === "shipped") ? { "tag": "error", "error": "the order has already shipped" } : { "tag": "error", "error": "a cancelled order cannot ship" })))))(state);
 }
 
 /** trackingOf : (state : OrderState) → Option String */
 export function trackingOf(__p0) {
   const state = __ck(__p0, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
-  return ((__s) => ((((__s).tag === "draft") ? { "tag": "none" } : (((__s).tag === "placed") ? ((orderId) => ({ "tag": "none" }))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ({ "tag": "some", "value": trackingId }))((__s).orderId, (__s).trackingId) : ((reason) => ({ "tag": "none" }))((__s).reason))))))(state);
+  return ((__s) => ((((__s).tag === "draft") ? { "tag": "none" } : (((__s).tag === "placed") ? { "tag": "none" } : (((__s).tag === "shipped") ? ((trackingId) => ({ "tag": "some", "value": trackingId }))((__s).trackingId) : { "tag": "none" })))))(state);
 }
 
 /** canRefund : (role : Role, state : OrderState) → Bool */
 export function canRefund(__p0, __p1) {
   const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
   const state = __ck(__p1, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
-  return ((__s) => ((((__s).tag === "draft") ? false : (((__s).tag === "placed") ? ((orderId) => ((roleRank(role) >= 1)))((__s).orderId) : (((__s).tag === "shipped") ? ((orderId, trackingId) => ((roleRank(role) >= 2)))((__s).orderId, (__s).trackingId) : ((reason) => (false))((__s).reason))))))(state);
+  return ((__s) => ((((__s).tag === "draft") ? false : (((__s).tag === "placed") ? (roleRank(role) >= 1) : (((__s).tag === "shipped") ? (roleRank(role) >= 2) : false)))))(state);
 }
 
 /** total : (xs : Array Int53) → Int53 */

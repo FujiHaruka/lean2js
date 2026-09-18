@@ -95,13 +95,13 @@ def sameMoney(a : Money, b : Money) : Bool =
   (a == b)
 
 def ship(state : OrderState, trackingId : String) : Result OrderState String =
-  match state { draft => error[OrderState]("a draft order cannot ship") | placed(orderId) => if (trackingId == "") then error[OrderState]("a tracking id is required") else ok[String](OrderState.shipped(orderId, trackingId)) | shipped(orderId, trackingId) => error[OrderState]("the order has already shipped") | cancelled(reason) => error[OrderState]("a cancelled order cannot ship") }
+  match state { draft => error[OrderState]("a draft order cannot ship") | placed(orderId) => if (trackingId == "") then error[OrderState]("a tracking id is required") else ok[String](OrderState.shipped(orderId, trackingId)) | shipped(_, _) => error[OrderState]("the order has already shipped") | cancelled(_) => error[OrderState]("a cancelled order cannot ship") }
 
 def trackingOf(state : OrderState) : Option String =
-  match state { draft => none[String] | placed(orderId) => none[String] | shipped(orderId, trackingId) => some(trackingId) | cancelled(reason) => none[String] }
+  match state { draft => none[String] | placed(_) => none[String] | shipped(_, trackingId) => some(trackingId) | cancelled(_) => none[String] }
 
 def canRefund(role : Role, state : OrderState) : Bool =
-  match state { draft => false | placed(orderId) => (roleRank(role) >= 1) | shipped(orderId, trackingId) => (roleRank(role) >= 2) | cancelled(reason) => false }
+  match state { draft => false | placed(_) => (roleRank(role) >= 1) | shipped(_, _) => (roleRank(role) >= 2) | cancelled(_) => false }
 
 def total(xs : Array Int53) : Int53 =
   xs.reduce(0, (sum, x) => (sum + x))

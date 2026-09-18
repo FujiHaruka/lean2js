@@ -216,25 +216,39 @@ walk が読む形は 13 —— 変数・`Int53` リテラル・`+` / `-` / `*`�
 
 ## Step 2. `match` —— 済
 
-`deriving Enc` が型ごとに `T.denotes_matchE` を出し、reifier が `matchMatcherApp?` で腕を復元して
-それを引用する。`reify_decl% roleRank` は表層構文の `Example.roleRank` と `rfl` で等しく、
-フィールドを束縛する腕（`Sale`）も通る。**`casesOn` を手で剥がす場面は無かった。**
+reifier は `matchMatcherApp?` で matcher を見つけ、その **splitter** を引いて腕を復元する。splitter は
+腕ごとに「パターンの束縛子 → 先の腕が外れた条件 → `motive <パターン>`」という型をしていて、
+**パターンは `motive` の引数として `Expr` で読める** —— 構成子もリテラルも `_` も入れ子も同じ形で
+出てくるので、形ごとの規則が要らない。`Option` や `Except` のように利用者が宣言していない型の
+`match` も同じ道で通る。
+
+証明も splitter を引用する。motive は
+`fun y => Denotes _ _ scrut y → Denotes _ _ (matchE scrut alts) (g y)` で、
+腕ごとに `denotes_matchE_of` を使い、`firstMatch` が同じ腕を選ぶことを外れた条件から出す。
 
 ### 分かったこと
 
-**`match` 全体は `g x` として運ぶ。** 対応補題の結論に `match` をもう 1 つ書くと、それは利用者が書いた
-matcher とは別の補助定義になって単一化しない。`g : T → α` を取って結論を `Denotes … (g x)` にすると
-利用者が書いた形にそのまま当たり、腕の仮定は `g (.ctor y…)` —— 構成子に当てれば ι で腕に落ちる。
+**`match` 全体は `g x` として運ぶ。** 結論に `match` をもう 1 つ書くと、それは利用者が書いた matcher
+とは別の補助定義になって単一化しない。`g : T → α` を取って結論を `Denotes … (g x)` にすると利用者が
+書いた形にそのまま当たる。**走査する値は変数でなくてよい** —— `dailyLimit` は呼び出しの答えを
+`match` するので、scrutinee は `kabstract` で出現ごとに抽象する。
+
+**重なりのない腕は `g <パターン>` が ι で腕の本体に落ちるが、重なる腕は落ちない。**
+`Match.getEquationsFor` が返す腕ごとの等式を `simp only` で当てる。外れた条件は仮定として文脈に
+あるので、条件付き書き換えの discharger がそのまま拾う。
+
+**外れた条件は `matchPat` と向きが逆。** splitter は `x = 0 → False` を渡すが、`matchPat` は
+パターンのリテラルを左に置いて比べるので、`ne_of_missed` で `0 ≠ x` に直してから simp に渡す。
 
 **何も束縛しない腕もパラメタを 1 つ取る。** matcher は空の腕に `Unit` の引数を付けるので、
-`altNumParams` は `max 1 フィールド数`。
+`altNumParams` は `max 1 フィールド数`。splitter でも同じで、その束縛子はパターンに現れない。
 
-**腕と構成子の対応は位置でしか決まらない。** 腕の数が構成子の数と一致し、各腕のパラメタ数が
-`max 1 フィールド数` と一致することしか確かめられない。`_` の腕や並べ替えた腕はこの検査を
-すり抜けうる —— **入れ子の `match` と合わせて、ここは残っている穴**。
+**matcher は定義をまたいで共有される。** `Denote.trackingOf` の matcher は `deriving Enc` が出した
+`OrderState.toValue` のもので、splitter の束縛子は `x0` / `x1` と名乗る。**名前は `app.alts[i]` の
+ラムダから取る** —— splitter から取ると、他人が付けた名前が生成する JS に出る。
 
-**パターンが束縛する名前は利用者のものではなく `TypeDef` のもの。** 生成される JS の変数名は
-フィールド名になる。利用者が `| .mk buyer _ =>` と書いても、AST 上は `buyer` はフィールド名で束縛される。
+**`_` は macro scope で分かる。** 利用者が `_` と書いた束縛子は macro scope 付きの名前になり、
+名前を付けた束縛子は付かない。生成される JS の変数名は利用者が書いたものになる。
 
 **利用者は引数に名前を付けなければならない。** `def roleRank : Role → Int | .guest => 0` の形だと
 パラメタ名が `x✝` になり、生成する関数の引数名にならない。reifier はこれを断る。
@@ -312,7 +326,7 @@ lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を�
 | `none` / `some` / `ok` / `error` | 済。型注釈が形に乗るので `encTy` を通す |
 | `UInt32` の算術と比較 | 済。ラップするので `Int53` の補題は使えず、`+ - * / %` と `< ≤ > ≥` に別系統を置いた。**`/` と `%` は `UInt32` でだけ演算子そのものを読む** —— 両側とも自然数を割って同じ丸めをするので、prelude の関数が要らない |
 | 関数を取る引数 | **まだ**。`.fn` に `Enc` instance は立たない。reifier が `@f` を宣言名に落とす |
-| リテラル・`_` の腕、入れ子 `match` | **まだ**。Step 2 で残した既知の穴 |
+| リテラル・`_` の腕、入れ子 `match` | 済。matcher の splitter がパターンをそのまま返すので、形ごとの規則は要らない。`Option` / `Except` の `match` も同じ道で通る |
 | 型パラメタを取る型 | **まだ**。`Paginated<T>` / `Validated<E, A>` は `deriving Enc` が `numParams == 0` しか受けない |
 
 ### ここで分かったこと
@@ -331,25 +345,9 @@ elaborate されるので、腕が読む外側の変数（`canRefund` の `role`
 `beq_refl` / `eq_of_beq`（`Ty` に同じ形がある）で、利用者の型は `deriving DecidableEq` で
 `LawfulBEq` に届く —— `deriving BEq` だけでは届かない。
 
-**残り 3 つの `match` は 1 本の道で閉じる —— matcher の splitter と等式。**
-`Match.getEquationsFor app.matcherName` が splitter と腕ごとの等式を返し、splitter の型が腕ごとに
-`(パターン束縛子…) → (先の腕が外れた条件…) → motive <パターン>` になっている。**パターンは
-`motive` の引数として `Expr` で読める** —— リテラルも入れ子の構成子も、`_` も同じ形で出てくる。
-束縛子は先頭 `altNumParams[i]` 本がパターン束縛子で、残りが外れた条件。`app.alts[i]` の λ も
-同じ順に同じ束縛子を取るので、本体を歩くときの名前はそこから取れる。
-
-- **名前は利用者のものになる。** パターン束縛子のうち `_` は macro scope 付きなので `Pat.wild` に、
-  名前の付いたものは `Pat.bind` に落ちる。**いまの実装は `TypeDef` のフィールド名で束縛している**ので、
-  ここを変えると `Example.trackingOf` / `canRefund` / `saleAmount` との `rfl` がずれる ——
-  `Denote.lean` の腕で束縛子に名前を付け直せば戻り、生成される JS の変数名は利用者が書いたものになる。
-- **証明は splitter を引用する。** motive は
-  `fun y => Denotes _ _ scrut y → Denotes _ _ (matchE scrut alts) (g y)`。
-  `hs` を motive の中に入れないと、腕の中で `Denotes … scrut <パターン>` が作れない。
-  `p` と `env` は穴でよい —— 最後に `hs` を当てた時点で決まる。
-- 腕ごとに `denotes_matchE_of` を使い、`firstMatch` が同じ腕を選ぶことを外れた条件から出す。
-  重なりのない腕は `g <パターン>` が ι で腕の本体に落ちるが、**重なる腕は落ちない**ので
-  `eq_i` を `simp only` で当てる（外れた条件は仮定として文脈にあるので discharger が拾う）。
-- これが通ると `deriving Enc` の `matchLemma` を引く道が無くなる。二重化を避けるなら置き換える。
+**`match` の道は Step 2 に書いてある。** パターンは splitter が返し、`hs` を motive の中に入れる
+ことで腕の中に `Denotes … scrut <パターン>` が立つ。`p` と `env` は穴でよく、最後に `hs` を当てた
+時点で決まる。
 
 そのうえで:
 
@@ -365,7 +363,7 @@ Step 0（縦に 1 本）                済 —— `Lean2Js/Denote.lean`
   ↓
 Step 1（符号化 + スカラ）          済 —— `Lean2Js/Enc.lean` / `EncDeriving.lean` / `Reify.lean`
   ↓
-Step 2（match）                    済 —— `T.denotes_matchE` を `deriving` が出す
+Step 2（match）                    済 —— matcher の splitter を reifier が引く
   ↓
 Step 3（走査）                     済 —— `denotes_mapE` ほか
   ↓

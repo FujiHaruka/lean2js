@@ -286,6 +286,11 @@ theorem denotes_matchE_of (p : Program) (env : Env) (scrut : Expr) (alts : List 
     rw [hfm] at h
     exact hb (by simp [defaultFuel]) v h
 
+/-- What the matcher's splitter hands an arm about the arms before it, turned around. `matchPat` compares
+the pattern's literal against the value, so a proof that an earlier arm missed needs the literal on the
+left and the splitter states it on the right. -/
+theorem ne_of_missed {α : Sort u} {a b : α} (h : a = b → False) : b ≠ a := fun hb => h hb.symm
+
 /-- An `if` on a `Bool` tests `b = true`, and the subset's condition is the `Bool` itself. -/
 theorem denotes_decide_eq_true (p : Program) (env : Env) (e : Expr) (b : Bool)
     (h : Denotes p env e b) : Denotes p env e (decide (b = true)) := by
