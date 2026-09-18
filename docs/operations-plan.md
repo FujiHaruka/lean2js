@@ -214,6 +214,26 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 **触る場所**: 層 1 の一式（`strUn` を触っているのは 16 ファイル）。`Helper` に 2 本
 （`__toString` と `__toInt`）。**`toString` を先に 1 つ入れて全ゲートを通し、`toInt?` は別コミット。**
 
+**16 ファイルのうち op を名指ししているのは 11 だけ**（残りは `.strUn _ x` で op に依らない）。
+`toInt?` を `StrUnOp` に足すとき手が要るのは:
+
+| ファイル | 何を足すか |
+| --- | --- |
+| `Core.lean` | `StrUnOp` に `toInt?`、`StrUnOp.name` に 1 行 |
+| `Eval.lean` | `applyStrUn` に腕 1 つ（`.str s` → `.opt (.int53 …)`） |
+| `Compile.lean` | `strUnHelper` に 1 行、`.strUn op e` の腕の `.string` 固定を `strUnResult` に開く |
+| `Builder.lean` | `def toInt? (e : Expr) : Expr := .strUn .toInt? e` |
+| `Reify.lean` | `Lean2Js.Str.toInt?` → `strUn` の行（`Str.trim` の隣） |
+| `Denotes.lean` | `denotes_toInt?`（`denotes_strUn` は結果型が `t` で一般なので通る見込み） |
+| `Sound.lean` | `applyStrUn_hasTy` を op 依存に。`TypeChecked` の `strUn` は op に依らないので動かない |
+| `Correct.lean` | `strUn` の場合（`InFragment` は op に依らない） |
+| `Helper.lean` | `__toInt` |
+| `HelperSem` / `HelperProof` / `HelperAgree` | `__toInt` の模型と一致証明 |
+| `Renderable.lean` | `okCallee_strUnHelper` が新しい名前でも通ること |
+
+`toString` を `UnOp` に足すほうは `.un` を名指ししているファイルだけで、`Compile` の腕が op ごとに
+分かれているぶん `strUn` より軽い。
+
 ### ベクタの穴（2026-09-18 に測った）
 
 **`scalarEdges .string` に数字の文字列が 1 つも無い。** 今の 17 件は
