@@ -829,6 +829,24 @@ theorem anyUnderLimit_certificate (p : Program) (amounts : List Int) (limit : In
       (reify_decl% anyUnderLimit).body (anyUnderLimit amounts limit) :=
   reify_proof% anyUnderLimit
 
+abbrev everyLineWithinLimitCore : Decl := reify_decl% everyLineWithinLimit
+
+example : everyLineWithinLimitCore = Example.everyLineWithinLimit := rfl
+
+theorem everyLineWithinLimit_certificate (p : Program) (amounts : List Int) (limit : Int) :
+    Denotes p (bindParams everyLineWithinLimitCore.params [toValue amounts, toValue limit])
+      everyLineWithinLimitCore.body (everyLineWithinLimit amounts limit) :=
+  reify_proof% everyLineWithinLimit
+
+abbrev someLineIsFreeCore : Decl := reify_decl% someLineIsFree
+
+example : someLineIsFreeCore = Example.someLineIsFree := rfl
+
+theorem someLineIsFree_certificate (p : Program) (amounts : List Int) :
+    Denotes p (bindParams someLineIsFreeCore.params [toValue amounts]) someLineIsFreeCore.body
+      (someLineIsFree amounts) :=
+  reify_proof% someLineIsFree
+
 /-! ### The array itself
 
 Building one, reading one element, measuring, slicing, reversing, joining. `Arr.get` and `Arr.slice` are
@@ -900,6 +918,24 @@ theorem sortsBefore_certificate (p : Program) (a b : String) :
 abbrev mentionsTermCore : Decl := reify_decl% mentionsTerm
 
 example : mentionsTermCore = Example.mentionsTerm := rfl
+
+abbrev storedCouponCore : Decl := reify_decl% storedCoupon
+
+example : storedCouponCore = Example.storedCoupon := rfl
+
+theorem storedCoupon_certificate (p : Program) (campaign entered : String) :
+    Denotes p (bindParams storedCouponCore.params [toValue campaign, toValue entered])
+      storedCouponCore.body (storedCoupon campaign entered) :=
+  reify_proof% storedCoupon
+
+abbrev couponAppliesCore : Decl := reify_decl% couponApplies
+
+example : couponAppliesCore = Example.couponApplies := rfl
+
+theorem couponApplies_certificate (p : Program) (code campaign : String) :
+    Denotes p (bindParams couponAppliesCore.params [toValue code, toValue campaign])
+      couponAppliesCore.body (couponApplies code campaign) :=
+  reify_proof% couponApplies
 
 theorem mentionsTerm_certificate (p : Program) (text term : String) :
     Denotes p (bindParams mentionsTermCore.params [toValue text, toValue term])
@@ -1067,6 +1103,15 @@ theorem tenPercentOff_certificate (p : Program) (amount : Int) :
     Denotes p (bindParams tenPercentOffCore.params [toValue amount]) tenPercentOffCore.body
       (tenPercentOff amount) :=
   reify_proof% tenPercentOff
+
+abbrev rebindTwiceCore : Decl := reify_decl% rebindTwice
+
+example : rebindTwiceCore = Example.rebindTwice := rfl
+
+theorem rebindTwice_certificate (p : Program) (amount : Int) :
+    Denotes p (bindParams rebindTwiceCore.params [toValue amount]) rebindTwiceCore.body
+      (rebindTwice amount) :=
+  reify_proof% rebindTwice
 
 abbrev noDiscountCore : Decl := reify_decl% noDiscount
 
@@ -1278,6 +1323,15 @@ theorem canRefund_certificate (role : Role) (state : OrderState) :
     Denotes Example.program (bindParams canRefundCore.params [toValue role, toValue state])
       canRefundCore.body (canRefund role state) :=
   reify_proof% canRefund
+
+abbrev firstTrackingCore : Decl := reify_decl% firstTracking
+
+example : firstTrackingCore = Example.firstTracking := rfl
+
+theorem firstTracking_certificate (states : List OrderState) :
+    Denotes Example.program (bindParams firstTrackingCore.params [toValue states])
+      firstTrackingCore.body (firstTracking states) :=
+  reify_proof% firstTracking
 
 abbrev refundableOnlyCore : Decl := reify_decl% refundableOnly
 

@@ -105,6 +105,11 @@ def allUnderLimit (amounts : List Int) (limit : Int) : Bool :=
 def anyUnderLimit (amounts : List Int) (limit : Int) : Bool :=
   amounts.any (fun amount => amount ≤ limit)
 
+def everyLineWithinLimit (amounts : List Int) (limit : Int) : Bool :=
+  amounts.all (fun amount => amount ≤ limit)
+
+def someLineIsFree (amounts : List Int) : Bool := amounts.any (fun amount => amount == 0)
+
 def pageOf (xs : List Int) (lo hi : Int) : List Int := Arr.slice xs lo hi
 
 def mostRecentFirst (events : List String) : List String := events.reverse
@@ -121,6 +126,11 @@ def slugOf («prefix» name : String) : String := «prefix» ++ "-" ++ name
 def sortsBefore (a b : String) : Bool := a < b
 
 def mentionsTerm (text term : String) : Bool := Str.includes (Str.lower text) (Str.lower term)
+
+def storedCoupon (campaign entered : String) : String := Str.upper (Str.trim (campaign ++ entered))
+
+def couponApplies (code campaign : String) : Bool :=
+  Str.startsWith (Str.lower (Str.trim code)) (Str.lower (Str.trim campaign))
 
 def fieldCount (row separator : String) : Int := Arr.length (Str.split row separator)
 
@@ -164,6 +174,11 @@ def discounted (amount percent : Int) : Int :=
 
 def tenPercentOff (amount : Int) : Int := amount - Int53.div amount 10
 
+def rebindTwice (amount : Int) : Int :=
+  let amount := amount + 1
+  let amount := amount * 2
+  amount
+
 def noDiscount (amount : Int) : Int := amount
 
 def priced (rule : Int → Int) (amount : Int) : Int := rule amount
@@ -204,7 +219,7 @@ inductive OrderState where
   | placed (orderId : Int)
   | shipped (orderId : Int) (trackingId : String)
   | cancelled (reason : String)
-  deriving Enc
+  deriving Inhabited, Enc
 
 def addMoney (a b : Money) : Except String Money :=
   if a.currency != b.currency then .error "currency mismatch"
@@ -232,6 +247,9 @@ def canRefund (role : Role) (state : OrderState) : Bool :=
   | .placed _ => roleRank role ≥ 1
   | .shipped _ _ => roleRank role ≥ 2
   | .cancelled _ => false
+
+def firstTracking (states : List OrderState) : Option String :=
+  if Arr.length states == 0 then none else trackingOf (Arr.get states 0)
 
 def refundableOnly (role : Role) (states : List OrderState) : List OrderState :=
   states.filter (fun state => canRefund role state)
