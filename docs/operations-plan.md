@@ -184,14 +184,49 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 `-?[0-9]+`（先頭ゼロなし、Int53 の範囲内）と自分で定義し、外れたら `none` を返す手書きヘルパに落とす。
 `toInt?` が `Option` を返すので trap は無い。
 
-**形を増やさずに済むか先に見る。** `toString` は `Int → String` なので `UnOp` に演算子として足せば
-`Core.Expr` は 35 形のまま（`Sound` と `Correct` には `un` の下の場合が 1 つ増える）。`toInt?` は
-`String → Option Int` で、`StrUnOp` は `String → String` を前提にしている。どちらに置くかは
-`Eval` / `Compile` の型付けを読んでから決める。**形が増えないほうが、証明の分母が動かない。**
+### どこに置くか（2026-09-18 に測った）
 
-**触る場所**: 層 1 の一式。`Helper` に 2 本（`prim` の `String` と手書きのパーサ）。
+**両方とも演算子で足せる。`Core.Expr` は 35 形のまま。**
+
+- `toString` は `UnOp` に足す。`Compile` の `un` は `.un .not` / `.un .neg` / `.un .abs` と
+  **op ごとに腕が分かれている**ので、`.un .toString`（`.int53 → .string`）は腕が 1 つ増えるだけで、
+  既存の腕の型付けは動かない。
+- `toInt?` は `StrUnOp` に足す。`strUn` の `Compile` は今 `.ok (…, .string)` と**結果型を固定**して
+  いるので、`strBinResult : StrBinOp → Ty` と同じ形の `strUnResult : StrUnOp → Ty` に開く。
+  **これは新しい手ではなく `strBin` の既存の形をなぞるだけ。**
+- `Sound` の `TypeChecked` は `strUn {op : StrUnOp}` と op に依らないので**動かない**。`Sound` の
+  `strUn` の場合は `applyStrUn_hasTy` に委ねているので、仕事はその補題の中。`strBin` が
+  `applyStrBin_hasTy` で既に op 依存の結果型をやっている。
+
+### ヘルパ（2026-09-18 に測った）
+
+**`String` は `prim` に無い。** 今の `prim` 11 種は `Array.from` / `Array.isArray` / `BigInt` /
+`Math.imul` / `Math.trunc` / `Number.isInteger` / `Number.isSafeInteger` / `Number` /
+`Object.fromEntries` / `Object.hasOwn` / `Object.keys`。`toString` は `prim "String"` を 12 種目に
+足すか `method … "toString"` にするかで、どちらも名指しの TCB が 1 増える。
+
+**`toInt?` は手書きで書き切れる。** ヘルパ言語に `forOf` / `letMut` / `setVar` / `brk` があり、
+`__upper` が既に 1 文字ずつ回している。形は「`__chars` で回して `-?[0-9]+`（先頭ゼロなし）を
+確かめる → `BigInt(s)` で正確に読む → Int53 の範囲を BigInt のまま比べる → `Number(...)`」。
+`__bigdiv` が既に `Number(BigInt(a) / BigInt(b))` をやっているので、prim は増えない。
+**`BigInt(s)` は形が違うと投げる**ので、形の検査が先。ヘルパ言語に try/catch は無い。
+
+**触る場所**: 層 1 の一式（`strUn` を触っているのは 16 ファイル）。`Helper` に 2 本
+（`__toString` と `__toInt`）。**`toString` を先に 1 つ入れて全ゲートを通し、`toInt?` は別コミット。**
+
+### ベクタの穴（2026-09-18 に測った）
+
+**`scalarEdges .string` に数字の文字列が 1 つも無い。** 今の 17 件は
+`"" "a" "b" "ab" "ba" "abc" "Z" "z" "\"" "\\" "\n" "日本語" "🍣" "🍣a" bmpMax astral astral++"a"` で、
+`toInt?` の**成功側がベクタで 1 度も踏まれない**。`"0" "-0" "007" "+5" " 5" "9007199254740991"
+"9007199254740992" "-9007199254740991"` を足すのが筋だが、プールは `String` 引数の直積に効くので
+**足す前に件数を測る**（今 31741 件、文字列 2 引数の関数は 17² → 25²）。
 
 **保証の境界**: 変わらない。覆う側が増える。
+
+**同じコミットで直す数字**: `docs/guarantees.md` のヘルパ本数（今 49 本）と模型の表の行数（今 35 行）、
+ベクタ件数、`README.md` のサブセットの表、`docs/next-milestone-plan.md` の「言語が凍っている」行
+（層 1 は凍結を解く側なので、Step 3 が初めてここに届く）。
 
 ## Step 4. 文字列の組み立て
 
@@ -268,7 +303,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `lake env lean` は `reify_decl%` しか走らず、証明書（citing）を作らない——**検証には 3 段階ある**：
   `lake env lean`（walk だけ）⊂ `ship_package`（証明書と compile と燃料）⊂ `lean2js --out`（ベクタを Node で）。
   **以降、文書に載せるコードは `ship_package` まで通す。**
-- **Step 2**（2026-09-18） — 層 0 の語彙 19 本が `Prelude.lean` に入った。`Arr` に 10、`Dict` に 2、
+- **Step 2**（2026-09-18, `4c7ed5f`） — 層 0 の語彙 19 本が `Prelude.lean` に入った。`Arr` に 10、`Dict` に 2、
   新設の `Opt` に 2 と `Exc` に 4、`Str` に 1。全部 `@[expand]` で、`Reify.lean` も `Core` も動いていない。
   `Example.lean` に公開宣言を 21 本足したので、公開関数は 70 → 91 本、差分ベクタは 25511 → 31741 件。
   当初の表の `indexOf?` `min?` `max?` `groupBy` `Dict.map` `Dict.filter` は入っていない（理由は Step 2 に）。

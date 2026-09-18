@@ -568,8 +568,7 @@ export declare function settledOrElse(outcome: Result<Money, string>, fallback: 
 export declare function settledCurrency(outcome: Result<Money, string>): Result<string, string>;
 
 /**
- * The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion
- * the way a shipped declaration does.
+ * The refusal upper-cased. What the settlement accepted is handed back untouched.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
  */

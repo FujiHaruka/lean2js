@@ -141,7 +141,7 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `settledOrElse(outcome: Result<Money, string>, fallback: Money): Money`
 - `settledCurrency(outcome: Result<Money, string>): Result<string, string>`
 - `loudRefusal(outcome: Result<Money, string>): Result<Money, string>`
-  The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion the way a shipped declaration does.
+  The refusal upper-cased. What the settlement accepted is handed back untouched.
 - `settledMoney(outcome: Result<Money, string>): Option<Money>`
 
 ## Errors

@@ -462,8 +462,7 @@ def settledOrElse (outcome : Except String Money) (fallback : Money) : Money :=
 def settledCurrency (outcome : Except String Money) : Except String String :=
   Exc.map outcome currencyOf
 
-/-- The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion
-the way a shipped declaration does. -/
+/-- The refusal upper-cased. What the settlement accepted is handed back untouched. -/
 @[ship]
 def loudRefusal (outcome : Except String Money) : Except String Money :=
   Exc.mapError outcome Str.upper

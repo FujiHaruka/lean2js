@@ -501,7 +501,7 @@
       "name": "loudRefusal",
       "signature": "(outcome : Result Money String) → Result Money String",
       "declaration": "loudRefusal(outcome: Result<Money, string>): Result<Money, string>",
-      "doc": "The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion\nthe way a shipped declaration does."
+      "doc": "The refusal upper-cased. What the settlement accepted is handed back untouched."
     },
     {
       "name": "settledMoney",
