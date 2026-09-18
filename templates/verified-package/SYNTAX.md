@@ -5,20 +5,21 @@ is a list to memorise: one is the set of values JavaScript already has, the othe
 before the program runs, how long it can take.
 
 **1. A value is one of the seven things JavaScript has.** `boolean`, `number`, `bigint`, `string`,
-`Array`, `Map`, and the tagged object `{ tag: ... }`. Everything Lean writes lands on one of those and
-there is no eighth: `Option`, `Except` and the types you declare with `deriving Enc` are all the tagged
-object, `Dict` is the `Map`, and `Int` / `UInt32` / `BigInt` are three names because JavaScript has two
-number types and a safe range inside one of them. The vocabulary follows from the same line — `Arr.*`,
-`Str.*`, `Dict.*`, `Int53.*` and `BigInt.*` name the JavaScript operation, which is why Lean's function of
-the same name is not read. `List.length` is not forbidden for being Lean's; it answers in `Nat`, and `Nat`
-is not one of the seven.
+`Array`, `Map`, and the tagged object `{ tag: ... }`. `Option`, `Except` and the types you declare with
+`deriving Enc` are all the tagged object, `Dict` is the `Map`, and `Int` / `UInt32` / `BigInt` are three
+names because JavaScript has two number types and a safe range inside one of them. Nothing else crosses
+the boundary — the one thing the subset has besides the seven is a function, and a function is only ever a
+name, which is line 2. The vocabulary follows from the same line: `Arr.*`, `Str.*`, `Dict.*`, `Int53.*`
+and `BigInt.*` name the JavaScript operation, which is why Lean's function of the same name is not read
+(`Opt.*` and `Exc.*` are shorthand for a `match` rather than an operation of their own). `List.length` is
+not forbidden for being Lean's; it answers in `Nat`, and `Nat` is not one of the seven.
 
 **2. Every call goes to a name written above it.** There is no recursion, no closure and no function built
 where it stands: a function reaches a call as the name of a declaration. That is what lets the fuel a
 program needs be counted from its syntax alone — a call only reaches backwards, so the stack is at most as
 deep as the list of declarations. Repetition is the same line. The six traversals `map`, `filter`,
-`find?`, `all`, `any` and `foldl` are one pass over an array, which costs no fuel at all, and the lambda in
-one of them is the traversal's own syntax rather than a value of its own.
+`find?`, `all`, `any` and `foldl` are one pass over an array, whose length costs no fuel at all, and the
+lambda in one of them is the traversal's own syntax rather than a value of its own.
 
 So there is one question to ask rather than a table to consult:
 
