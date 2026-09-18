@@ -145,10 +145,44 @@ def dictWith (entries : List (String × Value)) (k : String) (v : Value) : List 
   if entries.any (·.1 == k) then entries.map (fun e => if e.1 == k then (k, v) else e)
   else entries ++ [(k, v)]
 
+/-- The digits read as a number, with no bound on the answer. A character that is not a digit
+contributes its code point less 48, which `parseInt53` throws away by printing the answer back. -/
+def digitsValue (cs : List Char) : Int :=
+  cs.foldl (fun acc c => acc * 10 + ((c.toNat : Int) - 48)) 0
+
+/-- Reading an Int53 back from its decimal spelling. The answer has to print as the string it was read
+from, so what this accepts is exactly what `toString` prints: `"007"`, `"+5"`, `" 5"` and `"-0"` are
+refused, and so is anything outside the Int53 range. -/
+def parseInt53 (s : String) : Option Int :=
+  let cs := s.toList
+  let neg := "-".toList.isPrefixOf cs
+  let v := digitsValue (if neg then cs.drop 1 else cs)
+  if v < 0 || int53Max < v then none
+  else
+    let n := if neg then -v else v
+    if toString n == s then some n else none
+
+theorem parseInt53_range {s : String} {n : Int} (h : parseInt53 s = some n) :
+    int53Min ≤ n ∧ n ≤ int53Max := by
+  simp only [parseInt53, int53Min, int53Max] at h ⊢
+  split at h <;>
+    (split at h
+     · exact absurd h (by simp)
+     · rename_i hr
+       simp only [Bool.or_eq_true, decide_eq_true_eq, not_or, Int.not_lt] at hr
+       split at h
+       · simp only [Option.some.injEq] at h
+         omega
+       · exact absurd h (by simp))
+
 def applyStrUn : StrUnOp → Value → Except Err Value
   | .trim, .str s => .ok (.str (String.ofList (trimChars s.toList)))
   | .upper, .str s => .ok (.str (String.ofList (s.toList.map asciiUpper)))
   | .lower, .str s => .ok (.str (String.ofList (s.toList.map asciiLower)))
+  | .toInt, .str s =>
+    .ok (match parseInt53 s with
+      | some n => .obj "some" [("value", .int53 n)]
+      | none => .obj "none" [])
   | op, _ => .error (.typeError s!"{op.name} expects a String")
 
 def applyStrBin : StrBinOp → Value → Value → Except Err Value

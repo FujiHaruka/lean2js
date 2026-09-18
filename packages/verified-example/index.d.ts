@@ -118,6 +118,21 @@ export declare function slugOf(prefix: string, name: string): string;
 export declare function orderReference(prefix: string, orderNo: number): string;
 
 /**
+ * The amount a line carries, read back from the string the caller was handed. `none` unless the
+ * string is exactly the decimal spelling of an Int53, so `"007"`, `" 5"` and `"+5"` are refused.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function amountOf(field: string): Option<number>;
+
+/**
+ * The same amount, with a fallback for a field that does not spell one.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function amountOr(field: string, fallback: number): number;
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.

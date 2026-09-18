@@ -107,6 +107,16 @@ private theorem cmp_not_le {a b : Int} (h : ¬a ≤ b) : (compare a b != Orderin
   simp only [compare, compareOfLessAndEq, if_neg (by omega : ¬a < b), if_neg (by omega : ¬a = b)]
   rfl
 
+private theorem cmp_gt {a b : Int} (h : b < a) : (compare a b == Ordering.gt) = true := by
+  simp only [compare, compareOfLessAndEq, if_neg (by omega : ¬a < b), if_neg (by omega : ¬a = b)]
+  rfl
+
+private theorem cmp_not_gt {a b : Int} (h : ¬b < a) : (compare a b == Ordering.gt) = false := by
+  simp only [compare, compareOfLessAndEq]
+  by_cases h1 : a < b
+  · rw [if_pos h1]; rfl
+  · rw [if_neg h1, if_pos (by omega : a = b)]; rfl
+
 /-! ## Arithmetic
 
 Each theorem says what the helper computes, in plain Lean, with no hypothesis about its arguments.
@@ -353,6 +363,120 @@ theorem calls_str (ext : Ext) (a : Int) (f : Nat) (hlo : safeMin ≤ a) (hhi : a
   simp only [Helper.str]
   walk
   simp [hlo, hhi]
+
+theorem find_toInt : Helper.defs.find? (·.name == "__toInt") = some Helper.toInt := rfl
+
+theorem toInt_loop (ext : Ext) (cs : List Char) (k : Int) (D N X S : Val) (f : Nat) :
+    evalFor ext (f + cs.length + 11)
+        [("v", .bigint k), ("ds", D), ("neg", N), ("xs", X), ("s", S)] "c"
+        (cs.map fun c => Val.str c.toString)
+        [.setVar "v" (.bin "+" (.bin "*" (.var "v") (.big 10))
+          (.prim "BigInt" [.bin "-" (.call "__cp" [.var "c"]) (.num 48)]))]
+      = .ok (.next [("v", .bigint (cs.foldl (fun acc c => acc * 10 + ((c.toNat : Int) - 48)) k)),
+          ("ds", D), ("neg", N), ("xs", X), ("s", S)]) := by
+  induction cs generalizing k with
+  | nil =>
+    walk
+    simp
+  | cons c rest ih =>
+    rw [show f + (c :: rest).length + 11 = (f + rest.length + 11) + 1 from by simp; omega]
+    walk
+    rw [show f + rest.length + 5 = (f + rest.length) + 5 from rfl, calls_cp]
+    walk
+    simp only [Option.getD]
+    rw [ih]
+    simp
+
+theorem slice1 {α β : Type} (g : α → β) (xs : List α) :
+    List.take (((xs.length : Int) - 1).toNat) (List.drop 1 (xs.map g)) = (xs.drop 1).map g := by
+  cases xs with
+  | nil => simp
+  | cons a t =>
+    simp only [List.map_cons, List.drop_succ_cons, List.drop_zero, List.length_cons]
+    rw [show (((t.length + 1 : Nat) : Int) - 1).toNat = (t.map g).length from by simp,
+      List.take_length]
+
+theorem calls_toInt (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + x.toList.length + 40) "__toInt" [.str x] =
+      .ok (match strToInt x with
+           | some n => .obj [("tag", .str "some"), ("value", .num n)]
+           | none => .obj [("tag", .str "none")]) := by
+  rw [show f + x.toList.length + 40 = (f + x.toList.length + 39) + 1 from rfl,
+    callDef_block find_toInt rfl rfl]
+  simp only [Helper.toInt, Helper.or2, Helper.lengthOf]
+  walk
+  rw [show f + x.toList.length + 37 = (f + x.toList.length + 32) + 5 from by omega, calls_chars]
+  by_cases hneg : "-".toList.isPrefixOf x.toList = true
+  · rw [hneg]
+    walk
+    rw [if_neg (by simp), Int.toNat_one, slice1]
+    have hlen : 1 ≤ x.toList.length := by
+      cases hxl : x.toList with
+      | nil => rw [hxl] at hneg; simp [show "-".toList = ['-'] from rfl] at hneg
+      | cons a t => simp
+    walk
+    rw [show f + x.toList.length + 34 = (f + 24) + (x.toList.drop 1).length + 11 from by
+      simp; omega, toInt_loop]
+    walk
+    unfold strToInt digitsValue
+    simp only [hneg, if_true]
+    generalize List.foldl (fun acc c => acc * 10 + ((c.toNat : Int) - 48)) 0 (x.toList.drop 1) = v
+    by_cases h0 : v < 0
+    · rw [cmp_lt h0]
+      walk
+      simp [h0]
+    · rw [cmp_not_lt h0]
+      walk
+      by_cases h1 : (9007199254740991 : Int) < v
+      · rw [cmp_gt h1]
+        walk
+        simp [safeMax, h1]
+      · rw [cmp_not_gt h1]
+        walk
+        rw [if_pos (show (decide (safeMin ≤ -v) && decide (-v ≤ safeMax)) = true from by
+          simp only [safeMin, safeMax, Bool.and_eq_true]
+          exact ⟨decide_eq_true (by omega), decide_eq_true (by omega)⟩)]
+        walk
+        by_cases h2 : (toString (-v) == x) = true
+        · rw [h2]
+          walk
+          simp [safeMax, h0, h1]
+        · rw [Bool.not_eq_true] at h2
+          rw [h2]
+          walk
+          simp [safeMax, h0, h1]
+  · rw [Bool.not_eq_true] at hneg
+    rw [hneg]
+    walk
+    rw [show f + x.toList.length + 34 = (f + 23) + x.toList.length + 11 from by omega, toInt_loop]
+    walk
+    unfold strToInt digitsValue
+    simp only [hneg, Bool.false_eq_true, if_false]
+    generalize List.foldl (fun acc c => acc * 10 + ((c.toNat : Int) - 48)) 0 x.toList = v
+    by_cases h0 : v < 0
+    · rw [cmp_lt h0]
+      walk
+      simp [h0]
+    · rw [cmp_not_lt h0]
+      walk
+      by_cases h1 : (9007199254740991 : Int) < v
+      · rw [cmp_gt h1]
+        walk
+        simp [safeMax, h1]
+      · rw [cmp_not_gt h1]
+        walk
+        rw [if_pos (show (decide (safeMin ≤ v) && decide (v ≤ safeMax)) = true from by
+          simp only [safeMin, safeMax, Bool.and_eq_true]
+          exact ⟨decide_eq_true (by omega), decide_eq_true (by omega)⟩)]
+        walk
+        by_cases h2 : (toString v == x) = true
+        · rw [h2]
+          walk
+          simp [safeMax, h0, h1]
+        · rw [Bool.not_eq_true] at h2
+          rw [h2]
+          walk
+          simp [safeMax, h0, h1]
 
 theorem calls_strlen (ext : Ext) (x : String) (f : Nat) :
     callDef ext (f + 9) "__strlen" [.str x] = .ok (.num x.toList.length) := by

@@ -44,7 +44,9 @@ private def scalarEdges : Ty → List Value
       fun n => Value.uint32 (UInt32.ofNat n)
   | .string =>
     ["", "a", "b", "ab", "ba", "abc", "Z", "z", "\"", "\\", "\n",
-     "日本語", "🍣", "🍣a", bmpMax, astral, astral ++ "a"].map Value.str
+     "日本語", "🍣", "🍣a", bmpMax, astral, astral ++ "a",
+     "0", "-0", "007", "+5", " 5", "9007199254740991", "9007199254740992",
+     "-9007199254740991"].map Value.str
   | .bigint =>
     [0, 1, -1, 7, -7, 9007199254740993, -9007199254740993,
      1208925819614629174706176, -1208925819614629174706176].map Value.bigint

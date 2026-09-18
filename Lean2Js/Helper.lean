@@ -287,6 +287,28 @@ def str : Def :=
 
   { name := "__str", params := ["x"], body := .expr (.prim "String" [(.var "x")]) }
 
+def toInt : Def :=
+
+  { name := "__toInt", params := ["s"]
+    doc := ["Number() reads \"\", \"0x10\" and \" 5\", and BigInt() throws on anything it dislikes.",
+            "This reads the digits itself and answers only when printing the result back gives the",
+            "string it was handed."]
+    body := .block [
+      .const "xs" (.call "__chars" [(.var "s")]),
+      .const "neg" (.method (.var "s") "startsWith" [.str "-"]),
+      .const "ds" (.cond (.var "neg")
+        (.method (.var "xs") "slice" [.num 1, lengthOf (.var "xs")]) (.var "xs")),
+      .letMut "v" (.big 0),
+      .forOf "c" (.var "ds") [
+        .setVar "v" (.bin "+" (.bin "*" (.var "v") (.big 10))
+          (.prim "BigInt" [.bin "-" (.call "__cp" [(.var "c")]) (.num 48)]))],
+      .ifThen (or2 [.bin "<" (.var "v") (.big 0), .bin ">" (.var "v") (.big 9007199254740991)])
+        [.ret (.objLit [("tag", .str "none")])],
+      .const "n" (.prim "Number" [.cond (.var "neg") (.neg (.var "v")) (.var "v")]),
+      .ifThen (.bin "!==" (.prim "String" [(.var "n")]) (.var "s"))
+        [.ret (.objLit [("tag", .str "none")])],
+      .ret (.objLit [("tag", .str "some"), ("value", .var "n")])] }
+
 def strlen : Def :=
 
   { name := "__strlen", params := ["s"], body := .expr (lengthOf (.call "__chars" [(.var "s")])) }
@@ -715,9 +737,9 @@ def ck : Def :=
 
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
-  str, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split, substring,
-  aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues, ddelete, eq, map, filter,
-  find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
+  str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
+  substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues, ddelete, eq, map,
+  filter, find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
 ]
 
 def runtime : String := renderAll defs

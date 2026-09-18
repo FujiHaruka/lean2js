@@ -252,6 +252,7 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
   | (``Lean2Js.Str.trim, #[l]) => strUn `trim ``Lean2Js.Denote.denotes_trim l
   | (``Lean2Js.Str.upper, #[l]) => strUn `upper ``Lean2Js.Denote.denotes_upper l
   | (``Lean2Js.Str.lower, #[l]) => strUn `lower ``Lean2Js.Denote.denotes_lower l
+  | (``Lean2Js.Str.toInt?, #[l]) => strUn `toInt ``Lean2Js.Denote.denotes_toInt l
   | (``Lean2Js.Str.startsWith, #[l, r]) =>
     strBin `startsWith ``Lean2Js.Denote.denotes_startsWith l r
   | (``Lean2Js.Str.endsWith, #[l, r]) => strBin `endsWith ``Lean2Js.Denote.denotes_endsWith l r

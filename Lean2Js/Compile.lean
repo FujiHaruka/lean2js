@@ -104,6 +104,11 @@ def strUnHelper : StrUnOp → String
   | .trim => "__trim"
   | .upper => "__upper"
   | .lower => "__lower"
+  | .toInt => "__toInt"
+
+def strUnResult : StrUnOp → Ty
+  | .trim | .upper | .lower => .string
+  | .toInt => .option .int53
 
 def strBinHelper : StrBinOp → String
   | .startsWith => "__startsWith"
@@ -631,7 +636,7 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
   | .strUn op e => do
     let (je, te) ← compileExpr p ctx e
     if te != .string then .error s!"{op.name} expects a String, not {te.render}"
-    else .ok (.call (strUnHelper op) [je], .string)
+    else .ok (.call (strUnHelper op) [je], strUnResult op)
   | .strBin op lhs rhs => do
     let (jl, tl) ← compileExpr p ctx lhs
     let (jr, tr) ← compileExpr p ctx rhs

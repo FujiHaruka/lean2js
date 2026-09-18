@@ -171,7 +171,9 @@ def binOp (op : String) (a b : Val) : Res Val :=
     match op, a, b with
     | "+", .num x, .num y => .ok (.num (x + y))
     | "+", .str x, .str y => .ok (.str (x ++ y))
+    | "+", .bigint x, .bigint y => .ok (.bigint (x + y))
     | "-", .num x, .num y => .ok (.num (x - y))
+    | "*", .bigint x, .bigint y => .ok (.bigint (x * y))
     | "/", .bigint x, .bigint y => if y == 0 then .stuck else .ok (.bigint (x.tdiv y))
     | "/", .num x, .num y => .ok (.quot x y)
     | "%", .num x, .num y => if y == 0 then .stuck else .ok (.num (x.tmod y))

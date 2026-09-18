@@ -767,6 +767,19 @@ theorem denotes_upper (p : Program) (env : Env) (e : Expr) (s : String) (h : Den
       rw [← hw, toValue_str])
     h
 
+theorem denotes_toInt (p : Program) (env : Env) (e : Expr) (s : String) (h : Denotes p env e s) :
+    Denotes p env (.strUn .toInt e) (Str.toInt? s) :=
+  denotes_strUn p env .toInt e s _
+    (fun w hw => by
+      rw [show applyStrUn .toInt (toValue s)
+            = Except.ok (match parseInt53 s with
+                | some n => Value.obj "some" [("value", .int53 n)]
+                | none => Value.obj "none" []) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw]
+      cases hp : parseInt53 s <;> simp only [Str.toInt?, hp] <;> rfl)
+    h
+
 theorem denotes_lower (p : Program) (env : Env) (e : Expr) (s : String) (h : Denotes p env e s) :
     Denotes p env (.strUn .lower e) (Str.lower s) :=
   denotes_strUn p env .lower e s _

@@ -32,6 +32,10 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `slugOf(prefix: string, name: string): string`
 - `orderReference(prefix: string, orderNo: number): string`
   The reference an order is filed under: the prefix and the order number in decimal.
+- `amountOf(field: string): Option<number>`
+  The amount a line carries, read back from the string the caller was handed. `none` unless the string is exactly the decimal spelling of an Int53, so `"007"`, `" 5"` and `"+5"` are refused.
+- `amountOr(field: string, fallback: number): number`
+  The same amount, with a fallback for a field that does not spell one.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`

@@ -5,8 +5,8 @@
 
 ## 文脈
 
-今の到達点は測った数字で言える。公開関数 92 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
-32270 件、`Core.Expr` は 35 形。実行時ヘルパは 50 本で、模型がヘルパについて仮定している表 36 行の
+今の到達点は測った数字で言える。公開関数 94 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
+34291 件、`Core.Expr` は 35 形。実行時ヘルパは 51 本で、模型がヘルパについて仮定している表 37 行の
 全行が印字器の書き出すソースと一致する（`helpers_ship_as_modelled`）。JS の組み込みへの依存は
 `Helper.lean` が名指ししている `prim` 12 種とメソッド 13 種で、それが読み取れる TCB の全部。
 
@@ -180,9 +180,10 @@
 **`String(n)` は Int53 の範囲で 10 進表記と一致する。** JS が指数表記に落ちるのは |n| ≥ 1e21 で、
 Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意」という基準を満たす。
 
-**`Number()` は使わない。** 空文字列を 0 にし、`0x` を読み、前後の空白を飛ばす。受け付ける文字列を
-`-?[0-9]+`（先頭ゼロなし、Int53 の範囲内）と自分で定義し、外れたら `none` を返す手書きヘルパに落とす。
-`toInt?` が `Option` を返すので trap は無い。
+**`Number()` は使わない。** 空文字列を 0 にし、`0x` を読み、前後の空白を飛ばす。受け付ける文字列は
+**`Int53.toString` が印字するものちょうど**——読んだ値を印字し直して元の文字列と一致しなければ `none`
+を返す。これは当初書いた `-?[0-9]+`（先頭ゼロなし）より狭い: `"-0"` は正規表現に合うが印字器が書かない
+ので落ちる。`toInt?` が `Option` を返すので trap は無い。
 
 ### どこに置くか（2026-09-18 に測った）
 
@@ -205,26 +206,29 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 `Object.fromEntries` / `Object.hasOwn` / `Object.keys`。`toString` は `prim "String"` を 12 種目に
 足すか `method … "toString"` にするかで、どちらも名指しの TCB が 1 増える。
 
-**`toInt?` は手書きで書き切れる。** ヘルパ言語に `forOf` / `letMut` / `setVar` / `brk` があり、
-`__upper` が既に 1 文字ずつ回している。形は「`__chars` で回して `-?[0-9]+`（先頭ゼロなし）を
-確かめる → `BigInt(s)` で正確に読む → Int53 の範囲を BigInt のまま比べる → `Number(...)`」。
-`__bigdiv` が既に `Number(BigInt(a) / BigInt(b))` をやっているので、prim は増えない。
-**`BigInt(s)` は形が違うと投げる**ので、形の検査が先。ヘルパ言語に try/catch は無い。
+**`toInt?` は手書きで書き切れる。** ヘルパ言語に `forOf` / `letMut` / `setVar` があり、`__upper` が
+既に 1 文字ずつ回している。形は「先頭の `-` を `startsWith` で見て `slice` で落とす → 残りを 1 文字ずつ
+`v = v * 10n + BigInt(__cp(c) - 48)` で畳む → `v` が 0 と Int53 上限の間にあることを BigInt のまま見る →
+`Number(...)` → `String(n) !== s` なら `none`」。**`BigInt(s)` は使わない** —— 文字列を渡すと形が
+違うときに投げるうえ、模型に「JS の BigInt が文字列をどう読むか」の行が要る。桁を自分で畳めば
+`BigInt` に渡すのは数値だけになり、`prim` は増えない。
+**形の検査は最後の印字し直しが全部やる。** 桁でない文字は畳み込みで別の値になり、印字し直すと元の
+文字列と合わない。だから桁かどうかを別に確かめる腕は要らない。
 
 **触る場所**: 層 1 の一式（`strUn` を触っているのは 16 ファイル）。`Helper` に 2 本
-（`__toString` と `__toInt`）。**`toString` を先に 1 つ入れて全ゲートを通し、`toInt?` は別コミット。**
+（`__str` と `__toInt`）。**`toString` を先に 1 つ入れて全ゲートを通し、`toInt?` は別コミット。**
 
 **16 ファイルのうち op を名指ししているのは 11 だけ**（残りは `.strUn _ x` で op に依らない）。
 `toInt?` を `StrUnOp` に足すとき手が要るのは:
 
 | ファイル | 何を足すか |
 | --- | --- |
-| `Core.lean` | `StrUnOp` に `toInt?`、`StrUnOp.name` に 1 行 |
+| `Core.lean` | `StrUnOp` に `toInt`（`?` は付けない。付くのは `Prelude` の `Str.toInt?` の側）、`StrUnOp.name` に 1 行 |
 | `Eval.lean` | `applyStrUn` に腕 1 つ（`.str s` → `.opt (.int53 …)`） |
 | `Compile.lean` | `strUnHelper` に 1 行、`.strUn op e` の腕の `.string` 固定を `strUnResult` に開く |
 | `Builder.lean` | `def toInt? (e : Expr) : Expr := .strUn .toInt? e` |
 | `Reify.lean` | `Lean2Js.Str.toInt?` → `strUn` の行（`Str.trim` の隣） |
-| `Denotes.lean` | `denotes_toInt?`（`denotes_strUn` は結果型が `t` で一般なので通る見込み） |
+| `Denotes.lean` | `denotes_toInt`（`denotes_strUn` は結果型が `t` で一般なので通った） |
 | `Sound.lean` | `applyStrUn_hasTy` を op 依存に。`TypeChecked` の `strUn` は op に依らないので動かない |
 | `Correct.lean` | `strUn` の場合（`InFragment` は op に依らない） |
 | `Helper.lean` | `__toInt` |
@@ -240,8 +244,9 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 `"" "a" "b" "ab" "ba" "abc" "Z" "z" "\"" "\\" "\n" "日本語" "🍣" "🍣a" bmpMax astral astral++"a"` で、
 `toInt?` の**成功側がベクタで 1 度も踏まれない**。`"0" "-0" "007" "+5" " 5" "9007199254740991"
 "9007199254740992" "-9007199254740991"` を足すのが筋だが、プールは `String` 引数の直積に効くので
-**測った**（2026-09-18）: この 8 件を足すと 32270 → 33457 件（+1187, +3.7%）。文字列 2 引数の関数は
-17² → 25² に広がるが、そこまで持つ関数が少ないので分母は 4% も動かない。**8 件とも足してよい。**
+**測った**（2026-09-18）: この 8 件だけを足すと 32270 → 33457 件（+1187, +3.7%）。文字列 2 引数の関数は
+17² → 25² に広がるが、そこまで持つ関数が少ないので分母は 4% も動かない。**8 件とも足した**（`toInt?` を
+使う公開宣言 2 本と合わせて 34291 件）。
 
 **保証の境界**: 変わらない。覆う側が増える。
 
@@ -342,3 +347,15 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `Example.lean` に `orderReference` を 1 本。公開関数 91 → 92 本、差分ベクタ 31741 → 32270 件。
   `docs/guarantees.md` の燃料の数字は `503` のまま止まっていた（Step 2 の 21 本を数えていない）ので、
   測って `657` に直した。
+- **Step 3 の後半**（2026-09-19, `HEAD`） — `Str.toInt?` が入った。`StrUnOp` に腕 1 つ、`Core.Expr` は
+  35 形のまま。`Compile` の `strUn` は結果型を `.string` 固定から `strUnResult` に開いた（`strBin` の
+  `strBinResult` と同じ形）ので、`Sound` / `Correct` の `strUn` の場合は op に依らないまま通り、
+  仕事は `applyStrUn_hasTy` / `helper_strUn` / `applyStrUn_str` の中だけで済んだ。
+  **受け付けるのは `Int53.toString` の像ちょうど**で、読んだ値を印字し直して照合する。これで
+  先頭ゼロ・`"+5"`・`" 5"`・`"-0"`・範囲外が 1 つの検査で落ち、JS 側も同じ形に書ける。
+  ヘルパは `__toInt` で 50 → 51 本、模型の表は 36 → 37 行。**`prim` は 12 種のままで TCB は増えていない**
+  ——`BigInt` / `Number` / `String` も `codePointAt` / `startsWith` / `slice` も既にあるものだけを使う。
+  増えたのは `HelperSem.binOp` の 2 行（BigInt の `*` と `+`）で、桁を BigInt で畳むため。
+  `Example.lean` に `amountOf` と `amountOr` を 1 本ずつ。公開関数 92 → 94 本、宣言 93 → 95、
+  差分ベクタ 32270 → 34291 件（数字の文字列 8 件込み）、燃料は 657 → 671。
+  `SYNTAX.md` の「無い操作」から `parseInt` / `Number(s)` の行を消した。

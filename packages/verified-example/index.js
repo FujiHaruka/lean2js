@@ -40,6 +40,27 @@ const __cp = (c) => (c).codePointAt(0);
 
 const __str = (x) => String(x);
 
+// Number() reads "", "0x10" and " 5", and BigInt() throws on anything it dislikes.
+// This reads the digits itself and answers only when printing the result back gives the
+// string it was handed.
+const __toInt = (s) => {
+  const xs = __chars(s);
+  const neg = (s).startsWith("-");
+  const ds = (neg ? (xs).slice(1, (xs).length) : xs);
+  let v = 0n;
+  for (const c of ds) {
+    v = ((v * 10n) + BigInt((__cp(c) - 48)));
+  }
+  if (((v < 0n) || (v > 9007199254740991n))) {
+    return { tag: "none" };
+  }
+  const n = Number((neg ? (-v) : v));
+  if ((String(n) !== s)) {
+    return { tag: "none" };
+  }
+  return { tag: "some", value: n };
+};
+
 const __strlen = (s) => (__chars(s)).length;
 
 const __strcmp = (a, b) => {
@@ -516,6 +537,19 @@ export function orderReference(__p0, __p1) {
   const prefix = __ck(__p0, ["string"]);
   const orderNo = __ck(__p1, ["int53"]);
   return ((prefix + "-") + __str(orderNo));
+}
+
+/** amountOf : (field : String) → Option Int53 */
+export function amountOf(__p0) {
+  const field = __ck(__p0, ["string"]);
+  return __toInt(field);
+}
+
+/** amountOr : (field : String, fallback : Int53) → Int53 */
+export function amountOr(__p0, __p1) {
+  const field = __ck(__p0, ["string"]);
+  const fallback = __ck(__p1, ["int53"]);
+  return ((__s) => ((((__s).tag === "some") ? ((a) => (a))((__s).value) : fallback)))(__toInt(field));
 }
 
 /** sortsBefore : (a : String, b : String) → Bool */

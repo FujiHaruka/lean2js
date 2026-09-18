@@ -419,13 +419,27 @@ theorem int53_range {p : Program} {i : Int} (h : Value.hasTy p (.int53 i) .int53
   rw [hasTy_int53] at h
   simpa using h
 
+theorem strToInt_eq (s : String) : Js.Runtime.strToInt s = parseInt53 s := rfl
+
 /-- The string helpers the compiler emits compute what `applyStrUn` and `applyStrBin` compute; the two
 sides are written as the same functions on the code points. -/
 theorem helper_strUn {op : StrUnOp} {s : String} {v : Value}
     (h : applyStrUn op (.str s) = .ok v) :
     Js.helper (Compile.strUnHelper op) [.str s] = some (.ok (encodeValue v)) := by
-  cases op <;> simp only [applyStrUn, Except.ok.injEq] at h <;> subst h <;>
-    simp only [encodeValue] <;> exact rfl
+  cases op with
+  | toInt =>
+    simp only [applyStrUn, Except.ok.injEq] at h
+    subst h
+    rw [show Js.helper (Compile.strUnHelper StrUnOp.toInt) [Js.JsValue.str s]
+        = some (.ok (match parseInt53 s with
+            | some n => .obj [("tag", .str "some"), ("value", .num n)]
+            | none => .obj [("tag", .str "none")])) from rfl]
+    cases parseInt53 s <;> simp [encodeValue, encodeFields]
+  | _ =>
+    simp only [applyStrUn, Except.ok.injEq] at h
+    subst h
+    simp only [encodeValue]
+    exact rfl
 
 theorem helper_strBin {op : StrBinOp} {a b : String} {v : Value}
     (h : applyStrBin op (.str a) (.str b) = .ok v) :
@@ -436,7 +450,7 @@ theorem helper_strBin {op : StrBinOp} {a b : String} {v : Value}
   · simp only [encodeValue, hasInfix_eq]; exact rfl
   · simp only [encodeValue, encodeList_map_str]; exact rfl
 
-theorem applyStrUn_str (op : StrUnOp) (s : String) : ∃ t, applyStrUn op (.str s) = .ok (.str t) := by
+theorem applyStrUn_str (op : StrUnOp) (s : String) : ∃ v, applyStrUn op (.str s) = .ok v := by
   cases op <;> exact ⟨_, rfl⟩
 
 theorem applyStrBin_str (op : StrBinOp) (a b : String) :

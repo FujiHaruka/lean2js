@@ -90,6 +90,15 @@ def slugOf («prefix» name : String) : String := «prefix» ++ "-" ++ name
 def orderReference («prefix» : String) (orderNo : Int) : String :=
   «prefix» ++ "-" ++ Int53.toString orderNo
 
+/-- The amount a line carries, read back from the string the caller was handed. `none` unless the
+string is exactly the decimal spelling of an Int53, so `"007"`, `" 5"` and `"+5"` are refused. -/
+@[ship]
+def amountOf (field : String) : Option Int := Str.toInt? field
+
+/-- The same amount, with a fallback for a field that does not spell one. -/
+@[ship]
+def amountOr (field : String) (fallback : Int) : Int := Opt.getD (Str.toInt? field) fallback
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b

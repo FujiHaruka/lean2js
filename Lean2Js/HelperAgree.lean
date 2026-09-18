@@ -302,6 +302,15 @@ theorem agree_str (ext : Ext) (a : Int) (f : Nat) (hlo : safeMin ≤ a) (hhi : a
     callDef ext (f + 5) "__str" [ofJs (.num a)] = ofRes (.ok (.str (toString a))) := by
   simpa using calls_str ext a f hlo hhi
 
+theorem agree_toInt (ext : Ext) (x : String) (f : Nat) :
+    callDef ext (f + (x.toList.length + 40)) "__toInt" [ofJs (.str x)]
+      = ofRes (.ok (match strToInt x with
+          | some n => .obj [("tag", .str "some"), ("value", .num n)]
+          | none => .obj [("tag", .str "none")])) := by
+  rw [show f + (x.toList.length + 40) = f + x.toList.length + 40 from by omega, ofJs_str,
+    calls_toInt]
+  cases strToInt x <;> simp [ofJs]
+
 theorem agree_strlen (ext : Ext) (x : String) (f : Nat) :
     callDef ext (f + 9) "__strlen" [ofJs (.str x)] = ofRes (.ok (.num x.toList.length)) := by
   simpa using calls_strlen ext x f
@@ -638,6 +647,7 @@ theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : 
       | exact eventually_of_offset _ (fun f => agree_dvalues ext _ f)
       | exact eventually_of_offset _ (fun f => agree_ddelete ext _ _ f hok)
       | exact eventually_of_offset _ (fun f => agree_str ext _ f hok.1 hok.2)
+      | exact eventually_of_offset _ (fun f => agree_toInt ext _ f)
       | exact eventually_of_offset _ (fun f => agree_strlen ext _ f)
       | exact eventually_of_offset _ (fun f => agree_trim ext _ f)
       | exact eventually_of_offset _ (fun f => agree_upper ext _ f)

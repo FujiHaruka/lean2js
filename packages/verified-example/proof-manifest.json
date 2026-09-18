@@ -94,6 +94,18 @@
       "doc": "The reference an order is filed under: the prefix and the order number in decimal."
     },
     {
+      "name": "amountOf",
+      "signature": "(field : String) → Option Int53",
+      "declaration": "amountOf(field: string): Option<number>",
+      "doc": "The amount a line carries, read back from the string the caller was handed. `none` unless the\nstring is exactly the decimal spelling of an Int53, so `\"007\"`, `\" 5\"` and `\"+5\"` are refused."
+    },
+    {
+      "name": "amountOr",
+      "signature": "(field : String, fallback : Int53) → Int53",
+      "declaration": "amountOr(field: string, fallback: number): number",
+      "doc": "The same amount, with a fallback for a field that does not spell one."
+    },
+    {
       "name": "sortsBefore",
       "signature": "(a : String, b : String) → Bool",
       "declaration": "sortsBefore(a: string, b: string): boolean",

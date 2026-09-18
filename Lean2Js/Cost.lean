@@ -441,6 +441,7 @@ theorem noFn_applyStrUn {op : StrUnOp} {x v : Value} (h : applyStrUn op x = .ok 
   rw [applyStrUn.eq_def] at h
   split at h <;> first
     | ((injection h with h; subst h); rw [noFn])
+    | ((injection h with h; subst h); split <;> rfl)
     | injection h
 
 theorem noFn_applyStrBin {op : StrBinOp} {a b v : Value} (h : applyStrBin op a b = .ok v) :

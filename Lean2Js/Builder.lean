@@ -83,6 +83,7 @@ def dictDelete (d key : Expr) : Expr := .dictDelete d key
 def trim (e : Expr) : Expr := .strUn .trim e
 def upper (e : Expr) : Expr := .strUn .upper e
 def lower (e : Expr) : Expr := .strUn .lower e
+def toInt (e : Expr) : Expr := .strUn .toInt e
 def startsWith (s prefix' : Expr) : Expr := .strBin .startsWith s prefix'
 
 def endsWith (s suffix : Expr) : Expr := .strBin .endsWith s suffix

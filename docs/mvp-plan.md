@@ -26,7 +26,7 @@
   （`Parse.lean`）
 - type soundness — 証明済み（`Sound.lean`）。`Core.Expr` の 35 形すべて
 - compiler correctness — 証明済み（`Correct.lean`）。35 形すべて、二項演算は 16 演算子すべて
-- 宣言単位の正しさ・陰性方向 — 証明済み（`Decl.lean`）。公開関数 92 本すべてについて、返す側
+- 宣言単位の正しさ・陰性方向 — 証明済み（`Decl.lean`）。公開関数 94 本すべてについて、返す側
   （`decl_correct`）・落ちる側（`decl_traps`）・入口で弾く側（`decl_refuses`）の 3 方向
 - 網羅性 — 証明済み（`Exhaustive.lean`）。Maranget の usefulness 検査を `partial` から全域に
   書き直して健全性を示したもの

@@ -116,6 +116,11 @@ def split (s sep : String) : List String := splitStr s sep
 def substring (s : String) (lo hi : Int) : String :=
   String.ofList ((s.toList.drop lo.toNat).take (hi - lo).toNat)
 
+/-- Reads back what `Int53.toString` prints, and nothing else. `"007"`, `"+5"`, `" 5"` and `"-0"` are
+refused along with everything outside the Int53 range, because none of them is what the printer would
+have written. JS's own `Number()` reads all four. -/
+def toInt? (s : String) : Option Int := parseInt53 s
+
 @[expand] def isEmpty (s : String) : Bool := length s == 0
 
 end Str

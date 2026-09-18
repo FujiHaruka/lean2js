@@ -55,6 +55,12 @@ def slugOf(prefix : String, name : String) : String =
 def orderReference(prefix : String, orderNo : Int53) : String =
   ((prefix ++ "-") ++ orderNo.toString())
 
+def amountOf(field : String) : Option Int53 =
+  field.toInt()
+
+def amountOr(field : String, fallback : Int53) : Int53 =
+  match field.toInt() { some(a) => a | none => fallback }
+
 def sortsBefore(a : String, b : String) : Bool =
   (a < b)
 

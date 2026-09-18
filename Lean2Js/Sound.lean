@@ -568,11 +568,20 @@ theorem applyBin_hasTy {p : Program} {op : BinOp} {t : Ty} {a b v : Value}
       | (exfalso; simp [applyBin] at h; done)
 
 theorem applyStrUn_hasTy {p : Program} {op : StrUnOp} {w v : Value}
-    (h : applyStrUn op w = .ok v) : Value.hasTy p v .string = true := by
+    (h : applyStrUn op w = .ok v) : Value.hasTy p v (Compile.strUnResult op) = true := by
   cases op <;> cases w <;>
     first
       | (exfalso; simp [applyStrUn] at h; done)
       | (simp only [applyStrUn, Except.ok.injEq] at h; subst h; exact hasTy_str p _)
+      | (rename_i s
+         simp only [applyStrUn, Except.ok.injEq] at h
+         subst h
+         cases hp : parseInt53 s with
+         | none => simp [Compile.strUnResult, hasTy_none]
+         | some n =>
+           obtain ⟨h1, h2⟩ := parseInt53_range hp
+           simp [Compile.strUnResult, hasTy_some, hasFieldTys_cons, hasFieldTys_nil,
+             hasTy_int53, h1, h2])
 
 theorem applyStrBin_hasTy {p : Program} {op : StrBinOp} {a b v : Value}
     (h : applyStrBin op a b = .ok v) :

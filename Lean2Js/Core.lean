@@ -168,6 +168,7 @@ inductive StrUnOp where
   | trim
   | upper
   | lower
+  | toInt
   deriving Repr, BEq, Inhabited
 
 inductive StrBinOp where
@@ -181,6 +182,7 @@ def StrUnOp.name : StrUnOp → String
   | .trim => "trim"
   | .upper => "toUpper"
   | .lower => "toLower"
+  | .toInt => "toInt"
 
 def StrBinOp.name : StrBinOp → String
   | .startsWith => "startsWith"

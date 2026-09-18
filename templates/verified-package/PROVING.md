@@ -46,6 +46,7 @@ theorem negative_seats_are_refused (plan : Plan) (discount : Discount) (seats : 
 | `Int53.mod a b` | `Int.tmod a b` |
 | `Int53.abs a` | `Int.natAbs a`, as an `Int` |
 | `Int53.toString a` | `toString a` — the decimal spelling |
+| `Str.toInt? s` | `some n` where `toString n = s` and `n` is an `Int53`, `none` otherwise |
 | `Str.length s` | the number of code points, not UTF-16 units |
 | `Arr.get xs i` | the element, defined where `i` is in range |
 

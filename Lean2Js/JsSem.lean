@@ -128,6 +128,23 @@ def strUpper (s : String) : String :=
 def strLower (s : String) : String :=
   String.ofList (s.toList.map fun c => if 'A' ≤ c && c ≤ 'Z' then Char.ofNat (c.toNat + 32) else c)
 
+/-- The digits read as a number, with no bound on the answer. A character that is not a digit
+contributes its code point less 48; `strToInt` throws that away by printing the answer back. -/
+def digitsValue (cs : List Char) : Int :=
+  cs.foldl (fun acc c => acc * 10 + ((c.toNat : Int) - 48)) 0
+
+/-- What `__toInt` answers: the value, read back and printed again, has to be the string it was handed.
+That admits exactly the strings `String(n)` prints for an Int53, so `"007"`, `"+5"`, `" 5"` and `"-0"`
+are all refused. -/
+def strToInt (s : String) : Option Int :=
+  let cs := s.toList
+  let neg := "-".toList.isPrefixOf cs
+  let v := digitsValue (if neg then cs.drop 1 else cs)
+  if v < 0 || safeMax < v then none
+  else
+    let n := if neg then -v else v
+    if toString n == s then some n else none
+
 def strIncludes (needle : List Char) : List Char → Bool
   | [] => needle.isEmpty
   | c :: rest => needle.isPrefixOf (c :: rest) || strIncludes needle rest
@@ -205,6 +222,10 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__ddelete", [.dict entries, .str key] =>
     some (.ok (.dict (entries.filter (·.1 != key))))
   | "__str", [.num a] => some (.ok (.str (toString a)))
+  | "__toInt", [.str s] =>
+    some (.ok (match strToInt s with
+      | some n => .obj [("tag", .str "some"), ("value", .num n)]
+      | none => .obj [("tag", .str "none")]))
   | "__strlen", [.str s] => some (.ok (.num s.toList.length))
   | "__trim", [.str s] => some (.ok (.str (strTrim s)))
   | "__upper", [.str s] => some (.ok (.str (strUpper s)))
@@ -238,6 +259,7 @@ inductive HelperRow : String → List JsValue → Prop where
   | maxBig (a b : Int) : HelperRow "__max" [.bigint a, .bigint b]
   | strcmp (a b : String) : HelperRow "__strcmp" [.str a, .str b]
   | str (a : Int) : HelperRow "__str" [.num a]
+  | toInt (s : String) : HelperRow "__toInt" [.str s]
   | eq (a b : JsValue) : HelperRow "__eq" [a, b]
   | at (xs : List JsValue) (i : Int) : HelperRow "__at" [.arr xs, .num i]
   | aslice (xs : List JsValue) (a b : Int) : HelperRow "__aslice" [.arr xs, .num a, .num b]

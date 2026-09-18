@@ -187,7 +187,7 @@ priced tenPercentOff amount           handing a declaration to a call
 | On | What you may write |
 | --- | --- |
 | `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` `Int53.toString` |
-| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.split` `Str.substring` `Str.length` `Str.isEmpty` |
+| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.split` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
 | `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` |
@@ -197,6 +197,9 @@ priced tenPercentOff amount           handing a declaration to a call
 `Arr.length` / `Arr.get` / `Arr.slice` and the `Str.*` functions are the prelude's, not Lean's
 `List.length` or `String.length`. They are separate so that what traps out of range can still be written
 as a total function.
+
+`Str.toInt?` answers only on the strings `Int53.toString` prints, so `"007"`, `" 5"`, `"+5"` and `"-0"`
+are refused along with anything outside the `Int53` range. JavaScript's `Number()` reads all four.
 
 `Opt` and `Exc` are named apart from `Option` and `Except` because Lean's `Option.getD` and `Except.map`
 already exist; writing `o.getD fallback` reaches Lean's, which the walk does not read.
@@ -259,7 +262,6 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | What you reach for | What to write instead |
 | --- | --- |
 | `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
-| `parseInt` / `Number(s)` | Take the number as an `Int` parameter and parse it in TypeScript. |
 | `join` | `foldl`, where no part is empty (below). |
 | `replace` / `replaceAll` | `Str.split` and then the `join` recipe. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |
 | `padStart` / `padEnd` / `repeat` | TypeScript. Repeating a string a variable number of times needs recursion, and the subset has none. |
