@@ -185,6 +185,50 @@ declaration works too (`quantities.map clampToTen`).
 - **There is a fuel ceiling.** The fuel a program needs follows from the depth of its expressions and
   the number of its declarations; past 10000 it cannot be written out. `ship_package` checks this.
 
+## Operations that are not there
+
+Some things a JavaScript author reaches for first are not in the subset at all. The refusal names the
+term the walk stopped at, not the alternative, so the alternatives are here.
+
+| What you reach for | What to write instead |
+| --- | --- |
+| `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
+| `String(n)` / `toString` | Return the `Int` and format it in TypeScript. |
+| `parseInt` / `Number(s)` | Take the number as an `Int` parameter and parse it in TypeScript. |
+| `join` | `foldl` over an `Option String` accumulator (below). |
+| `replace` / `replaceAll` | `Str.split` and then the `join` recipe. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |
+| `padStart` / `padEnd` / `repeat` | TypeScript. Repeating a string a variable number of times needs recursion, and the subset has none. |
+| regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
+| `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |
+| `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out. |
+| `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure. |
+
+An array or string operation that is missing from the tables above but needs no new concept is usually
+already writable. `foldl` is the loop, and `Arr.slice` is the window:
+
+```lean
+Arr.slice xs 0 n                                   take
+Arr.slice xs n (Arr.length xs)                     drop
+Arr.length xs == 0                                 isEmpty
+xs.any (fun y => y == wanted)                      contains
+xs.foldl (fun acc y => acc + y) 0                  sum
+if Arr.length xs == 0 then none else some (Arr.get xs 0)    head?
+xss.foldl (fun acc xs => acc ++ xs) []             flatten
+```
+
+```lean
+/-- The parts of `parts` with `sep` between them, as `Array.prototype.join` writes them. The accumulator
+is an `Option` so that an empty part is not mistaken for "nothing written yet". -/
+@[ship]
+def join (parts : List String) (sep : String) : String :=
+  match parts.foldl (fun acc part =>
+      match acc with
+      | none => some part
+      | some sofar => some (sofar ++ sep ++ part)) none with
+  | none => ""
+  | some s => s
+```
+
 ## When you leave the subset
 
 | What you wrote | What comes back |
