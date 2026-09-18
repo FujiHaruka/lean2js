@@ -329,7 +329,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   当初の表の `indexOf?` `min?` `max?` `groupBy` `Dict.map` `Dict.filter` は入っていない（理由は Step 2 に）。
   Step 0 が `SYNTAX.md` に置いた「foldl と Arr.slice で今日書ける 7 行」は、その 7 つが名前を持った
   ぶん表に移し、残したのは `join` の全文だけ。
-- **Step 3 の前半**（2026-09-18, `3d40103`） — `Int53.toString` が入った。`UnOp` に腕 1 つ、`Core.Expr` は
+- **Step 3 の前半**（2026-09-18, `76d2e43`） — `Int53.toString` が入った。`UnOp` に腕 1 つ、`Core.Expr` は
   35 形のまま。触ったのは `Core` / `Eval` / `Compile` / `Render` / `Builder` / `Reify` / `Denotes` /
   `Sound` / `Correct`（返す側と落ちる側で 1 つずつ）/ `Renderable`（`compileExpr` の場合が 1 つ増えるので
   番号が 1 つずれる）/ `Js.helper` の表 / `Helper` / `HelperSem` / `HelperProof` / `HelperAgree`。
