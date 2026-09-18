@@ -91,6 +91,83 @@ end
 instance : BEq Value where
   beq := Value.beq
 
+/-! `Value.beq` is structural equality, and the two halves of saying so are what lets a claim about
+`==` on an author's own type be settled by comparing encodings. -/
+
+mutual
+
+theorem Value.beq_refl : ∀ v : Value, Value.beq v v = true
+  | .bool _ => by rw [Value.beq]; simp
+  | .int53 _ => by rw [Value.beq]; simp
+  | .uint32 _ => by rw [Value.beq]; simp
+  | .str _ => by rw [Value.beq]; simp
+  | .bigint _ => by rw [Value.beq]; simp
+  | .obj _ fs => by rw [Value.beq]; simp [Value.beqFields_refl fs]
+  | .arr xs => by rw [Value.beq]; exact Value.beqList_refl xs
+  | .dict es => by rw [Value.beq]; exact Value.beqFields_refl es
+  | .fn _ => by rw [Value.beq]; simp
+
+theorem Value.beqFields_refl : ∀ fs : List (String × Value), Value.beqFields fs fs = true
+  | [] => by rw [Value.beqFields]
+  | (_, v) :: rest => by
+    rw [Value.beqFields]; simp [Value.beq_refl v, Value.beqFields_refl rest]
+
+theorem Value.beqList_refl : ∀ xs : List Value, Value.beqList xs xs = true
+  | [] => by rw [Value.beqList]
+  | v :: rest => by rw [Value.beqList]; simp [Value.beq_refl v, Value.beqList_refl rest]
+
+end
+
+mutual
+
+theorem Value.eq_of_beq : ∀ {a b : Value}, Value.beq a b = true → a = b
+  | .bool _, b, h => by cases b <;> simp_all [Value.beq]
+  | .int53 _, b, h => by cases b <;> simp_all [Value.beq]
+  | .uint32 _, b, h => by cases b <;> simp_all [Value.beq]
+  | .str _, b, h => by cases b <;> simp_all [Value.beq]
+  | .bigint _, b, h => by cases b <;> simp_all [Value.beq]
+  | .fn _, b, h => by cases b <;> simp_all [Value.beq]
+  | .obj c fs, b, h => by
+    cases b <;> simp only [Value.beq, Bool.and_eq_true] at h <;> try exact Bool.noConfusion h
+    rename_i d gs
+    have e1 : c = d := beq_iff_eq.mp h.1
+    have e2 : fs = gs := Value.eq_of_beqFields h.2
+    subst e1; subst e2; rfl
+  | .arr xs, b, h => by
+    cases b <;> simp only [Value.beq] at h <;> try exact Bool.noConfusion h
+    rename_i ys
+    have : xs = ys := Value.eq_of_beqList h
+    subst this; rfl
+  | .dict es, b, h => by
+    cases b <;> simp only [Value.beq] at h <;> try exact Bool.noConfusion h
+    rename_i fs
+    have : es = fs := Value.eq_of_beqFields h
+    subst this; rfl
+
+theorem Value.eq_of_beqFields :
+    ∀ {as bs : List (String × Value)}, Value.beqFields as bs = true → as = bs
+  | [], bs, h => by cases bs <;> simp_all [Value.beqFields]
+  | _ :: _, [], h => by simp [Value.beqFields] at h
+  | (k, v) :: as, (l, w) :: bs, h => by
+    rw [Value.beqFields] at h
+    simp only [Bool.and_eq_true] at h
+    have e1 : k = l := beq_iff_eq.mp h.1.1
+    have e2 : v = w := Value.eq_of_beq h.1.2
+    have e3 : as = bs := Value.eq_of_beqFields h.2
+    subst e1; subst e2; subst e3; rfl
+
+theorem Value.eq_of_beqList : ∀ {as bs : List Value}, Value.beqList as bs = true → as = bs
+  | [], bs, h => by cases bs <;> simp_all [Value.beqList]
+  | a :: as, bs, h => by
+    cases bs <;> simp only [Value.beqList, Bool.and_eq_true] at h <;>
+      try exact Bool.noConfusion h
+    rename_i b bs'
+    have e1 : a = b := Value.eq_of_beq h.1
+    have e2 : as = bs' := Value.eq_of_beqList h.2
+    subst e1; subst e2; rfl
+
+end
+
 /-- A JS `Map` cannot hold one key twice, so a dictionary that does has no value on the other side of the
 boundary and is rejected there. -/
 def keysDistinct : List String → Bool

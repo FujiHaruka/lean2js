@@ -305,7 +305,7 @@ lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を�
 
 | 形 | 状態 |
 | --- | --- |
-| `==` / `!=` | `Enc` の外に `EncBEq`（符号化が等価を保つ）を置いて、`Bool` / `Int` / `String` / `UInt32` / `BigInt` に instance。**利用者の型はまだ** —— `deriving Enc` が instance を出していない |
+| `==` / `!=` | 済。`Enc` の外に `EncBEq`（符号化が等価を保つ）を置き、instance は 1 本 —— `LawfulBEq` があれば `Enc` の往復から出る。利用者の型は `deriving DecidableEq` で届く |
 | `&&` / `\|\|` | 済。短絡するので `bin` は通らず、専用の補題 2 本 |
 | `min` / `max` | 済（`Int53` のみ。`BigInt` には `Min` instance が無いので walk に届かないが、`UInt32` にはあるので届いて断られる —— `eval` は `UInt32` の `min` を持っているので、これは残っている穴） |
 | 構成子と射影 | 済。**構成子はプログラムを名指しする** —— `eval` が型を引いてフィールド名を取るので、`findType?` を `rfl` で通すために証明書が `Example.program` についてのものになる。射影は通らない |
@@ -323,6 +323,13 @@ elaborate されるので、腕が読む外側の変数（`canRefund` の `role`
 その時点で存在しない。**捕捉している変数ごと抽象して、穴として適用し直す** —— 穴は期待型から埋まる。
 `g` を `_` にして推論に任せる手は使えない: `?g ?x =?= ship state trackingId` は引数が 2 つあると
 一次近似が `?g := ship state` を選んで型が合わなくなる。
+
+**`EncBEq` は型ごとに書くものではなかった。** 最初は `deriving Enc` に instance を出させる話に見えたが、
+`Enc` はすでに `ofValue_toValue` で符号化が単射だと言っている。足りないのは「両側の `==` が等価を
+決めている」ことだけで、それは `LawfulBEq` そのものなので、instance は
+`[Enc α] [BEq α] [LawfulBEq α] → EncBEq α` の 1 本になる。代わりに要るのが `Value.beq` の
+`beq_refl` / `eq_of_beq`（`Ty` に同じ形がある）で、利用者の型は `deriving DecidableEq` で
+`LawfulBEq` に届く —— `deriving BEq` だけでは届かない。
 
 そのうえで:
 

@@ -99,6 +99,12 @@ namespace BigInt
 /-- `==` is the subset's equality, so it is the one on the value rather than the one `DecidableEq`
 would derive through the wrapper. -/
 instance (priority := high) : BEq BigInt := ⟨fun a b => a.val == b.val⟩
+instance : ReflBEq BigInt where
+  rfl {a} := beq_self_eq_true a.val
+instance : LawfulBEq BigInt where
+  eq_of_beq {a b} h := by
+    cases a; cases b
+    exact congrArg BigInt.mk (eq_of_beq (α := Int) h)
 
 instance : Add BigInt := ⟨fun a b => ⟨a.val + b.val⟩⟩
 instance : Sub BigInt := ⟨fun a b => ⟨a.val - b.val⟩⟩
@@ -212,12 +218,6 @@ instance : Enc BigInt where
 
 @[simp] theorem toValue_bigint (b : BigInt) : (toValue b : Value) = .bigint b.val := rfl
 
-instance : EncBEq BigInt where
-  beq_toValue
-    | ⟨x⟩, ⟨y⟩ => by
-      show Value.beq (.bigint x) (.bigint y) = (BigInt.mk x == BigInt.mk y)
-      rw [Value.beq]
-      rfl
 
 end Enc
 

@@ -88,8 +88,8 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     binary `mod (← u32Only α ``Lean2Js.Denote.denotes_modU32) l r
   | (``Neg.neg, #[α, _, a]) =>
     unary `neg (← signed α ``Lean2Js.Denote.denotes_neg ``Lean2Js.Denote.denotes_negBig) a
-  | (``BEq.beq, #[_, _, l, r]) => binary `eq ``Lean2Js.Denote.denotes_eq l r
-  | (``bne, #[_, _, l, r]) => binary `ne ``Lean2Js.Denote.denotes_ne l r
+  | (``BEq.beq, #[α, _, l, r]) => equated α `eq ``Lean2Js.Denote.denotes_eq l r
+  | (``bne, #[α, _, l, r]) => equated α `ne ``Lean2Js.Denote.denotes_ne l r
   | (``Bool.and, #[l, r]) => binary `and ``Lean2Js.Denote.denotes_and l r
   | (``Bool.or, #[l, r]) => binary `or ``Lean2Js.Denote.denotes_or l r
   | (``Min.min, #[α, _, l, r]) =>
@@ -287,6 +287,18 @@ where
     | .const ``String _ => binary op strLemma l r
     | .const ``Lean2Js.BigInt _ => binary op bigLemma l r
     | t => throwError "reify: comparing two values of type {t} is outside the subset this walk reads"
+  /-- `==` is the one form that asks something of the encoding rather than of the walk: `eval` compares
+  encodings, so the type has to be one whose encoding neither folds two terms together nor splits one
+  apart. -/
+  equated (α : Lean.Expr) (op : Name) (lemma : Name) (l r : Lean.Expr) : TermElabM (Term × Term) := do
+    let some encInst ← synthInstance? (mkApp (mkConst ``Lean2Js.Enc) α)
+      | throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
+    let some beqInst ← synthInstance? (mkApp (mkConst ``BEq [Level.zero]) α)
+      | throwError "reify: {α} has no BEq instance, so `==` on it is not a form at all"
+    unless (← synthInstance? (mkApp3 (mkConst ``Lean2Js.Enc.EncBEq) α encInst beqInst)).isSome do
+      throwError "reify: comparing two values of type {α} needs EncBEq {α}, which follows from \
+        LawfulBEq {α} — an author's own type reaches it by `deriving DecidableEq`"
+    binary op lemma l r
   strUn (op : Name) (lemma : Name) (l : Lean.Expr) : TermElabM (Term × Term) := do
     let (ae, ap) ← walk ns names xs l
     return (← `(Lean2Js.Core.Expr.strUn $(mkIdent (`Lean2Js.Core.StrUnOp ++ op)) $ae),
@@ -1022,6 +1034,15 @@ theorem addMoney_certificate (a b : Money) :
       addMoneyCore.body (addMoney a b) :=
   reify_proof% addMoney
 
+abbrev sameMoneyCore : Decl := reify_decl% sameMoney
+
+example : sameMoneyCore = Example.sameMoney := rfl
+
+theorem sameMoney_certificate (p : Program) (a b : Money) :
+    Denotes p (bindParams sameMoneyCore.params [toValue a, toValue b]) sameMoneyCore.body
+      (sameMoney a b) :=
+  reify_proof% sameMoney
+
 abbrev currenciesOfCore : Decl := reify_decl% currenciesOf
 
 example : currenciesOfCore = Example.currenciesOf := rfl
@@ -1106,6 +1127,20 @@ example : Core.Decl := reify_decl% quotient
 
 /-! A call is the one refusal the author can act on, so it says which certificate was missing rather
 than that the term was unreadable. -/
+
+/-! `==` is the one refusal about the type rather than about the term. `eval` compares encodings, so a
+type whose `BEq` is not known to decide equality has nothing to say about what that comparison means. -/
+
+inductive Tier where
+  | free
+  | paid
+  deriving BEq, Enc
+
+private def sameTier (a b : Tier) : Bool := a == b
+
+/-- error: reify: comparing two values of type Tier needs EncBEq Tier, which follows from LawfulBEq Tier — an author's own type reaches it by `deriving DecidableEq` -/
+#guard_msgs in
+example : Core.Decl := reify_decl% sameTier
 
 def uncertified (x : Int) : Int := x + 1
 

@@ -189,7 +189,7 @@ structure Money where
   Money ::
   amount : Int
   currency : String
-  deriving Enc
+  deriving DecidableEq, Enc
 
 inductive OrderState where
   | draft
@@ -201,6 +201,8 @@ inductive OrderState where
 def addMoney (a b : Money) : Except String Money :=
   if a.currency != b.currency then .error "currency mismatch"
   else .ok (Money.Money (a.amount + b.amount) a.currency)
+
+def sameMoney (a b : Money) : Bool := a == b
 
 def currenciesOf (items : List Money) : List String := items.map (fun item => item.currency)
 
