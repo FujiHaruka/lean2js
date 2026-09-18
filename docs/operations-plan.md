@@ -457,7 +457,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `strBinArgTys .repeat = (.string, .int53)`、長さが伸びるので `indexOf` と同じ `int53Overflow` の
   落ちる腕、そして「回数で回るループを `Helper.Stmt` に足すか、`String.prototype.repeat` を模型に
   足すか」の判断が残る。
-- **Step 4 の 4 つめ**（2026-09-19, `PENDING`） — `Str.repeat` が入った。**3 つの道のうち、形を 1 つも
+- **Step 4 の 4 つめ**（2026-09-19, `6802d7f`） — `Str.repeat` が入った。**3 つの道のうち、形を 1 つも
   足さない道が通った。** 計画は「回数で回るループを `Helper.Stmt` に足す」か「`String.prototype.repeat`
   を模型に足す」かの二択で書いていたが、どちらも要らない。ヘルパ言語は**自分を呼べる**（`__eq` が
   既にそうで、`calls_eq_aux` がその証明の型紙）ので、`__rep(s, n)` を
