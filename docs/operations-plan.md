@@ -397,7 +397,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `Example.lean` に `amountOf` と `amountOr` を 1 本ずつ。公開関数 92 → 94 本、宣言 93 → 95、
   差分ベクタ 32270 → 34291 件（数字の文字列 8 件込み）、燃料は 657 → 671。
   `SYNTAX.md` の「無い操作」から `parseInt` / `Number(s)` の行を消した。
-- **Step 4 の 1 つめ**（2026-09-19, `HASH`） — `Str.indexOf?` が入った。`StrBinOp` に腕 1 つ、
+- **Step 4 の 1 つめ**（2026-09-19, `6af6e2a`） — `Str.indexOf?` が入った。`StrBinOp` に腕 1 つ、
   `Core.Expr` は 35 形のまま。`strBinResult` は既に op 依存だったので `Compile` の形は動かず、
   `Sound` / `Correct` の `strBin` の場合の中だけで済んだ——**ただし op 非依存では済まなかった**。
   位置が安全整数を超えると落ちるので、`applyStrBin_str` を消して `strBin_err_indexOf` に置き換え、
