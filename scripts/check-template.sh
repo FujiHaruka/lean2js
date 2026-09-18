@@ -86,6 +86,68 @@ if lake exe lean2js MyLogic --out unproved 2> unproved.err; then
 fi
 grep -q 'rests on sorryAx' unproved.err || { cat unproved.err; echo "lean2js refused for another reason"; exit 1; }
 
+# A `def` marked `@[expand]` is written out where it is called, so it has to leave nothing of itself in
+# the package: no export, no entry in the types, no function at all.
+cat > MyLogic.lean <<'LEAN'
+import Lean2Js
+
+namespace MyLogic
+
+open Lean2Js Lean2Js.Core Lean2Js.Enc
+
+@[expand] def take (xs : List α) (n : Int) : List α := Arr.slice xs 0 n
+
+@[ship] def firstThree (xs : List Int) : List Int := take xs 3
+@[ship] def firstThreeNames (names : List String) : List String := take names 3
+
+def manifest : Manifest := { package := "@example/my-logic", version := "0.1.0" }
+
+ship_package
+
+end MyLogic
+LEAN
+lake exe lean2js MyLogic --out expanded
+grep -q 'export declare function firstThree' expanded/index.d.ts
+test "$(grep -c '^export function ' expanded/index.js)" = 2 \
+  || { echo "an @[expand] def reached the generated module"; exit 1; }
+if grep -qw 'take' expanded/index.js expanded/index.d.ts; then
+  echo "an @[expand] def left its name in the generated package"; exit 1
+fi
+cp MyLogic.lean.orig MyLogic.lean
+
+# The expansion has no declaration to be refused at, so a body that leaves the subset has to name the
+# `def` the author marked rather than the term it was written out into.
+cat >> MyLogic.lean <<'LEAN'
+
+namespace MyLogic
+@[expand] def half (x : Int) : Int := x / 2
+@[ship] def halved (x : Int) : Int := half x
+end MyLogic
+LEAN
+if lake build > expand.err 2>&1; then
+  echo "an @[expand] def whose body leaves the subset was accepted"; exit 1
+fi
+grep -q 'which is marked @\[expand\]' expand.err \
+  || { cat expand.err; echo "the build failed for another reason"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
+
+# Recursion is refused at the mark: a recursor reaching the walk would be reported as a term that is in
+# no file.
+cat >> MyLogic.lean <<'LEAN'
+
+namespace MyLogic
+@[expand] def mySum : List Int → Int
+  | [] => 0
+  | x :: rest => x + mySum rest
+end MyLogic
+LEAN
+if lake build > recursive.err 2>&1; then
+  echo "a recursive def was accepted as @[expand]"; exit 1
+fi
+grep -q 'cannot be recursive' recursive.err \
+  || { cat recursive.err; echo "the build failed for another reason"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
+
 # A program written by hand rather than by ship_package carries no certificate for its declarations, and
 # a certificate is the whole of what ties a declaration to the `def` it was read from.
 cat > MyLogic.lean <<'LEAN'

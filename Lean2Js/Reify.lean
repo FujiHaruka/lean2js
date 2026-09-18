@@ -328,6 +328,8 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     return (← `(Lean2Js.Core.Expr.cond $ce $te $fe),
             ← `(Lean2Js.Denote.denotes_ite _ _ _ _ _ _ _ _ $cp $tp $fp))
   | (c, callArgs) =>
+    if expandAttr.hasTag (← getEnv) c then
+      return ← expanded c
     if let some (.ctorInfo ci) := (← getEnv).find? c then
       return ← constructed ci callArgs
     if let some pi ← getProjectionFnInfo? c then
@@ -365,6 +367,17 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     return (← `(Lean2Js.Core.Expr.call $fnLit [$(items.reverse),*]),
             ← `(Lean2Js.Denote.denotes_call _ _ $fnLit _ _ _ _ rfl rfl $proof $cited))
 where
+  /-- A `def` marked `@[expand]` has no declaration behind it, so the walk reads its body where the call
+  is. The body is the same term by unfolding, which is what lets the certificate built here be about the
+  call the author wrote. The name is carried into the message because otherwise a refusal would point at
+  a term that is in no file. -/
+  expanded (c : Name) : TermElabM (Term × Term) := do
+    let some body ← unfoldDefinition? e
+      | throwError "reify: {c} is marked @[expand], but its definition did not unfold"
+    try
+      walk citing ns names xs (← instantiateMVars body)
+    catch err =>
+      throwError "reify: writing out {c}, which is marked @[expand] — {err.toMessageData}"
   /-- An argument that is itself a function. `eval` carries a declaration's name rather than a value, so
   this is the one argument whose proof is not a `Denotes` — and the callee's certificate is the answer to
   what the receiving declaration asks about it. -/

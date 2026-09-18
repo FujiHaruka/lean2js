@@ -36,7 +36,8 @@ ship_package
 ```
 
 - **Only a `def` marked `@[ship]` ships.** An unmarked `def` is fine as a Lean helper, but calling one
-  from a shipped `def` is refused: it has no certificate.
+  from a shipped `def` is refused: it has no certificate. A helper you want to call needs a mark, either
+  `@[ship]` or `@[expand]`.
 - **A type needs `deriving Enc`.** `Enc` says where the type sits in `Value` and puts a `TypeDef` into
   the program. Add `DecidableEq` as well if you compare values of it with `==`.
 - **A `structure` has to name its constructor** (`Money ::`). The constructor's name is the `tag` a
@@ -51,6 +52,32 @@ ship_package
   with no certificate does not ship.**
 - `ship_package` also runs, at `lake build` time, the checks `lean2js` would otherwise only make when it
   emits: the fuel bound, and that every gathered declaration compiles.
+
+### Helpers that do not cross the boundary
+
+A `def` marked `@[expand]` is written out where it is called. The package ships no function for it: it is
+in neither `index.js` nor `index.d.ts`, and a consumer never sees it.
+
+```lean
+@[expand]
+def take (xs : List α) (n : Int) : List α := Arr.slice xs 0 n
+
+@[ship]
+def firstThreeLabels (labels : List String) : List String := take labels 3
+```
+
+- **A marked `def` may be polymorphic**, as `take` is here, where a `@[ship] def` may not. A shipped
+  declaration carries a list of parameter types and has nowhere to put a type variable; an expansion
+  happens where the call is, and `α` is already `String` there.
+- **It cannot be recursive.** Marking a recursive `def` is refused at the mark. Repetition is what the
+  array traversals are for.
+- **It needs no certificate**, and writes no theorem of its own into the manifest. The theorems you prove
+  about the shipped `def`s that call it are about the same terms either way, so `simp [firstThreeLabels,
+  take]` unfolds through it as it would through any `def`.
+- **The body is still the subset.** A body that leaves it is refused naming the marked `def`:
+  `reify: writing out MyLogic.half, which is marked @[expand] — reify: x / 2 is outside the subset ...`
+- **The call sites pay for it.** The body appears at each one, so the expression the program is made of
+  grows, and with it the fuel the program needs. `ship_package` still checks the ceiling.
 
 ## Types
 
@@ -219,7 +246,7 @@ xss.foldl (fun acc xs => acc ++ xs) []             flatten
 ```lean
 /-- The parts of `parts` with `sep` between them, as `Array.prototype.join` writes them. The accumulator
 is an `Option` so that an empty part is not mistaken for "nothing written yet". -/
-@[ship]
+@[expand]
 def join (parts : List String) (sep : String) : String :=
   match parts.foldl (fun acc part =>
       match acc with

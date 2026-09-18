@@ -1,5 +1,6 @@
 import Lean2Js.Enc
 import Lean2Js.Eval
+import Lean2Js.Expand
 
 /-!
 # The functions an author writes where Lean's own would mean something else
