@@ -82,3 +82,19 @@ Lean 側の変更は生成物と Node 側のテストの両方に届く。
 - 証明できないからといって、命題のほうを弱めて通さない。
 - `sorry` で塞がない（塞げば `Axioms.lean` が落ちる）。
 - 実行時検査が落ちたときに、検査対象のベクタを減らして緑にしない。
+
+## 定理が主張どおりかを見る
+
+`sorryAx` が無いことは必要条件であって十分条件ではない。**仮説を誰も満たさない定理は、`sorry` 無しで
+証明できて公理ゲートを素通りし、そのまま公開一覧に載る。** `sorry` を書けないこの構成では、未完成の証明は
+未完成として出荷されず、**より小さい主張の完成した証明として**出荷される —— 嘘は証明項ではなく、仮説・
+結論の `∃`・docstring・`docs/guarantees.md` の文に移る。
+
+`readArtifact` は manifest 名前空間の公開定理の docstring をそのまま `proof-manifest.json` と
+パッケージの README に載せる。**出荷する定理の docstring はコメントではなく公開された主張**で、
+シグネチャと同じ監査対象。
+
+機械が見ないこの一点は `/proof-audit` が見る（判定は `.claude/agents/proof-auditor.md`、
+検査項目は `.claude/skills/proof-audit/references/honesty-checks.md`）。回すのは、公開定理を足した /
+シグネチャを変えた / 出荷する定理に仮説を足した / その docstring を書き換えた / `README.md` か
+`docs/guarantees.md` の主張を強めたときで、毎プッシュではない。
