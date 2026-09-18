@@ -130,9 +130,9 @@
 `Except.map` は import 済みで `TagAttribute` を付けられず、同名を足すと `open Lean2Js` の下で
 曖昧になる。
 
-**関数を取るものには宣言の名前しか渡せない。** `Arr.count` / `Arr.flatMap` / `Dict.ofPairs` /
-`Opt.map` / `Exc.map` / `Exc.mapError` にその場のラムダを渡すと、展開した先でラムダが呼ばれる形になり
-`reify:` が印を付けた `def` の名前で断る。既存の「ラムダは走査の引数にだけ」という規則の帰結。
+**関数を取るものには、宣言の名前でもその場のラムダでも渡せる**（`docs/subset-intuition-plan.md`
+Step 2 以降）。`Arr.count` / `Arr.flatMap` / `Dict.ofPairs` / `Opt.map` / `Exc.map` / `Exc.mapError`
+はどれも展開されるので、`walk` の先頭の `headBeta` がラムダの適用をそのまま読む。
 
 **`zip` は入れない。** 2 本の配列から組の配列を作る形だが、`Ty` に組が無い。自分の `structure` を
 宣言すれば書けるので、型を 1 つ足すほどの値打ちが無い。
@@ -147,28 +147,14 @@
 
 - `indexOf?` — 組を畳み込む形が要るが、`Ty` に組が無く `Prod.mk` は断られる。`structure` を
   `Prelude` に宣言しても、`shippedTypes` は利用者の名前空間しか集めないのでプログラムの `types` に入らない。**外す。**
-- `min?` `max?` `groupBy` `Dict.map` `Dict.filter` — どれも**走査の関数の中の `match`** を要求する。
-  `Dict.map` / `Dict.filter` は入ったとしても生成コードが O(n²) になる（`keys` を回して `get` を
-  引くので、`Map` の `get` が O(1) でも走査が n 回入る）。件数が小さい業務ロジック向けと割り切るか、
-  層 1 の走査として足すかは、実際に困ってから決める。
+- `min?` `max?` `groupBy` `Dict.map` `Dict.filter` — どれも**走査の関数の中の `match`** を要求し、
+  当時はその形が証明書を作れなかった。**この壁は解けている**（`docs/subset-intuition-plan.md` Step 1:
+  走査の補題の関数引数 `g` を `_` で渡していたのが原因で、明示すれば通る）ので、5 つとも今なら
+  書ける。`Dict.map` / `Dict.filter` は生成コードが O(n²) になる（`keys` を回して `get` を引くので、
+  `Map` の `get` が O(1) でも走査が n 回入る）ままなので、足すかどうかは別の判断。
 
-**走査の関数の中に `match` を書くと、walk は読むが証明書が型が合わない。** `reify:` の拒否ではなく
-`ship_package` での Type mismatch になる。`Example.lean` にはこの形が 1 つも無く、踏んだのは初めて。
-
-- 原因の見当: `Reify.matched` が splitter の major premise を `_` で渡す。最上位では期待型が
-  具体なので `denotes_var` の `rfl` が `env.lookup?` を計算して埋めるが、`denotes_reduceE` の
-  `(fun _ _ => …)` の下では埋まらない。
-- **試して落ちた手 2 つ**（同じことをやらないこと）。① motive から fuel / env を外に括り出す ——
-  env が束縛変数になり `lookup?` が計算できなくなって悪化する。② major premise を `matchedFn` と同じ
-  自由変数の抽象で渡す —— 孔が埋まらず同じところで落ちる。
-- **回避策は測ってある**: `match` を自分の `@[ship] def` に出し、ラムダからそれを呼ぶと通る。
-  **`@[expand]` では通らない** —— 展開が `match` をラムダの中へ戻すから。つまりこの 5 つは
-  「公開関数を 1 本余分に出す」形でなら今でも書けるが、層 0 の語彙としては出せない。
-
-**だから入れたのは残りだけ。** `Opt.*` / `Exc.*` が通るのは `match` が `def` の直下にあるからで、
-呼ぶ側も `@[ship] def` の直下に置くかぎり通る —— 走査のラムダの中で呼ぶと、展開が `match` を
-ラムダに戻すので同じ壁に当たる（`SYNTAX.md` に 1 行足した）。`?` で終わる名前は `@[ship]` だと
-`validateIdent` で落ちるが、`@[expand]` はコンパイラに届かないので `Arr.head?` と書ける。
+`?` で終わる名前は `@[ship]` だと `validateIdent` で落ちるが、`@[expand]` はコンパイラに届かないので
+`Arr.head?` と書ける。
 
 **保証の境界**: 変わらない。`Core.Expr` は 35 形のまま。公開関数が 70 本から 91 本に増えたので、
 `decl_correct` / `decl_traps` / `decl_refuses` が覆う側だけが厚くなった。
