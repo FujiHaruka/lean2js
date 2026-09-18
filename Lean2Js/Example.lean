@@ -131,6 +131,11 @@ receipt is printed to. -/
 @[ship]
 def receiptRule (mark : String) : String := Str.repeat mark 32
 
+/-- An amount in minor units, right-aligned in the column a printed receipt gives it. Too wide an
+amount keeps its digits and overruns the column. -/
+@[ship]
+def amountColumn (amount : Int) : String := Str.padStart (Int53.toString amount) 12 " "
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b

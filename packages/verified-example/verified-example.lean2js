@@ -79,6 +79,9 @@ def refiled(reference : String, oldSep : String, newSep : String) : String =
 def receiptRule(mark : String) : String =
   mark.repeat(32)
 
+def amountColumn(amount : Int53) : String =
+  if ((" ".length == 0) || (12 <= amount.toString().length)) then amount.toString() else (" ".repeat((12 - amount.toString().length)).substring(0, (12 - amount.toString().length)) ++ amount.toString())
+
 def sortsBefore(a : String, b : String) : Bool =
   (a < b)
 

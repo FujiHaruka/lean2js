@@ -180,6 +180,14 @@ export declare function refiled(reference: string, oldSep: string, newSep: strin
 export declare function receiptRule(mark: string): string;
 
 /**
+ * An amount in minor units, right-aligned in the column a printed receipt gives it. Too wide an
+ * amount keeps its digits and overruns the column.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function amountColumn(amount: number): string;
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.

@@ -51,6 +51,7 @@ theorem negative_seats_are_refused (plan : Plan) (discount : Discount) (seats : 
 | `Str.join xs sep` | the strings of `xs` in order with `sep` between them, `""` for an empty `xs` |
 | `Str.replace s pat rep` | `s` with every occurrence of `pat` rewritten to `rep`, `s` itself for an empty `pat` |
 | `Str.repeat s n` | `s` written out `n` times, `""` for a count of zero or less |
+| `Str.padStart s n pad` | `s` widened to `n` code points with `pad` in front, `s` itself when it is already that wide |
 | `Str.length s` | the number of code points, not UTF-16 units |
 | `Arr.get xs i` | the element, defined where `i` is in range |
 

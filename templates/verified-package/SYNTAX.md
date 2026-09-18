@@ -187,7 +187,7 @@ priced tenPercentOff amount           handing a declaration to a call
 | On | What you may write |
 | --- | --- |
 | `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` `Int53.toString` |
-| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
+| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
 | `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` |
@@ -214,10 +214,14 @@ where JavaScript's own `repeat` throws on a negative one. It is the one operatio
 than what it was given, so it is the one that can ask for a string past the `Int53` bound on a length;
 that traps, and an engine will run out of memory below it.
 
+`Str.padStart s n pad` widens `s` to `n` code points by writing `pad` in front of it, cut where the
+width falls so a multi-character pad does not overshoot. A width `s` already reaches, and an empty
+`pad`, leave `s` as it is. JavaScript's own counts UTF-16 units, so it pads astral text short.
+
 `Opt` and `Exc` are named apart from `Option` and `Except` because Lean's `Option.getD` and `Except.map`
 already exist; writing `o.getD fallback` reaches Lean's, which the walk does not read.
 
-**`Str.replace`, `Str.isEmpty` and everything from `Arr.take` down is `@[expand]`**, so each call writes the body out
+**`Str.replace`, `Str.isEmpty`, `Str.padStart` and everything from `Arr.take` down is `@[expand]`**, so each call writes the body out
 where it stands. Nothing of them reaches `index.js`, and the fuel the program needs grows with how
 deeply they nest.
 `Arr.contains` needs `BEq T`, which `deriving DecidableEq` gives; `Arr.head?` and `Arr.last?` need
@@ -275,7 +279,7 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | What you reach for | What to write instead |
 | --- | --- |
 | `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
-| `padStart` / `padEnd` | `Str.repeat` and `Str.length`, or TypeScript. A width the code points do not fill is a subtraction and a repeat; JavaScript's own two count UTF-16 units, so they pad astral text short. |
+| `padEnd` | `s ++ Str.substring (Str.repeat pad k) 0 k`, with `k` the width less `Str.length s`, which is what `Str.padStart` is written from. |
 | regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out. |

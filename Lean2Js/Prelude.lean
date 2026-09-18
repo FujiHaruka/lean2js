@@ -140,6 +140,13 @@ def «repeat» (s : String) (n : Int) : String := repeatStr s n.toNat
 
 @[expand] def isEmpty (s : String) : Bool := length s == 0
 
+/-- `s` widened to `n` code points by writing `pad` in front of it, cut to fit exactly. A width `s`
+already reaches, and an empty `pad`, leave `s` as it is. JS's own `padStart` counts UTF-16 units, so it
+pads astral text short. -/
+@[expand] def padStart (s : String) (n : Int) (pad : String) : String :=
+  if isEmpty pad || n ≤ length s then s
+  else substring (Str.repeat pad (n - length s)) 0 (n - length s) ++ s
+
 end Str
 
 namespace Int53

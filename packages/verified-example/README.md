@@ -48,6 +48,8 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   A reference filed under one separator, rewritten under another. Every occurrence moves, and a reference carrying none comes back unchanged.
 - `receiptRule(mark: string): string`
   The rule a printed receipt puts between its sections, one `mark` per column at the width the receipt is printed to.
+- `amountColumn(amount: number): string`
+  An amount in minor units, right-aligned in the column a printed receipt gives it. Too wide an amount keeps its digits and overruns the column.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`

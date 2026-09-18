@@ -403,6 +403,19 @@ answers. The trap is on the length of the result, and `applyStrBin` is where it 
 #guard Str.repeat "" 5 == ""
 #guard Str.repeat astralThenA 2 == astralThenA ++ astralThenA
 
+/-! ## How `Str.padStart` fills a width
+
+The pad is cut where the width falls, so a multi-character pad does not overshoot it. A width the
+string already reaches, and an empty pad, leave the string alone. -/
+
+#guard Str.padStart "7" 3 "0" == "007"
+#guard Str.padStart "abc" 3 "0" == "abc"
+#guard Str.padStart "abc" 2 "0" == "abc"
+#guard Str.padStart "7" 5 "ab" == "abab7"
+#guard Str.padStart "7" 4 "ab" == "aba7"
+#guard Str.padStart "7" 3 "" == "7"
+#guard Str.padStart "" 3 "x" == "xxx"
+
 private def Box : TypeDef :=
   struct "Box" [("value", Ty.var "T")] (params := ["T"])
 

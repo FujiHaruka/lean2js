@@ -638,6 +638,12 @@ export function receiptRule(__p0) {
   return __repeat(mark, 32);
 }
 
+/** amountColumn : (amount : Int53) → String */
+export function amountColumn(__p0) {
+  const amount = __ck(__p0, ["int53"]);
+  return (((__i53(__strlen(" ")) === 0) || (12 <= __i53(__strlen(__str(amount))))) ? __str(amount) : (__substring(__repeat(" ", __i53((12 - __i53(__strlen(__str(amount)))))), 0, __i53((12 - __i53(__strlen(__str(amount)))))) + __str(amount)));
+}
+
 /** sortsBefore : (a : String, b : String) → Bool */
 export function sortsBefore(__p0, __p1) {
   const a = __ck(__p0, ["string"]);
