@@ -151,8 +151,8 @@ end MyLogic
 ```sh
 lake build                           # checks the logic and the theorems
 lake exe lean2js MyLogic --out dist  # checks them again, then writes the npm package
-# 942 vectors agree on Node v24.18.0
-# wrote 4 exports to dist
+# 2733 vectors agree on Node v24.18.0
+# wrote 9 exports to dist
 ```
 
 `lean2js` is an executable the `Lean2Js` library owns, and `lake exe` resolves it out of the
