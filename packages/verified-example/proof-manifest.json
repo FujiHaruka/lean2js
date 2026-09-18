@@ -139,7 +139,7 @@
       "name": "receiptRule",
       "signature": "(mark : String) → String",
       "declaration": "receiptRule(mark: string): string",
-      "doc": "The rule a printed receipt puts between its sections, one `mark` per column at the width the\nreceipt is printed to."
+      "doc": "The rule a printed receipt puts between its sections: `mark` written out 32 times, which is one\ncolumn each where `mark` is a single character."
     },
     {
       "name": "amountColumn",

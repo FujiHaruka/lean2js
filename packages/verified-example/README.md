@@ -47,7 +47,7 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `refiled(reference: string, oldSep: string, newSep: string): string`
   A reference filed under one separator, rewritten under another. Every occurrence moves, and a reference carrying none comes back unchanged.
 - `receiptRule(mark: string): string`
-  The rule a printed receipt puts between its sections, one `mark` per column at the width the receipt is printed to.
+  The rule a printed receipt puts between its sections: `mark` written out 32 times, which is one column each where `mark` is a single character.
 - `amountColumn(amount: number): string`
   An amount in minor units, right-aligned in the column a printed receipt gives it. Too wide an amount keeps its digits and overruns the column.
 - `sortsBefore(a: string, b: string): boolean`

@@ -172,8 +172,8 @@ export declare function referenceFrom(parts: readonly string[]): string;
 export declare function refiled(reference: string, oldSep: string, newSep: string): string;
 
 /**
- * The rule a printed receipt puts between its sections, one `mark` per column at the width the
- * receipt is printed to.
+ * The rule a printed receipt puts between its sections: `mark` written out 32 times, which is one
+ * column each where `mark` is a single character.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
  */

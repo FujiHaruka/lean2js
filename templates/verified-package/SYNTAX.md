@@ -210,9 +210,9 @@ counts UTF-16 units and answers `-1`. The empty needle sits at `0`, in both. The
 position — the same divergence `Str.split s ""` carries, which is what `Str.replace` is written from.
 
 `Str.repeat s n` writes `s` out `n` times, counted in code points. A count of zero or less gives `""`,
-where JavaScript's own `repeat` throws on a negative one. It is the one operation whose result is longer
-than what it was given, so it is the one that can ask for a string past the `Int53` bound on a length;
-that traps, and an engine will run out of memory below it.
+where JavaScript's own `repeat` throws on a negative one. It and `Str.padStart`, which is written from
+it, are the two operations that take a length as a number, so they are the two that can ask for a string
+past the `Int53` bound on a length; that traps, and an engine will run out of memory below it.
 
 `Str.padStart s n pad` widens `s` to `n` code points by writing `pad` in front of it, cut where the
 width falls so a multi-character pad does not overshoot. A width `s` already reaches, and an empty
@@ -279,7 +279,7 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | What you reach for | What to write instead |
 | --- | --- |
 | `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
-| `padEnd` | `s ++ Str.substring (Str.repeat pad k) 0 k`, with `k` the width less `Str.length s`, which is what `Str.padStart` is written from. |
+| `padEnd` | `if Str.isEmpty pad || n ≤ Str.length s then s else s ++ Str.substring (Str.repeat pad k) 0 k`, with `k` the width less `Str.length s`. The guard is the one `Str.padStart` carries; without it the call traps where JavaScript's own returns `s`. |
 | regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out. |

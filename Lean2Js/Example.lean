@@ -126,8 +126,8 @@ reference carrying none comes back unchanged. -/
 @[ship]
 def refiled (reference oldSep newSep : String) : String := Str.replace reference oldSep newSep
 
-/-- The rule a printed receipt puts between its sections, one `mark` per column at the width the
-receipt is printed to. -/
+/-- The rule a printed receipt puts between its sections: `mark` written out 32 times, which is one
+column each where `mark` is a single character. -/
 @[ship]
 def receiptRule (mark : String) : String := Str.repeat mark 32
 
