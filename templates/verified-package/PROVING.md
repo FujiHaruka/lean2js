@@ -45,6 +45,7 @@ theorem negative_seats_are_refused (plan : Plan) (discount : Discount) (seats : 
 | `Int53.div a b` | `Int.tdiv a b` — truncating, unlike Lean's `/` |
 | `Int53.mod a b` | `Int.tmod a b` |
 | `Int53.abs a` | `Int.natAbs a`, as an `Int` |
+| `Int53.toString a` | `toString a` — the decimal spelling |
 | `Str.length s` | the number of code points, not UTF-16 units |
 | `Arr.get xs i` | the element, defined where `i` is in range |
 

@@ -204,6 +204,7 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__dvalues", [.dict entries] => some (.ok (.arr (entries.map fun e => e.2)))
   | "__ddelete", [.dict entries, .str key] =>
     some (.ok (.dict (entries.filter (·.1 != key))))
+  | "__str", [.num a] => some (.ok (.str (toString a)))
   | "__strlen", [.str s] => some (.ok (.num s.toList.length))
   | "__trim", [.str s] => some (.ok (.str (strTrim s)))
   | "__upper", [.str s] => some (.ok (.str (strUpper s)))
@@ -236,6 +237,7 @@ inductive HelperRow : String → List JsValue → Prop where
   | maxNum (a b : Int) : HelperRow "__max" [.num a, .num b]
   | maxBig (a b : Int) : HelperRow "__max" [.bigint a, .bigint b]
   | strcmp (a b : String) : HelperRow "__strcmp" [.str a, .str b]
+  | str (a : Int) : HelperRow "__str" [.num a]
   | eq (a b : JsValue) : HelperRow "__eq" [a, b]
   | at (xs : List JsValue) (i : Int) : HelperRow "__at" [.arr xs, .num i]
   | aslice (xs : List JsValue) (a b : Int) : HelperRow "__aslice" [.arr xs, .num a, .num b]

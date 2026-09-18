@@ -151,6 +151,7 @@ inductive UnOp where
   | not
   | neg
   | abs
+  | toString
   deriving Repr, BEq, Inhabited
 
 inductive BinOp where

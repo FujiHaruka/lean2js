@@ -38,6 +38,8 @@ const __chars = (s) => Array.from(s);
 
 const __cp = (c) => (c).codePointAt(0);
 
+const __str = (x) => String(x);
+
 const __strlen = (s) => (__chars(s)).length;
 
 const __strcmp = (a, b) => {
@@ -507,6 +509,13 @@ export function slugOf(__p0, __p1) {
   const prefix = __ck(__p0, ["string"]);
   const name = __ck(__p1, ["string"]);
   return ((prefix + "-") + name);
+}
+
+/** orderReference : (prefix : String, orderNo : Int53) → String */
+export function orderReference(__p0, __p1) {
+  const prefix = __ck(__p0, ["string"]);
+  const orderNo = __ck(__p1, ["int53"]);
+  return ((prefix + "-") + __str(orderNo));
 }
 
 /** sortsBefore : (a : String, b : String) → Bool */

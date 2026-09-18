@@ -219,6 +219,7 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
   | (``Lean2Js.Int53.div, #[l, r]) => binary `div ``Lean2Js.Denote.denotes_div l r
   | (``Lean2Js.Int53.mod, #[l, r]) => binary `mod ``Lean2Js.Denote.denotes_mod l r
   | (``Lean2Js.Int53.abs, #[a]) => unary `abs ``Lean2Js.Denote.denotes_abs a
+  | (``Lean2Js.Int53.toString, #[a]) => unary `toString ``Lean2Js.Denote.denotes_toString a
   | (``Lean2Js.BigInt.div, #[l, r]) => binary `div ``Lean2Js.Denote.denotes_divBig l r
   | (``Lean2Js.BigInt.mod, #[l, r]) => binary `mod ``Lean2Js.Denote.denotes_modBig l r
   | (``Lean2Js.BigInt.abs, #[a]) => unary `abs ``Lean2Js.Denote.denotes_absBig a

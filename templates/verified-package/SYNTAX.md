@@ -186,7 +186,7 @@ priced tenPercentOff amount           handing a declaration to a call
 
 | On | What you may write |
 | --- | --- |
-| `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` |
+| `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` `Int53.toString` |
 | `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.split` `Str.substring` `Str.length` `Str.isEmpty` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
@@ -259,7 +259,6 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | What you reach for | What to write instead |
 | --- | --- |
 | `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
-| `String(n)` / `toString` | Return the `Int` and format it in TypeScript. |
 | `parseInt` / `Number(s)` | Take the number as an `Int` parameter and parse it in TypeScript. |
 | `join` | `foldl`, where no part is empty (below). |
 | `replace` / `replaceAll` | `Str.split` and then the `join` recipe. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |

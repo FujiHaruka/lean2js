@@ -131,6 +131,10 @@ def mod (a b : Int) : Int := a.tmod b
 
 def abs (a : Int) : Int := a.natAbs
 
+/-- The decimal spelling. JS's `String(n)` falls back to exponent notation only at 1e21, which is above
+the Int53 range, so the two agree on every Int53. -/
+def toString (a : Int) : String := ToString.toString a
+
 end Int53
 
 namespace Opt

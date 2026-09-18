@@ -7,10 +7,10 @@ The model of the generated code assumes a table of runtime helpers, `Js.helper`.
 each helper answers is proved here against what the shipped source computes, so the hand-written
 JavaScript stops being taken on trust.
 
-Three rows ask for something of their arguments, and `helperArgsOk` is where all three are written
-down. Two are the model being more careful than the helper — `__i53div` re-checks the Int53 range the
-type has already given, and `__ddelete` is stated on the dictionaries a `Map` can actually hold. The
-third, `__eq`, is a real divergence: see `eqShape`.
+Four rows ask for something of their arguments, and `helperArgsOk` is where all four are written
+down. Three are the model being more careful than the helper — `__i53div` and `__str` re-check the
+Int53 range the type has already given, and `__ddelete` is stated on the dictionaries a `Map` can
+actually hold. The fourth, `__eq`, is a real divergence: see `eqShape`.
 -/
 
 namespace Lean2Js.HelperSem
@@ -298,6 +298,10 @@ theorem agree_strcmp (ext : Ext) (x y : String) (f : Nat) :
   rw [show f + (x.toList.length + 17) = f + x.toList.length + 17 from by omega]
   simpa using calls_strcmp ext x y f
 
+theorem agree_str (ext : Ext) (a : Int) (f : Nat) (hlo : safeMin ≤ a) (hhi : a ≤ safeMax) :
+    callDef ext (f + 5) "__str" [ofJs (.num a)] = ofRes (.ok (.str (toString a))) := by
+  simpa using calls_str ext a f hlo hhi
+
 theorem agree_strlen (ext : Ext) (x : String) (f : Nat) :
     callDef ext (f + 9) "__strlen" [ofJs (.str x)] = ofRes (.ok (.num x.toList.length)) := by
   simpa using calls_strlen ext x f
@@ -580,12 +584,13 @@ theorem agree_eq (ext : Ext) (x y : Js.JsValue) (f : Nat) (h : eqShape x y = tru
 
 /-! ## The table -/
 
-/-- What a call has to satisfy for the shipped source to answer what the model's table says. Two rows
-are the model being the more careful of the two — it re-checks an Int53 range the type has already
-given, and it is stated on dictionaries a `Map` can actually hold — and one is a real divergence. -/
+/-- What a call has to satisfy for the shipped source to answer what the model's table says. Three rows
+are the model being the more careful of the two — two re-check an Int53 range the type has already
+given, and one is stated on dictionaries a `Map` can actually hold — and one is a real divergence. -/
 def helperArgsOk (name : String) (args : List Js.JsValue) : Prop :=
   match name, args with
   | "__i53div", [.num a, _] => safeMin ≤ a ∧ a ≤ safeMax
+  | "__str", [.num a] => safeMin ≤ a ∧ a ≤ safeMax
   | "__ddelete", [.dict es, _] => Js.keysDistinct (es.map (·.1)) = true
   | "__eq", [a, b] => eqShape a b = true
   | _, _ => True
@@ -632,6 +637,7 @@ theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : 
       | exact eventually_of_offset _ (fun f => agree_dkeys ext _ f)
       | exact eventually_of_offset _ (fun f => agree_dvalues ext _ f)
       | exact eventually_of_offset _ (fun f => agree_ddelete ext _ _ f hok)
+      | exact eventually_of_offset _ (fun f => agree_str ext _ f hok.1 hok.2)
       | exact eventually_of_offset _ (fun f => agree_strlen ext _ f)
       | exact eventually_of_offset _ (fun f => agree_trim ext _ f)
       | exact eventually_of_offset _ (fun f => agree_upper ext _ f)

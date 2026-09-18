@@ -88,6 +88,12 @@
       "declaration": "slugOf(prefix: string, name: string): string"
     },
     {
+      "name": "orderReference",
+      "signature": "(prefix : String, orderNo : Int53) → String",
+      "declaration": "orderReference(prefix: string, orderNo: number): string",
+      "doc": "The reference an order is filed under: the prefix and the order number in decimal."
+    },
+    {
       "name": "sortsBefore",
       "signature": "(a : String, b : String) → Bool",
       "declaration": "sortsBefore(a: string, b: string): boolean",

@@ -111,6 +111,13 @@ export declare function headOr(xs: readonly number[], fallback: number): number;
 export declare function slugOf(prefix: string, name: string): string;
 
 /**
+ * The reference an order is filed under: the prefix and the order number in decimal.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function orderReference(prefix: string, orderNo: number): string;
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.

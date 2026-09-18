@@ -252,6 +252,13 @@ theorem denotes_abs (p : Program) (env : Env) (e : Expr) (a : Int) (h : Denotes 
     Denotes p env (.un .abs e) (Int53.abs a) :=
   denotes_un p env .abs e a _ (fun _ hw => mkInt53_ok (by rwa [toValue_int] at hw)) h
 
+theorem denotes_toString (p : Program) (env : Env) (e : Expr) (a : Int) (h : Denotes p env e a) :
+    Denotes p env (.un .toString e) (Int53.toString a) :=
+  denotes_un p env .toString e a _ (fun _ hw => by
+    rw [toValue_int] at hw
+    simp only [applyUn, Except.ok.injEq] at hw
+    exact hw.symm) h
+
 theorem denotes_letE (p : Program) (env : Env) (name : String) (ty : Ty) (val body : Expr)
     {β : Type} [Enc β] (x : β) {α : Type} [Enc α] (t : α)
     (hv : Denotes p env val x) (hb : Denotes p ((name, toValue x) :: env) body t) :

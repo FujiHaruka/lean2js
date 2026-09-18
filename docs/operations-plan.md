@@ -5,10 +5,10 @@
 
 ## 文脈
 
-今の到達点は測った数字で言える。公開関数 91 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
-31741 件、`Core.Expr` は 35 形。実行時ヘルパは 49 本で、模型がヘルパについて仮定している表 35 行の
+今の到達点は測った数字で言える。公開関数 92 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
+32270 件、`Core.Expr` は 35 形。実行時ヘルパは 50 本で、模型がヘルパについて仮定している表 36 行の
 全行が印字器の書き出すソースと一致する（`helpers_ship_as_modelled`）。JS の組み込みへの依存は
-`Helper.lean` が名指ししている `prim` 11 種とメソッド 13 種で、それが読み取れる TCB の全部。
+`Helper.lean` が名指ししている `prim` 12 種とメソッド 13 種で、それが読み取れる TCB の全部。
 
 **値段が変わったことが、この計画の出発点。** `decl_correct` / `decl_traps` / `decl_refuses` は但し書き
 無しで 35 形すべてを覆っている。`Core.Expr` に形を 1 つ足すのは、もはや「`Agree` の全件検査に任せる
@@ -240,11 +240,11 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 `"" "a" "b" "ab" "ba" "abc" "Z" "z" "\"" "\\" "\n" "日本語" "🍣" "🍣a" bmpMax astral astral++"a"` で、
 `toInt?` の**成功側がベクタで 1 度も踏まれない**。`"0" "-0" "007" "+5" " 5" "9007199254740991"
 "9007199254740992" "-9007199254740991"` を足すのが筋だが、プールは `String` 引数の直積に効くので
-**足す前に件数を測る**（今 31741 件、文字列 2 引数の関数は 17² → 25²）。
+**足す前に件数を測る**（今 32270 件、文字列 2 引数の関数は 17² → 25²）。
 
 **保証の境界**: 変わらない。覆う側が増える。
 
-**同じコミットで直す数字**: `docs/guarantees.md` のヘルパ本数（今 49 本）と模型の表の行数（今 35 行）、
+**同じコミットで直す数字**: `docs/guarantees.md` のヘルパ本数（今 50 本）と模型の表の行数（今 36 行）、
 ベクタ件数、`README.md` のサブセットの表、`docs/next-milestone-plan.md` の「言語が凍っている」行
 （層 1 は凍結を解く側なので、Step 3 が初めてここに届く）。
 
@@ -304,7 +304,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
 
 - `README.md` — サブセットの表、「35 の形すべて」
 - `templates/verified-package/SYNTAX.md` — 書けるものの表、Step 0 で足す無いものの表
-- `docs/guarantees.md` — ベクタ件数（今 31741 件）、実行時ヘルパの本数と仮定の表の行数
+- `docs/guarantees.md` — ベクタ件数（今 32270 件）、実行時ヘルパの本数と仮定の表の行数
 - `docs/next-milestone-plan.md` — 「言語が凍っている」を数えている行。**Step 1 と Step 2 では動かない**
   （層 0 は `Core.Expr` に形を足さない）。動くのは Step 3 以降で、そのとき凍結をどの範囲で解いたかを書く
 
@@ -329,3 +329,15 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   当初の表の `indexOf?` `min?` `max?` `groupBy` `Dict.map` `Dict.filter` は入っていない（理由は Step 2 に）。
   Step 0 が `SYNTAX.md` に置いた「foldl と Arr.slice で今日書ける 7 行」は、その 7 つが名前を持った
   ぶん表に移し、残したのは `join` の全文だけ。
+- **Step 3 の前半**（2026-09-18, `3d40103`） — `Int53.toString` が入った。`UnOp` に腕 1 つ、`Core.Expr` は
+  35 形のまま。触ったのは `Core` / `Eval` / `Compile` / `Render` / `Builder` / `Reify` / `Denotes` /
+  `Sound` / `Correct`（返す側と落ちる側で 1 つずつ）/ `Renderable`（`compileExpr` の場合が 1 つ増えるので
+  番号が 1 つずれる）/ `Js.helper` の表 / `Helper` / `HelperSem` / `HelperProof` / `HelperAgree`。
+  `Cost` / `Step` / `Decl` / `Gather` は op に依らないので動かなかった。
+  ヘルパは `__str`（`String(x)` 1 行）で 49 → 50 本、模型の表は 35 → 36 行、`prim` は 11 → 12 種。
+  **`String(n)` が 10 進なのは Int53 の範囲だけ**（JS は 1e21 で指数表記に落ちる）なので、
+  `HelperSem.prim` は範囲の外で `stuck` にし、`helperArgsOk` に `__str` の行を足した
+  （`__i53div` と同じ「模型のほうが慎重」な行で、要求は 3 行 + `__eq` の 1 行）。
+  `Example.lean` に `orderReference` を 1 本。公開関数 91 → 92 本、差分ベクタ 31741 → 32270 件。
+  `docs/guarantees.md` の燃料の数字は `503` のまま止まっていた（Step 2 の 21 本を数えていない）ので、
+  測って `657` に直した。

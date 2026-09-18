@@ -373,6 +373,12 @@ theorem applyUn_not_hasTy {p : Program} {w v : Value} (h : applyUn .not w = .ok 
   subst h
   exact hasTy_bool p _
 
+theorem applyUn_toString_hasTy {p : Program} {w v : Value} (h : applyUn .toString w = .ok v) :
+    Value.hasTy p v .string = true := by
+  cases w <;> simp [applyUn] at h
+  subst h
+  exact hasTy_str p _
+
 theorem applyUn_neg_int53 {p : Program} {i : Int} {v : Value}
     (h : applyUn .neg (.int53 i) = .ok v) : Value.hasTy p v .int53 = true := by
   simp only [applyUn] at h
@@ -2104,6 +2110,16 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
           obtain ⟨i, hi⟩ := hasTy_bigint_inv (htx' ▸ hwt)
           subst hi
           exact hc.2 ▸ applyUn_abs_bigint he
+        · simp at hc
+      | toString =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        split at hc
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          exact hc.2 ▸ applyUn_toString_hasTy he
         · simp at hc
     | bin hl hr =>
       rename_i op lhsE rhsE

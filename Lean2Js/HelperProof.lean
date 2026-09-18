@@ -345,6 +345,15 @@ theorem calls_cp (ext : Ext) (c : Char) (f : Nat) :
   walk
   rw [show c.toString.toList = [c] from by simp [Char.toString]]
 
+theorem find_str : Helper.defs.find? (·.name == "__str") = some Helper.str := rfl
+
+theorem calls_str (ext : Ext) (a : Int) (f : Nat) (hlo : safeMin ≤ a) (hhi : a ≤ safeMax) :
+    callDef ext (f + 5) "__str" [.num a] = .ok (.str (toString a)) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_str rfl rfl]
+  simp only [Helper.str]
+  walk
+  simp [hlo, hhi]
+
 theorem calls_strlen (ext : Ext) (x : String) (f : Nat) :
     callDef ext (f + 9) "__strlen" [.str x] = .ok (.num x.toList.length) := by
   rw [show f + 9 = (f + 8) + 1 from rfl, callDef_expr find_strlen rfl rfl]

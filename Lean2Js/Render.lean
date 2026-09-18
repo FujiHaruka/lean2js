@@ -39,6 +39,7 @@ partial def Expr.source : Expr → String
   | .un .not e => "!" ++ e.source
   | .un .neg e => "-" ++ e.source
   | .un .abs e => e.source ++ ".abs()"
+  | .un .toString e => e.source ++ ".toString()"
   | .bin op lhs rhs =>
     match op with
     | .min | .max => lhs.source ++ "." ++ binSymbol op ++ "(" ++ rhs.source ++ ")"

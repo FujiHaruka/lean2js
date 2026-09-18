@@ -12,11 +12,13 @@ Everything the helpers borrow from the platform is in `prim`, `method`, `binOp`,
 below, and nowhere else. Each is defined only where a helper actually reaches for it and is `stuck`
 elsewhere, so an assumption that is never used cannot be smuggled in.
 
-Two of them are worth stating out loud.
+Three of them are worth stating out loud.
 
 - **An iterator is the array of its elements.** `d.keys()` yields the keys and `Array.from` on an array
   is the identity, so `Array.from(d.keys())` is the list of keys. The model does not distinguish an
   iterator from the array it produces, because nothing in the fragment can observe the difference.
+- **A number prints in decimal.** `String(n)` falls back to exponent notation at 1e21, so the model
+  answers only inside the Int53 range, which is below it.
 - **A quotient is truncated before anything looks at it.** `/` on two numbers yields `quot a b`, which
   only `Math.trunc` accepts. Real JavaScript computes a double there; the truncation agrees with exact
   integer division whenever the numerator is below 2^53, which the one caller (`__u32div`) guarantees.
@@ -195,6 +197,7 @@ def prim (name : String) (args : List Val) : Res Val :=
   | "Number.isInteger", [.num _] => .ok (.bool true)
   | "Number.isInteger", [_] => .ok (.bool false)
   | "Number", [.bigint i] => .ok (.num i)
+  | "String", [.num i] => if safeMin ≤ i && i ≤ safeMax then .ok (.str (toString i)) else .stuck
   | "BigInt", [.num i] => .ok (.bigint i)
   | "Math.imul", [.num a, .num b] => .ok (.num (imul a b))
   | "Math.trunc", [.quot a b] => if b == 0 then .stuck else .ok (.num (a.tdiv b))

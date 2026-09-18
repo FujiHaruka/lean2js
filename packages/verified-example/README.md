@@ -30,6 +30,8 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `headOr(xs: readonly number[], fallback: number): number`
   An out-of-range read traps rather than yielding `undefined`.
 - `slugOf(prefix: string, name: string): string`
+- `orderReference(prefix: string, orderNo: number): string`
+  The reference an order is filed under: the prefix and the order number in decimal.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`

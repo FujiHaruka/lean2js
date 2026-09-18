@@ -85,6 +85,11 @@ def headOr (xs : List Int) (fallback : Int) : Int :=
 @[ship]
 def slugOf («prefix» name : String) : String := «prefix» ++ "-" ++ name
 
+/-- The reference an order is filed under: the prefix and the order number in decimal. -/
+@[ship]
+def orderReference («prefix» : String) (orderNo : Int) : String :=
+  «prefix» ++ "-" ++ Int53.toString orderNo
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b

@@ -37,6 +37,7 @@ def applyUn : UnOp → Value → Except Err Value
   | .neg, .bigint i => .ok (.bigint (-i))
   | .abs, .int53 i => mkInt53 i.natAbs
   | .abs, .bigint i => .ok (.bigint i.natAbs)
+  | .toString, .int53 i => .ok (.str (toString i))
   | op, _ => .error (.typeError s!"unary {repr op} applied to a value of the wrong type")
 
 /-- Integer division is pinned to truncation. Lean's `/` is floor division (`-7 / 2 = -4`), which

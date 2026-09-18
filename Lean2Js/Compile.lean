@@ -353,6 +353,10 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
     | .int53 => .ok (.call "__i53" [.call "__abs" [jx]], .int53)
     | .bigint => .ok (.call "__abs" [jx], .bigint)
     | _ => .error "abs expects Int53 or BigInt"
+  | .un .toString x => do
+    let (jx, tx) ← compileExpr p ctx x
+    if tx == .int53 then .ok (.call "__str" [jx], .string)
+    else .error "toString expects Int53"
   | .bin op lhs rhs => do
     let (jl, tl) ← compileExpr p ctx lhs
     let (jr, tr) ← compileExpr p ctx rhs

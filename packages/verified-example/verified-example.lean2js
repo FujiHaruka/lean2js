@@ -52,6 +52,9 @@ def headOr(xs : Array Int53, fallback : Int53) : Int53 =
 def slugOf(prefix : String, name : String) : String =
   ((prefix ++ "-") ++ name)
 
+def orderReference(prefix : String, orderNo : Int53) : String =
+  ((prefix ++ "-") ++ orderNo.toString())
+
 def sortsBefore(a : String, b : String) : Bool =
   (a < b)
 

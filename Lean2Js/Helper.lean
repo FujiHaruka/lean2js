@@ -283,6 +283,10 @@ def cp : Def :=
 
   { name := "__cp", params := ["c"], body := .expr (.method (.var "c") "codePointAt" [.num 0]) }
 
+def str : Def :=
+
+  { name := "__str", params := ["x"], body := .expr (.prim "String" [(.var "x")]) }
+
 def strlen : Def :=
 
   { name := "__strlen", params := ["s"], body := .expr (lengthOf (.call "__chars" [(.var "s")])) }
@@ -711,7 +715,7 @@ def ck : Def :=
 
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
-  strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split, substring,
+  str, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split, substring,
   aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues, ddelete, eq, map, filter,
   find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
 ]
