@@ -1490,6 +1490,32 @@ theorem denotes_max (p : Program) (env : Env) (l r : Expr) (a b : Int)
       by_cases h : a ≤ b <;> simp [h, Int.max_def])
     (by simp) (by simp) hl hr
 
+theorem denotes_minU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .min l r) (min a b) :=
+  denotes_bin p env .min l r a b _
+    (fun _ hw => by
+      rw [show applyBin .min (toValue a) (toValue b)
+        = .ok (if (decide (a ≤ b)) = true then Value.uint32 a else Value.uint32 b) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw]
+      by_cases h : a ≤ b <;>
+        simp [h, show min a b = if a ≤ b then a else b from rfl])
+    (by simp) (by simp) hl hr
+
+theorem denotes_maxU32 (p : Program) (env : Env) (l r : Expr) (a b : UInt32)
+    (hl : Denotes p env l a) (hr : Denotes p env r b) :
+    Denotes p env (.bin .max l r) (max a b) :=
+  denotes_bin p env .max l r a b _
+    (fun _ hw => by
+      rw [show applyBin .max (toValue a) (toValue b)
+        = .ok (if (decide (a ≤ b)) = true then Value.uint32 b else Value.uint32 a) from rfl] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw]
+      by_cases h : a ≤ b <;>
+        simp [h, show max a b = if a ≤ b then b else a from rfl])
+    (by simp) (by simp) hl hr
+
 /-- The arguments of a call, paired with the values the callee's certificate is stated about. It is a
 list of `Value` rather than of encoded terms because a call's arguments need not share a type. -/
 def DenotesArgs (p : Program) (env : Env) : List Expr → List Value → Prop

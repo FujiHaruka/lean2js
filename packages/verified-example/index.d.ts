@@ -109,6 +109,8 @@ export declare function mixChannels(a: number, b: number): number;
 
 export declare function bucketOf(key: number, buckets: number): number;
 
+export declare function clampChannel(value: number, lo: number, hi: number): number;
+
 export declare function scaleFee(fee: bigint, factor: bigint): bigint;
 
 export declare function bigQuotient(a: bigint, b: bigint): bigint;

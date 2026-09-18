@@ -178,9 +178,11 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
   | (``Bool.and, #[l, r]) => binary `and ``Lean2Js.Denote.denotes_and l r
   | (``Bool.or, #[l, r]) => binary `or ``Lean2Js.Denote.denotes_or l r
   | (``Min.min, #[α, _, l, r]) =>
-    binary `min (← int53Only α "min" ``Lean2Js.Denote.denotes_min) l r
+    binary `min (← ordered α "min" ``Lean2Js.Denote.denotes_min
+      ``Lean2Js.Denote.denotes_minU32) l r
   | (``Max.max, #[α, _, l, r]) =>
-    binary `max (← int53Only α "max" ``Lean2Js.Denote.denotes_max) l r
+    binary `max (← ordered α "max" ``Lean2Js.Denote.denotes_max
+      ``Lean2Js.Denote.denotes_maxU32) l r
   | (``Lean2Js.Int53.div, #[l, r]) => binary `div ``Lean2Js.Denote.denotes_div l r
   | (``Lean2Js.Int53.mod, #[l, r]) => binary `mod ``Lean2Js.Denote.denotes_mod l r
   | (``Lean2Js.Int53.abs, #[a]) => unary `abs ``Lean2Js.Denote.denotes_abs a
@@ -367,10 +369,11 @@ where
     return (← `(Lean2Js.Core.Expr.un $(mkIdent (`Lean2Js.Core.UnOp ++ op)) $ae),
             ← `($(mkIdent lemma) _ _ _ _ $ap))
   /-- `eval` takes a `min` of two `BigInt`s, but nothing here reads one: the prelude gives `BigInt` no
-  `Min`, so a `min` reaching this walk is on `Int53`. -/
-  int53Only (α : Lean.Expr) (what : String) (lemma : Name) : TermElabM Name := do
+  `Min`, so a `min` reaching this walk is on `Int53` or `UInt32`. -/
+  ordered (α : Lean.Expr) (what : String) (intLemma u32Lemma : Name) : TermElabM Name := do
     match ← whnf α with
-    | .const ``Int _ => return lemma
+    | .const ``Int _ => return intLemma
+    | .const ``UInt32 _ => return u32Lemma
     | t => throwError "reify: {what} on {t} is outside the subset this walk reads"
   /-- `Int` and `BigInt` are both Lean `Int`s underneath and are told apart only by their type, so the
   operators they share reach the right lemma by what they were applied to. -/

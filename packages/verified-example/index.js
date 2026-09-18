@@ -696,6 +696,14 @@ export function bucketOf(__p0, __p1) {
   return __u32mod(key, buckets);
 }
 
+/** clampChannel : (value : UInt32, lo : UInt32, hi : UInt32) → UInt32 */
+export function clampChannel(__p0, __p1, __p2) {
+  const value = __ck(__p0, ["uint32"]);
+  const lo = __ck(__p1, ["uint32"]);
+  const hi = __ck(__p2, ["uint32"]);
+  return __min(__max(value, lo), hi);
+}
+
 /** scaleFee : (fee : BigInt, factor : BigInt) → BigInt */
 export function scaleFee(__p0, __p1) {
   const fee = __ck(__p0, ["bigint"]);

@@ -81,6 +81,8 @@ instance : Enc UInt32 where
 
 @[simp] theorem ty_uint32 : (ty UInt32) = .uint32 := rfl
 
+@[simp] theorem toValue_uint32 (n : UInt32) : (toValue n : Value) = .uint32 n := rfl
+
 instance : Enc String where
   ty := .string
   toValue := .str

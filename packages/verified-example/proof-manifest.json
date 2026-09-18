@@ -176,6 +176,10 @@
       "signature": "(key : UInt32, buckets : UInt32) → UInt32"
     },
     {
+      "name": "clampChannel",
+      "signature": "(value : UInt32, lo : UInt32, hi : UInt32) → UInt32"
+    },
+    {
       "name": "scaleFee",
       "signature": "(fee : BigInt, factor : BigInt) → BigInt"
     },

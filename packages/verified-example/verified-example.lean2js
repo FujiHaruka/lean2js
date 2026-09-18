@@ -136,6 +136,9 @@ def mixChannels(a : UInt32, b : UInt32) : UInt32 =
 def bucketOf(key : UInt32, buckets : UInt32) : UInt32 =
   (key % buckets)
 
+def clampChannel(value : UInt32, lo : UInt32, hi : UInt32) : UInt32 =
+  value.max(lo).min(hi)
+
 def scaleFee(fee : BigInt, factor : BigInt) : BigInt =
   ((fee * factor) - 1n)
 

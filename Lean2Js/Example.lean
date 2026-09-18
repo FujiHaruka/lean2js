@@ -200,6 +200,10 @@ def mixChannels (a b : UInt32) : UInt32 := a * b + (a - b)
 @[verified]
 def bucketOf (key buckets : UInt32) : UInt32 := key % buckets
 
+/-- A channel value held between a floor and a ceiling. -/
+@[verified]
+def clampChannel (value lo hi : UInt32) : UInt32 := min (max value lo) hi
+
 @[verified]
 def scaleFee (fee factor : BigInt) : BigInt := fee * factor - 1
 
