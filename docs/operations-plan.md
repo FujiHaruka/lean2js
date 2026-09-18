@@ -478,7 +478,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   公開関数 99 → 100 本、宣言 100 → 101、差分ベクタ 36533 → 36761 件、燃料は 706 → 713。
   `docs/guarantees.md` に「模型が名づけられる文字列がエンジンの作れる文字列より長いことがある」の
   1 段落を足した——`repeat` が、入力より結果が長い最初の op だから。
-- **Step 4 の 5 つめ**（2026-09-19, `PENDING`） — `Str.padStart` が入って **Step 4 は終わった。
+- **Step 4 の 5 つめ**（2026-09-19, `ed69d06`） — `Str.padStart` が入って **Step 4 は終わった。
   `strTer` は最後まで要らなかった。** `repeat` が入った時点で
   `padStart s n pad = substring (Str.repeat pad (n - length s)) 0 (n - length s) ++ s`（空の `pad` と
   足りている幅は `s` をそのまま返す）が部分式のまま書けていて、`@[expand] def` 1 本で済む。
