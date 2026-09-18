@@ -66,9 +66,9 @@ import した結果は README の出力例とバイト一致する。**止めて
 ## フェーズ 1 — コンパイラのバグ（P0）
 
 **Lean2Js/Reify.lean**
-- `casesOn` が `cases` を出す条件を、`typeDef` を持つ型だけでなく **サブセット組み込みの inductive**
-  （`Option` / `Except`）にも広げる。判定は型名の直書きではなく、「その型がサブセットの `Ty` に写り、
-  条件がその binder を見ている」という今の形の素直な拡張にする。
+- 分割は 1 段では足りない（入れ子パターンでは、分割して初めて現れた値をもう一度分割する必要がある）ので、
+  `casesOn` の「腕の束縛子を 1 つ選んで `cases`」をやめ、**ゴールに現れるサブセット型のローカルを
+  再帰的に分割する戦術** `lean2js_split_tested` を置き、生成する証明をそれに差し替える。
 - 前方参照の 2 次エラー: elaboration が既に失敗している（`sorryAx` / `Expr` にエラーが混じっている）ときは、
   `reify:` を投げずに黙る。`Unknown identifier` だけが残るようにする。
 
@@ -144,3 +144,21 @@ import した結果は README の出力例とバイト一致する。**止めて
   `git diff --exit-code -- packages/verified-example` が緑。
 - 外から（このリポジトリを知らない状態で）テンプレをタグ固定でコピーして、
   英語の文書だけで `dist` を作り、`npm publish --dry-run` まで行ける。
+
+## 結果（2026-09-18 に完了）
+
+4 フェーズすべて main にプッシュ済み。タグ `v0.1.0` と GitHub リリースも公開した。
+
+- `f46e522` — 束縛する腕＋ワイルドカードを読めるようにし（`lean2js_split_tested`）、前方参照の
+  2 次エラーを止めた。`Example.lean` に `Option` / `Except` の同型を追加（ベクタ 25075 → 25511、
+  公開関数 68 → 70、宣言 69 → 71、fuel 489 → 503）
+- `bf415a4` — 生成物を消費者のものにした（docstring → `.d.ts` の JSDoc と README、TS 表記の署名、
+  throw する `code` の節、import 例、定理ゼロのときの文言、`--out` の後始末、`mk` タグの拒否、
+  タプル・`Nat`・`Float` の実行可能な断り）
+- `eb0312b` — 利用者に届く文書を英語へ（`SYNTAX.md` は誤り 2 箇所も修正、`PROVING.md` を新設、
+  `guarantees.md` / `index.md` / テンプレ README / README、`CLAUDE.md` の言語節）
+- `3df1d5a` — `CHANGELOG.md`、テンプレの `rev` をタグへ、`v0.1.0` タグとリリース、
+  GitHub の description と topics
+
+受け入れ確認: タグ固定のテンプレをコピーして `lake build` 1m07s → emit（2733 ベクタ一致・9 exports）
+→ `npm publish --dry-run` が 7 ファイル・6.9kB で通る。
