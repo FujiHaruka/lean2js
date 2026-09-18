@@ -60,6 +60,21 @@ if lake exe lean2js MyLogic --out late 2> late.err; then
 fi
 grep -q 'does not carry it' late.err || { cat late.err; echo "lean2js refused for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
+# A tag is what a consumer reads in the generated type, so a structure that never named its constructor
+# would ship as "mk" and say nothing to them.
+cat >> MyLogic.lean <<'LEAN'
+
+namespace MyLogic
+structure Quota where
+  soft : Int
+  deriving Lean2Js.Enc
+end MyLogic
+LEAN
+if lake build > unnamed.err 2>&1; then
+  echo "deriving Enc accepted a structure whose constructor has no name"; exit 1
+fi
+grep -q 'would ship as the tag' unnamed.err || { cat unnamed.err; echo "the build failed for another reason"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
 cat >> MyLogic.lean <<'LEAN'
 
 namespace MyLogic
