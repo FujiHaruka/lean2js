@@ -69,7 +69,7 @@ Lean2Js/Js.lean       JS AST + ESM printer + .d.ts printer
 Lean2Js/Compile.lean  Program → Js.Module  … Phase 2 で正しさを証明する対象
 Lean2Js/Denotes.lean  Denotes: ある Core.Expr がある Lean の項を表すこと。形ごとに 1 本の補題
 Lean2Js/Reify.lean    利用者の def を歩いて Core 項と証明項を同時に組み立てる
-Lean2Js/Verified.lean declarations% / certificates%: @[verified] な def から宣言と証明書を書く
+Lean2Js/Verified.lean ship_package: @[ship] な def から宣言と証明書を書く
 Lean2Js/Builder.lean  Core 項を直接組み立てるための記法（Tests が使う）
 Main.lean            lean2js 実行ファイル: 渡されたモジュールの manifest を読み、Node で全ベクタを当ててから index.js / index.d.ts / proof-manifest.json を出力
 ```

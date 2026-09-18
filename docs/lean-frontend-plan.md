@@ -302,8 +302,8 @@ lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を�
 
 ## Step 5. 移行 —— 済
 
-パッケージは `@[verified]` を付けた普通の Lean の `def` の名前空間になった。`declarations%` が
-それぞれから宣言を読み出し、`program%` が集め、`certificates%` が宣言 1 本につき 1 本の証明書を書く。
+パッケージは `@[ship]` を付けた普通の Lean の `def` の名前空間になった。印を付けた時点で宣言が
+読み出され、`ship_package` がそれを集めて宣言 1 本につき 1 本の証明書を書く。
 **`lean2js` は証明書の無い宣言を出荷しない**ので、AST を手で渡して迂回する道は無い。表層構文
 （`decl%` / `type%`）は退役した。
 
@@ -392,7 +392,7 @@ Step 3（走査）                     済 —— `denotes_mapE` ほか
   ↓
 Step 4（文字列・辞書・prelude）    済 —— `Lean2Js/Prelude.lean`
   ↓
-Step 5（移行・README の文言）    済 —— `@[verified]` / `declarations%` / `certificates%`
+Step 5（移行・README の文言）    済 —— `@[ship]` / `ship_package`
 ```
 
 ## リスク

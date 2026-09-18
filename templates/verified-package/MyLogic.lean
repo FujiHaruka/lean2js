@@ -5,8 +5,8 @@ import Lean2Js
 
 The business logic this package ships, and the theorems proved about it.
 
-The logic is ordinary Lean. `@[verified]` marks a `def` as one the package ships; `declarations%` reads
-a declaration out of every marked `def`, `program%` gathers them, and `certificates%` writes the proof
+The logic is ordinary Lean. `@[ship]` marks a `def` as one the package ships, which reads the
+declaration out of it; `ship_package` gathers them into the program and writes the proof
 that each declaration denotes the `def` it was read from. What may go inside a marked `def` is
 `SYNTAX.md`; a `def` the walk cannot read is refused by name, with the term it stopped at.
 
@@ -53,7 +53,7 @@ structure Invoice where
   total : Int
   deriving Enc
 
-@[verified]
+@[ship]
 def planName (plan : Plan) : String :=
   match plan with
   | .free => "Free"
@@ -61,7 +61,7 @@ def planName (plan : Plan) : String :=
   | .enterprise => "Enterprise"
 
 /-- Seats a plan carries before per-seat billing starts. -/
-@[verified]
+@[ship]
 def includedSeats (plan : Plan) : Int :=
   match plan with
   | .free => 3
@@ -69,7 +69,7 @@ def includedSeats (plan : Plan) : Int :=
   | .enterprise => 25
 
 /-- The monthly price of one seat past the included ones. -/
-@[verified]
+@[ship]
 def seatPrice (plan : Plan) : Int :=
   match plan with
   | .free => 0
@@ -78,29 +78,29 @@ def seatPrice (plan : Plan) : Int :=
 
 /-- The seats actually charged for. A negative seat count bills nothing rather than crediting the
 customer, and the included seats come off before the rest are priced. -/
-@[verified]
+@[ship]
 def billableSeats (plan : Plan) (seats : Int) : Int :=
   max (max seats 0 - includedSeats plan) 0
 
-@[verified]
+@[ship]
 def seatCharge (plan : Plan) (seats : Int) : Int :=
   seatPrice plan * billableSeats plan seats
 
 /-- What the invoice is made of. Only a paid plan carries the platform fee. -/
-@[verified]
+@[ship]
 def invoiceLines (plan : Plan) (seats : Int) : List LineItem :=
   let seatLine := LineItem.LineItem (planName plan ++ " seats") (seatCharge plan seats)
   match plan with
   | .free => [seatLine]
   | _ => [seatLine, LineItem.LineItem "Platform fee" 900]
 
-@[verified]
+@[ship]
 def linesTotal (lines : List LineItem) : Int :=
   lines.foldl (fun sum line => sum + line.amount) 0
 
 /-- What a discount takes off a subtotal. A percentage is clamped to 0..100 and a fixed amount never
 exceeds the subtotal, so no discount can add to a bill or push it below zero. -/
-@[verified]
+@[ship]
 def discountOn (discount : Discount) (subtotal : Int) : Int :=
   match discount with
   | .noDiscount => 0
@@ -110,7 +110,7 @@ def discountOn (discount : Discount) (subtotal : Int) : Int :=
   | .amountOff amount => min (max amount 0) (max subtotal 0)
 
 /-- The bill for one workspace for one month, or the reason there is none. -/
-@[verified]
+@[ship]
 def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String Invoice :=
   if seats < 0 then .error "a seat count cannot be negative"
   else if seats > 10000 then .error "a seat count above 10000 needs a sales contract"
@@ -120,13 +120,7 @@ def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String
     let off := discountOn discount subtotal
     .ok (Invoice.Invoice lines subtotal off (subtotal - off))
 
-declarations%
-
-def program : Program := program%
-
-certificates%
-
-#eval program.check
+ship_package
 
 /-- An enterprise workspace is not billed for the seats its plan includes. -/
 theorem enterprise_includes_its_seats : seatCharge .enterprise 25 = 0 := by

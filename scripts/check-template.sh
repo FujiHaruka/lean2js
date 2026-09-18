@@ -46,19 +46,19 @@ if PATH="$work/disagreeing-node:$PATH" lake exe lean2js MyLogic --out refused; t
 fi
 test ! -e refused || { echo "lean2js left files behind for a package Node did not agree with"; exit 1; }
 
-# The namespace is the package, so neither a declaration program% did not gather nor a public theorem that
-# is not proved may slip out of it quietly.
+# The namespace is the package, so neither a declaration ship_package did not gather nor a public theorem
+# that is not proved may slip out of it quietly.
 cp MyLogic.lean MyLogic.lean.orig
 cat >> MyLogic.lean <<'LEAN'
 
 namespace MyLogic
-@[verified] def lateTotal (x : Int) : Int := x
+@[ship] def lateTotal (x : Int) : Int := x
 end MyLogic
 LEAN
 if lake exe lean2js MyLogic --out late 2> late.err; then
-  echo "lean2js wrote a package without a declaration program% did not gather"; exit 1
+  echo "lean2js wrote a package without a declaration ship_package did not gather"; exit 1
 fi
-grep -q 'not in scope' late.err || { cat late.err; echo "lean2js refused for another reason"; exit 1; }
+grep -q 'does not carry it' late.err || { cat late.err; echo "lean2js refused for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
 cat >> MyLogic.lean <<'LEAN'
 

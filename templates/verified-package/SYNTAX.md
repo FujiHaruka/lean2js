@@ -1,9 +1,9 @@
 # 受け付ける Lean
 
-`@[verified]` を付けた `def` の中に書けるのは、Lean の中の**狭い部分集合**だけ。`Array` や `String` の
+`@[ship]` を付けた `def` の中に書けるのは、Lean の中の**狭い部分集合**だけ。`Array` や `String` の
 API、Lean のラムダ、再帰、`do`、型クラス、依存型はここには入らない。このページがその部分集合の全部。
 
-読めない形に当たると、`declarations%` が**その `def` を名指しして**、止まった項ごと断る。
+読めない形に当たると、**その `def` を名指しして**、止まった項ごと断る。
 
 ## 宣言
 
@@ -29,27 +29,21 @@ structure Paginated (T : Type) where
   total : Int
   deriving Enc
 
-@[verified]
+@[ship]
 def orderTotal (unitPrice quantity : Int) : Int := unitPrice * quantity
 
-declarations%
-
-def program : Program := program%
-
-certificates%
-
-#eval program.check
+ship_package
 ```
 
-- **`@[verified]` を付けた `def` だけが出荷される。** 付けない `def` は補助として使えるが、
+- **`@[ship]` を付けた `def` だけが出荷される。** 付けない `def` は補助として使えるが、
   呼び出すと「証明書が無い」と断られる。
 - **型は `deriving Enc` が要る。** `Enc` が、その型が `Value` のどこに載るかを書き、
   `TypeDef` をプログラムに出す。`==` を使うなら `deriving DecidableEq, Enc`。
 - 引数には名前が要る。`def f : Role → Int | .guest => 0` の形はパラメタ名が付かないので断られる。
-- `declarations%` が、それより上の `@[verified] def` から宣言を読み出す。`program%` はそれを集め、
-  呼び出しが前へ進む順に並べる（書く順序は問わない）。`certificates%` が、宣言 1 本につき
-  「この宣言はこの `def` を計算する」の証明を書く。**証明書の無い宣言は `lean2js` が出荷しない。**
-- `#eval program.check` は、`lean2js` がベクタを走らせる前に断る条件を `lake build` の側に置いたもの。
+- 印を付けると、その場で宣言が読み出される。`ship_package` はそれより上の宣言を集めて呼び出しが
+  前へ進む順に並べ（書く順序は問わない）、宣言 1 本につき「この宣言はこの `def` を計算する」の証明を
+  書く。**証明書の無い宣言は `lean2js` が出荷しない。**
+- `ship_package` は、`lean2js` がベクタを走らせる前に断る条件も `lake build` の側で先に見る。
 
 ## 型
 
@@ -140,8 +134,8 @@ Arr.get xs 0                          添字
 priced tenPercentOff amount           宣言を関数として渡す
 ```
 
-- 呼び出せるのは、**同じ名前空間の `@[verified] def` で、証明書が先に書かれているもの**だけ。
-  `certificates%` が呼ばれる順に並べるので、書く順序は問わない。
+- 呼び出せるのは、**同じ名前空間の `@[ship] def`** だけ。`ship_package` が呼ばれる順に並べるので、
+  書く順序は問わない。
 - 関数として渡せるのは**宣言の名前だけ**。その場のラムダは渡せない。
 
 ### 配列・文字列・辞書
@@ -163,13 +157,13 @@ priced tenPercentOff amount           宣言を関数として渡す
 
 - **呼び出しは循環できない。** Lean 自身が相互再帰の `def` を断るので、循環は書く前に止まる。
   繰り返しは配列の走査（`.map` / `.filter` / `.foldl` …）が受け持つ。
-- **関数は値にならない。** 渡せるのは宣言の名前だけで、`program%` は渡される宣言を渡し先の宣言より
+- **関数は値にならない。** 渡せるのは宣言の名前だけで、`ship_package` は渡される宣言を渡し先の宣言より
   前に並べる。`xs.map double` は書けない —— 走査が取るのはラムダの構文であって値ではない。
 - **関数を引数に取る宣言は公開されない。** 公開境界に関数型は出せないので、`.d.ts` にも
   `index.js` の輸出にも現れず、内部からだけ呼ばれる。取れる関数は 1 引数のものだけ。
 - **型パラメタは `Type` だけ。** `Paginated (T : Type)` は書けるが、`Type 1` や型クラス制約は入らない。
 - **燃料の上限。** 必要な燃料は式の深さと宣言の本数から決まり、10000 を超えるプログラムは書き出せない。
-  `#eval program.check` がこれを見る。
+  `ship_package` がこれを見る。
 
 ## サブセットの外に出たとき
 

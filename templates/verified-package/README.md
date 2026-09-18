@@ -28,7 +28,7 @@ lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケー
 | --- | --- |
 | `lakefile.toml` | `Lean2Js` への依存。`rev` を固定すると処理系の版が固定される |
 | `MyLogic.lean` | 業務ロジック（普通の Lean の `def`）、定理、`lean2js` が読む manifest |
-| [`SYNTAX.md`](SYNTAX.md) | `@[verified]` を付けた `def` の中に書ける Lean の全部 |
+| [`SYNTAX.md`](SYNTAX.md) | `@[ship]` を付けた `def` の中に書ける Lean の全部 |
 
 `dist/` に出るのは `index.js` / `index.js.map` / `index.d.ts` / `<パッケージ名の末尾>.lean2js` /
 `proof-manifest.json` / `README.md` / `package.json`。生成される `README.md` は
@@ -37,13 +37,13 @@ lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケー
 ## 書き換えるところ
 
 - `MyLogic.lean` の `def`（`invoiceFor` と、それが呼ぶ `invoiceLines` / `discountOn` …）を自分のものに
-  置き換える。出荷するものには `@[verified]` を付ける。`declarations%` がそこから宣言を読み出し、
-  `program%` が集めて呼び出しが前へ進む順に並べ、`certificates%` が宣言ごとの証明書を書く。
-  この 3 行より下に書いた `def` は集まらず、`lean2js` が落ちる。
+  置き換える。出荷するものには `@[ship]` を付ける —— 印を付けた時点で宣言が読み出され、
+  `ship_package` がそれを集めて呼び出しが前へ進む順に並べ、宣言ごとの証明書を書く。
+  この行より下に書いた `def` は集まらず、`lean2js` が落ちる。
   書ける Lean は [`SYNTAX.md`](SYNTAX.md) —— **受け付けるのは Lean の狭い部分集合**で、
   読めない形は `def` を名指しして断られる
-- `#eval program.check` はそのまま残す。`lean2js` がベクタを走らせる前に断る条件
-  （燃料の上限、コンパイルできない宣言）を `lake build` の側で先に落とす
+- `ship_package` はそのまま残す。`lean2js` がベクタを走らせる前に断る条件（燃料の上限、
+  コンパイルできない宣言）を `lake build` の側で先に落とすのも、この行
 - 定理を書く。**名前空間の公開定理はすべて、成果物の定理として載る。** 文言は Lean が定理に対して
   印字するシグネチャで、docstring があれば説明として添えられる。載せたくない補題は `private` にする
 - `manifest` の `package` / `version` が、生成される `package.json` にそのまま入る

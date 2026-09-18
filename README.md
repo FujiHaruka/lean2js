@@ -106,35 +106,29 @@ inductive Plan where
   | enterprise
   deriving Enc
 
-@[verified]
+@[ship]
 def includedSeats (plan : Plan) : Int :=
   match plan with
   | .free => 3
   | .team => 5
   | .enterprise => 25
 
-@[verified]
+@[ship]
 def seatPrice (plan : Plan) : Int :=
   match plan with
   | .free => 0
   | .team => 1200
   | .enterprise => 2500
 
-@[verified]
+@[ship]
 def billableSeats (plan : Plan) (seats : Int) : Int :=
   max (max seats 0 - includedSeats plan) 0
 
-@[verified]
+@[ship]
 def seatCharge (plan : Plan) (seats : Int) : Int :=
   seatPrice plan * billableSeats plan seats
 
-declarations%
-
-def program : Program := program%
-
-certificates%
-
-#eval program.check
+ship_package
 
 def manifest : Manifest := {
   package := "@example/my-logic"
@@ -157,7 +151,7 @@ dependency — you never write one. It takes a module name, reads that module's 
 
 It refuses rather than writes when the program reaches outside what it can stand behind: a vector on
 which the generated JavaScript and the reference semantics disagree, a theorem resting on `sorry`, a
-declaration without a certificate or one `program%` did not gather, or a program past the fuel the
+declaration without a certificate or one `ship_package` did not gather, or a program past the fuel the
 artifact runs at. Nothing lands in `--out` when it refuses, and the vectors are never left behind.
 
 `templates/verified-package/` is this package with the rest of the example — a discount type, an
@@ -166,7 +160,7 @@ Copy it and start replacing declarations.
 
 ## Writing the logic
 
-**You write ordinary Lean, and `@[verified]` marks what ships.** The subset is narrow — no `Array` or
+**You write ordinary Lean, and `@[ship]` marks what ships.** The subset is narrow — no `Array` or
 `String` API from Lean, no lambdas outside traversals, no recursion, no type classes — and a `def`
 that leaves it is refused by name, with the term the walk stopped at.
 [`SYNTAX.md`](templates/verified-package/SYNTAX.md) is the whole of it.
@@ -178,7 +172,7 @@ inductive Discount where
   | amountOff (amount : Int)
   deriving Enc
 
-@[verified]
+@[ship]
 def discountOn (discount : Discount) (subtotal : Int) : Int :=
   match discount with
   | .noDiscount => 0
@@ -187,7 +181,7 @@ def discountOn (discount : Discount) (subtotal : Int) : Int :=
     Int53.div (max subtotal 0 * rate) 100
   | .amountOff amount => min (max amount 0) (max subtotal 0)
 
-@[verified]
+@[ship]
 def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String Invoice :=
   if seats < 0 then .error "a seat count cannot be negative"
   else if seats > 10000 then .error "a seat count above 10000 needs a sales contract"
@@ -198,9 +192,9 @@ def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String
     .ok (Invoice.Invoice lines subtotal off (subtotal - off))
 ```
 
-`declarations%` reads a declaration out of every marked `def`, `program%` gathers them in an order
-where every call goes backwards, and `certificates%` writes, per declaration, the proof that it
-computes the `def` it was read from. **A declaration without one does not ship** — there is no way to
+Marking a `def` reads a declaration out of it, and `ship_package` gathers them in an order where
+every call goes backwards and writes, per declaration, the proof that it computes the `def` it was read
+from. **A declaration without one does not ship** — there is no way to
 hand the compiler an AST it has not read out of Lean.
 
 The subset is the part of Lean whose correspondence to JavaScript is unambiguous, which is what makes
@@ -212,7 +206,7 @@ a small trusted base and a correctness proof affordable:
 | `inductive` and `structure` with `deriving Enc`, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
 | List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`) and `match` (nested, wildcard, literal) | Metaprogramming |
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
-| Pure `def`s marked `@[verified]` | Recursion / non-termination / DOM access |
+| Pure `def`s marked `@[ship]` | Recursion / non-termination / DOM access |
 | A declaration passed to another as a function | Functions as values: lambdas outside traversals, closures, function types on the public boundary |
 | Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.split` / `Str.substring`) | Regular expressions |
 | `Dict V` (string keys, emitted as a `Map`: `get` / `set` / `has` / `erase` / `keys` / `values`) | Plain objects used as dictionaries |
@@ -241,7 +235,7 @@ theorem free_plan_is_never_charged (seats : Int) : seatCharge .free seats = 0 :=
   simp [seatCharge, seatPrice]
 ```
 
-What carries that down to the shipped JavaScript is the certificate `certificates%` wrote beside the
+What carries that down to the shipped JavaScript is the certificate `ship_package` wrote beside the
 declaration: it says the function the package exports computes this very `def`. The rest — that the
 generated code agrees with the reference semantics, throws the same codes, and refuses at the
 boundary what the semantics would not accept — is proved once, about every program.

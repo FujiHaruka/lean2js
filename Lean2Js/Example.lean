@@ -9,9 +9,9 @@ import Lean2Js.Verified
 /-!
 # Business logic written in Lean, and the theorems proved about it
 
-Ordinary Lean `def`s, each marked `@[verified]`, and the theorems proved about them. `declarations%`
-reads a declaration out of every marked `def`, `program%` gathers them, and `certificates%` writes the
-proof that each declaration denotes the `def` it was read from.
+Ordinary Lean `def`s, each marked `@[ship]`, and the theorems proved about them. Marking a `def` reads
+a declaration out of it, and `ship_package` gathers them into the program and writes the proof that each
+declaration denotes the `def` it was read from.
 
 The `program` placed here is what ships as `packages/verified-example`.
 -/
@@ -20,17 +20,17 @@ namespace Lean2Js.Example
 
 open Core Enc
 
-@[verified]
+@[ship]
 def add (a b : Int) : Int := a + b
 
 /-- Clamps a quantity to at least 1 and at most upper. -/
-@[verified]
+@[ship]
 def clampQuantity (quantity upper : Int) : Int :=
   if quantity < 1 then 1 else if quantity > upper then upper else quantity
 
 /-- The amount of a line item. The quantity is clamped before multiplying, so a negative quantity never
 makes the amount negative. -/
-@[verified]
+@[ship]
 def lineTotal (unitPrice quantity : Int) : Int := unitPrice * clampQuantity quantity 999
 
 inductive Role where
@@ -39,7 +39,7 @@ inductive Role where
   | admin
   deriving Enc
 
-@[verified]
+@[ship]
 def roleRank (role : Role) : Int :=
   match role with
   | .guest => 0
@@ -47,184 +47,184 @@ def roleRank (role : Role) : Int :=
   | .admin => 2
 
 /-- The amount of every line of an order at one unit price. -/
-@[verified]
+@[ship]
 def lineTotals (unitPrice : Int) (quantities : List Int) : List Int :=
   quantities.map (fun quantity => lineTotal unitPrice quantity)
 
-@[verified]
+@[ship]
 def anyOverLimit (amounts : List Int) (limit : Int) : Bool :=
   amounts.foldl (fun seen amount => if seen then true else amount > limit) false
 
 /-- The first line that breaks the limit. Lines after it are never looked at. -/
-@[verified]
+@[ship]
 def firstOverLimit (amounts : List Int) (limit : Int) : Option Int :=
   amounts.find? (fun amount => amount > limit)
 
-@[verified]
+@[ship]
 def everyLineWithinLimit (amounts : List Int) (limit : Int) : Bool :=
   amounts.all (fun amount => amount ≤ limit)
 
-@[verified]
+@[ship]
 def someLineIsFree (amounts : List Int) : Bool := amounts.any (fun amount => amount == 0)
 
 /-- One window of a list. A window reaching past the end is refused rather than shortened. -/
-@[verified]
+@[ship]
 def pageOf (xs : List Int) (lo hi : Int) : List Int := Arr.slice xs lo hi
 
-@[verified]
+@[ship]
 def mostRecentFirst (events : List String) : List String := events.reverse
 
-@[verified]
+@[ship]
 def combinedCart (saved added : List Int) : List Int := saved ++ added
 
 /-- An out-of-range read traps rather than yielding `undefined`. -/
-@[verified]
+@[ship]
 def headOr (xs : List Int) (fallback : Int) : Int :=
   if Arr.length xs < 1 then fallback else Arr.get xs 0
 
-@[verified]
+@[ship]
 def slugOf («prefix» name : String) : String := «prefix» ++ "-" ++ name
 
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
-@[verified]
+@[ship]
 def sortsBefore (a b : String) : Bool := a < b
 
 /-- Whether a free-text note mentions a search term, ignoring case. -/
-@[verified]
+@[ship]
 def mentionsTerm (text term : String) : Bool := Str.includes (Str.lower text) (Str.lower term)
 
 /-- A coupon code as it is stored: the campaign prefix and what the customer typed, upper-cased and with
 the surrounding whitespace gone. -/
-@[verified]
+@[ship]
 def storedCoupon (campaign entered : String) : String := Str.upper (Str.trim (campaign ++ entered))
 
 /-- Whether a coupon belongs to a campaign, comparing the way the codes are stored. -/
-@[verified]
+@[ship]
 def couponApplies (code campaign : String) : Bool :=
   Str.startsWith (Str.lower (Str.trim code)) (Str.lower (Str.trim campaign))
 
 /-- How many columns a line of an uploaded file carries. An empty separator leaves the line whole rather
 than cutting it into characters. -/
-@[verified]
+@[ship]
 def fieldCount (row separator : String) : Int := Arr.length (Str.split row separator)
 
 /-- A label cut to fit, counted in code points so a surrogate pair is never split in half. A negative
 limit has no string to return and fails the way an out-of-range index does. -/
-@[verified]
+@[ship]
 def truncateLabel (label : String) (limit : Int) : String :=
   if Str.length label ≤ limit then label else Str.substring label 0 limit ++ "..."
 
 /-- Whether an uploaded file is a spreadsheet, compared the way the names are stored. -/
-@[verified]
+@[ship]
 def isSpreadsheet (fileName : String) : Bool :=
   Str.endsWith (Str.lower (Str.trim fileName)) ".csv"
 
 /-- What a role may do in a day and in a month. -/
-@[verified]
+@[ship]
 def limitsFor (role : Role) : Dict Int :=
   match role with
   | .guest => Dict.ofList [("daily", 10), ("monthly", 100)]
   | .member => Dict.ofList [("daily", 100), ("monthly", 3000)]
   | .admin => Dict.ofList [("daily", 1000), ("monthly", 30000)]
 
-@[verified]
+@[ship]
 def priceOf (prices : Dict Int) (sku : String) : Option Int := prices.get sku
 
-@[verified]
+@[ship]
 def isListed (prices : Dict Int) (sku : String) : Bool := prices.has sku
 
 /-- The price book after one price change. A sku already in the book keeps its place. -/
-@[verified]
+@[ship]
 def repriced (prices : Dict Int) (sku : String) (amount : Int) : Dict Int := prices.set sku amount
 
-@[verified]
+@[ship]
 def listedSkus (prices : Dict Int) : List String := prices.keys
 
-@[verified]
+@[ship]
 def listedPrices (prices : Dict Int) : List Int := prices.values
 
 /-- The price book after a sku is withdrawn. A sku that was never listed leaves the book unchanged. -/
-@[verified]
+@[ship]
 def withdrawn (prices : Dict Int) (sku : String) : Dict Int := prices.erase sku
 
-@[verified]
+@[ship]
 def catalogueSize (prices : Dict Int) : Int := prices.size
 
 /-- Truncating division. Division by zero traps on the JS side too. -/
-@[verified]
+@[ship]
 def divide (a b : Int) : Int := Int53.div a b
 
-@[verified]
+@[ship]
 def remainder (a b : Int) : Int := Int53.mod a b
 
-@[verified]
+@[ship]
 def negate (a : Int) : Int := -a
 
-@[verified]
+@[ship]
 def priceGap (a b : Int) : Int := Int53.abs (a - b)
 
 /-- The amount after a percent% discount. The remainder is truncated. -/
-@[verified]
+@[ship]
 def discounted (amount percent : Int) : Int :=
   let rate : Int := 100 - (if percent < 0 then 0 else if percent > 100 then 100 else percent)
   Int53.div (amount * rate) 100
 
-@[verified]
+@[ship]
 def tenPercentOff (amount : Int) : Int := amount - Int53.div amount 10
 
 /-- Binds the same name twice. ESM runs in strict mode, so emitting `const` twice would fail at import
 time. -/
-@[verified]
+@[ship]
 def rebindTwice (amount : Int) : Int :=
   let amount := amount + 1
   let amount := amount * 2
   amount
 
-@[verified]
+@[ship]
 def noDiscount (amount : Int) : Int := amount
 
 /-- Charges an amount under a pricing rule the caller picks. Taking a function keeps it off the public
 API: there is no way to check at the boundary that one handed in from JS is pure. -/
-@[verified]
+@[ship]
 def priced (rule : Int → Int) (amount : Int) : Int := rule amount
 
-@[verified]
+@[ship]
 def memberPrice (amount : Int) : Int := priced tenPercentOff amount
 
-@[verified]
+@[ship]
 def guestPrice (amount : Int) : Int := priced noDiscount amount
 
-@[verified]
+@[ship]
 def mixChannels (a b : UInt32) : UInt32 := a * b + (a - b)
 
-@[verified]
+@[ship]
 def bucketOf (key buckets : UInt32) : UInt32 := key % buckets
 
 /-- A channel value held between a floor and a ceiling. -/
-@[verified]
+@[ship]
 def clampChannel (value lo hi : UInt32) : UInt32 := min (max value lo) hi
 
-@[verified]
+@[ship]
 def scaleFee (fee factor : BigInt) : BigInt := fee * factor - 1
 
-@[verified]
+@[ship]
 def bigQuotient (a b : BigInt) : BigInt := BigInt.div a b
 
-@[verified]
+@[ship]
 def sameLabel (a b : String) : Bool := a == b
 
 /-- Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated. -/
-@[verified]
+@[ship]
 def safeQuotientIsPositive (a b : Int) : Bool := b != 0 && Int53.div a b > 0
 
-@[verified]
+@[ship]
 def canCheckout (signedIn : Bool) (cartTotal stock : Int) : Bool :=
   signedIn && cartTotal > 0 && stock ≥ 1
 
-@[verified]
+@[ship]
 def cappedCharge (amount budget : Int) : Int := min amount budget
 
-@[verified]
+@[ship]
 def atLeast (amount floor : Int) : Int := max amount floor
 
 /-- The constructor is named so that the subset reads it as `Money`; Lean's default `mk` would make the
@@ -244,27 +244,27 @@ inductive OrderState where
 
 /-- Amounts in different currencies cannot be added. `===` is unusable on the JS side, so a structural
 equality helper is called. -/
-@[verified]
+@[ship]
 def addMoney (a b : Money) : Except String Money :=
   if a.currency != b.currency then .error "currency mismatch"
   else .ok (Money.Money (a.amount + b.amount) a.currency)
 
-@[verified]
+@[ship]
 def sameMoney (a b : Money) : Bool := a == b
 
-@[verified]
+@[ship]
 def currenciesOf (items : List Money) : List String := items.map (fun item => item.currency)
 
 /-- Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix
 them. -/
-@[verified]
+@[ship]
 def cartTotal (items : List Money) : Int :=
   items.foldl (fun subtotal item => subtotal + item.amount) 0
 
-@[verified]
+@[ship]
 def total (xs : List Int) : Int := xs.foldl (fun sum x => sum + x) 0
 
-@[verified]
+@[ship]
 def trackingOf (state : OrderState) : Option String :=
   match state with
   | .draft => none
@@ -272,7 +272,7 @@ def trackingOf (state : OrderState) : Option String :=
   | .shipped _ trackingId => some trackingId
   | .cancelled _ => none
 
-@[verified]
+@[ship]
 def canRefund (role : Role) (state : OrderState) : Bool :=
   match state with
   | .draft => false
@@ -280,17 +280,17 @@ def canRefund (role : Role) (state : OrderState) : Bool :=
   | .shipped _ _ => roleRank role ≥ 2
   | .cancelled _ => false
 
-@[verified]
+@[ship]
 def firstTracking (states : List OrderState) : Option String :=
   if Arr.length states == 0 then none else trackingOf (Arr.get states 0)
 
 /-- The orders this role may still refund. The predicate reads `role` from outside the lambda. -/
-@[verified]
+@[ship]
 def refundableOnly (role : Role) (states : List OrderState) : List OrderState :=
   states.filter (fun state => canRefund role state)
 
 /-- The state transition to shipped. Rejects states that cannot transition and an empty tracking id. -/
-@[verified]
+@[ship]
 def ship (state : OrderState) (trackingId : String) : Except String OrderState :=
   match state with
   | .draft => .error "a draft order cannot ship"
@@ -301,7 +301,7 @@ def ship (state : OrderState) (trackingId : String) : Except String OrderState :
   | .cancelled _ => .error "a cancelled order cannot ship"
 
 /-- The label shown next to a line item. -/
-@[verified]
+@[ship]
 def quantityLabel (quantity : Int) : String :=
   match quantity with
   | 0 => "out of stock"
@@ -309,7 +309,7 @@ def quantityLabel (quantity : Int) : String :=
   | _ => "in stock"
 
 /-- Whether a subscription carries on. Both cases are named, so no fallback is needed. -/
-@[verified]
+@[ship]
 def renewalLabel (autoRenew : Bool) : String :=
   match autoRenew with
   | true => "renews"
@@ -317,7 +317,7 @@ def renewalLabel (autoRenew : Bool) : String :=
 
 /-- An amount of zero is free whatever the currency, and an amount carrying no currency cannot be
 charged at all. -/
-@[verified]
+@[ship]
 def chargeable (amount : Money) : Bool :=
   match amount with
   | Money.Money 0 _ => false
@@ -326,7 +326,7 @@ def chargeable (amount : Money) : Bool :=
 
 /-- The shipping line shown once a transition has been attempted. A draft or cancelled order has nothing
 to show, so one arm reaches past `ok` and leaves the state itself open. -/
-@[verified]
+@[ship]
 def settleMessage (outcome : Except String OrderState) : String :=
   match outcome with
   | .ok (OrderState.shipped _ trackingId) => trackingId
@@ -335,7 +335,7 @@ def settleMessage (outcome : Except String OrderState) : String :=
   | .error message => message
 
 /-- A role with no daily limit recorded may do nothing. -/
-@[verified]
+@[ship]
 def dailyLimit (role : Role) : Int :=
   match (limitsFor role).get "daily" with
   | some value => value
@@ -358,33 +358,29 @@ inductive Validated (E A : Type) where
   deriving Enc
 
 /-- How many results lie beyond the page in hand. -/
-@[verified]
+@[ship]
 def remainingItems (page : Paginated Money) : Int := page.total - Arr.length page.items
 
 /-- The whole list served as a single page. -/
-@[verified]
+@[ship]
 def firstPage (amounts : List Int) : Paginated Int :=
   Paginated.Paginated amounts (Arr.length amounts)
 
 /-- Accepts an order quantity or says why it was refused. -/
-@[verified]
+@[ship]
 def validateQuantity (quantity : Int) : Validated String Int :=
   if quantity < 1 then .invalid ["a quantity must be at least 1"]
   else if quantity > 999 then .invalid ["a quantity may not exceed 999"]
   else .valid quantity
 
 /-- The line shown once a quantity has been checked. -/
-@[verified]
+@[ship]
 def validationMessage (outcome : Validated String Int) : String :=
   match outcome with
   | .valid value => quantityLabel value
   | .invalid errors => if Arr.length errors == 0 then "refused" else Arr.get errors 0
 
-declarations%
-
-def program : Program := program%
-
-certificates%
+ship_package
 
 
 private theorem find_add : program.find? "add" = some addDecl := rfl

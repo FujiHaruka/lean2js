@@ -400,17 +400,15 @@ ahead of the callee it is handed to. A cycle cannot be written at all — Lean t
 
 namespace Gathered
 
-@[verified] def withRule (rule : Int → Int) (x : Int) : Int := rule x
+@[ship] def withRule (rule : Int → Int) (x : Int) : Int := rule x
 
-@[verified] def base (x : Int) : Int := x + 1
+@[ship] def base (x : Int) : Int := x + 1
 
-@[verified] def twice (x : Int) : Int := base x * 2
+@[ship] def twice (x : Int) : Int := base x * 2
 
-@[verified] def lateCaller (x : Int) : Int := withRule base x + twice x
+@[ship] def lateCaller (x : Int) : Int := withRule base x + twice x
 
 private def unshipped (x : Int) : Int := x
-
-declarations%
 
 def program : Program := program%
 

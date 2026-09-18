@@ -84,28 +84,28 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
   for n in ofType ``Core.Decl do
     let d ← evalConstCheck Core.Decl ``Core.Decl n
     unless program.decls.any (·.name == d.name) do
-      throwError "{n} is not in {programConst}, so it would not ship: program% gathers only what is \
-        declared above it"
+      throwError "{n} is not in {programConst}, so it would not ship: `ship_package` gathers only \
+        what is declared above it"
   for n in ofType ``Core.TypeDef do
     let t ← evalConstCheck Core.TypeDef ``Core.TypeDef n
     unless program.types.any (·.name == t.name) do
-      throwError "{n} is not in {programConst}, so it would not ship: program% gathers only what is \
-        declared above it"
+      throwError "{n} is not in {programConst}, so it would not ship: `ship_package` gathers only \
+        what is declared above it"
   let mut certificates : Array Name := #[]
   for (n, _) in members do
-    unless Core.Dsl.verifiedAttr.hasTag (← getEnv) n do continue
+    unless Core.Dsl.shipAttr.hasTag (← getEnv) n do continue
     let declName := Core.Dsl.declNameFor n
     unless (← getEnv).contains declName do
-      throwError "{n} is marked `@[verified]` but {declName} is not in scope, so the walk never read \
-        it: `declarations%` writes it, and only what stands above it"
+      throwError "{n} is marked `@[ship]` but {declName} is not in scope, so the walk never read \
+        it: marking a `def` is what reads it"
     let d ← evalConstCheck Core.Decl ``Core.Decl declName
     unless program.decls.any (·.name == d.name) do
-      throwError "{n} is marked `@[verified]` but {programConst} does not carry it: program% gathers \
-        only what is declared above it"
+      throwError "{n} is marked `@[ship]` but {programConst} does not carry it: `ship_package` \
+        gathers only what is declared above it"
     let cert := Core.Dsl.certificateNameFor n
     unless ((← getEnv).find? cert) matches some (.thmInfo _) do
-      throwError "{n} is marked `@[verified]` but {cert} is not in scope, so nothing says the \
-        declaration the program carries computes it: `certificates%` writes it"
+      throwError "{n} is marked `@[ship]` but {cert} is not in scope, so nothing says the \
+        declaration the program carries computes it: `ship_package` writes it"
     certificates := certificates.push cert
   let allowed := String.intercalate ", " (allowedAxioms.map toString)
   let theorems := members.filterMap fun (n, info) =>

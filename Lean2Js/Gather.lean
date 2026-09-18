@@ -1,6 +1,7 @@
 import Lean.DeclarationRange
 import Lean.Elab.Term
 import Lean2Js.Core
+import Lean2Js.Reify
 
 /-!
 # What a package is made of
@@ -17,11 +18,34 @@ namespace Lean2Js.Core.Dsl
 
 open Elab Term Meta
 
-/-- The `def`s a package ships. A declaration reaches the program only by being read out of one of these,
-so there is no way to put an AST into a program without the walk that proves what it denotes. -/
-initialize verifiedAttr : TagAttribute ←
-  registerTagAttribute `verified
+/-- The declaration read out of a `def` the package ships. -/
+def declNameFor (n : Name) : Name := n.appendAfter "Decl"
+
+/-- The certificate for a `def` the package ships. -/
+def certificateNameFor (n : Name) : Name := n.appendAfter "_certificate"
+
+/-- The walk runs here, on the `def` itself, so a `def` that leaves the subset is refused where it is
+written rather than wherever the package is assembled. -/
+private def readDeclaration (n : Name) : CoreM Unit := do
+  let value ← MetaM.run' <| TermElabM.run' <| withoutErrToSorry <| withDeclName n do
+    let e ← elabTerm (← `(reify_decl% $(mkCIdent n))) (some (mkConst ``Core.Decl))
+    synthesizeSyntheticMVarsNoPostponing
+    instantiateMVars e
+  addAndCompile (.defnDecl {
+    name := declNameFor n, levelParams := [], type := mkConst ``Core.Decl, value
+    hints := .abbrev, safety := .safe })
+  setReducibleAttribute (declNameFor n)
+
+/-- The `def`s a package ships. Marking one reads the declaration out of it, so a declaration reaches the
+program only through the walk that proves what it denotes: there is no way to put an AST into a program by
+hand.
+
+The mark is not `@[export]`: Lean's own `@[export]` names a C symbol, and whether a declaration leaves the
+generated module is decided by its type (`Decl.isPublic`) rather than by anything written above it. -/
+initialize shipAttr : TagAttribute ←
+  registerTagAttribute `ship
     "ship this `def`: the program carries the declaration read out of it, and its certificate"
+    (validate := readDeclaration) (applicationTime := .afterCompilation)
 
 /-- The constants a package is made of: those declared directly in `ns`, in the order they were written.
 Private ones and the ones Lean generates are left out, which is how a helper stays out of the package. -/
@@ -42,6 +66,12 @@ private unsafe def evalDeclUnsafe (n : Name) : CoreM Core.Decl :=
 
 @[implemented_by evalDeclUnsafe]
 private opaque evalDecl (n : Name) : CoreM Core.Decl
+
+private unsafe def evalProgramUnsafe (n : Name) : CoreM Core.Program :=
+  evalConstCheck Core.Program ``Core.Program n
+
+@[implemented_by evalProgramUnsafe]
+opaque evalProgram (n : Name) : CoreM Core.Program
 
 private def subterms : Core.Expr → List Core.Expr
   | .lit _ | .var _ | .fnRef _ | .noneE _ => []
@@ -87,12 +117,6 @@ private partial def placeAfterPrerequisites (edges : List (String × String))
         placed ← placeAfterPrerequisites edges decls (name :: path) placed e
   return placed.push d
 
-/-- The declaration read out of a `def` the package ships. -/
-def declNameFor (n : Name) : Name := n.appendAfter "Decl"
-
-/-- The certificate for a `def` the package ships. -/
-def certificateNameFor (n : Name) : Name := n.appendAfter "_certificate"
-
 /-- What `ns` ships, ordered so that every call goes backwards and otherwise in the order the `def`s
 were written. -/
 def shipped (ns : Name) : CoreM (Array Shipped) := do
@@ -100,10 +124,10 @@ def shipped (ns : Name) : CoreM (Array Shipped) := do
   let members ← namespaceMembers ns
   let mut decls := #[]
   for (n, _) in members do
-    unless verifiedAttr.hasTag env n do continue
+    unless shipAttr.hasTag env n do continue
     let d := declNameFor n
     unless env.contains d do
-      throwError "{n} is marked `@[verified]` but {d} is not in scope — `declarations%` writes it"
+      throwError "{n} is marked `@[ship]` but {d} is not in scope, so the walk never read it"
     decls := decls.push { source := n, decl := d, value := ← evalDecl d }
   let edges := decls.toList.flatMap fun d => orderings d.value.name d.value.body
   decls.foldlM (placeAfterPrerequisites edges decls []) #[]

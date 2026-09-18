@@ -1,22 +1,24 @@
+import Lean2Js.Emit
 import Lean2Js.Gather
 import Lean2Js.Reify
 
 /-!
 # What an author writes next to a `def`
 
-A package is a namespace of ordinary Lean `def`s, each marked `@[verified]`. Two commands turn that into
-a package: one reads a declaration out of every marked `def`, and the other writes the certificate that
-says the declaration denotes that `def`. Neither is a shortcut — both go through the same walk, which
-emits the proof along with the AST, so a declaration cannot reach the program without one.
+A package is a namespace of ordinary Lean `def`s, each marked `@[ship]`, and one `ship_package` under
+them. Marking a `def` reads the declaration out of it; `ship_package` gathers those into the program,
+writes the certificate saying each one denotes the `def` it came from, and puts up the wall `emit` puts
+up. None of it is a shortcut — the declarations and the certificates come out of the same walk, so a
+declaration cannot reach the program without one.
 
-The two are separate because a certificate names the program: a declaration that calls another goes
-through `p.find?`, so the program has to exist before the certificates and after the declarations.
+The certificates are written after the program because a certificate names it: a declaration that calls
+another goes through `p.find?`.
 -/
 
 namespace Lean2Js.Verified
 
 open Lean Elab Command Term Meta
-open Lean2Js.Core.Dsl (namespaceMembers verifiedAttr shipped declNameFor certificateNameFor)
+open Lean2Js.Core.Dsl (namespaceMembers shipped certificateNameFor evalProgram)
 
 /-- A parameter's type, written back as syntax. The commands are elaborated after this one's term
 context is gone, so what `exprToSyntax` produces does not survive; the type is written from the constant
@@ -29,18 +31,6 @@ private partial def typeStx (α : Lean.Expr) : TermElabM Term := do
     let args ← α.getAppArgs.mapM typeStx
     if args.isEmpty then return mkCIdent c else `($(mkCIdent c) $args*)
   | _ => throwError "certificates%: a parameter of type {α} is not one the subset reads"
-
-/-- The declaration read out of every `def` the package ships. -/
-syntax "declarations%" : command
-
-elab_rules : command
-  | `(command| declarations%) => do
-    let ns ← getCurrNamespace
-    for (n, _) in ← liftCoreM (namespaceMembers ns) do
-      unless verifiedAttr.hasTag (← getEnv) n do continue
-      let short := n.replacePrefix ns .anonymous
-      elabCommand (← `(command| abbrev $(mkIdent (declNameFor short)) : Lean2Js.Core.Decl :=
-        reify_decl% $(mkCIdent n)))
 
 private def certificateOf (ns programName source declName : Name) : CommandElabM (TSyntax `command) :=
   liftTermElabM do
@@ -95,5 +85,19 @@ elab_rules : command
       | throwError "certificates% needs the program, and {ns} declares none — `program%` writes it"
     for d in ← liftCoreM (shipped ns) do
       elabCommand (← certificateOf ns programName d.source d.decl)
+
+/-- The package: the program gathered from the `def`s marked above, a certificate for each declaration in
+it, and what `emit` refuses by reading the program alone, asked here where it costs a compile rather than
+a differential run. -/
+syntax "ship_package" : command
+
+elab_rules : command
+  | `(command| ship_package) => do
+    elabCommand (← `(command| def $(mkIdent `program) : Lean2Js.Core.Program := program%))
+    elabCommand (← `(command| certificates%))
+    let program ← liftCoreM (evalProgram ((← getCurrNamespace) ++ `program))
+    match program.checked with
+    | .error e => throwError e
+    | .ok _ => pure ()
 
 end Lean2Js.Verified
