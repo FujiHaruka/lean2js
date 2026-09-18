@@ -307,6 +307,18 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 `strBin` の場合は op で分けて、落ちる側は `strBin_err_indexOf` と `eventuallyErr_call2_helper` で
 JS 側の同じ失敗に繋いだ。**`repeat` も同じ形を持つ**（長さが伸びる）ので、この分岐はそのまま使える。
 
+**`repeat` と `padStart` はヘルパの言語に無い形を要求する**（2026-09-19 に測った）。`Helper.Stmt` の
+繰り返しは `forOf` 1 つだけで、回数で回るループが無い。`join` と `replace` は配列を回るので今の
+言語で書けるが、`repeat s n` は n 回、`padStart` は不足ぶんだけ回す必要がある。**道は 2 つ**:
+
+- **`String.prototype.repeat` を模型のメソッドに足す**（メソッド 13 → 14 種）。JS の `repeat` は
+  UTF-16 単位を数えないので、コードポイントの基準と食い違わない。`padStart` も
+  `repeat` + `substring` で書けるようになるので、1 つ足せば 2 つ通る。**TCB は 1 行増える。**
+- **`Helper.Stmt` に回数で回るループを足す。** TCB は増えないが、`HelperSem` の評価器と
+  `HelperProof` の `walk` に新しい形が 1 つ増える。
+
+**先に `join` と `replace` を入れて、この判断は `repeat` に当たったときにする。**
+
 **触る場所**: 上の一式 × 4。ここがこの計画でいちばん重い。**1 つずつ入れて、1 つ入るたびに
 ゲートを全部通す。**
 
