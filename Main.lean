@@ -93,6 +93,7 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
         what is declared above it"
   let mut certificates : Array Name := #[]
   let mut certified : Array String := #[]
+  let mut docs : Array (String × String) := #[]
   for (n, _) in members do
     unless Core.Dsl.shipAttr.hasTag (← getEnv) n do continue
     let declName := Core.Dsl.declNameFor n
@@ -109,6 +110,8 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
         declaration the program carries computes it: `ship_package` writes it"
     certificates := certificates.push cert
     certified := certified.push d.name
+    if let some doc ← findDocString? (← getEnv) n then
+      docs := docs.push (d.name, doc.trimAscii.copy)
   let uncertified := program.decls.filter (!certified.contains ·.name)
   unless uncertified.isEmpty do
     throwError "refusing to write: {programConst} carries \
@@ -131,7 +134,7 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
     return { name := toString (n.replacePrefix ns .anonymous), statement := ← statementOf ns n,
              doc := (← findDocString? (← getEnv) n).map (·.trimAscii.copy) }
   let axioms := ((used.map toString).qsort (fun a b => decide (a < b))).toList.eraseDups
-  return { manifest, program, claims, source := toString inv.module, axioms }
+  return { manifest, program, claims, source := toString inv.module, axioms, docs := docs.toList }
 
 private unsafe def run (inv : Invocation) : IO UInt32 := do
   unless (← rebuild inv.module) do return 1

@@ -94,12 +94,17 @@ def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
       ("index.js", emitted.text),
       (sourceFile, a.program.source.text),
       ("index.js.map", (sourceMapFor a.program emitted sourceFile).renderPretty ++ "\n"),
-      ("index.d.ts", Js.renderDts a.program),
+      ("index.d.ts", Js.renderDts a.program a.docs),
       ("README.md", a.toReadme),
       ("proof-manifest.json", a.toJson.renderPretty ++ "\n"),
       ("package.json", (packageJson a.manifest).renderPretty ++ "\n")]
     checkOnNode files vectors
     IO.FS.createDirAll outDir
+    -- the transcribed source is named after the package, so renaming the package would otherwise leave
+    -- the old one behind, next to a manifest that does not mention it
+    for entry in ← outDir.readDir do
+      if entry.fileName.endsWith ".lean2js" && entry.fileName != sourceFile then
+        IO.FS.removeFile entry.path
     for (name, text) in files do
       IO.FS.writeFile (outDir / name) text
     IO.println s!"wrote {a.program.publicDecls.length} exports to {outDir}"

@@ -499,6 +499,9 @@ where
   constructor's arguments. -/
   constructed (ci : ConstructorVal) (callArgs : Array Lean.Expr) : TermElabM (Term × Term) := do
     unless (← getEnv).contains (ci.induct ++ `typeDef) do
+      if ci.induct == ``Prod then
+        throwError "reify: {ci.name} builds a tuple, and the subset has no tuple type: declare a \
+          `structure` with `deriving Enc` and build that instead"
       throwError "reify: {ci.name} builds a {ci.induct}, which needs `deriving Enc` before the \
         subset has a type for it"
     let tyArgs ← (callArgs.extract 0 ci.numParams).mapM encTy

@@ -134,6 +134,11 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
       unless (← inferType a).isType do
         throwError "deriving Enc: a parameter of {t} is not a type, and the subset carries only types"
       return (← a.fvarId!.getUserName).toString
+  for c in indVal.ctors do
+    if c.getString! == "mk" then
+      throwError "deriving Enc: {c} would ship as the tag \"mk\", which says nothing to a consumer \
+        reading the generated type. Name the constructor — `structure {t.getString!} where\n  \
+        {t.getString!} ::` — and the tag is that name"
   let shapes ← liftTermElabM <| indVal.ctors.toArray.mapM fun c => shapeOf c paramNames
   let nameLit : Term := ⟨Syntax.mkStrLit t.getString!⟩
   let paramIds : Array Ident := paramNames.map fun nm => mkIdent (Name.mkSimple nm)
