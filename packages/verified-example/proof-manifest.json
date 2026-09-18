@@ -118,6 +118,18 @@
       "doc": "The part of a reference before its first separator, or the whole reference when it carries none."
     },
     {
+      "name": "joinFields",
+      "signature": "(fields : Array String, separator : String) → String",
+      "declaration": "joinFields(fields: readonly string[], separator: string): string",
+      "doc": "A row of an uploaded file written back out: the fields in order with the separator between them.\nAn empty list of fields writes an empty row."
+    },
+    {
+      "name": "referenceFrom",
+      "signature": "(parts : Array String) → String",
+      "declaration": "referenceFrom(parts: readonly string[]): string",
+      "doc": "The reference an order is filed under, built from parts that are already in hand, under the same\nseparator `referencePrefix` reads back."
+    },
+    {
       "name": "sortsBefore",
       "signature": "(a : String, b : String) → Bool",
       "declaration": "sortsBefore(a: string, b: string): boolean",

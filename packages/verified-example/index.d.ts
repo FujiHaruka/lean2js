@@ -148,6 +148,22 @@ export declare function separatorAt(reference: string, sep: string): Option<numb
 export declare function referencePrefix(reference: string): string;
 
 /**
+ * A row of an uploaded file written back out: the fields in order with the separator between them.
+ * An empty list of fields writes an empty row.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function joinFields(fields: readonly string[], separator: string): string;
+
+/**
+ * The reference an order is filed under, built from parts that are already in hand, under the same
+ * separator `referencePrefix` reads back.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function referenceFrom(parts: readonly string[]): string;
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.

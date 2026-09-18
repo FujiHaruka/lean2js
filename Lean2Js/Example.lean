@@ -111,6 +111,16 @@ def referencePrefix (reference : String) : String :=
   | some i => Str.substring reference 0 i
   | none => reference
 
+/-- A row of an uploaded file written back out: the fields in order with the separator between them.
+An empty list of fields writes an empty row. -/
+@[ship]
+def joinFields (fields : List String) (separator : String) : String := Str.join fields separator
+
+/-- The reference an order is filed under, built from parts that are already in hand, under the same
+separator `referencePrefix` reads back. -/
+@[ship]
+def referenceFrom (parts : List String) : String := Str.join parts "-"
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b

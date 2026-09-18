@@ -5,8 +5,8 @@
 
 ## 文脈
 
-今の到達点は測った数字で言える。公開関数 96 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
-35125 件、`Core.Expr` は 35 形。実行時ヘルパは 53 本で、模型がヘルパについて仮定している表 38 行の
+今の到達点は測った数字で言える。公開関数 98 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
+35924 件、`Core.Expr` は 35 形。実行時ヘルパは 54 本で、模型がヘルパについて仮定している表 39 行の
 全行が印字器の書き出すソースと一致する（`helpers_ship_as_modelled`）。JS の組み込みへの依存は
 `Helper.lean` が名指ししている `prim` 12 種とメソッド 13 種で、それが読み取れる TCB の全部。
 
@@ -259,7 +259,8 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 **書けるようになること**: `Str.join` / `Str.replace` / `Str.padStart` / `Str.repeat` /
 `Str.indexOf?`。Step 3 と合わせて、金額整形が Lean 側で書き切れる。
 
-**`join` は JS 組み込みへの依存を増やさない。** `Helper.lean` はすでに `join` を名指ししている。
+**`join` は JS 組み込みへの依存を増やさない。** 模型の `join` は空セパレータ専用なので、
+`__join` は `+` と `xs[0]` と `slice` で書く。
 
 **`replace` の空パターンは JS 固有。** `"abc".replaceAll("", "-")` は各位置に挿入する。意味論を
 そこに合わせる価値が無いので、空パターンは拒否する（コンパイル時に落とせるのはリテラルのときだけ
@@ -361,7 +362,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
 
 - `README.md` — サブセットの表、「35 の形すべて」
 - `templates/verified-package/SYNTAX.md` — 書けるものの表、Step 0 で足す無いものの表
-- `docs/guarantees.md` — ベクタ件数（今 35125 件）、実行時ヘルパの本数と仮定の表の行数
+- `docs/guarantees.md` — ベクタ件数（今 35924 件）、実行時ヘルパの本数と仮定の表の行数
 - `docs/next-milestone-plan.md` — 「言語が凍っている」を数えている行。**Step 1 と Step 2 では動かない**
   （層 0 は `Core.Expr` に形を足さない）。動くのは Step 3 以降で、そのとき凍結をどの範囲で解いたかを書く
 
@@ -429,3 +430,15 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `hasTy_string_inv` はどちらも `helper_strBin` の中に移った。**振る舞いは変わらない**：
   ベクタ件数も生成物も 1 バイト動かず、`Core.Expr` は 35 形のまま。**残る仕事は `strTer`
   （`substring` の一般化）だけ**で、これは `replace` / `padStart` が要る。
+- **Step 4 の 2 つめ**（2026-09-19, `HASH_JOIN`） — `Str.join` が入った。`StrBinOp` に腕 1 つ、
+  `Core.Expr` は 35 形のまま。`strBinArgTys` に `(.array .string, .string)` を 1 行足すだけで引数の型は
+  通り、`helper_strBin` は `hasTy_string_array_inv` で `.arr (ss.map .str)` を取り出す。`join` は
+  落ちない op なので、`Correct` の落ちる側は `valueStrs_map_str` で矛盾に落ちて終わる。
+  **模型の `join("")` は開いていない。** `__join` はメソッドの `join` を呼ばず、`xs[0]` から始めて
+  `xs.slice(1, xs.length)` を `out + sep + x` で畳む手書きループにした。おかげで `calls_trim` /
+  `calls_startsAt` / `calls_substring`（どれも `join("")` を使う）の証明に触らずに済み、
+  **`prim` 12 種・メソッド 13 種のままで TCB は増えていない**。動いたのは模型の表の 38 → 39 行だけで、
+  実行時ヘルパは `__join` で 53 → 54 本。
+  `Example.lean` に `joinFields` と `referenceFrom` を 1 本ずつ。公開関数 96 → 98 本、宣言 97 → 99、
+  差分ベクタ 35125 → 35924 件、燃料は 685 → 699。
+  `SYNTAX.md` の「無い操作」から `join` の行と `@[expand] def join` のレシピを消した。

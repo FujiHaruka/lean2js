@@ -40,6 +40,10 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   Where the separator first sits in a reference, counted in code points. `none` when the reference carries none. JS's own `indexOf` counts UTF-16 units and answers `-1`.
 - `referencePrefix(reference: string): string`
   The part of a reference before its first separator, or the whole reference when it carries none.
+- `joinFields(fields: readonly string[], separator: string): string`
+  A row of an uploaded file written back out: the fields in order with the separator between them. An empty list of fields writes an empty row.
+- `referenceFrom(parts: readonly string[]): string`
+  The reference an order is filed under, built from parts that are already in hand, under the same separator `referencePrefix` reads back.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`

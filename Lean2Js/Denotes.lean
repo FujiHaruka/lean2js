@@ -790,7 +790,7 @@ theorem denotes_lower (p : Program) (env : Env) (e : Expr) (s : String) (h : Den
     h
 
 private theorem denotes_strBin (p : Program) (env : Env) (op : StrBinOp) (l r : Expr)
-    (a b : String) {α : Type} [Enc α] (t : α)
+    {β γ : Type} [Enc β] [Enc γ] (a : β) (b : γ) {α : Type} [Enc α] (t : α)
     (hop : ∀ w, applyStrBin op (toValue a) (toValue b) = .ok w → w = toValue t)
     (hl : Denotes p env l a) (hr : Denotes p env r b) :
     Denotes p env (.strBin op l r) t := by
@@ -875,6 +875,20 @@ theorem denotes_indexOf (p : Program) (env : Env) (l r : Expr) (a b : String)
         simp only [Except.ok.injEq] at hw
         rw [← hw, hp]
         rfl)
+    hl hr
+
+theorem denotes_join (p : Program) (env : Env) (l r : Expr) (xs : List String) (sep : String)
+    (hl : Denotes p env l xs) (hr : Denotes p env r sep) :
+    Denotes p env (.strBin .join l r) (Str.join xs sep) :=
+  denotes_strBin p env .join l r xs sep _
+    (fun w hw => by
+      rw [show applyStrBin .join (toValue xs) (toValue sep)
+            = Except.ok (Value.str (Str.join xs sep)) from by
+              simp only [toValue_list, toValue_str, applyStrBin,
+                show (List.map toValue xs) = List.map Value.str xs from rfl,
+                valueStrs_map_str, Str.join]] at hw
+      simp only [Except.ok.injEq] at hw
+      rw [← hw, toValue_str])
     hl hr
 
 theorem denotes_substring (p : Program) (env : Env) (e lo hi : Expr) (s : String) (a b : Int)

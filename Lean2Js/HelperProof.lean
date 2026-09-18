@@ -1018,6 +1018,7 @@ theorem calls_substring (ext : Ext) (x : String) (lo hi : Int) (f : Nat) :
 
 theorem find_startsAt : Helper.defs.find? (·.name == "__startsAt") = some Helper.startsAt := rfl
 theorem find_indexOf : Helper.defs.find? (·.name == "__indexOf") = some Helper.indexOf := rfl
+theorem find_join : Helper.defs.find? (·.name == "__join") = some Helper.join := rfl
 
 theorem calls_startsAt (ext : Ext) (cs : List Char) (t : String) (f : Nat) :
     callDef ext (f + 8) "__startsAt" [.arr (cs.map fun c => Val.str c.toString), .str t]
@@ -1126,6 +1127,40 @@ theorem calls_indexOf (ext : Ext) (x t : String) (f : Nat) :
   · rw [Bool.not_eq_true] at hp
     rw [hp]
     walk
+
+theorem join_loop (ext : Ext) (ss : List String) (sep acc : String) (XS : Val) (f : Nat) :
+    evalFor ext (f + ss.length + 6)
+        [("out", .str acc), ("xs", XS), ("sep", .str sep)] "x" (ss.map Val.str)
+        [.setVar "out" (.bin "+" (.bin "+" (.var "out") (.var "sep")) (.var "x"))]
+      = .ok (.next [("out", .str (strJoinFrom sep acc ss)), ("xs", XS), ("sep", .str sep)]) := by
+  induction ss generalizing acc with
+  | nil => walk; simp [strJoinFrom]
+  | cons a rest ih =>
+    rw [show f + (a :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    simp only [Option.getD]
+    rw [ih]
+    simp only [strJoinFrom]
+
+theorem calls_join (ext : Ext) (ss : List String) (sep : String) (f : Nat) :
+    callDef ext (f + ss.length + 20) "__join" [.arr (ss.map Val.str), .str sep]
+      = .ok (.str (strJoin ss sep)) := by
+  rw [show f + ss.length + 20 = (f + ss.length + 19) + 1 from rfl,
+    callDef_block find_join rfl rfl]
+  simp only [Helper.join, Helper.lengthOf]
+  cases ss with
+  | nil => walk; simp [strJoin]
+  | cons a rest =>
+    walk
+    rw [show ((((Val.str a :: List.map Val.str rest).length : Int)) == 0) = false from by simp; omega]
+    walk
+    rw [if_neg (by simp; omega), Int.toNat_one, dropTake1]
+    walk
+    simp only [Int.toNat_zero, List.getElem?_cons_zero, Option.getD_some]
+    rw [show f + (a :: rest).length + 16 = (f + 11) + rest.length + 6 from by simp; omega,
+      join_loop]
+    walk
+    simp only [strJoin]
 
 private theorem compare_cons_ne {a b : Char} (l m : List Char) (h : a ≠ b) :
     compare (a :: l) (b :: m) = compare a b := by

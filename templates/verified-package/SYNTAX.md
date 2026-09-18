@@ -187,7 +187,7 @@ priced tenPercentOff amount           handing a declaration to a call
 | On | What you may write |
 | --- | --- |
 | `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` `Int53.toString` |
-| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
+| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
 | `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` |
@@ -266,8 +266,7 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | What you reach for | What to write instead |
 | --- | --- |
 | `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
-| `join` | `foldl`, where no part is empty (below). |
-| `replace` / `replaceAll` | `Str.split` and then the `join` recipe. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |
+| `replace` / `replaceAll` | `Str.split` and then `Str.join`. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |
 | `padStart` / `padEnd` / `repeat` | TypeScript. Repeating a string a variable number of times needs recursion, and the subset has none. |
 | regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |
@@ -276,21 +275,9 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 
 An array or string operation that is missing from the tables above but needs no new concept is usually
 writable as a `@[expand] def` of your own. `foldl` is the loop and `Arr.slice` is the window, which is
-all `Arr.take` and the rest of the prelude's vocabulary are made of. `join` is the one below that reaches
-far enough to be worth copying:
-
-```lean
-/-- The parts of `parts` with `sep` between them. This agrees with `Array.prototype.join` as long as no
-part is empty: the accumulator tells "nothing written yet" from "an empty part written" by comparing with
-`""`, and an empty first part would take the separator with it. -/
-@[expand]
-def join (parts : List String) (sep : String) : String :=
-  parts.foldl (fun sofar part => if sofar == "" then part else sofar ++ sep ++ part) ""
-```
-
-Reading the accumulator with a `match` rather than an `==` is what would make that exact, and a `match`
-inside a traversal's function is the form that may not certify (above). The exact version is writable by
-moving that `match` into a `@[ship] def`, at the cost of one more exported function.
+all `Arr.take` and the rest of the prelude's vocabulary are made of. What such a definition cannot carry
+is a `match` inside the traversal's function, which is the form that may not certify (above); moving that
+`match` into a `@[ship] def` is the way out, at the cost of one more exported function.
 
 ## When you leave the subset
 

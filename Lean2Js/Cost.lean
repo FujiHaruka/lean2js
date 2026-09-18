@@ -460,6 +460,9 @@ theorem noFn_applyStrBin {op : StrBinOp} {a b v : Value} (h : applyStrBin op a b
       · injection h
       · (injection h with h; subst h); rfl
     · (injection h with h; subst h); rfl
+  · split at h
+    · (injection h with h; subst h); rw [noFn]
+    · injection h
   · injection h
 
 theorem noFn_sliceStr {s lo hi v : Value} (h : sliceStr s lo hi = .ok v) : noFn v = true := by
@@ -599,10 +602,8 @@ theorem safe_applyStrUn (op : StrUnOp) (x : Value) :
 theorem safe_applyStrBin (op : StrBinOp) (a b : Value) :
     Safe (applyStrBin op a b) (fun v => noFn v = true) := by
   refine ⟨?_, fun v hv => noFn_applyStrBin hv⟩
-  rw [applyStrBin.eq_def]
-  split <;> try simp
-  split <;> try simp
-  split <;> simp
+  rw [applyStrBin.eq_def]; repeat' split
+  all_goals simp
 
 theorem safe_sliceStr (s lo hi : Value) : Safe (sliceStr s lo hi) (fun v => noFn v = true) := by
   refine ⟨?_, fun v hv => noFn_sliceStr hv⟩

@@ -152,6 +152,17 @@ const __indexOf = (s, t) => {
   return { tag: "some", value: __i53(n) };
 };
 
+const __join = (xs, sep) => {
+  if (((xs).length === 0)) {
+    return "";
+  }
+  let out = (xs)[0];
+  for (const x of (xs).slice(1, (xs).length)) {
+    out = ((out + sep) + x);
+  }
+  return out;
+};
+
 // Indices count code points, and one outside the string fails rather than being clamped.
 const __substring = (s, lo, hi) => {
   const xs = __chars(s);
@@ -584,6 +595,19 @@ export function separatorAt(__p0, __p1) {
 export function referencePrefix(__p0) {
   const reference = __ck(__p0, ["string"]);
   return ((__s) => ((((__s).tag === "some") ? ((i) => (__substring(reference, 0, i)))((__s).value) : reference)))(__indexOf(reference, "-"));
+}
+
+/** joinFields : (fields : Array String, separator : String) → String */
+export function joinFields(__p0, __p1) {
+  const fields = __ck(__p0, ["array", ["string"]]);
+  const separator = __ck(__p1, ["string"]);
+  return __join(fields, separator);
+}
+
+/** referenceFrom : (parts : Array String) → String */
+export function referenceFrom(__p0) {
+  const parts = __ck(__p0, ["array", ["string"]]);
+  return __join(parts, "-");
 }
 
 /** sortsBefore : (a : String, b : String) → Bool */

@@ -125,6 +125,10 @@ def toInt? (s : String) : Option Int := parseInt53 s
 The empty needle sits at 0. JS's own `indexOf` counts UTF-16 units and answers `-1` for absence. -/
 def indexOf? (s t : String) : Option Int := (indexOfChars s.toList t.toList).map Int.ofNat
 
+/-- The strings in order with `sep` between them, the way JS's own `Array.prototype.join` puts it
+together. An empty list joins to the empty string. -/
+def join (xs : List String) (sep : String) : String := joinStr xs sep
+
 @[expand] def isEmpty (s : String) : Bool := length s == 0
 
 end Str

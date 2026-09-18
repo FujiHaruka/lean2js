@@ -221,7 +221,7 @@ a small trusted base and a correctness proof affordable:
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
 | Pure `def`s marked `@[ship]` | Recursion / non-termination / DOM access |
 | A declaration passed to another as a function | Functions as values: lambdas outside traversals, closures, function types on the public boundary |
-| Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
+| Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.join` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
 | `Dict V` (string keys, emitted as a `Map`: `get` / `set` / `has` / `erase` / `keys` / `values`) | Plain objects used as dictionaries |
 
 Where JavaScript and Lean disagree, the generated code follows neither silently:

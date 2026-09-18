@@ -163,6 +163,43 @@ def strIndexOf (s t : String) : JsResult :=
     else .ok (.obj [("tag", .str "some"), ("value", .num n)])
   | none => .ok (.obj [("tag", .str "none")])
 
+def strJoinFrom (sep : String) (acc : String) : List String → String
+  | [] => acc
+  | s :: rest => strJoinFrom sep (acc ++ sep ++ s) rest
+
+def strJoin (xs : List String) (sep : String) : String :=
+  match xs with
+  | [] => ""
+  | s :: rest => strJoinFrom sep s rest
+
+/-- An array holding anything but Strings is past what the compiler builds, so the table leaves it
+unanswered rather than modelling what JS would print for it. -/
+def strsOf : List JsValue → Option (List String)
+  | [] => some []
+  | .str s :: rest => (strsOf rest).map (s :: ·)
+  | _ => none
+
+theorem strsOf_map_str (ss : List String) : strsOf (ss.map .str) = some ss := by
+  induction ss with
+  | nil => rfl
+  | cons a rest ih => simp only [List.map_cons, strsOf, ih, Option.map_some]
+
+theorem strsOf_eq {xs : List JsValue} {ss : List String} (h : strsOf xs = some ss) :
+    xs = ss.map .str := by
+  induction xs generalizing ss with
+  | nil => simp only [strsOf, Option.some.injEq] at h; simp [← h]
+  | cons x rest ih =>
+    cases x with
+    | str a =>
+      simp only [strsOf] at h
+      cases hr : strsOf rest with
+      | none => rw [hr] at h; simp at h
+      | some tl =>
+        rw [hr] at h
+        simp only [Option.map_some, Option.some.injEq] at h
+        rw [← h, List.map_cons, ih hr]
+    | _ => simp [strsOf] at h
+
 def strSplit (s sep : String) : List JsValue :=
   (if sep.isEmpty then [s] else s.splitOn sep).map JsValue.str
 
@@ -250,8 +287,14 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__includes", [.str s, .str t] => some (.ok (.bool (strIncludes t.toList s.toList)))
   | "__split", [.str s, .str sep] => some (.ok (.arr (strSplit s sep)))
   | "__indexOf", [.str s, .str t] => some (strIndexOf s t)
+  | "__join", [.arr xs, .str sep] => (strsOf xs).map fun ss => .ok (.str (strJoin ss sep))
   | "__substring", [.str s, .num a, .num b] => some (strSlice s a b)
   | _, _ => none
+
+theorem helper_join (ss : List String) (sep : String) :
+    helper "__join" [.arr (ss.map .str), .str sep] = some (.ok (.str (strJoin ss sep))) := by
+  simp only [helper, strsOf_map_str, Option.map_some, isReserved]
+  rfl
 
 /-- The calls the table above answers. Stated as an inductive rather than read off `helper` at the use
 site because `split` builds its splitter in whatever module asks, under options that module cannot
@@ -296,6 +339,7 @@ inductive HelperRow : String → List JsValue → Prop where
   | includes (s t : String) : HelperRow "__includes" [.str s, .str t]
   | split (s sep : String) : HelperRow "__split" [.str s, .str sep]
   | indexOf (s t : String) : HelperRow "__indexOf" [.str s, .str t]
+  | join (ss : List String) (sep : String) : HelperRow "__join" [.arr (ss.map .str), .str sep]
   | substring (s : String) (a b : Int) : HelperRow "__substring" [.str s, .num a, .num b]
 
 theorem helper_row {name : String} {args : List JsValue} {r : JsResult}
@@ -303,7 +347,13 @@ theorem helper_row {name : String} {args : List JsValue} {r : JsResult}
   rw [helper.eq_def] at h
   split at h
   · exact absurd h (by simp)
-  split at h <;> first | constructor | exact absurd h (by simp)
+  split at h <;> first
+    | constructor
+    | (rename_i xs sep _
+       cases hs : strsOf xs with
+       | none => rw [hs] at h; simp at h
+       | some ss => rw [strsOf_eq hs]; exact .join ss sep)
+    | exact absurd h (by simp)
 def arith (op : String) (a b : JsValue) : JsResult :=
   match op, a, b with
   | "+", .num x, .num y => .ok (.num (x + y))

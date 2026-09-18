@@ -448,6 +448,24 @@ theorem hasElemTy_getElem? {p : Program} {xs : List Value} {elem : Ty} {n : Nat}
     Value.hasTy p v elem = true :=
   (hasElemTy_iff p xs elem).mp h v (List.mem_of_getElem? hg)
 
+theorem hasElemTy_string_inv {p : Program} {xs : List Value}
+    (h : Value.hasElemTy p xs .string = true) : ∃ ss : List String, xs = ss.map Value.str := by
+  induction xs with
+  | nil => exact ⟨[], rfl⟩
+  | cons x rest ih =>
+    rw [hasElemTy_cons, Bool.and_eq_true] at h
+    obtain ⟨s, rfl⟩ := hasTy_string_inv h.1
+    obtain ⟨ss, rfl⟩ := ih h.2
+    exact ⟨s :: ss, rfl⟩
+
+theorem hasTy_string_array_inv {p : Program} {v : Value}
+    (h : Value.hasTy p v (.array .string) = true) :
+    ∃ ss : List String, v = .arr (ss.map Value.str) := by
+  obtain ⟨xs, rfl⟩ := hasTy_array_inv h
+  rw [hasTy_array] at h
+  obtain ⟨ss, rfl⟩ := hasElemTy_string_inv h
+  exact ⟨ss, rfl⟩
+
 theorem hasElemTy_map_str (p : Program) (ss : List String) :
     Value.hasElemTy p (ss.map Value.str) .string = true :=
   (hasElemTy_iff p _ .string).mpr fun x hx => by
@@ -606,6 +624,14 @@ theorem applyStrBin_hasTy {p : Program} {op : StrBinOp} {a b v : Value}
            · simp only [Except.ok.injEq] at h
              subst h
              simp [Compile.strBinResult, hasTy_none])
+  | join =>
+    cases a <;> cases b <;>
+      first
+        | (exfalso; simp [applyStrBin] at h; done)
+        | (simp only [applyStrBin] at h
+           split at h
+           · simp only [Except.ok.injEq] at h; subst h; exact hasTy_str p _
+           · exact absurd h (by simp))
   | _ =>
     cases a <;> cases b <;>
       first

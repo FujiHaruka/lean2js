@@ -88,6 +88,8 @@ def startsWith (s prefix' : Expr) : Expr := .strBin .startsWith s prefix'
 
 def indexOf (s needle : Expr) : Expr := .strBin .indexOf s needle
 
+def join (xs sep : Expr) : Expr := .strBin .join xs sep
+
 def endsWith (s suffix : Expr) : Expr := .strBin .endsWith s suffix
 def includes (s needle : Expr) : Expr := .strBin .includes s needle
 def split (s sep : Expr) : Expr := .strBin .split s sep

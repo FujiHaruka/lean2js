@@ -332,6 +332,12 @@ private def doubleAll : Decl :=
 #guard !compiles
   (decl "at" [("s", .string), ("n", .int53)] (.option .int53) (indexOf (v "s") (v "n")))
 #guard compiles
+  (decl "j" [("xs", .array .string), ("sep", .string)] .string (join (v "xs") (v "sep")))
+#guard !compiles
+  (decl "j" [("xs", .string), ("sep", .string)] .string (join (v "xs") (v "sep")))
+#guard !compiles
+  (decl "j" [("xs", .array .int53), ("sep", .string)] .string (join (v "xs") (v "sep")))
+#guard compiles
   (decl "slice" [("s", .string)] .string (substring (v "s") (int53 0) (int53 1)))
 #guard !compiles
   (decl "slice" [("s", .string)] .string (substring (v "s") (int53 0) (str "1")))
@@ -366,6 +372,17 @@ private def astralThenA : String := String.ofList [Char.ofNat 0x1F363, 'a']
 #guard Str.indexOf? "" "a" == none
 #guard Str.length astralThenA == 2
 #guard Str.indexOf? astralThenA "a" == some 1
+
+/-! ## Where `Str.join` puts the separator
+
+One separator between neighbours and none at either end, which the empty list and the one-element list
+are what pin down. -/
+
+#guard Str.join [] "-" == ""
+#guard Str.join ["a"] "-" == "a"
+#guard Str.join ["a", "b", "c"] "-" == "a-b-c"
+#guard Str.join ["", ""] "-" == "-"
+#guard Str.join ["a", "b"] "" == "ab"
 
 private def Box : TypeDef :=
   struct "Box" [("value", Ty.var "T")] (params := ["T"])

@@ -365,6 +365,12 @@ theorem agree_indexOf (ext : Ext) (x t : String) (f : Nat) :
     · simp [hb, fail]
     · simp [hb, ofJs]
 
+theorem agree_join (ext : Ext) (ss : List String) (sep : String) (f : Nat) :
+    callDef ext (f + (ss.length + 20)) "__join" [ofJs (.arr (ss.map .str)), ofJs (.str sep)]
+      = ofRes (.ok (.str (strJoin ss sep))) := by
+  rw [show f + (ss.length + 20) = f + ss.length + 20 from by omega]
+  simp only [ofJs_str, ofJs_arr, List.map_map, Function.comp_def, calls_join, ofRes_ok]
+
 theorem agree_substring (ext : Ext) (x : String) (lo hi : Int) (f : Nat) :
     callDef ext (f + 11) "__substring" [ofJs (.str x), ofJs (.num lo), ofJs (.num hi)]
       = ofRes (strSlice x lo hi) := by
@@ -628,6 +634,7 @@ theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : 
     Helper.Calls ext name (args.map ofJs) (ofRes r) := by
   cases Js.helper_row h
   all_goals
+    try rw [Js.helper_join] at h
     injection h with hr
     subst hr
     simp only [List.map_cons, List.map_nil]
@@ -669,6 +676,7 @@ theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : 
       | exact eventually_of_offset _ (fun f => agree_includes ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_split ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_indexOf ext _ _ f)
+      | exact eventually_of_offset _ (fun f => agree_join ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_substring ext _ _ _ f)
 
 end Lean2Js.HelperSem

@@ -418,6 +418,16 @@ def indexOf : Def :=
         [.ret (.objLit [("tag", .str "none")])],
       .ret (.objLit [("tag", .str "some"), ("value", .call "__i53" [(.var "n")])])] }
 
+def join : Def :=
+
+  { name := "__join", params := ["xs", "sep"]
+    body := .block [
+      .ifThen (.bin "===" (lengthOf (.var "xs")) (.num 0)) [.ret (.str "")],
+      .letMut "out" (.index (.var "xs") (.num 0)),
+      .forOf "x" (.method (.var "xs") "slice" [.num 1, lengthOf (.var "xs")]) [
+        .setVar "out" (.bin "+" (.bin "+" (.var "out") (.var "sep")) (.var "x"))],
+      .ret (.var "out")] }
+
 def substring : Def :=
 
   { name := "__substring", params := ["s", "lo", "hi"]
@@ -760,7 +770,7 @@ def ck : Def :=
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
   str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
-  startsAt, indexOf, substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues,
+  startsAt, indexOf, join, substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues,
   ddelete, eq, map, filter, find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
 ]
 

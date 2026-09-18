@@ -447,6 +447,18 @@ theorem indexOfChars_eq (t : List Char) :
   | _ :: rest => by
     rw [Js.Runtime.strIndexOfChars, indexOfChars, indexOfChars_eq t rest]
 
+theorem joinFrom_eq (sep : String) : ∀ (ss : List String) (acc : String),
+    Js.Runtime.strJoinFrom sep acc ss = joinFrom sep acc ss
+  | [], _ => rfl
+  | s :: rest, acc => by
+    rw [Js.Runtime.strJoinFrom, joinFrom, joinFrom_eq sep rest (acc ++ sep ++ s)]
+
+theorem joinStr_eq (ss : List String) (sep : String) :
+    Js.Runtime.strJoin ss sep = joinStr ss sep := by
+  cases ss with
+  | nil => rfl
+  | cons a rest => simp only [Js.Runtime.strJoin, joinStr, joinFrom_eq]
+
 theorem helper_strBin {p : Program} {op : StrBinOp} {av bv v : Value}
     (hav : Value.hasTy p av (Compile.strBinArgTys op).1 = true)
     (hbv : Value.hasTy p bv (Compile.strBinArgTys op).2 = true)
@@ -477,6 +489,13 @@ theorem helper_strBin {p : Program} {op : StrBinOp} {av bv v : Value}
         subst h
         rw [if_neg (show ¬ (Js.Runtime.safeMax < ((n : Nat) : Int)) from hr)]
         simp [encodeValue, encodeFields]
+  | join =>
+    obtain ⟨ss, rfl⟩ := hasTy_string_array_inv hav
+    obtain ⟨sep, rfl⟩ := hasTy_string_inv hbv
+    simp only [applyStrBin, valueStrs_map_str, Except.ok.injEq] at h
+    subst h
+    simp only [encodeValue, encodeList_map_str]
+    rw [show Compile.strBinHelper StrBinOp.join = "__join" from rfl, Js.helper_join, joinStr_eq]
   | _ =>
     obtain ⟨a, rfl⟩ := hasTy_string_inv hav
     obtain ⟨b, rfl⟩ := hasTy_string_inv hbv
@@ -7267,6 +7286,10 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     | indexOf =>
       obtain ⟨rfl, hh⟩ := strBin_err_indexOf hat hbt he
       exact eventuallyErr_call2_helper hlv hrv hh
+    | join =>
+      obtain ⟨ss, rfl⟩ := hasTy_string_array_inv hat
+      obtain ⟨sb, rfl⟩ := hasTy_string_inv hbt
+      simp [applyStrBin, valueStrs_map_str] at he
     | _ =>
       obtain ⟨sa, rfl⟩ := hasTy_string_inv hat
       obtain ⟨sb, rfl⟩ := hasTy_string_inv hbt

@@ -141,6 +141,25 @@ UTF-16 units, which is why the generated code cannot call it unguarded. -/
 def splitStr (s sep : String) : List String :=
   if sep.isEmpty then [s] else s.splitOn sep
 
+def joinFrom (sep : String) (acc : String) : List String → String
+  | [] => acc
+  | s :: rest => joinFrom sep (acc ++ sep ++ s) rest
+
+def joinStr (xs : List String) (sep : String) : String :=
+  match xs with
+  | [] => ""
+  | s :: rest => joinFrom sep s rest
+
+def valueStrs : List Value → Option (List String)
+  | [] => some []
+  | .str s :: rest => (valueStrs rest).map (s :: ·)
+  | _ => none
+
+theorem valueStrs_map_str (ss : List String) : valueStrs (ss.map .str) = some ss := by
+  induction ss with
+  | nil => rfl
+  | cons a rest ih => simp only [List.map_cons, valueStrs, ih, Option.map_some]
+
 def dictLookup (entries : List (String × Value)) (k : String) : Value :=
   match (entries.find? (·.1 == k)).map (·.2) with
   | some v => .obj "some" [("value", v)]
@@ -203,7 +222,11 @@ def applyStrBin : StrBinOp → Value → Value → Except Err Value
       if int53Max < (n : Int) then .error .int53Overflow
       else .ok (.obj "some" [("value", .int53 n)])
     | none => .ok (.obj "none" [])
-  | op, _, _ => .error (.typeError s!"{op.name} expects two Strings")
+  | .join, .arr xs, .str sep =>
+    match valueStrs xs with
+    | some ss => .ok (.str (joinStr ss sep))
+    | none => .error (.typeError "join expects an Array of Strings")
+  | op, _, _ => .error (.typeError s!"{op.name} got operands of the wrong type")
 
 /-- Indices count code points, and one outside the string traps the way an array read does. Clamping is
 what JS's own `substring` would do, and silently returning a shorter string is worse than failing. -/
