@@ -268,7 +268,39 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 **`padStart` / `repeat` はコードポイントで数える。** `Str.length` と同じ基準。ネイティブの
 `padStart` は UTF-16 単位で数えるので手書きヘルパに落ちる。
 
-**触る場所**: 層 1 の一式 × 5。ここがこの計画でいちばん重い。**1 つずつ入れて、1 つ入るたびに
+### どこに置くか（2026-09-19 に測った）
+
+**`Str.indexOf?` だけは既存の形の腕で足りる。** 引数は String 2 つで、結果型は `strBinResult` が
+既に op 依存なので、**`StrBinOp` に腕を 1 つ足すだけ**。`Str.toInt?` と同じ値段で、`Core.Expr` も
+`Compile` の引数検査も動かない。**5 つのうちこれを先にやる。**
+
+**残る 4 つは引数の型が今の形に合わない。**
+
+| 操作 | 引数の型 | 今ある形 |
+| --- | --- | --- |
+| `join xs sep` | `(List String, String)` | `strBin` は `(String, String)` 固定 |
+| `repeat s n` | `(String, Int53)` | 同上 |
+| `replace s pat rep` | `(String, String, String)` | `substring` は `(String, Int53, Int53)` 固定 |
+| `padStart s n pad` | `(String, Int53, String)` | 同上 |
+
+**`Core.Expr` を 35 形のまま通す道がある。** `strUn` の結果型をこの leg で `strUnResult` に開いたのと
+同じ手で、`strBin` の**引数**型を `strBinArgTys : StrBinOp → Ty × Ty` に開き、`substring` を
+`strTer (op : StrTerOp) (a b c : Expr)` に一般化する。形は増えず、`decl_correct` の分母も動かない。
+
+**ただし `strUn` のときほど安くはない。** 測ったのはここ:
+
+- `strBin` を名指ししているのは **16 ファイル**、`substring` は **16 ファイル**。`Cost` / `Step` /
+  `Fuel` / `Gather` / `Decl` / `StepAgree` は op に依らないので、開くのは `Core` / `Eval` /
+  `Compile` / `Render` / `Renderable` / `Builder` / `Reify` / `Denotes` / `Sound` / `Correct`。
+- **`Correct` と `Sound` の `strBin` の場合は、今のままでは op 非依存を保てない。** 今は
+  `Ty.eq_of_not_bne` で `tl = tr = .string` を出し、`hasTy_string_inv` で両引数を `String` に
+  落としてから `helper_strBin` を当てている（`Correct.lean` の `| strBin hl hr` の中）。
+  引数型が op 依存になると、この 2 段が op ごとに分かれる。
+- **op 非依存に保つなら `helper_strBin` を上げる。** 今の `applyStrBin op (.str a) (.str b)` 固定を
+  「両引数が `strBinArgTys op` の型を持つ」という仮定つきの `Value` の形に上げれば、場合の側は
+  今の形のまま通る。**これをやるかどうかが Step 4 の最初の判断**で、5 操作ぶんの値段を決める。
+
+**触る場所**: 上の一式 × 5。ここがこの計画でいちばん重い。**1 つずつ入れて、1 つ入るたびに
 ゲートを全部通す。**
 
 **保証の境界**: 変わらない。
