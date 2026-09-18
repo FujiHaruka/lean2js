@@ -29,6 +29,14 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.add_comm
 
+/-- info: 'Lean2Js.Example.monthly_limit_is_not_negative' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.monthly_limit_is_not_negative
+
+/-- info: 'Lean2Js.Example.failed_settlement_has_no_order_id' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.failed_settlement_has_no_order_id
+
 /-- info: 'Lean2Js.Example.draft_never_ships' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.draft_never_ships

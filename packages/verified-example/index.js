@@ -843,10 +843,22 @@ export function settleMessage(__p0) {
   return ((__s) => (((((__s).tag === "ok") && (((__s).value).tag === "shipped")) ? ((trackingId) => (trackingId))(((__s).value).trackingId) : ((((__s).tag === "ok") && (((__s).value).tag === "placed")) ? "awaiting shipment" : (((__s).tag === "ok") ? "no update" : ((message) => (message))((__s).error))))))(outcome);
 }
 
+/** settledOrderId : (outcome : Result OrderState String) → Int53 */
+export function settledOrderId(__p0) {
+  const outcome = __ck(__p0, ["result", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
+  return ((__s) => (((((__s).tag === "ok") && (((__s).value).tag === "placed")) ? ((orderId) => (orderId))(((__s).value).orderId) : 0)))(outcome);
+}
+
 /** dailyLimit : (role : Role) → Int53 */
 export function dailyLimit(__p0) {
   const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
   return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(limitsFor(role), "daily"));
+}
+
+/** monthlyLimit : (role : Role) → Int53 */
+export function monthlyLimit(__p0) {
+  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(limitsFor(role), "monthly"));
 }
 
 /** remainingItems : (page : Paginated Money) → Int53 */

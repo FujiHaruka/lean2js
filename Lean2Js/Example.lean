@@ -334,12 +334,29 @@ def settleMessage (outcome : Except String OrderState) : String :=
   | .ok _ => "no update"
   | .error message => message
 
+/-- The order the settlement placed, if it placed one. The wildcard here stands for both the states that
+are not `placed` and the error, so the split the certificate makes reaches `Except` as well. -/
+@[ship]
+def settledOrderId (outcome : Except String OrderState) : Int :=
+  match outcome with
+  | .ok (OrderState.placed orderId) => orderId
+  | _ => 0
+
 /-- A role with no daily limit recorded may do nothing. -/
 @[ship]
 def dailyLimit (role : Role) : Int :=
   match (limitsFor role).get "daily" with
   | some value => value
   | none => 0
+
+/-- The same read with the arms the other way round: an arm that binds, then a wildcard for the rest.
+The certificate splits the scrutinee to show the binding arm did not fire, which `Option` needs as much
+as a type the program declares. -/
+@[ship]
+def monthlyLimit (role : Role) : Int :=
+  match (limitsFor role).get "monthly" with
+  | some value => value
+  | _ => 0
 
 /-- One page of results together with how many there are in all. The subset carries the parameter as a
 `Ty.var` and a use substitutes what it was applied to, so the name here is the one the generated type
@@ -388,6 +405,14 @@ private theorem find_add : program.find? "add" = some addDecl := rfl
 /-- Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same
 sum. -/
 theorem add_comm (a b : Int) : add a b = add b a := Int.add_comm a b
+
+/-- No role's monthly limit is negative, including a role whose book records none. -/
+theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role := by
+  cases role <;> decide
+
+/-- A settlement that failed carries no order id, whatever it failed with. -/
+theorem failed_settlement_has_no_order_id (message : String) :
+    settledOrderId (.error message) = 0 := rfl
 
 private theorem find_clampQuantity : program.find? "clampQuantity" = some clampQuantityDecl := rfl
 

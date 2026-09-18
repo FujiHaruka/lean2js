@@ -264,7 +264,15 @@
       "signature": "(outcome : Result OrderState String) → String"
     },
     {
+      "name": "settledOrderId",
+      "signature": "(outcome : Result OrderState String) → Int53"
+    },
+    {
       "name": "dailyLimit",
+      "signature": "(role : Role) → Int53"
+    },
+    {
+      "name": "monthlyLimit",
       "signature": "(role : Role) → Int53"
     },
     {
@@ -289,6 +297,16 @@
       "name": "add_comm",
       "statement": "add_comm (a b : Int) : add a b = add b a",
       "doc": "Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same\nsum."
+    },
+    {
+      "name": "monthly_limit_is_not_negative",
+      "statement": "monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role",
+      "doc": "No role's monthly limit is negative, including a role whose book records none."
+    },
+    {
+      "name": "failed_settlement_has_no_order_id",
+      "statement": "failed_settlement_has_no_order_id (message : String) : settledOrderId (Except.error message) = 0",
+      "doc": "A settlement that failed carries no order id, whatever it failed with."
     },
     {
       "name": "draft_never_ships",

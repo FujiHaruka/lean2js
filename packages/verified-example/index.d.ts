@@ -153,7 +153,11 @@ export declare function chargeable(amount: Money): boolean;
 
 export declare function settleMessage(outcome: Result<OrderState, string>): string;
 
+export declare function settledOrderId(outcome: Result<OrderState, string>): number;
+
 export declare function dailyLimit(role: Role): number;
+
+export declare function monthlyLimit(role: Role): number;
 
 export declare function remainingItems(page: Paginated<Money>): number;
 

@@ -24,9 +24,16 @@ def declNameFor (n : Name) : Name := n.appendAfter "Decl"
 /-- The certificate for a `def` the package ships. -/
 def certificateNameFor (n : Name) : Name := n.appendAfter "_certificate"
 
+/-- A `def` whose own elaboration failed: Lean has already reported that and filled the body with
+`sorryAx`, so walking it would report a second time, about a term the author never wrote. -/
+private def elaborationFailed (n : Name) : CoreM Bool := do
+  let some (.defnInfo di) := (← getEnv).find? n | return false
+  return di.value.hasSorry
+
 /-- The walk runs here, on the `def` itself, so a `def` that leaves the subset is refused where it is
 written rather than wherever the package is assembled. -/
 private def readDeclaration (n : Name) : CoreM Unit := do
+  if ← elaborationFailed n then return
   let value ← MetaM.run' <| TermElabM.run' <| withoutErrToSorry <| withDeclName n do
     let e ← elabTerm (← `(reify_decl% $(mkCIdent n))) (some (mkConst ``Core.Decl))
     synthesizeSyntheticMVarsNoPostponing
@@ -127,6 +134,7 @@ def shipped (ns : Name) : CoreM (Array Shipped) := do
     unless shipAttr.hasTag env n do continue
     let d := declNameFor n
     unless env.contains d do
+      if ← elaborationFailed n then continue
       throwError "{n} is marked `@[ship]` but {d} is not in scope, so the walk never read it"
     decls := decls.push { source := n, decl := d, value := ← evalDecl d }
   let edges := decls.toList.flatMap fun d => orderings d.value.name d.value.body

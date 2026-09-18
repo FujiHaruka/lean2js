@@ -202,8 +202,14 @@ def chargeable(amount : Money) : Bool =
 def settleMessage(outcome : Result OrderState String) : String =
   match outcome { ok(shipped(_, trackingId)) => trackingId | ok(placed(_)) => "awaiting shipment" | ok(_) => "no update" | error(message) => message }
 
+def settledOrderId(outcome : Result OrderState String) : Int53 =
+  match outcome { ok(placed(orderId)) => orderId | _ => 0 }
+
 def dailyLimit(role : Role) : Int53 =
   match limitsFor(role).get("daily") { some(value) => value | none => 0 }
+
+def monthlyLimit(role : Role) : Int53 =
+  match limitsFor(role).get("monthly") { some(value) => value | _ => 0 }
 
 def remainingItems(page : Paginated Money) : Int53 =
   (page.total - page.items.length)

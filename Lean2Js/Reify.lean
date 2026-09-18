@@ -93,6 +93,33 @@ private partial def patternOf (binders : Array Lean.Expr) (binderNames : Array N
     bound := bound ++ b
   return (← `(Lean2Js.Core.Pat.ctor $(⟨Syntax.mkStrLit ctorName⟩) [$pats,*]), bound)
 
+/-- Whether a local's type has constructors the subset gives tags to: one the program declares, or
+`Option` / `Except`, which the subset declares itself and which therefore carry no `typeDef`. -/
+private def splittableValue (fv : FVarId) : MetaM Bool := do
+  let .const tName _ := (← whnf (← fv.getType)).getAppFn | return false
+  if tName == ``Option || tName == ``Except then return true
+  return (← getEnv).contains (tName ++ `typeDef)
+
+/-- Splits every local value the goal still tests. `matchPat` reduces on a constructor, so an arm reached
+past earlier ones closes by computation only once the values those arms looked at are in constructor
+form — and a nested pattern puts a value there that is itself only produced by a split. The fuel bounds
+the descent: patterns are finite, and a type that splits into itself would not otherwise stop. -/
+private partial def splitTested (fuel : Nat) (g : MVarId) : MetaM (List MVarId) :=
+  g.withContext do
+    if fuel == 0 then return [g]
+    let target ← instantiateMVars (← g.getType)
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      unless target.containsFVar d.fvarId do continue
+      unless ← splittableValue d.fvarId do continue
+      let mut out := []
+      for sub in ← g.cases d.fvarId do
+        out := out ++ (← splitTested (fuel - 1) sub.mvarId)
+      return out
+    return [g]
+
+elab "lean2js_split_tested" : tactic => Tactic.liftMetaTactic (splitTested 8)
+
 /-- The simp set a proof that the subset picks the same arm runs in: what `firstMatch` is, what a pattern
 compares with, and the encodings whose tag a pattern tests. -/
 private def matchedSimp : TermElabM (Array Term) :=
@@ -580,8 +607,15 @@ where
       let (patStx, bound) ← patternOf (bs.extract 0 nb) binderNames concl.appArg!
       let (be, bp) ← lambdaBoundedTelescope app.alts[i]! nb fun ys body =>
         walk citing ns (names ++ bound.map (·.1)) (xs ++ bound.map (fun (_, j) => ys[j]!)) body
-      let conds := bs.extract nb bs.size
-      let yIds : Array Ident := (Array.range nb).map fun j => mkIdent (Name.mkSimple s!"y{j}")
+      -- a nested pattern makes the splitter go deeper than the arm's own binders, so the values it
+      -- splits to are however many binders come before the first condition rather than `nb` of them
+      let mut nv := bs.size
+      for j in [0:bs.size] do
+        if ← isProp (← inferType bs[j]!) then
+          nv := j
+          break
+      let conds := bs.extract nv bs.size
+      let yIds : Array Ident := (Array.range nv).map fun j => mkIdent (Name.mkSimple s!"y{j}")
       let cIds : Array Ident := (Array.range conds.size).map fun j =>
         mkIdent (Name.mkSimple s!"c{j}")
       let hId := mkIdent `harm
@@ -594,28 +628,13 @@ where
         if ty.isArrow && ty.bindingDomain!.isAppOf ``Eq then
           extra := extra.push (← `(Lean2Js.Denote.ne_of_missed $(cIds[j]!)))
       let simpArgs ← extra.mapM fun t => `(Lean.Parser.Tactic.simpLemma| $t:term)
-      let mut tac ← `(tactic| simp_all [$simpArgs,*])
-      for j in (← casesOn conds bs nb).reverse do
-        tac ← `(tactic| cases $(yIds[j]!):term <;> $tac)
+      let tac ← `(tactic| lean2js_split_tested <;> simp_all [$simpArgs,*])
       -- the arms that overlap do not reduce on their pattern, and the equation is what says which fired
       let hb ← if conds.isEmpty then pure bp
         else `((by simp only [$(mkCIdent eqn):term]; exact $bp))
       return (← `(($patStx, $be)),
               ← `(fun $yIds* $cIds* $hId => Lean2Js.Denote.denotes_matchE_of _ _ _ _ _ _ $hId
                     [$bindsStx,*] $be (by $tac:tactic) $hb))
-  /-- The pattern binders a condition is about and whose type the program declares. What the condition
-  says is that the value is not one of the constructors an earlier arm named, and the subset's side of
-  that is a tag, so the proof has to reach the constructors. -/
-  casesOn (conds bs : Array Lean.Expr) (nb : Nat) : TermElabM (Array Nat) := do
-    let mut idx := #[]
-    for j in [0:nb] do
-      let .const tName _ := (← whnf (← inferType bs[j]!)).getAppFn | continue
-      unless (← getEnv).contains (tName ++ `typeDef) do continue
-      for c in conds do
-        if (← inferType c).containsFVar bs[j]!.fvarId! then
-          idx := idx.push j
-          break
-    return idx
   /-- A proposition reaches the subset only as the `Bool` a comparison decides, so the decidable
   instance is walked rather than the proposition. -/
   decided (prop inst : Lean.Expr) : TermElabM (Term × Term) := do
