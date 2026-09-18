@@ -1,32 +1,46 @@
 # The Lean a shipped `def` may be written in
 
-What goes inside a `def` marked `@[ship]` is a **narrow subset** of Lean, and it is narrow in one
-direction: what crosses to JavaScript is what has a single JavaScript spelling. Three questions decide
-almost everything, and the rest of this page is their detail.
+What goes inside a `def` marked `@[ship]` is a **narrow subset** of Lean, and two lines draw it. Neither
+is a list to memorise: one is the set of values JavaScript already has, the other is the price of knowing,
+before the program runs, how long it can take.
 
-**1. Is it a value the boundary can carry?** The values are `Bool`, `Int`, `UInt32`, `BigInt`, `String`,
-`List`, `Dict`, `Option`, `Except` and the types you declare with `deriving Enc`. That set is closed, and
-**a function is not in it**.
+**1. A value is one of the seven things JavaScript has.** `boolean`, `number`, `bigint`, `string`,
+`Array`, `Map`, and the tagged object `{ tag: ... }`. Everything Lean writes lands on one of those and
+there is no eighth: `Option`, `Except` and the types you declare with `deriving Enc` are all the tagged
+object, `Dict` is the `Map`, and `Int` / `UInt32` / `BigInt` are three names because JavaScript has two
+number types and a safe range inside one of them. The vocabulary follows from the same line — `Arr.*`,
+`Str.*`, `Dict.*`, `Int53.*` and `BigInt.*` name the JavaScript operation, which is why Lean's function of
+the same name is not read. `List.length` is not forbidden for being Lean's; it answers in `Nat`, and `Nat`
+is not one of the seven.
 
-**2. Does it repeat through one of the six traversals?** `map`, `filter`, `find?`, `all`, `any`, `foldl`.
-There is no recursion and no loop. A lambda is written in the argument of one of those, as part of the
-traversal's own syntax rather than as a value of its own.
+**2. Every call goes to a name written above it.** There is no recursion, no closure and no function built
+where it stands: a function reaches a call as the name of a declaration. That is what lets the fuel a
+program needs be counted from its syntax alone — a call only reaches backwards, so the stack is at most as
+deep as the list of declarations. Repetition is the same line. The six traversals `map`, `filter`,
+`find?`, `all`, `any` and `foldl` are one pass over an array, which costs no fuel at all, and the lambda in
+one of them is the traversal's own syntax rather than a value of its own.
 
-**3. Is the name the subset's?** Operators, constructors, `match` / `if` / `let`, array literals and the
-six traversals are Lean's, written as you would write them anywhere. Everything else comes from `Arr.*`,
-`Str.*`, `Dict.*`, `Opt.*`, `Exc.*`, `Int53.*` and `BigInt.*` rather than from Lean's library.
+So there is one question to ask rather than a table to consult:
 
-What a Lean author reaches for first, and which question decides it:
+> **Could you write it in plain JavaScript, with no function in a variable, and no loop but an `Array`
+> method?**
 
-| You write | Read | Which question |
+A no there is a no here as well. A yes is almost always read, and the exceptions are short: the subset is
+narrower than JavaScript in a few more places: no fractional number (`1.5`, `Math.*`), no `sort`, no
+regular expressions, no `Set` and no `Date`, no `null` or `undefined` (`Option` is the tagged object), and
+no side effects. *Operations that are not there*, below, is what to write instead.
+
+What a Lean author reaches for first, and which line decides it:
+
+| You write | Read | Why |
 | --- | --- | --- |
-| `Nat` | no | 1 — the subset's integers are `Int`, `UInt32` and `BigInt` |
+| `Nat` | no | 1 — not one of the seven; the subset's integers are `Int`, `UInt32` and `BigInt` |
 | a helper that calls itself | no | 2 |
-| `xs.length` / `s.length` / `xs.take 3` | no | 3 — `Arr.length` / `Str.length` / `Arr.take` |
-| `do` and `←` over `Except` | no | 1 — `bind` takes a function |
-| a tuple | no | 1 — declare a `structure` instead |
-| `/` on `Int` | no | 3 — `Int53.div`, because Lean's `/` floors and the subset's truncates |
-| `sort` | no | 1 and 2 — the comparison would have to be a value, and be proved a total order |
+| `xs.length` / `s.length` / `xs.take 3` | no | 1 — the JavaScript operation is `Arr.length` / `Str.length` / `Arr.take` |
+| `do` and `←` over `Except` | no | 2 — `bind` takes a function built where it stands |
+| a tuple | no | 1 — there is no tuple among the seven; declare a `structure` instead |
+| `/` on `Int` | no | 1 — `Int53.div`, because Lean's `/` floors where JavaScript truncates |
+| `sort` | no | 1 and 2 — the comparison is a function built where it stands, and would have to be proved a total order |
 | `xs.filter (fun x => x.active)` | yes | 2 — the lambda is the traversal's own syntax |
 | `xs.map (fun s => match s with ...)` | yes | 2 — a `match` inside that lambda reads like any other |
 | `if seats < 0 then` | yes | the `Decidable` instance is gone before anything runs |
@@ -37,8 +51,12 @@ mentioned but that **nothing may survive to run time that is not a value**: an i
 the declaration is read costs nothing, and a `@[ship] def` is monomorphic because a declaration has
 nowhere to put a type variable.
 
+**Whether it is read is one question; what it answers is another**, and the two lines do not settle the
+second. Division by zero traps where JavaScript answers `Infinity`, and a length is counted in code points
+rather than UTF-16 units. *Where the same name answers differently*, below, is all of that in one place.
+
 A form the walk cannot read is refused **by the name of the `def`**, with the term it stopped at — and,
-where there is nothing better to say, with the one of the three rules above that it broke.
+where there is nothing better to say, with the rule it broke in the walk's own words.
 
 ## Declarations
 
@@ -261,7 +279,7 @@ program carries the name, and a lambda has none. `priced tenPercentOff amount` i
 
 - **Calls cannot cycle.** Lean refuses mutually recursive `def`s, so a cycle stops before this does.
   Repetition is what the array traversals are for (`.map` / `.filter` / `.foldl` …).
-- **A function is not a value.** What may be handed over is the name of a declaration, and
+- **A function is only ever a name.** What may be handed over is the name of a declaration, and
   `ship_package` places a declaration that is handed over before the one that takes it. A function may
   take at most one argument.
 - **A declaration that takes a function is not published.** No function type crosses the public
@@ -338,13 +356,15 @@ all `Arr.take` and the rest of the subset's vocabulary are made of.
 | a `structure` whose constructor is not named | `deriving Enc: T.mk would ship as the tag "mk", ...` |
 | anything else | `reify: <term> is outside the subset this walk reads`, and the rule of the three it broke |
 
-**A refusal closes with the rule where it has nothing better to say.** The three sentences are the three
-questions this page opens with, in the walk's own words:
+**A refusal closes with the rule where it has nothing better to say.** The three sentences are the two
+lines this page opens with, in the walk's own words — the first and the third are the value line, said of
+the types and of the names:
 
 ```
 the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the types you
   declare with deriving Enc
-the subset repeats only through the array traversals, and a function is never a value
+the subset repeats only through the array traversals, and a function is only ever the name of a
+  declaration
 the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 / BigInt
   vocabulary rather than Lean's own library
 ```

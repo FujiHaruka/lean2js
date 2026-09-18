@@ -18,17 +18,19 @@ open Lean2Js Core
 /-! ### The three rules a refusal closes with
 
 A refusal that cannot name what to write instead names the rule the term broke, and there are three:
-what a value may be, how a program repeats, and whose vocabulary it reads. `SYNTAX.md` opens with the
-same three and `Lean2Js.Denote` pins the wording, so neither side can move alone. -/
+what a value may be, whose vocabulary it reads, and where a call may go. The first two are the one line
+`SYNTAX.md` opens with, said of the types and of the names; `Lean2Js.Denote` pins the wording, so neither
+side can move alone. -/
 
 /-- What may be a value. -/
 private def valueRule : String :=
   "the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the \
     types you declare with deriving Enc"
 
-/-- How a program repeats. -/
+/-- Where a call may go, which is also how a program repeats. -/
 private def repeatRule : String :=
-  "the subset repeats only through the array traversals, and a function is never a value"
+  "the subset repeats only through the array traversals, and a function is only ever the name of a \
+    declaration"
 
 /-- Whose vocabulary it reads. -/
 private def vocabularyRule : String :=

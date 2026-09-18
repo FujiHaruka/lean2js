@@ -173,11 +173,13 @@ README says plainly that it ships none. The proofs can come once the shape of th
 
 ## Writing the logic
 
-**You write ordinary Lean, and `@[ship]` marks what ships.** Three questions decide what the subset
-reads: whether it is a value the boundary can carry — **a function is not one** — whether it repeats
-through one of the six list traversals, since there is no recursion, and whether the name is the
-subset's own rather than Lean's library. A `def` that leaves the subset is refused by name, with the
-term the walk stopped at and the rule it broke.
+**You write ordinary Lean, and `@[ship]` marks what ships.** Two lines draw the subset. A value is one of
+the seven things JavaScript has — `boolean`, `number`, `bigint`, `string`, `Array`, `Map`, a tagged object
+— which is also why the vocabulary is `Arr.*` / `Str.*` / `Dict.*` rather than Lean's library. And every
+call goes to a name written above it: no recursion, no closure and no function built where it stands, so
+the fuel a program needs follows from its syntax. One question decides almost all of it — **could you
+write it in plain JavaScript, with no function in a variable, and no loop but an `Array` method?** A `def`
+that leaves the subset is refused by name, with the term the walk stopped at and the rule it broke.
 [`SYNTAX.md`](templates/verified-package/SYNTAX.md) is the whole of it.
 
 ```lean

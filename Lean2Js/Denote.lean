@@ -125,7 +125,7 @@ private def bumpedBy (n : Int) : Int :=
   bump n
 
 /-- error: reify: fun x => x + 1 is outside the subset this walk reads
-the subset repeats only through the array traversals, and a function is never a value -/
+the subset repeats only through the array traversals, and a function is only ever the name of a declaration -/
 #guard_msgs in
 example : Core.Decl := reify_decl% bumpedBy
 
