@@ -66,7 +66,7 @@ major premise 側を触っていて、**原因は `g` 側だった**。
 
 **直し方**: `intLit` を足して、負なら `-(その絶対値)` の構文にする。
 
-## Step 4. 原則を `SYNTAX.md` に置く
+## Step 4. 原則を `SYNTAX.md` に置く — 完了
 
 - 冒頭に 3 つの問いと、Lean 使いが最初に打つ反射（`Nat` / 構造的再帰 / `xs.length` / `do` /
   `[BEq α]`）がどの問いで落ちるかの表。
@@ -78,8 +78,13 @@ major premise 側を触っていて、**原因は `g` 側だった**。
   trap、`-0`）。「書けるか」ではなく「同じ名前で答えが違うか」なので、構文の表に混ぜると原則がぼやける。
 - Step 1〜3 で消えた制限の記述を落とす。
 
-## Step 5. 拒否メッセージを原則と同じ語彙にする
+## Step 5. 拒否メッセージを原則と同じ語彙にする — 完了
 
 `reify: <term> is outside the subset this walk reads` は総称で、3 問のどれで落ちたかを言わない。
-**Q1 / Q2 / Q3 に対応する 3 つの定型文**を持たせ、`#guard_msgs` で固定する。文書と walk が同じ文を
-使うので、片方だけ動かせば `lake build` が落ちる。
+**Q1 / Q2 / Q3 に対応する 3 つの定型文**（`valueRule` / `repeatRule` / `vocabularyRule`）を持たせ、
+`Lean2Js/Denote.lean` に 1 ルール 1 件の `#guard_msgs` を置いた。文書と walk が同じ文を使うので、
+片方だけ動かせば `lake build` が落ちる。
+
+**文は行を分けて付ける。** 末尾に ` — ` で continue すると、メッセージ全体が長くなった分だけ
+pretty printer が**項のほうを折る**（`reify: a /\n  b is outside ...`）。改行を 1 つ入れると項は
+1 行に残り、規則がその下に来る。

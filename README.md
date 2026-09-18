@@ -173,9 +173,11 @@ README says plainly that it ships none. The proofs can come once the shape of th
 
 ## Writing the logic
 
-**You write ordinary Lean, and `@[ship]` marks what ships.** The subset is narrow — no `Array` or
-`String` API from Lean, no lambdas outside traversals, no recursion, no type classes — and a `def`
-that leaves it is refused by name, with the term the walk stopped at.
+**You write ordinary Lean, and `@[ship]` marks what ships.** Three questions decide what the subset
+reads: whether it is a value the boundary can carry — **a function is not one** — whether it repeats
+through one of the six list traversals, since there is no recursion, and whether the name is the
+subset's own rather than Lean's library. A `def` that leaves the subset is refused by name, with the
+term the walk stopped at and the rule it broke.
 [`SYNTAX.md`](templates/verified-package/SYNTAX.md) is the whole of it.
 
 ```lean
@@ -220,7 +222,7 @@ a small trusted base and a correctness proof affordable:
 | List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`) and `match` (nested, wildcard, literal) | Metaprogramming |
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
 | Pure `def`s marked `@[ship]` | Recursion / non-termination / DOM access |
-| A declaration passed to another as a function | Functions as values: lambdas outside traversals, closures, function types on the public boundary |
+| A lambda where a traversal takes one, and a declaration's name passed to a call | Functions as values: a function in a variable, a closure, a function type on the public boundary |
 | Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.join` / `Str.replace` / `Str.repeat` / `Str.padStart` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
 | `Dict V` (string keys, emitted as a `Map`: `get` / `set` / `has` / `erase` / `keys` / `values`) | Plain objects used as dictionaries |
 

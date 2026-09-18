@@ -15,6 +15,24 @@ namespace Lean2Js.Reify
 open Lean Elab Term Meta
 open Lean2Js Core
 
+/-! ### The three rules a refusal closes with
+
+A refusal that cannot name what to write instead names the rule the term broke, and there are three:
+what a value may be, how a program repeats, and whose vocabulary it reads. `SYNTAX.md` opens with the
+same three and `Lean2Js.Denote` pins the wording, so neither side can move alone. -/
+
+/-- What may be a value. -/
+private def valueRule : String :=
+  "the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the types you declare with deriving Enc"
+
+/-- How a program repeats. -/
+private def repeatRule : String :=
+  "the subset repeats only through the array traversals, and a function is never a value"
+
+/-- Whose vocabulary it reads. -/
+private def vocabularyRule : String :=
+  "the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 vocabulary rather than Lean's own library"
+
 /-- How many explicit arguments a cited certificate takes, counted off its statement rather than off the
 `∀` the statement unfolds to. `f ..` would keep going into `Denotes` itself. -/
 private partial def statedArity : Lean.Expr → Nat
@@ -50,7 +68,7 @@ private partial def encTy (α : Lean.Expr) : TermElabM Term := do
     if α.isConstOf ``Float then
       throwError "reify: Float is not a subset type; the subset has no floating point, so an amount is \
         an Int in minor units"
-    throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
+    throwError "reify: {α} has no Enc instance, so there is no subset type to give it\n{valueRule}"
   `(Lean2Js.Enc.ty (α := $(← exprToSyntax α)))
 
 /-- An `Int` as the term the AST carries. A numeral is written without a sign, so a negative one is the
@@ -81,7 +99,9 @@ private partial def patternOf (binders : Array Lean.Expr) (binderNames : Array N
     | .const ``Int _ => return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.int53 $lit)), #[])
     | .const ``Lean2Js.BigInt _ =>
       return (← `(Lean2Js.Core.Pat.lit (Lean2Js.Core.Lit.bigint $lit)), #[])
-    | t => throwError "reify: {pat} is a numeral of type {t}, which the subset has no pattern for"
+    | t =>
+      throwError "reify: {pat} is a numeral of type {t}, which the subset has no pattern for\n\
+        {valueRule}"
   let (ctorName, args) : String × Array Lean.Expr ← match pat.getAppFnArgs with
     | (``Option.none, _) => pure ("none", #[])
     | (``Option.some, #[_, a]) => pure ("some", #[a])
@@ -172,7 +192,9 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     | .const ``Lean2Js.BigInt _ =>
       return (← `(Lean2Js.Core.Expr.lit (Lean2Js.Core.Lit.bigint $lit)),
               ← `(Lean2Js.Denote.denotes_litBig _ _ $lit))
-    | t => throwError "reify: {e} is a numeral of type {t}, which the subset has no literal for"
+    | t =>
+      throwError "reify: {e} is a numeral of type {t}, which the subset has no literal for\n\
+        {valueRule}"
   if let .letE nm ty val body _ := e then
     let (ve, vp) ← walk citing ns names xs val
     let (be, bp) ← walk citing ns (names.push nm.toString) (xs.push val) (body.instantiate1 val)
@@ -349,7 +371,8 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
       if citing && ns.isPrefixOf c then
         throwError "reify: the call to {c} needs {cert}, which is not in scope"
       unless ns.isPrefixOf c do
-        throwError "reify: {e} is outside the subset this walk reads"
+        throwError "reify: {e} is outside the subset this walk reads\n\
+          {if e.isLambda then repeatRule else vocabularyRule}"
     let mut items := #[]
     let mut proof ← `(Lean2Js.Denote.denotesArgs_nil _ _)
     let mut answers := #[]
@@ -429,7 +452,7 @@ where
     match ← whnf α with
     | .const ``Int _ => return intLemma
     | .const ``UInt32 _ => return u32Lemma
-    | t => throwError "reify: {what} on {t} is outside the subset this walk reads"
+    | t => throwError "reify: {what} on {t} is outside the subset this walk reads\n{vocabularyRule}"
   /-- `Int` and `BigInt` are both Lean `Int`s underneath and are told apart only by their type, so the
   operators they share reach the right lemma by what they were applied to. -/
   numeric (α : Lean.Expr) (intLemma u32Lemma bigLemma : Name) : TermElabM Name := do
@@ -437,21 +460,22 @@ where
     | .const ``Int _ => return intLemma
     | .const ``UInt32 _ => return u32Lemma
     | .const ``Lean2Js.BigInt _ => return bigLemma
-    | t => throwError "reify: arithmetic on {t} is outside the subset this walk reads"
+    | t =>
+      throwError "reify: arithmetic on {t} is outside the subset this walk reads\n{vocabularyRule}"
   /-- `eval` has no `neg` for a `UInt32`, so Lean's own — which wraps — is turned away rather than read
   as the wrapping negation the subset does not have. -/
   signed (α : Lean.Expr) (intLemma bigLemma : Name) : TermElabM Name := do
     match ← whnf α with
     | .const ``Int _ => return intLemma
     | .const ``Lean2Js.BigInt _ => return bigLemma
-    | t => throwError "reify: negating a {t} is outside the subset this walk reads"
+    | t => throwError "reify: negating a {t} is outside the subset this walk reads\n{vocabularyRule}"
   /-- `/` and `%` read only on `UInt32`, where both sides divide the same natural numbers. On `Int53` and
   `BigInt` Lean rounds towards negative infinity and the subset truncates, so there the author writes
   `Int53.div` or `BigInt.div` and the operator itself stays unread. -/
   u32Only (α : Lean.Expr) (lemma : Name) : TermElabM Name := do
     match ← whnf α with
     | .const ``UInt32 _ => return lemma
-    | _ => throwError "reify: {e} is outside the subset this walk reads"
+    | _ => throwError "reify: {e} is outside the subset this walk reads\n{vocabularyRule}"
   /-- `Int53`, `UInt32`, `BigInt` and `String` are ordered by different functions on both sides, so a
   comparison reads as the lemma for the type being compared. -/
   cmp (α : Lean.Expr) (op : Name) (intLemma u32Lemma strLemma bigLemma : Name) (l r : Lean.Expr) :
@@ -461,13 +485,15 @@ where
     | .const ``UInt32 _ => binary op u32Lemma l r
     | .const ``String _ => binary op strLemma l r
     | .const ``Lean2Js.BigInt _ => binary op bigLemma l r
-    | t => throwError "reify: comparing two values of type {t} is outside the subset this walk reads"
+    | t =>
+      throwError "reify: comparing two values of type {t} is outside the subset this walk reads\n\
+        {vocabularyRule}"
   /-- `==` is the one form that asks something of the encoding rather than of the walk: `eval` compares
   encodings, so the type has to be one whose encoding neither folds two terms together nor splits one
   apart. -/
   equated (α : Lean.Expr) (op : Name) (lemma : Name) (l r : Lean.Expr) : TermElabM (Term × Term) := do
     let some encInst ← synthInstance? (mkApp (mkConst ``Lean2Js.Enc) α)
-      | throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
+      | throwError "reify: {α} has no Enc instance, so there is no subset type to give it\n{valueRule}"
     let some beqInst ← synthInstance? (mkApp (mkConst ``BEq [Level.zero]) α)
       | throwError "reify: {α} has no BEq instance, so `==` on it is not a form at all"
     unless (← synthInstance? (mkApp3 (mkConst ``Lean2Js.Enc.EncBEq) α encInst beqInst)).isSome do
@@ -692,10 +718,10 @@ where
         let (be, bp) ← walk citing ns names xs b
         return (be, ← `(Lean2Js.Denote.denotes_decide_eq_true _ _ _ _ $bp))
       else
-        throwError "reify: {prop} is outside the subset this walk reads"
+        throwError "reify: {prop} is outside the subset this walk reads\n{vocabularyRule}"
     | _ =>
       throwError "reify: {mkApp2 (mkConst ``Decidable.decide) prop inst} is outside the subset \
-        this walk reads"
+        this walk reads\n{vocabularyRule}"
 
 private structure Reified where
   name : Name

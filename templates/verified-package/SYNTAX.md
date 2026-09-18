@@ -1,9 +1,44 @@
 # The Lean a shipped `def` may be written in
 
-What goes inside a `def` marked `@[ship]` is a **narrow subset** of Lean. Lean's `Array` and `String`
-APIs, recursion, `do`, type classes and dependent types are not in it. This page is all of it.
+What goes inside a `def` marked `@[ship]` is a **narrow subset** of Lean, and it is narrow in one
+direction: what crosses to JavaScript is what has a single JavaScript spelling. Three questions decide
+almost everything, and the rest of this page is their detail.
 
-A form the walk cannot read is refused **by the name of the `def`**, with the term it stopped at.
+**1. Is it a value the boundary can carry?** The values are `Bool`, `Int`, `UInt32`, `BigInt`, `String`,
+`List`, `Dict`, `Option`, `Except` and the types you declare with `deriving Enc`. That set is closed, and
+**a function is not in it**.
+
+**2. Does it repeat through one of the six traversals?** `map`, `filter`, `find?`, `all`, `any`, `foldl`.
+There is no recursion and no loop. A lambda is written in the argument of one of those, as part of the
+traversal's own syntax rather than as a value of its own.
+
+**3. Is the name the subset's?** Operators, constructors, `match` / `if` / `let`, array literals and the
+six traversals are Lean's, written as you would write them anywhere. Everything else comes from `Arr.*`,
+`Str.*`, `Dict.*`, `Opt.*`, `Exc.*`, `Int53.*` and `BigInt.*` rather than from Lean's library.
+
+What a Lean author reaches for first, and which question decides it:
+
+| You write | Read | Which question |
+| --- | --- | --- |
+| `Nat` | no | 1 — the subset's integers are `Int`, `UInt32` and `BigInt` |
+| a helper that calls itself | no | 2 |
+| `xs.length` / `s.length` / `xs.take 3` | no | 3 — `Arr.length` / `Str.length` / `Arr.take` |
+| `do` and `←` over `Except` | no | 1 — `bind` takes a function |
+| a tuple | no | 1 — declare a `structure` instead |
+| `/` on `Int` | no | 3 — `Int53.div`, because Lean's `/` floors and the subset's truncates |
+| `sort` | no | 1 and 2 — the comparison would have to be a value, and be proved a total order |
+| `xs.filter (fun x => x.active)` | yes | 2 — the lambda is the traversal's own syntax |
+| `xs.map (fun s => match s with ...)` | yes | 2 — a `match` inside that lambda reads like any other |
+| `if seats < 0 then` | yes | the `Decidable` instance is gone before anything runs |
+| `@[expand] def f [Inhabited α]` | yes | the same: an expansion's instance never reaches the AST |
+
+The last two are what "no type classes" would get wrong. The rule is not that a class may not be
+mentioned but that **nothing may survive to run time that is not a value**: an instance resolved while
+the declaration is read costs nothing, and a `@[ship] def` is monomorphic because a declaration has
+nowhere to put a type variable.
+
+A form the walk cannot read is refused **by the name of the `def`**, with the term it stopped at — and,
+where there is nothing better to say, with the one of the three rules above that it broke.
 
 ## Declarations
 
@@ -112,8 +147,8 @@ carries.
 true  false    Bool
 ```
 
-A negative literal cannot be written (`0 - 1` can). `UInt32` has no literal: take one as a parameter or
-from another declaration.
+`-1` is a literal too, in an expression and in a pattern alike. `UInt32` has no literal: take one as a
+parameter or from another declaration.
 
 ### Operators
 
@@ -126,14 +161,14 @@ from another declaration.
 | `==` `!=` | a type with `Enc` and `LawfulBEq` (your own: `deriving DecidableEq, Enc`) |
 | `&&` `\|\|` | `Bool`, short-circuiting as JavaScript does |
 | `++` | `String` / `List` |
-| `min` `max` | `Int` |
+| `min` `max` | `Int` / `UInt32` |
 
 **`/` on `Int` is refused.** Lean's `/` floors and the subset's division truncates, so reading the same
 symbol as the other operation would silently change what the function means. Write `Int53.div`,
 `Int53.mod` or `Int53.abs`.
 
-Division by zero, `Int53` overflow and out-of-range access (`Arr.get` / `Arr.slice` / `Str.substring`)
-trap: the reference semantics stops, and the generated code throws the same code at the same point.
+Division by zero and an `Int53` that overflows trap rather than answering, as reading out of range does;
+*Where the same name answers differently*, below, is where that and the rest of the divergences are.
 
 ### Conditions, bindings, branches
 
@@ -179,82 +214,48 @@ priced tenPercentOff amount           handing a declaration to a call
 
 - What you may call is a **`@[ship] def` in the same namespace**. `ship_package` puts them in the order
   every call reaches backwards in.
-- What you may hand to a call as a function is **the name of a declaration**, not a lambda written in
-  place.
+- What you may hand to a call of your own as a function is **the name of a declaration**, not a lambda
+  written in place: the program carries the name. A lambda is read where it is written out instead —
+  the traversals and the vocabulary below.
 
 ### Arrays, strings, dictionaries
 
-| On | What you may write |
-| --- | --- |
-| `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` `Int53.toString` |
-| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
-| `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
-| | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
-| `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` |
-| `Option T` | `Opt.getD` `Opt.map` |
-| `Except E A` | `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` |
+**Written as Lean's own, because they are Lean's own**: `.map` `.filter` `.find?` `.all` `.any` `.foldl`
+`.reverse` and `++` on a `List`, `min` and `max` on an `Int` or a `UInt32`, the array literal, the
+constructors and the operators.
 
-`Arr.length` / `Arr.get` / `Arr.slice` and the `Str.*` functions are the prelude's, not Lean's
-`List.length` or `String.length`. They are separate so that what traps out of range can still be written
-as a total function.
+**Everything else is the subset's**, and Lean's function of the same name is not read:
 
-`Str.toInt?` answers only on the strings `Int53.toString` prints, so `"007"`, `" 5"`, `"+5"` and `"-0"`
-are refused along with anything outside the `Int53` range. JavaScript's `Number()` reads all four.
+| On | What you write | Why not Lean's own |
+| --- | --- | --- |
+| `List T` | `Arr.length` `Arr.get` `Arr.slice` | Lean's `List.length` counts in `Nat`, which is not a subset type, and a read past the end has to trap rather than answer a default |
+| | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's repeat by recursion, which the walk does not read. These say the same thing with `slice` / `any` / `foldl` |
+| `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API is not read at all: these are written so that one answer holds on both sides, and *Where the same name answers differently*, below, is what that decided. `Str.length` answers in `Int` as well, and `Str.substring` traps rather than clamping |
+| `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | Lean's `/` floors where the subset truncates, as JavaScript does, and `toString` is a class method rather than an operation the subset could name |
+| `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` | a `Dict` is a type of its own, because `List (String × V)` already encodes as an array |
+| `Option T` | `Opt.getD` `Opt.map` | the name is taken: Lean's `Option.getD` is imported before this library is read, so `o.getD fallback` reaches Lean's, which the walk does not read |
+| `Except E A` | `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | the same, for `Except.map` |
 
-`Str.indexOf? s t` counts code points and answers `none` for absence, where JavaScript's `indexOf`
-counts UTF-16 units and answers `-1`. The empty needle sits at `0`, in both. The answer is an index
-`Str.substring` accepts.
+**`Str.replace`, `Str.isEmpty`, `Str.padStart` and everything from `Arr.take` down is `@[expand]`**, so
+each call writes the body out where it stands. Nothing of them reaches `index.js`, and the fuel the
+program needs grows with how deeply they nest. `Arr.contains` needs `BEq T`, which `deriving DecidableEq`
+gives; `Arr.head?` and `Arr.last?` need `Inhabited T`, which is `deriving Inhabited`.
 
-`Str.replace s pat rep` rewrites **every** occurrence, the way JavaScript's `replaceAll` does and its
-`replace` does not. An empty `pat` leaves `s` as it is, where `replaceAll("", r)` inserts at every
-position — the same divergence `Str.split s ""` carries, which is what `Str.replace` is written from.
-
-`Str.repeat s n` writes `s` out `n` times, counted in code points. A count of zero or less gives `""`,
-where JavaScript's own `repeat` throws on a negative one. It and `Str.padStart`, which is written from
-it, are the two operations that take a length as a number, so they are the two that can ask for a string
-past the `Int53` bound on a length; that traps, and an engine will run out of memory below it.
-
-`Str.padStart s n pad` widens `s` to `n` code points by writing `pad` in front of it, cut where the
-width falls so a multi-character pad does not overshoot. A width `s` already reaches, and an empty
-`pad`, leave `s` as it is. JavaScript's own counts UTF-16 units, so it pads astral text short.
-
-`Opt` and `Exc` are named apart from `Option` and `Except` because Lean's `Option.getD` and `Except.map`
-already exist; writing `o.getD fallback` reaches Lean's, which the walk does not read.
-
-**`Str.replace`, `Str.isEmpty`, `Str.padStart` and everything from `Arr.take` down is `@[expand]`**, so each call writes the body out
-where it stands. Nothing of them reaches `index.js`, and the fuel the program needs grows with how
-deeply they nest.
-`Arr.contains` needs `BEq T`, which `deriving DecidableEq` gives; `Arr.head?` and `Arr.last?` need
-`Inhabited T`, which is `deriving Inhabited`.
-
-**The one that takes a function takes the name of a declaration**, never a lambda written in place:
-`Arr.count`, `Arr.flatMap`, `Dict.ofPairs`, `Opt.map`, `Exc.map` and `Exc.mapError`. A lambda is refused
-naming the marked `def`: `reify: writing out Lean2Js.Arr.count, which is marked @[expand] —
-reify: (fun n => decide (n > 0))`.
-
-A lambda may be written **only** as the argument of `.map` / `.filter` / `.find?` / `.all` / `.any` /
-`.foldl`, and its body may read the enclosing parameters
-(`states.filter (fun state => canRefund role state)`). In that position the name of a shipped
-declaration works too (`quantities.map clampToTen`).
-
-**A `match` written inside that lambda may not certify.** The walk reads it, and then `ship_package`
-fails on the certificate with a type mismatch rather than a `reify:` refusal. Write the branch with `if`
-where the condition allows, or move the `match` into a `@[ship] def` of its own and call that:
+**A lambda is written wherever the function it stands for is written out**: the six traversals, and the
+entries above that take one — `Arr.count`, `Arr.flatMap`, `Dict.ofPairs`, `Opt.map`, `Exc.map` and
+`Exc.mapError`. Its body may read the enclosing parameters and may branch:
 
 ```lean
-@[ship]
-def addSome (running : Int) (o : Option Int) : Int :=
-  match o with
-  | none => running
-  | some v => running + v
-
-@[ship]
-def sumSome (xs : List (Option Int)) : Int := xs.foldl (fun running o => addSome running o) 0
+states.filter (fun state => canRefund role state)
+states.map (fun state => match state with | .shipped _ trackingId => trackingId | _ => "")
+Arr.count amounts (fun amount => amount < 0)
 ```
 
-`@[expand]` does not help here: the expansion puts the `match` back inside the lambda. The helper has to
-be a declaration the package ships. **`Opt.*` and `Exc.*` are a `match` once written out**, so calling
-one inside a traversal's lambda meets the same wall; call them at the top of a `@[ship] def` instead.
+The name of a shipped declaration works in every one of those places too (`quantities.map clampToTen`).
+
+**Handing a function to a `@[ship] def` of your own takes a name**, never a lambda written in place: the
+program carries the name, and a lambda has none. `priced tenPercentOff amount` is read;
+`priced (fun x => x) amount` is refused.
 
 ## Rules that are not syntax
 
@@ -267,9 +268,40 @@ one inside a traversal's lambda meets the same wall; call them at the top of a `
   boundary, so it appears in neither `index.d.ts` nor the exports of `index.js`, and only other
   declarations call it.
 - **A type parameter is a `Type`.** `Paginated (T : Type)` is fine; `Type 1` and class constraints are
-  not.
+  not. A class constraint is read on a `@[expand] def` and nowhere else, because there it is gone before
+  the AST exists.
 - **There is a fuel ceiling.** The fuel a program needs follows from the depth of its expressions and
   the number of its declarations; past 10000 it cannot be written out. `ship_package` checks this.
+
+## Where the same name answers differently
+
+Not a question of what you may write but of what the answer is. Each of these is a place where
+JavaScript's function and Lean's function disagree, and the subset's picks one answer and holds both
+sides to it.
+
+- **Out of range traps.** `Arr.get`, `Arr.slice` and `Str.substring` stop where JavaScript would answer
+  `undefined` or clamp, and so do division by zero and an `Int53` that overflows: the reference semantics
+  stops, and the generated code throws the same code at the same point.
+- **A length is counted in code points.** `Str.length`, `Str.substring`, `Str.indexOf?`, `Str.repeat` and
+  `Str.padStart` all count what `Array.from` counts, not UTF-16 units, so a surrogate pair is one
+  character and `substring` never splits one in half.
+- **`-0` is normalised to `0`.** `Int53` is a mathematical integer, where JavaScript produces `-0` for
+  `0 - 0` and `-4 % 2`.
+- **Equality is structural**, and generated per type: `===` cannot compare two records.
+- `Str.toInt?` answers only on the strings `Int53.toString` prints, so `"007"`, `" 5"`, `"+5"` and `"-0"`
+  are refused along with anything outside the `Int53` range. JavaScript's `Number()` reads all four.
+- `Str.indexOf? s t` answers `none` for absence where JavaScript's `indexOf` answers `-1`. The empty
+  needle sits at `0`, in both. The answer is an index `Str.substring` accepts.
+- `Str.replace s pat rep` rewrites **every** occurrence, the way JavaScript's `replaceAll` does and its
+  `replace` does not. An empty `pat` leaves `s` as it is, where `replaceAll("", r)` inserts at every
+  position — the same divergence `Str.split s ""` carries, which is what `Str.replace` is written from.
+- `Str.repeat s n` gives `""` for a count of zero or less, where JavaScript's own throws on a negative
+  one. It and `Str.padStart`, which is written from it, are the two operations that take a length as a
+  number, so they are the two that can ask for a string past the `Int53` bound on a length; that traps,
+  and an engine will run out of memory below it.
+- `Str.padStart s n pad` cuts the pad where the width falls, so a multi-character pad does not overshoot.
+  A width `s` already reaches, and an empty `pad`, leave `s` as it is. JavaScript's own counts UTF-16
+  units, so it pads astral text short.
 
 ## Operations that are not there
 
@@ -287,25 +319,35 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 
 An array or string operation that is missing from the tables above but needs no new concept is usually
 writable as a `@[expand] def` of your own. `foldl` is the loop and `Arr.slice` is the window, which is
-all `Arr.take` and the rest of the prelude's vocabulary are made of. What such a definition cannot carry
-is a `match` inside the traversal's function, which is the form that may not certify (above); moving that
-`match` into a `@[ship] def` is the way out, at the cost of one more exported function.
+all `Arr.take` and the rest of the subset's vocabulary are made of.
 
 ## When you leave the subset
 
 | What you wrote | What comes back |
 | --- | --- |
-| `/` on `Int` | `reify: a / b is outside the subset this walk reads` |
+| `/` on `Int` | `reify: a / b is outside the subset this walk reads`, and the vocabulary rule |
 | a call to a declaration with no certificate | `reify: the call to f needs f_certificate, which is not in scope` |
 | `==` on a type without `deriving DecidableEq` | `reify: comparing two values of type T needs EncBEq T, ...` |
-| a lambda handed over as a function | `reify: fun x => x is a function that is not a declaration, ...` |
+| a lambda handed to a declaration of your own | `reify: fun x => x is a function that is not a declaration, ...` |
+| a lambda anywhere else — bound to a name, returned, stored | `reify: fun x => x + 1 is outside the subset this walk reads`, and the repeat rule |
 | a function returned as a value | `reify: rule is a function, and a function reaches the subset only where it is called or handed to a call` |
 | a tuple | `reify: Prod.mk builds a tuple, and the subset has no tuple type: declare a structure with deriving Enc and build that instead` |
 | `Nat` | `reify: Nat is not a subset type; the subset's integer is Int, ...` |
 | `Float` | `reify: Float is not a subset type; the subset has no floating point, ...` |
 | any other type without `deriving Enc` | `reify: T has no Enc instance, so there is no subset type to give it` |
 | a `structure` whose constructor is not named | `deriving Enc: T.mk would ship as the tag "mk", ...` |
-| anything else | `reify: <term> is outside the subset this walk reads` |
+| anything else | `reify: <term> is outside the subset this walk reads`, and the rule of the three it broke |
+
+**A refusal closes with the rule where it has nothing better to say.** The three sentences are the three
+questions this page opens with, in the walk's own words:
+
+```
+the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the types you
+  declare with deriving Enc
+the subset repeats only through the array traversals, and a function is never a value
+the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 vocabulary
+  rather than Lean's own library
+```
 
 **A refusal names the `def`.** `Lean.Expr` carries no position, so the furthest it can point is the
 `def` that was read; which term inside it stopped the walk is in the message.

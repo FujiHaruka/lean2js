@@ -100,6 +100,11 @@ theorem add_comm_ships (m : Js.Module) (hm : Compile.compileProgram Example.prog
 
 /-! ### What the walk refuses
 
+A refusal that cannot name what to write instead names the rule the term broke, and the three rules are
+the three questions `SYNTAX.md` opens with: what may be a value, how a program repeats, and whose
+vocabulary it reads. One fixture per rule is what keeps the two sides from drifting — the wording lives
+in `Lean2Js.Reify` and is read back here.
+
 Lean's `/` on `Int` rounds towards negative infinity and the subset's truncates, so `/` is not a form the
 walk may quietly accept. It refuses at the `reify_decl%` call rather than at the author's `/`:
 `Lean.Expr` carries no source positions, so pointing at the author's own syntax needs more than the
@@ -107,9 +112,34 @@ elaborated term. -/
 
 private def quotient (a b : Int) : Int := a / b
 
-/-- error: reify: a / b is outside the subset this walk reads -/
+/-- error: reify: a / b is outside the subset this walk reads
+the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 vocabulary rather than Lean's own library -/
 #guard_msgs in
 example : Core.Decl := reify_decl% quotient
+
+/-! A lambda is a value nowhere: the traversals carry their binder and body as syntax, and every other
+position wants a value the boundary can carry. -/
+
+private def bumpedBy (n : Int) : Int :=
+  let bump := fun (x : Int) => x + 1
+  bump n
+
+/-- error: reify: fun x => x + 1 is outside the subset this walk reads
+the subset repeats only through the array traversals, and a function is never a value -/
+#guard_msgs in
+example : Core.Decl := reify_decl% bumpedBy
+
+/-! A type with no `Enc` has no place in `Value`, so there is nothing for the boundary to carry it as. -/
+
+private structure Untagged where
+  amount : Int
+
+private def amountOf (u : Untagged) : Int := u.amount
+
+/-- error: reify: Untagged has no Enc instance, so there is no subset type to give it
+the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the types you declare with deriving Enc -/
+#guard_msgs in
+example : Core.Decl := reify_decl% amountOf
 
 /-! `==` is the one refusal about the type rather than about the term. `eval` compares encodings, so a
 type whose `BEq` is not known to decide equality has nothing to say about what that comparison means. -/
