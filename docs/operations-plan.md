@@ -430,7 +430,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `hasTy_string_inv` はどちらも `helper_strBin` の中に移った。**振る舞いは変わらない**：
   ベクタ件数も生成物も 1 バイト動かず、`Core.Expr` は 35 形のまま。**残る仕事は `strTer`
   （`substring` の一般化）だけ**で、これは `replace` / `padStart` が要る。
-- **Step 4 の 2 つめ**（2026-09-19, `HASH_JOIN`） — `Str.join` が入った。`StrBinOp` に腕 1 つ、
+- **Step 4 の 2 つめ**（2026-09-19, `6c3066c`） — `Str.join` が入った。`StrBinOp` に腕 1 つ、
   `Core.Expr` は 35 形のまま。`strBinArgTys` に `(.array .string, .string)` を 1 行足すだけで引数の型は
   通り、`helper_strBin` は `hasTy_string_array_inv` で `.arr (ss.map .str)` を取り出す。`join` は
   落ちない op なので、`Correct` の落ちる側は `valueStrs_map_str` で矛盾に落ちて終わる。
