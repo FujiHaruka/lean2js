@@ -1343,7 +1343,7 @@ def callsUncertified (x : Int) : Int := uncertified x
 
 /-- error: reify: the call to Lean2Js.Denote.uncertified needs Lean2Js.Denote.uncertified_certificate, which is not in scope -/
 #guard_msgs in
-example : Core.Decl := reify_decl% callsUncertified
+example : True := reify_proof% callsUncertified
 
 /-! A function crosses the boundary as a declaration's name, so a function the author wrote inline has
 no name to cross as. -/

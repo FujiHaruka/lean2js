@@ -11,6 +11,8 @@ import Lean2Js.Manifest
 import Lean2Js.Vectors
 import Lean2Js.Builder
 import Lean2Js.Syntax
+import Lean2Js.Gather
+import Lean2Js.Verified
 import Lean2Js.Ident
 import Lean2Js.Parse
 import Lean2Js.JsSem

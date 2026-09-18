@@ -108,7 +108,7 @@ being applied to the proof.
 `ns` is the namespace the declaration being read lives in. A call to a sibling declaration is the one
 refusal worth naming, because the author's remedy — reify the callee first — is not the remedy for
 anything else the walk turns away. -/
-private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Expr)
+private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs : Array Lean.Expr)
     (e : Lean.Expr) : TermElabM (Term × Term) := do
   if let some i := xs.findIdx? (· == e) then
     if (← whnf (← inferType e)).isArrow then
@@ -137,8 +137,8 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
               ← `(Lean2Js.Denote.denotes_litBig _ _ $lit))
     | t => throwError "reify: {e} is a numeral of type {t}, which the subset has no literal for"
   if let .letE nm ty val body _ := e then
-    let (ve, vp) ← walk ns names xs val
-    let (be, bp) ← walk ns (names.push nm.toString) (xs.push val) (body.instantiate1 val)
+    let (ve, vp) ← walk citing ns names xs val
+    let (be, bp) ← walk citing ns (names.push nm.toString) (xs.push val) (body.instantiate1 val)
     return (← `(Lean2Js.Core.Expr.letE $(⟨Syntax.mkStrLit nm.toString⟩) $(← encTy ty) $ve $be),
             ← `(Lean2Js.Denote.denotes_letE _ _ _ _ _ _ _ _ $vp $bp))
   if let some app ← matchMatcherApp? e then
@@ -148,7 +148,7 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     unless args.size == 1 do
       throwError "reify: {e} applies {names[i]!} to {args.size} arguments, and a function crosses the \
         boundary only where it takes one"
-    let (ae, ap) ← walk ns names xs args[0]!
+    let (ae, ap) ← walk citing ns names xs args[0]!
     let nm : Term := ⟨Syntax.mkStrLit names[i]!⟩
     return (← `(Lean2Js.Core.Expr.call $nm [$ae]),
             ← `(Lean2Js.Denote.denotes_callFn _ _ $nm _ _ _ _ rfl (by assumption) $ap))
@@ -190,27 +190,27 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
   | (``List.nil, #[α]) => arrayLit α e
   | (``List.cons, #[α, _, _]) => arrayLit α e
   | (``List.reverse, #[_, l]) =>
-    let (ae, ap) ← walk ns names xs l
+    let (ae, ap) ← walk citing ns names xs l
     return (← `(Lean2Js.Core.Expr.arrayReverse $ae),
             ← `(Lean2Js.Denote.denotes_arrayReverse _ _ _ _ $ap))
   | (``HAppend.hAppend, #[α, _, _, _, l, r]) => concat α l r
   | (``Lean2Js.Arr.length, #[_, l]) =>
-    let (ae, ap) ← walk ns names xs l
+    let (ae, ap) ← walk citing ns names xs l
     return (← `(Lean2Js.Core.Expr.length $ae),
             ← `(Lean2Js.Denote.denotes_lengthArr _ _ _ _ $ap))
   | (``Lean2Js.Arr.get, #[_, _, l, i]) =>
-    let (ae, ap) ← walk ns names xs l
-    let (ie, ip) ← walk ns names xs i
+    let (ae, ap) ← walk citing ns names xs l
+    let (ie, ip) ← walk citing ns names xs i
     return (← `(Lean2Js.Core.Expr.index $ae $ie),
             ← `(Lean2Js.Denote.denotes_index _ _ _ _ _ _ $ap $ip))
   | (``Lean2Js.Arr.slice, #[_, l, lo, hi]) =>
-    let (ae, ap) ← walk ns names xs l
-    let (loe, lop) ← walk ns names xs lo
-    let (hie, hip) ← walk ns names xs hi
+    let (ae, ap) ← walk citing ns names xs l
+    let (loe, lop) ← walk citing ns names xs lo
+    let (hie, hip) ← walk citing ns names xs hi
     return (← `(Lean2Js.Core.Expr.arraySlice $ae $loe $hie),
             ← `(Lean2Js.Denote.denotes_arraySlice _ _ _ _ _ _ _ _ $ap $lop $hip))
   | (``Lean2Js.Str.length, #[l]) =>
-    let (ae, ap) ← walk ns names xs l
+    let (ae, ap) ← walk citing ns names xs l
     return (← `(Lean2Js.Core.Expr.length $ae),
             ← `(Lean2Js.Denote.denotes_lengthStr _ _ _ _ $ap))
   | (``Lean2Js.Str.trim, #[l]) => strUn `trim ``Lean2Js.Denote.denotes_trim l
@@ -222,9 +222,9 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
   | (``Lean2Js.Str.includes, #[l, r]) => strBin `includes ``Lean2Js.Denote.denotes_includes l r
   | (``Lean2Js.Str.split, #[l, r]) => strBin `split ``Lean2Js.Denote.denotes_split l r
   | (``Lean2Js.Str.substring, #[l, lo, hi]) =>
-    let (ae, ap) ← walk ns names xs l
-    let (loe, lop) ← walk ns names xs lo
-    let (hie, hip) ← walk ns names xs hi
+    let (ae, ap) ← walk citing ns names xs l
+    let (loe, lop) ← walk citing ns names xs lo
+    let (hie, hip) ← walk citing ns names xs hi
     return (← `(Lean2Js.Core.Expr.substring $ae $loe $hie),
             ← `(Lean2Js.Denote.denotes_substring _ _ _ _ _ _ _ _ $ap $lop $hip))
   | (``Lean2Js.Dict.ofList, #[α, l]) => dictLit α l
@@ -235,21 +235,21 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
   | (``Lean2Js.Dict.erase, #[_, d, k]) =>
     dictKeyed `dictDelete ``Lean2Js.Denote.denotes_dictDelete d k
   | (``Lean2Js.Dict.set, #[_, d, k, v]) =>
-    let (de, dp) ← walk ns names xs d
-    let (ke, kp) ← walk ns names xs k
-    let (ve, vp) ← walk ns names xs v
+    let (de, dp) ← walk citing ns names xs d
+    let (ke, kp) ← walk citing ns names xs k
+    let (ve, vp) ← walk citing ns names xs v
     return (← `(Lean2Js.Core.Expr.dictSet $de $ke $ve),
             ← `(Lean2Js.Denote.denotes_dictSet _ _ _ _ _ _ _ _ $dp $kp $vp))
   | (``Lean2Js.Dict.keys, #[_, d]) =>
-    let (de, dp) ← walk ns names xs d
+    let (de, dp) ← walk citing ns names xs d
     return (← `(Lean2Js.Core.Expr.dictKeys $de),
             ← `(Lean2Js.Denote.denotes_dictKeys _ _ _ _ $dp))
   | (``Lean2Js.Dict.values, #[_, d]) =>
-    let (de, dp) ← walk ns names xs d
+    let (de, dp) ← walk citing ns names xs d
     return (← `(Lean2Js.Core.Expr.dictValues $de),
             ← `(Lean2Js.Denote.denotes_dictValues _ _ _ _ $dp))
   | (``Lean2Js.Dict.size, #[_, d]) =>
-    let (de, dp) ← walk ns names xs d
+    let (de, dp) ← walk citing ns names xs d
     return (← `(Lean2Js.Core.Expr.length $de),
             ← `(Lean2Js.Denote.denotes_lengthDict _ _ _ _ $dp))
   | (``List.map, #[_, _, f, l]) => traverse `mapE ``Lean2Js.Denote.denotes_mapE f l
@@ -258,13 +258,13 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
   | (``List.all, #[_, l, f]) => quantified `all ``Lean2Js.Denote.denotes_allE f l
   | (``List.any, #[_, l, f]) => quantified `any ``Lean2Js.Denote.denotes_anyE f l
   | (``List.foldl, #[_, _, f, init, l]) =>
-    let (ae, ap) ← walk ns names xs l
-    let (ie, ip) ← walk ns names xs init
+    let (ae, ap) ← walk citing ns names xs l
+    let (ie, ip) ← walk citing ns names xs init
     let f2 ← if f.isLambda then pure f else etaExpand f
     let (accName, elemName, be, bp) ← lambdaBoundedTelescope f2 2 fun ys body => do
       let accName ← named ys[0]!
       let elemName ← named ys[1]!
-      let (be, bp) ← walk ns (names ++ #[accName, elemName]) (xs ++ ys) body
+      let (be, bp) ← walk citing ns (names ++ #[accName, elemName]) (xs ++ ys) body
       return (accName, elemName, be, bp)
     let accLit : Term := ⟨Syntax.mkStrLit accName⟩
     let elemLit : Term := ⟨Syntax.mkStrLit elemName⟩
@@ -275,21 +275,21 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
     return (← `(Lean2Js.Core.Expr.noneE $(← encTy α)),
             ← `(Lean2Js.Denote.denotes_noneE _ _ _))
   | (``Option.some, #[_, a]) =>
-    let (ae, ap) ← walk ns names xs a
+    let (ae, ap) ← walk citing ns names xs a
     return (← `(Lean2Js.Core.Expr.someE $ae), ← `(Lean2Js.Denote.denotes_someE _ _ _ _ $ap))
   | (``Except.ok, #[ε, _, a]) =>
-    let (ae, ap) ← walk ns names xs a
+    let (ae, ap) ← walk citing ns names xs a
     return (← `(Lean2Js.Core.Expr.okE $(← encTy ε) $ae),
             ← `(Lean2Js.Denote.denotes_okE _ _ _ _ _ $ap))
   | (``Except.error, #[_, α, a]) =>
-    let (ae, ap) ← walk ns names xs a
+    let (ae, ap) ← walk citing ns names xs a
     return (← `(Lean2Js.Core.Expr.errorE $(← encTy α) $ae),
             ← `(Lean2Js.Denote.denotes_errorE _ _ _ _ _ $ap))
   | (``Decidable.decide, #[prop, inst]) => decided prop inst
   | (``ite, #[_, prop, inst, t, f]) =>
     let (ce, cp) ← decided prop inst
-    let (te, tp) ← walk ns names xs t
-    let (fe, fp) ← walk ns names xs f
+    let (te, tp) ← walk citing ns names xs t
+    let (fe, fp) ← walk citing ns names xs f
     return (← `(Lean2Js.Core.Expr.cond $ce $te $fe),
             ← `(Lean2Js.Denote.denotes_ite _ _ _ _ _ _ _ _ $cp $tp $fp))
   | (c, callArgs) =>
@@ -300,9 +300,10 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
         return ← projection c.getString! callArgs[pi.numParams]!
     let cert := c.appendAfter "_certificate"
     unless (← getEnv).contains cert do
-      if ns.isPrefixOf c then
+      if citing && ns.isPrefixOf c then
         throwError "reify: the call to {c} needs {cert}, which is not in scope"
-      throwError "reify: {e} is outside the subset this walk reads"
+      unless ns.isPrefixOf c do
+        throwError "reify: {e} is outside the subset this walk reads"
     let mut items := #[]
     let mut proof ← `(Lean2Js.Denote.denotesArgs_nil _ _)
     let mut answers := #[]
@@ -312,17 +313,19 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
         proof ← `(Lean2Js.Denote.denotesArgs_fnRef _ _ $nm _ _ rfl $proof)
         answers := answers.push answer
       else
-        let (ae, ap) ← walk ns names xs a
+        let (ae, ap) ← walk citing ns names xs a
         items := items.push ae
         proof ← `(Lean2Js.Denote.denotesArgs_cons _ _ _ _ _ _ $ap $proof)
-    let some info := (← getEnv).find? cert | throwError "reify: {cert} is not in scope"
-    let asked := fnHypPositions info.type 0 #[]
-    answers := answers.reverse
-    let holes : Array Term ← (Array.range (statedArity info.type)).mapM fun i => do
-      match asked.findIdx? (· == i) with
-      | some k => if h : k < answers.size then pure answers[k] else `(_)
+    let cited ← match (← getEnv).find? cert with
       | none => `(_)
-    let cited ← if holes.isEmpty then `($(mkIdent cert)) else `($(mkIdent cert) $holes*)
+      | some info =>
+        let asked := fnHypPositions info.type 0 #[]
+        answers := answers.reverse
+        let holes : Array Term ← (Array.range (statedArity info.type)).mapM fun i => do
+          match asked.findIdx? (· == i) with
+          | some k => if h : k < answers.size then pure answers[k] else `(_)
+          | none => `(_)
+        if holes.isEmpty then `($(mkIdent cert)) else `($(mkIdent cert) $holes*)
     let fnLit : Term := ⟨Syntax.mkStrLit c.getString!⟩
     return (← `(Lean2Js.Core.Expr.call $fnLit [$(items.reverse),*]),
             ← `(Lean2Js.Denote.denotes_call _ _ $fnLit _ _ _ _ rfl rfl $proof $cited))
@@ -336,15 +339,18 @@ where
       | throwError "reify: {a} is a function that is not a declaration, and only a declaration's \
           name crosses the boundary"
     let cert := c.appendAfter "_certificate"
+    let nameLit : Term := ⟨Syntax.mkStrLit c.getString!⟩
     let some info := (← getEnv).find? cert
-      | throwError "reify: passing {c} needs {cert}, which is not in scope"
+      | if citing then
+          throwError "reify: passing {c} needs {cert}, which is not in scope"
+        else return some (nameLit, ← `(_))
     let holes : Array Term ← (Array.range (statedArity info.type - 1)).mapM fun _ => `(_)
     let x := mkIdent `x
-    return some (⟨Syntax.mkStrLit c.getString!⟩,
+    return some (nameLit,
       ← `(Lean2Js.Denote.denotesFn_of _ _ _ _ rfl rfl (fun $x => $(mkIdent cert) $holes* $x)))
   binary (op : Name) (lemma : Name) (l r : Lean.Expr) : TermElabM (Term × Term) := do
-    let (le, lp) ← walk ns names xs l
-    let (re, rp) ← walk ns names xs r
+    let (le, lp) ← walk citing ns names xs l
+    let (re, rp) ← walk citing ns names xs r
     let opStx := mkIdent (`Lean2Js.Core.BinOp ++ op)
     return (← `(Lean2Js.Core.Expr.bin $opStx $le $re),
             ← `($(mkIdent lemma) _ _ _ _ _ _ $lp $rp))
@@ -357,7 +363,7 @@ where
       if t.isAppOf ``List then binary `concat ``Lean2Js.Denote.denotes_concatArr l r
       else throwError "reify: {t} is not a type this walk knows how to join"
   unary (op : Name) (lemma : Name) (a : Lean.Expr) : TermElabM (Term × Term) := do
-    let (ae, ap) ← walk ns names xs a
+    let (ae, ap) ← walk citing ns names xs a
     return (← `(Lean2Js.Core.Expr.un $(mkIdent (`Lean2Js.Core.UnOp ++ op)) $ae),
             ← `($(mkIdent lemma) _ _ _ _ $ap))
   /-- `eval` takes a `min` of two `BigInt`s, but nothing here reads one: the prelude gives `BigInt` no
@@ -411,12 +417,12 @@ where
         LawfulBEq {α} — an author's own type reaches it by `deriving DecidableEq`"
     binary op lemma l r
   strUn (op : Name) (lemma : Name) (l : Lean.Expr) : TermElabM (Term × Term) := do
-    let (ae, ap) ← walk ns names xs l
+    let (ae, ap) ← walk citing ns names xs l
     return (← `(Lean2Js.Core.Expr.strUn $(mkIdent (`Lean2Js.Core.StrUnOp ++ op)) $ae),
             ← `($(mkIdent lemma) _ _ _ _ $ap))
   strBin (op : Name) (lemma : Name) (l r : Lean.Expr) : TermElabM (Term × Term) := do
-    let (le, lp) ← walk ns names xs l
-    let (re, rp) ← walk ns names xs r
+    let (le, lp) ← walk citing ns names xs l
+    let (re, rp) ← walk citing ns names xs r
     return (← `(Lean2Js.Core.Expr.strBin $(mkIdent (`Lean2Js.Core.StrBinOp ++ op)) $le $re),
             ← `($(mkIdent lemma) _ _ _ _ _ _ $lp $rp))
   /-- A binder's name becomes a variable in the generated JavaScript, so it has to be one the author
@@ -433,7 +439,7 @@ where
     | (``List.nil, _) => return some #[]
     | (``List.cons, #[_, x, rest]) =>
       let some tail ← literalItems rest | return none
-      return some (#[← walk ns names xs x] ++ tail)
+      return some (#[← walk citing ns names xs x] ++ tail)
     | _ => return none
   arrayLit (α : Lean.Expr) (l : Lean.Expr) : TermElabM (Term × Term) := do
     let some parts ← literalItems l
@@ -469,7 +475,7 @@ where
     let mut items := #[]
     let mut proof ← `(Lean2Js.Denote.denotesArgs_nil _ _)
     for a in (callArgs.extract ci.numParams callArgs.size).reverse do
-      let (ae, ap) ← walk ns names xs a
+      let (ae, ap) ← walk citing ns names xs a
       items := items.push ae
       proof ← `(Lean2Js.Denote.denotesArgs_cons _ _ _ _ _ _ $ap $proof)
     let tLit : Term := ⟨Syntax.mkStrLit ci.induct.getString!⟩
@@ -478,13 +484,13 @@ where
             ← `(Lean2Js.Denote.denotes_ctor _ _ $tLit $cLit _ _ _ _ _ _ rfl rfl rfl $proof rfl))
   /-- Reading a field asks nothing of the program: the encoding of the value already carries it. -/
   projection (field : String) (recv : Lean.Expr) : TermElabM (Term × Term) := do
-    let (re, rp) ← walk ns names xs recv
+    let (re, rp) ← walk citing ns names xs recv
     let fLit : Term := ⟨Syntax.mkStrLit field⟩
     return (← `(Lean2Js.Core.Expr.proj $re $fLit),
             ← `(Lean2Js.Denote.denotes_proj _ _ _ $fLit _ _ _ _ $rp rfl rfl))
   dictKeyed (ctor : Name) (lemma : Name) (d k : Lean.Expr) : TermElabM (Term × Term) := do
-    let (de, dp) ← walk ns names xs d
-    let (ke, kp) ← walk ns names xs k
+    let (de, dp) ← walk citing ns names xs d
+    let (ke, kp) ← walk citing ns names xs k
     return (← `($(mkIdent (`Lean2Js.Core.Expr ++ ctor)) $de $ke),
             ← `($(mkIdent lemma) _ _ _ _ _ _ $dp $kp))
   /-- A dictionary the author spelled out. The keys are part of the form rather than evaluated, so each
@@ -497,7 +503,7 @@ where
       let (``Prod.mk, #[_, _, keyE, valE]) := e.getAppFnArgs | return none
       let .lit (.strVal key) := keyE | return none
       let some tail ← literalEntries rest | return none
-      return some (#[(key, ← walk ns names xs valE)] ++ tail)
+      return some (#[(key, ← walk citing ns names xs valE)] ++ tail)
     | _ => return none
   dictLit (α : Lean.Expr) (l : Lean.Expr) : TermElabM (Term × Term) := do
     let some parts ← literalEntries l
@@ -517,16 +523,16 @@ where
     let f1 ← if f.isLambda then pure f else etaExpand f
     lambdaBoundedTelescope f1 1 fun ys body => do
       let nm ← named ys[0]!
-      let (be, bp) ← walk ns (names.push nm) (xs.push ys[0]!) body
+      let (be, bp) ← walk citing ns (names.push nm) (xs.push ys[0]!) body
       return (nm, be, bp)
   traverse (ctor : Name) (lemma : Name) (f l : Lean.Expr) : TermElabM (Term × Term) := do
-    let (ae, ap) ← walk ns names xs l
+    let (ae, ap) ← walk citing ns names xs l
     let (nm, be, bp) ← arm f
     let nmLit : Term := ⟨Syntax.mkStrLit nm⟩
     return (← `($(mkIdent (`Lean2Js.Core.Expr ++ ctor)) $ae $nmLit $be),
             ← `($(mkIdent lemma) _ _ _ $nmLit _ _ _ $ap (fun _ => $bp)))
   quantified (op : Name) (lemma : Name) (f l : Lean.Expr) : TermElabM (Term × Term) := do
-    let (ae, ap) ← walk ns names xs l
+    let (ae, ap) ← walk citing ns names xs l
     let (nm, be, bp) ← arm f
     let nmLit : Term := ⟨Syntax.mkStrLit nm⟩
     return (← `(Lean2Js.Core.Expr.quantE $(mkIdent (`Lean2Js.Core.QuantOp ++ op)) $ae $nmLit $be),
@@ -540,7 +546,7 @@ where
     unless app.discrs.size == 1 && app.remaining.isEmpty do
       throwError "reify: {e} matches on more than one value, which this walk does not read"
     let scrut := app.discrs[0]!
-    let (se, sp) ← walk ns names xs scrut
+    let (se, sp) ← walk citing ns names xs scrut
     let eqns ← Match.getEquationsFor app.matcherName
     let splitter ← getConstInfo eqns.splitterName
     let firstAlt := eqns.splitterMatchInfo.getFirstAltPos
@@ -570,7 +576,7 @@ where
     forallTelescopeReducing (← inferType salt) fun bs concl => do
       let (patStx, bound) ← patternOf (bs.extract 0 nb) binderNames concl.appArg!
       let (be, bp) ← lambdaBoundedTelescope app.alts[i]! nb fun ys body =>
-        walk ns (names ++ bound.map (·.1)) (xs ++ bound.map (fun (_, j) => ys[j]!)) body
+        walk citing ns (names ++ bound.map (·.1)) (xs ++ bound.map (fun (_, j) => ys[j]!)) body
       let conds := bs.extract nb bs.size
       let yIds : Array Ident := (Array.range nb).map fun j => mkIdent (Name.mkSimple s!"y{j}")
       let cIds : Array Ident := (Array.range conds.size).map fun j =>
@@ -625,7 +631,7 @@ where
         ``Lean2Js.Denote.denotes_geStr ``Lean2Js.Denote.denotes_geBig l r
     | (``Eq, #[_, b, t]) =>
       if t.isConstOf ``Bool.true then
-        let (be, bp) ← walk ns names xs b
+        let (be, bp) ← walk citing ns names xs b
         return (be, ← `(Lean2Js.Denote.denotes_decide_eq_true _ _ _ _ $bp))
       else
         throwError "reify: {prop} is outside the subset this walk reads"
@@ -649,7 +655,7 @@ private def declRange? (n : Name) : TermElabM (Option Syntax) := do
   let fm ← getFileMap
   return some (Syntax.ofRange ⟨fm.ofPosition ranges.range.pos, fm.ofPosition ranges.range.endPos⟩)
 
-private def reifyTarget (stx : Syntax) : TermElabM Reified := do
+private def reifyTarget (citing : Bool) (stx : Syntax) : TermElabM Reified := do
   let n ← realizeGlobalConstNoOverload stx
   let some (.defnInfo di) := (← getEnv).find? n
     | throwError "reify: {n} is not a definition"
@@ -672,7 +678,7 @@ where
       names := names.push nm
       params := params.push
         (← `(Lean2Js.Core.Param.mk $(⟨Syntax.mkStrLit nm⟩) $(← encTy (← inferType x))))
-    let (ast, proof) ← walk n.getPrefix names xs body
+    let (ast, proof) ← walk citing n.getPrefix names xs body
     return { name := n, params, ret := ← encTy (← inferType body), ast, proof }
 
 /-- The declaration an author's `def` reifies to. -/
@@ -683,7 +689,7 @@ syntax (name := reifyProofStx) "reify_proof% " ident : term
 
 @[term_elab reifyDeclStx]
 def elabReifyDecl : TermElab := fun stx _ => do
-  let d ← reifyTarget stx[1]
+  let d ← reifyTarget false stx[1]
   let nameLit : Term := ⟨Syntax.mkStrLit d.name.getString!⟩
   elabTerm
     (← `({ name := $nameLit, params := [$(d.params),*], ret := $(d.ret), body := $(d.ast) }))
@@ -691,6 +697,6 @@ def elabReifyDecl : TermElab := fun stx _ => do
 
 @[term_elab reifyProofStx]
 def elabReifyProof : TermElab := fun stx expectedType? => do
-  elabTerm (← reifyTarget stx[1]).proof expectedType?
+  elabTerm (← reifyTarget true stx[1]).proof expectedType?
 
 end Lean2Js.Reify
