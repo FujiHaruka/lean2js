@@ -92,6 +92,7 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
       throwError "{n} is not in {programConst}, so it would not ship: `ship_package` gathers only \
         what is declared above it"
   let mut certificates : Array Name := #[]
+  let mut certified : Array String := #[]
   for (n, _) in members do
     unless Core.Dsl.shipAttr.hasTag (← getEnv) n do continue
     let declName := Core.Dsl.declNameFor n
@@ -107,6 +108,13 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
       throwError "{n} is marked `@[ship]` but {cert} is not in scope, so nothing says the \
         declaration the program carries computes it: `ship_package` writes it"
     certificates := certificates.push cert
+    certified := certified.push d.name
+  let uncertified := program.decls.filter (!certified.contains ·.name)
+  unless uncertified.isEmpty do
+    throwError "refusing to write: {programConst} carries \
+      {String.intercalate ", " (uncertified.map (·.name))} with no certificate\n\
+      a declaration ships only when `@[ship]` read it out of a `def` and `ship_package` wrote the \
+      proof that it computes that `def` — a hand-written {``Core.Program} has no way past this"
   let allowed := String.intercalate ", " (allowedAxioms.map toString)
   let theorems := members.filterMap fun (n, info) =>
     if info matches ConstantInfo.thmInfo _ then some n else none

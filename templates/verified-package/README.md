@@ -55,17 +55,14 @@ lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケー
 
 ## 定理の書き方
 
-`evalCall` について書く。`evalCall_eq` で公開関数の入口を 1 度で越え、そのあとは
-`evalExpr_<形>` の 1 段展開補題で本体を開いていく。`MyLogic.lean` の 4 本が、よく要る形をひととおり
-踏んでいる —— 引数が具体値で計算だけで閉じるもの（`enterprise_includes_its_seats`）、入口の `if` で
-断るもの（`negative_seats_are_refused`）、`match` の腕が定数のもの（`no_discount_takes_nothing`）、
-引数が記号のまま場合分けが要るもの（`free_plan_is_never_charged`）。
+**自分の `def` についての普通の Lean の等式を書く。** 解釈器も AST も出てこない。`@[ship]` が宣言を
+読み出したときに `ship_package` が書く証明書が「パッケージが export する関数はこの `def` を計算する」
+と言うので、`def` についての等式がそのまま出荷物についての主張になる。
 
-要る道具は 3 つ。**公開関数ごとに `private theorem find_f : program.find? "f" = some f := rfl`**
-を置くこと、**本体が別の宣言を呼ぶなら `calleeOf` と呼ばれる側の `find_` も `simp` に渡すこと**
-（渡さないと呼び出しが `program.find? ...` のまま止まる）、そして **`Int53` の範囲は
-`decide_eq_false (by simp only [int53Min]; omega)` の形で与えること** —— `int53Min` を `decide` の
-中で展開すると `Decidable` インスタンスが古い形のまま残り、補題が当たらなくなる。
+`MyLogic.lean` の 4 本が、よく要る形をひととおり踏んでいる —— 引数が具体値で計算だけで閉じるもの
+（`enterprise_includes_its_seats`、`decide`）、`match` の腕が定数のもの（`no_discount_takes_nothing`、
+`rfl`）、`def` を展開して閉じるもの（`free_plan_is_never_charged`、`simp [seatCharge, seatPrice]`）、
+入口の `if` を仮説で倒すもの（`negative_seats_are_refused`、`simp [invoiceFor, hneg]`）。
 
-`evalExpr.eq_def` を `simp` に直接渡さないこと。右辺が `evalExpr` を含むので止まらず、再帰深度が
-尽きる。
+生成した JavaScript がリファレンス意味論と同じ値を返すこと・同じコードで落ちること・入口で弾くことは、
+`Lean2Js` の側で一度だけ、すべてのプログラムについて証明してある。ここで書く必要は無い。

@@ -411,7 +411,7 @@ private theorem findAt_Money :
 def money (amount : Int) (currency : String) : Value :=
   .obj "Money" [("amount", .int53 amount), ("currency", .str currency)]
 
-/-- A draft order cannot shipDecl, whatever tracking id comes with it. -/
+/-- A draft order cannot ship, whatever tracking id comes with it. -/
 theorem draft_never_ships (trackingId : String) :
     evalCall program "ship" [.obj "draft" [], .str trackingId]
       = .ok (.obj "error" [("error", .str "a draft order cannot ship")]) := by
@@ -448,7 +448,7 @@ theorem clamped_quantity_in_range (quantity : Int)
         beq_eq_false_iff_ne.mpr (Int.compare_ne_gt.mpr (by omega))
       simp [e1, e2]
 
-/-- Two amounts in the same currency addDecl up, as long as their sum stays within `Int53`. -/
+/-- Two amounts in the same currency add up, as long as their sum stays within `Int53`. -/
 theorem same_currency_adds (x y : Int) (currency : String)
     (hx : int53Min ≤ x ∧ x ≤ int53Max) (hy : int53Min ≤ y ∧ y ≤ int53Max)
     (hsum : int53Min ≤ x + y ∧ x + y ≤ int53Max) :
@@ -489,7 +489,7 @@ private theorem find_rebindTwice : program.find? "rebindTwice" = some rebindTwic
 
 private theorem find_cartTotal : program.find? "cartTotal" = some cartTotalDecl := rfl
 
-/-- Whatever arguments the entry check accepts, the generated `addDecl` returns what `eval` returns. Its body
+/-- Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
 is a single binary operation. -/
 theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "add" args = .ok v) :
@@ -516,7 +516,7 @@ private theorem find_memberPrice : program.find? "memberPrice" = some memberPric
 
 /-- And for a body that calls another declaration, handing it a third by name. The call is where the
 proof leaves the expression it is looking at: `priced` applies the function it was given, so the claim
-about `memberPriceDecl` rests on the same claim about `tenPercentOff`. -/
+about `memberPrice` rests on the same claim about `tenPercentOff`. -/
 theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "memberPrice" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
@@ -536,9 +536,10 @@ set_option maxRecDepth 8000 in
 /-- The second: the fuel the artifact runs at covers the deepest call this program can make. -/
 theorem program_cost_fits : Cost.cost program ≤ defaultFuel := Nat.le_of_ble_eq_true rfl
 
-/-- Whenever `eval` refuses to return a value for `addDecl`, the generated function throws the code `eval`
-threw. Its body can reach `int53Overflow`. Running out of fuel is not among the answers: the two checks
-above rule it out for this program. -/
+/-- For arguments of the count and types `add` declares, whenever `eval` refuses to return a value the
+generated function throws the code `eval` threw. Its body can reach `int53Overflow`. Running out of fuel
+is not among the answers: the two checks above rule it out for this program. What falls outside those
+types never reaches the body at all — that is `add_refuses`. -/
 theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
     (hlen : addDecl.params.length = args.length)
@@ -564,7 +565,7 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
     ⟨hty.1, hty.2, trivial⟩ hcall
   simpa [encodeValue, Err.code] using h
 
-/-- The fragment reaches business logic, not just arithmetic: `addMoneyDecl` reads two fields, compares them,
+/-- The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
 and builds a `Result` around a constructor. -/
 theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "addMoney" args = .ok v) :
@@ -572,7 +573,7 @@ theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram progra
       Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .ok (encodeValue v) :=
   Decl.decl_correct program m "addMoney" addMoneyDecl args v hm find_addMoney he
 
-/-- The fragment reaches a `match`: `shipDecl` chooses an arm by the constructor of its scrutinee and reads
+/-- The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads
 the fields that arm binds. -/
 theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "ship" args = .ok v) :
@@ -580,7 +581,7 @@ theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = 
       Js.callFunctionAt m g' "ship" (args.map encodeValue) = .ok (encodeValue v) :=
   Decl.decl_correct program m "ship" shipDecl args v hm find_ship he
 
-/-- And an array traversal: `cartTotalDecl` folds a body over the elements, each under its own binding. -/
+/-- And an array traversal: `cartTotal` folds a body over the elements, each under its own binding. -/
 theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (v : Value) (he : evalCall program "cartTotal" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' →
@@ -601,11 +602,13 @@ theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .
 
 /-! ### Refusing what the reference semantics refuses
 
-`Decl.decl_refuses` needs no `InFragment`: the entry check does not look at the body, so this direction
-covers every public declaration rather than the six-form fragment. -/
+`Decl.decl_refuses` needs no `InFragment` either — the entry check does not look at the body. What it
+asks for instead is `isPublic`, which `decl_correct` does not: a declaration taking another by name has
+no boundary to check. -/
 
-/-- Whatever `addDecl` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
-function throws instead of computing. -/
+/-- Whatever `add` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
+function throws instead of computing. The one shape left out is a dictionary holding a key twice, which a
+`Map` cannot hold. -/
 theorem add_refuses (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (jargs : List Js.JsValue) (hk : Js.dictKeysDistinctList jargs = true)
     (hno : ¬ Decl.EvalAccepts program addDecl jargs) :
@@ -627,8 +630,8 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
     rw [Js.normTy.eq_def, encodeValue.eq_def] at hnorm
     simp at hnorm
 
-/-- The same for `addMoneyDecl`: the only way its body throws is the `Int53` overflow of the sum, and the
-generated function throws that code. -/
+/-- The same for `addMoney`, under the same declared types: the only way its body throws is the `Int53`
+overflow of the sum, and the generated function throws that code. -/
 theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (args : List Value) (err : Err)
     (hlen : addMoneyDecl.params.length = args.length)
@@ -647,10 +650,13 @@ theorem file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = .
   Compile.parseModule_render_of_compileProgram hm
 
 /-- The runtime helpers are the last hand-written JavaScript in the artifact, and the model of the
-generated code reaches them through one table. Every row of that table is what the source the compiler
-prints actually computes; `helperArgsOk` is all that is left assumed, and it asks only for the Int53
-range a type has already given, the distinct keys a `Map` cannot break, and the shapes on which `__eq`'s
-walk and the model's structural equality decide the same thing. -/
+generated code reaches most of them through one table. Every row of that table is what the source the
+compiler prints actually computes; `helperArgsOk` is what a call to a row is still asked for, and it asks
+only for the Int53 range a type has already given, the distinct keys a `Map` cannot break, and the shapes
+on which `__eq`'s walk and the model's structural equality decide the same thing.
+
+`__ck` and the six traversal helpers are not rows: the model evaluates them as rules of its own, and
+`HelperProof` answers those against the same printed source. -/
 theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : List Js.JsValue)
     (r : Js.JsResult) (hok : HelperSem.helperArgsOk name args)
     (h : Js.helper name args = some r) :

@@ -70,6 +70,30 @@ if lake exe lean2js MyLogic --out unproved 2> unproved.err; then
   echo "lean2js wrote a package claiming a theorem proved with sorry"; exit 1
 fi
 grep -q 'rests on sorryAx' unproved.err || { cat unproved.err; echo "lean2js refused for another reason"; exit 1; }
+
+# A program written by hand rather than by ship_package carries no certificate for its declarations, and
+# a certificate is the whole of what ties a declaration to the `def` it was read from.
+cat > MyLogic.lean <<'LEAN'
+import Lean2Js
+
+namespace MyLogic
+
+open Lean2Js Lean2Js.Core
+
+def program : Program := {
+  decls := [{ name := "seatCharge", params := [{ name := "seats", ty := .int53 }],
+              ret := .int53, body := .lit (.int53 0) }] }
+
+def manifest : Manifest := { package := "@example/my-logic", version := "0.1.0" }
+
+end MyLogic
+LEAN
+if lake exe lean2js MyLogic --out handbuilt 2> handbuilt.err; then
+  echo "lean2js wrote a package from a program it never read out of a def"; exit 1
+fi
+grep -q 'with no certificate' handbuilt.err \
+  || { cat handbuilt.err; echo "lean2js refused for another reason"; exit 1; }
+test ! -e handbuilt || { echo "lean2js left files behind for a program with no certificates"; exit 1; }
 mv MyLogic.lean.orig MyLogic.lean
 
 grep -q 'export declare function invoiceFor' dist/index.d.ts

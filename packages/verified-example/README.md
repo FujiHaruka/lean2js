@@ -88,7 +88,7 @@ theorem add_comm (a b : Int) : add a b = add b a
 
 ### draft_never_ships
 
-A draft order cannot shipDecl, whatever tracking id comes with it.
+A draft order cannot ship, whatever tracking id comes with it.
 
 ```lean
 theorem draft_never_ships (trackingId : String) :
@@ -109,7 +109,7 @@ theorem clamped_quantity_in_range (quantity : Int) (hlo : int53Min ≤ quantity)
 
 ### same_currency_adds
 
-Two amounts in the same currency addDecl up, as long as their sum stays within `Int53`.
+Two amounts in the same currency add up, as long as their sum stays within `Int53`.
 
 ```lean
 theorem same_currency_adds (x y : Int) (currency : String) (hx : int53Min ≤ x ∧ x ≤ int53Max) (hy : int53Min ≤ y ∧ y ≤ int53Max)
@@ -120,7 +120,7 @@ theorem same_currency_adds (x y : Int) (currency : String) (hx : int53Min ≤ x 
 
 ### add_calls_agree
 
-Whatever arguments the entry check accepts, the generated `addDecl` returns what `eval` returns. Its body
+Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
 is a single binary operation.
 
 ```lean
@@ -156,7 +156,7 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
 
 And for a body that calls another declaration, handing it a third by name. The call is where the
 proof leaves the expression it is looking at: `priced` applies the function it was given, so the claim
-about `memberPriceDecl` rests on the same claim about `tenPercentOff`.
+about `memberPrice` rests on the same claim about `tenPercentOff`.
 
 ```lean
 theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)
@@ -184,9 +184,10 @@ theorem program_cost_fits : Cost.cost program ≤ defaultFuel
 
 ### add_traps
 
-Whenever `eval` refuses to return a value for `addDecl`, the generated function throws the code `eval`
-threw. Its body can reach `int53Overflow`. Running out of fuel is not among the answers: the two checks
-above rule it out for this program.
+For arguments of the count and types `add` declares, whenever `eval` refuses to return a value the
+generated function throws the code `eval` threw. Its body can reach `int53Overflow`. Running out of fuel
+is not among the answers: the two checks above rule it out for this program. What falls outside those
+types never reaches the body at all — that is `add_refuses`.
 
 ```lean
 theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)
@@ -209,7 +210,7 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
 
 ### addMoney_calls_agree
 
-The fragment reaches business logic, not just arithmetic: `addMoneyDecl` reads two fields, compares them,
+The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
 and builds a `Result` around a constructor.
 
 ```lean
@@ -220,7 +221,7 @@ theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram progra
 
 ### ship_calls_agree
 
-The fragment reaches a `match`: `shipDecl` chooses an arm by the constructor of its scrutinee and reads
+The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads
 the fields that arm binds.
 
 ```lean
@@ -231,7 +232,7 @@ theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = 
 
 ### cartTotal_calls_agree
 
-And an array traversal: `cartTotalDecl` folds a body over the elements, each under its own binding.
+And an array traversal: `cartTotal` folds a body over the elements, each under its own binding.
 
 ```lean
 theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)
@@ -253,8 +254,9 @@ theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = E
 
 ### add_refuses
 
-Whatever `addDecl` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
-function throws instead of computing.
+Whatever `add` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
+function throws instead of computing. The one shape left out is a dictionary holding a key twice, which a
+`Map` cannot hold.
 
 ```lean
 theorem add_refuses (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
@@ -274,8 +276,8 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
 
 ### addMoney_traps
 
-The same for `addMoneyDecl`: the only way its body throws is the `Int53` overflow of the sum, and the
-generated function throws that code.
+The same for `addMoney`, under the same declared types: the only way its body throws is the `Int53`
+overflow of the sum, and the generated function throws that code.
 
 ```lean
 theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)
@@ -298,10 +300,13 @@ theorem file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = E
 ### helpers_ship_as_modelled
 
 The runtime helpers are the last hand-written JavaScript in the artifact, and the model of the
-generated code reaches them through one table. Every row of that table is what the source the compiler
-prints actually computes; `helperArgsOk` is all that is left assumed, and it asks only for the Int53
-range a type has already given, the distinct keys a `Map` cannot break, and the shapes on which `__eq`'s
-walk and the model's structural equality decide the same thing.
+generated code reaches most of them through one table. Every row of that table is what the source the
+compiler prints actually computes; `helperArgsOk` is what a call to a row is still asked for, and it asks
+only for the Int53 range a type has already given, the distinct keys a `Map` cannot break, and the shapes
+on which `__eq`'s walk and the model's structural equality decide the same thing.
+
+`__ck` and the six traversal helpers are not rows: the model evaluates them as rules of its own, and
+`HelperProof` answers those against the same printed source.
 
 ```lean
 theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : List Js.JsValue) (r : Js.JsResult)

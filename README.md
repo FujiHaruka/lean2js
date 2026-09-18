@@ -141,8 +141,8 @@ end MyLogic
 ```sh
 lake build                           # checks the logic and the theorems
 lake exe lean2js MyLogic --out dist  # checks them again, then writes the npm package
-# 2733 vectors agree on Node v24.18.0
-# wrote 9 exports to dist
+# 942 vectors agree on Node v24.18.0
+# wrote 4 exports to dist
 ```
 
 `lean2js` is an executable the `Lean2Js` library owns, and `lake exe` resolves it out of the
@@ -227,7 +227,8 @@ Where JavaScript and Lean disagree, the generated code follows neither silently:
 ## Writing theorems
 
 Theorems are about your own `def`s. Neither the interpreter nor the AST appears in them, and the
-proofs are the ones you would write about any Lean function:
+proofs are the ones you would write about any Lean function — `Lean2Js/Example.lean` is the exception
+that proves it, because the compiler's own example carries the compiler's guarantees too:
 
 ```lean
 /-- A workspace on the free plan is never billed for seats, whatever seat count it reports. -/
@@ -258,7 +259,8 @@ wrote.
   generated JavaScript agrees with the reference semantics: it returns the same value, throws the
   same code where the semantics traps, and refuses at the boundary what the semantics would not
   accept. The text of `index.js` reads back as the module the compiler built, and the `.d.ts` admits
-  exactly the arguments the entry check accepts.
+  every argument the entry check accepts — the only thing it admits that the check does not is a
+  number the `Int53` / `UInt32` range excludes.
 - **Checked for your package, before it is written.** Every vector generated for your program is run
   twice — the reference semantics against the model of the generated JavaScript inside Lean, and
   against the assembled package loaded into Node. One disagreement and nothing is written.
@@ -268,9 +270,10 @@ wrote.
   same name.
 
 One caveat, and it is in the types: `Int53` and `UInt32` both map to `number`, so TypeScript accepts
-a number outside their range and the call is refused at run time with `typeError`. Nothing else is
-narrower than it looks — fields are read by name, so their order is free, and keys the type does not
-declare are ignored.
+a number that is not an integer, or is outside their range, and the call is refused at run time with
+`typeError`. Nothing else is narrower than it looks — fields are read by name, so their order is free,
+and keys the type does not declare are ignored. What the theorems state at the canonical spelling of an
+argument, the vectors check at the other spellings the `.d.ts` admits.
 
 [`docs/guarantees.md`](docs/guarantees.md) has the whole assembly, and the
 [Lean reference](https://fujiharuka.github.io/lean2js/) has the statements, their hypotheses and the

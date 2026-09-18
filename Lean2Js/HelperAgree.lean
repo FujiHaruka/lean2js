@@ -590,9 +590,13 @@ def helperArgsOk (name : String) (args : List Js.JsValue) : Prop :=
   | "__eq", [a, b] => eqShape a b = true
   | _, _ => True
 
-/-- Every row of `Js.helper` is answered by the JavaScript the compiler writes out. The model of the
-generated code assumes this table and nothing else about the runtime, so what the hand-written helpers
-are left trusted for is what `helperArgsOk` still asks of a call. -/
+/-- Every row of `Js.helper` is answered by the JavaScript the compiler writes out, so what the helpers
+behind the table are left trusted for is what `helperArgsOk` still asks of a call.
+
+The table is not the whole of what the model assumes about hand-written JavaScript. `JsSem.eval` carries
+`__ck` and the six traversal helpers as rules of its own rather than as rows, and those are answered by
+`HelperProof.calls_ck_checkTy`, `calls_map`, `calls_filter`, `calls_find`, `calls_all`, `calls_any` and
+`calls_reduce`. -/
 theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : Js.JsResult)
     (hok : helperArgsOk name args) (h : Js.helper name args = some r) :
     Helper.Calls ext name (args.map ofJs) (ofRes r) := by
