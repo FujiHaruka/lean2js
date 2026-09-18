@@ -222,7 +222,7 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
 | `String(n)` / `toString` | Return the `Int` and format it in TypeScript. |
 | `parseInt` / `Number(s)` | Take the number as an `Int` parameter and parse it in TypeScript. |
-| `join` | `foldl` over an `Option String` accumulator (below). |
+| `join` | `foldl`, where no part is empty (below). |
 | `replace` / `replaceAll` | `Str.split` and then the `join` recipe. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |
 | `padStart` / `padEnd` / `repeat` | TypeScript. Repeating a string a variable number of times needs recursion, and the subset has none. |
 | regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
@@ -244,17 +244,17 @@ xss.foldl (fun acc xs => acc ++ xs) []             flatten
 ```
 
 ```lean
-/-- The parts of `parts` with `sep` between them, as `Array.prototype.join` writes them. The accumulator
-is an `Option` so that an empty part is not mistaken for "nothing written yet". -/
+/-- The parts of `parts` with `sep` between them. This agrees with `Array.prototype.join` as long as no
+part is empty: the accumulator tells "nothing written yet" from "an empty part written" by comparing with
+`""`, and an empty first part would take the separator with it. -/
 @[expand]
 def join (parts : List String) (sep : String) : String :=
-  match parts.foldl (fun acc part =>
-      match acc with
-      | none => some part
-      | some sofar => some (sofar ++ sep ++ part)) none with
-  | none => ""
-  | some s => s
+  parts.foldl (fun sofar part => if sofar == "" then part else sofar ++ sep ++ part) ""
 ```
+
+Reading the accumulator with a `match` rather than an `==` is what would make that exact, and a `match`
+inside a traversal's function is a form the walk reads but cannot yet certify. Until it can, an operation
+that has to tell "nothing yet" from a value belongs on the TypeScript side.
 
 ## When you leave the subset
 
