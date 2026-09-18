@@ -219,7 +219,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
 
 ## 結果
 
-- **Step 0**（2026-09-18, `9e8c2b6` → 訂正 `6a8619c`） — `SYNTAX.md` に「Operations that are not
+- **Step 0**（2026-09-18, `9e8c2b6` → 訂正 `c02f308`） — `SYNTAX.md` に「Operations that are not
   there」を足した。`sort` / `toString` / `parseInt` / `join` / `replace` / `padStart` / 正規表現 /
   `Date` / Float / 乱数・時刻の 10 行に、代替か「入れない理由」を 1 行ずつ。`foldl` と
   `Arr.slice` で今日書ける 7 行（take / drop / isEmpty / contains / sum / head? / flatten）と
@@ -228,7 +228,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `Reify.lean` の walk に分岐 1 つ。`Core` / `Compile` / `Gather` / `Dts` / `Decl.lean` は 1 行も動かなかった。
   `check-template.sh` に 3 件（多相な印が 2 型で使えて生成物に名前を残さないこと、本体が部分集合を出たとき
   印の名前で断ること、再帰を印の位置で断ること）。
-- **訂正**（`6a8619c`） — Step 0 に載せた `join` の全文が `ship_package` を通らなかった。
+- **訂正**（`c02f308`） — Step 0 に載せた `join` の全文が `ship_package` を通らなかった。
   `lake env lean` は `reify_decl%` しか走らず、証明書（citing）を作らない——**検証には 3 段階ある**：
   `lake env lean`（walk だけ）⊂ `ship_package`（証明書と compile と燃料）⊂ `lean2js --out`（ベクタを Node で）。
   **以降、文書に載せるコードは `ship_package` まで通す。**
