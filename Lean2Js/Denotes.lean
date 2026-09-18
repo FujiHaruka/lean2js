@@ -1544,6 +1544,47 @@ theorem denotes_call (p : Program) (env : Env) (fn : String) (args : List Expr) 
     simp only [harity, Bool.false_eq_true, if_false] at h
     exact hbody (by simp [defaultFuel]) v h
 
+/-! ### A function that crossed the boundary
+
+No Lean function value knows which declaration it is, so there is no `Enc` for one and a function-typed
+argument is not a value the encoding carries. What crosses is the declaration's name, and what the
+receiver has to be told about the name is what a certificate says about a declaration. That claim is the
+hypothesis on the certificate of every declaration that takes a function. -/
+
+/-- The name a function-typed argument arrives as, together with what running it does. -/
+def DenotesFn (p : Program) (name : String) {α β : Type} [Enc α] [Enc β] (f : α → β) : Prop :=
+  ∃ d : Decl, p.find? name = some d ∧ d.params.length = 1
+    ∧ ∀ a : α, Denotes p (bindParams d.params [toValue a]) d.body (f a)
+
+theorem denotesFn_of (p : Program) (name : String) (d : Decl) {α β : Type} [Enc α] [Enc β]
+    (f : α → β) (hd : p.find? name = some d) (hlen : d.params.length = 1)
+    (hbody : ∀ a : α, Denotes p (bindParams d.params [toValue a]) d.body (f a)) :
+    DenotesFn p name f := ⟨d, hd, hlen, hbody⟩
+
+/-- Passing one on. The argument evaluates to the name rather than to an encoding, so this is where
+`DenotesArgs` stops being about `Enc`. -/
+theorem denotesArgs_fnRef (p : Program) (env : Env) (name : String) (es : List Expr)
+    (vs : List Value) (hd : (p.find? name).isSome = true) (hs : DenotesArgs p env es vs) :
+    DenotesArgs p env (.fnRef name :: es) (.fn name :: vs) := by
+  refine ⟨?_, hs⟩
+  intro f hf w he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_fnRef, hd] at h
+  simp only [if_true, Except.ok.injEq] at h
+  rw [← h]
+
+/-- Calling one. The environment holds the name the caller passed, and `calleeOf` is what turns the
+parameter's own name into it. -/
+theorem denotes_callFn (p : Program) (env : Env) (fn name : String) (arg : Expr)
+    {α β : Type} [Enc α] [Enc β] (f : α → β) (a : α)
+    (hlk : Env.lookup? env fn = some (.fn name))
+    (hf : DenotesFn p name f) (harg : Denotes p env arg a) :
+    Denotes p env (.call fn [arg]) (f a) := by
+  obtain ⟨d, hd, hlen, hbody⟩ := hf
+  refine denotes_call p env fn [arg] d [toValue a] (f a) ?_ hlen ?_ (hbody a)
+  · rw [calleeOf.eq_def, hlk]; exact hd
+  · exact denotesArgs_cons p env arg [] a [] harg (denotesArgs_nil p env)
+
 /-! ### Making a value of the author's own type, and taking one apart
 
 Building one goes through the program: `eval` looks the type up to find the field names to pair the

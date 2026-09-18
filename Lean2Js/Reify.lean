@@ -21,9 +21,28 @@ private partial def statedArity : Lean.Expr → Nat
   | .forallE _ _ body bi => (if bi.isExplicit then 1 else 0) + statedArity body
   | _ => 0
 
+/-- Which of a cited certificate's explicit arguments ask what a function it was handed does. A
+declaration that takes a function knows only its name, so its certificate asks, and the citation answers
+from the callee's own certificate. -/
+private def fnHypPositions : Lean.Expr → Nat → Array Nat → Array Nat
+  | .forallE _ d body bi, i, acc =>
+    if bi.isExplicit then
+      fnHypPositions body (i + 1)
+        (if d.isAppOf ``Lean2Js.Denote.DenotesFn then acc.push i else acc)
+    else fnHypPositions body i acc
+  | _, _, acc => acc
+
 /-- The subset type a Lean type crosses the boundary as. It is written as the `Enc` projection rather
-than the `Ty` it reduces to, so the declaration says where its types came from. -/
-private def encTy (α : Lean.Expr) : TermElabM Term := do
+than the `Ty` it reduces to, so the declaration says where its types came from. A function type is the
+one that is not written that way: no Lean function value knows which declaration it is, so it has no
+`Enc` and the `Ty` is built from the types on either side of the arrow. -/
+private partial def encTy (α : Lean.Expr) : TermElabM Term := do
+  if α.isArrow then
+    let ret := α.bindingBody!
+    if ret.isArrow then
+      throwError "reify: {α} takes more than one argument, and a function crosses the boundary only \
+        where it takes one"
+    return ← `(Lean2Js.Core.Ty.fn [$(← encTy α.bindingDomain!)] $(← encTy ret))
   unless (← synthInstance? (mkApp (mkConst ``Lean2Js.Enc) α)).isSome do
     throwError "reify: {α} has no Enc instance, so there is no subset type to give it"
   `(Lean2Js.Enc.ty (α := $(← exprToSyntax α)))
@@ -92,6 +111,9 @@ anything else the walk turns away. -/
 private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Expr)
     (e : Lean.Expr) : TermElabM (Term × Term) := do
   if let some i := xs.findIdx? (· == e) then
+    if (← whnf (← inferType e)).isArrow then
+      throwError "reify: {names[i]!} is a function, and a function reaches the subset only where it \
+        is called or handed to a call"
     let nm : Term := ⟨Syntax.mkStrLit names[i]!⟩
     return (← `(Lean2Js.Core.Expr.var $nm), ← `(Lean2Js.Denote.denotes_var _ _ $nm _ rfl))
   if e.isConstOf ``Bool.true || e.isConstOf ``Bool.false then
@@ -121,6 +143,15 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
             ← `(Lean2Js.Denote.denotes_letE _ _ _ _ _ _ _ _ $vp $bp))
   if let some app ← matchMatcherApp? e then
     return ← matched app e
+  if let some i := xs.findIdx? (· == e.getAppFn) then
+    let args := e.getAppArgs
+    unless args.size == 1 do
+      throwError "reify: {e} applies {names[i]!} to {args.size} arguments, and a function crosses the \
+        boundary only where it takes one"
+    let (ae, ap) ← walk ns names xs args[0]!
+    let nm : Term := ⟨Syntax.mkStrLit names[i]!⟩
+    return (← `(Lean2Js.Core.Expr.call $nm [$ae]),
+            ← `(Lean2Js.Denote.denotes_callFn _ _ $nm _ _ _ _ rfl (by assumption) $ap))
   if let .proj tName idx recv := e then
     unless isStructure (← getEnv) tName do
       throwError "reify: {e} projects out of {tName}, which is not a structure"
@@ -274,17 +305,43 @@ private partial def walk (ns : Name) (names : Array String) (xs : Array Lean.Exp
       throwError "reify: {e} is outside the subset this walk reads"
     let mut items := #[]
     let mut proof ← `(Lean2Js.Denote.denotesArgs_nil _ _)
+    let mut answers := #[]
     for a in callArgs.reverse do
-      let (ae, ap) ← walk ns names xs a
-      items := items.push ae
-      proof ← `(Lean2Js.Denote.denotesArgs_cons _ _ _ _ _ _ $ap $proof)
+      if let some (nm, answer) ← passedFn? a then
+        items := items.push (← `(Lean2Js.Core.Expr.fnRef $nm))
+        proof ← `(Lean2Js.Denote.denotesArgs_fnRef _ _ $nm _ _ rfl $proof)
+        answers := answers.push answer
+      else
+        let (ae, ap) ← walk ns names xs a
+        items := items.push ae
+        proof ← `(Lean2Js.Denote.denotesArgs_cons _ _ _ _ _ _ $ap $proof)
     let some info := (← getEnv).find? cert | throwError "reify: {cert} is not in scope"
-    let holes : Array Term ← (Array.range (statedArity info.type)).mapM fun _ => `(_)
+    let asked := fnHypPositions info.type 0 #[]
+    answers := answers.reverse
+    let holes : Array Term ← (Array.range (statedArity info.type)).mapM fun i => do
+      match asked.findIdx? (· == i) with
+      | some k => if h : k < answers.size then pure answers[k] else `(_)
+      | none => `(_)
     let cited ← if holes.isEmpty then `($(mkIdent cert)) else `($(mkIdent cert) $holes*)
     let fnLit : Term := ⟨Syntax.mkStrLit c.getString!⟩
     return (← `(Lean2Js.Core.Expr.call $fnLit [$(items.reverse),*]),
             ← `(Lean2Js.Denote.denotes_call _ _ $fnLit _ _ _ _ rfl rfl $proof $cited))
 where
+  /-- An argument that is itself a function. `eval` carries a declaration's name rather than a value, so
+  this is the one argument whose proof is not a `Denotes` — and the callee's certificate is the answer to
+  what the receiving declaration asks about it. -/
+  passedFn? (a : Lean.Expr) : TermElabM (Option (Term × Term)) := do
+    unless (← whnf (← inferType a)).isArrow do return none
+    let .const c _ := a
+      | throwError "reify: {a} is a function that is not a declaration, and only a declaration's \
+          name crosses the boundary"
+    let cert := c.appendAfter "_certificate"
+    let some info := (← getEnv).find? cert
+      | throwError "reify: passing {c} needs {cert}, which is not in scope"
+    let holes : Array Term ← (Array.range (statedArity info.type - 1)).mapM fun _ => `(_)
+    let x := mkIdent `x
+    return some (⟨Syntax.mkStrLit c.getString!⟩,
+      ← `(Lean2Js.Denote.denotesFn_of _ _ _ _ rfl rfl (fun $x => $(mkIdent cert) $holes* $x)))
   binary (op : Name) (lemma : Name) (l r : Lean.Expr) : TermElabM (Term × Term) := do
     let (le, lp) ← walk ns names xs l
     let (re, rp) ← walk ns names xs r
@@ -1008,6 +1065,49 @@ theorem tenPercentOff_certificate (p : Program) (amount : Int) :
       (tenPercentOff amount) :=
   reify_proof% tenPercentOff
 
+abbrev noDiscountCore : Decl := reify_decl% noDiscount
+
+example : noDiscountCore = Example.noDiscount := rfl
+
+theorem noDiscount_certificate (p : Program) (amount : Int) :
+    Denotes p (bindParams noDiscountCore.params [toValue amount]) noDiscountCore.body
+      (noDiscount amount) :=
+  reify_proof% noDiscount
+
+/-! ### A function that was passed in
+
+`priced` is handed a function and never learns which one. What crosses the boundary is a declaration's
+name, so the parameter is bound to `.fn` rather than to an encoding, and what `priced` may assume about
+the name is `DenotesFn` — the hypothesis its caller discharges from the callee's own certificate. -/
+
+abbrev pricedCore : Decl := reify_decl% priced
+
+example : pricedCore = Example.priced := rfl
+
+theorem priced_certificate (p : Program) (ruleName : String) (rule : Int → Int)
+    (hrule : DenotesFn p ruleName rule) (amount : Int) :
+    Denotes p (bindParams pricedCore.params [.fn ruleName, toValue amount]) pricedCore.body
+      (priced rule amount) :=
+  reify_proof% priced
+
+abbrev memberPriceCore : Decl := reify_decl% memberPrice
+
+example : memberPriceCore = Example.memberPrice := rfl
+
+theorem memberPrice_certificate (amount : Int) :
+    Denotes Example.program (bindParams memberPriceCore.params [toValue amount])
+      memberPriceCore.body (memberPrice amount) :=
+  reify_proof% memberPrice
+
+abbrev guestPriceCore : Decl := reify_decl% guestPrice
+
+example : guestPriceCore = Example.guestPrice := rfl
+
+theorem guestPrice_certificate (amount : Int) :
+    Denotes Example.program (bindParams guestPriceCore.params [toValue amount])
+      guestPriceCore.body (guestPrice amount) :=
+  reify_proof% guestPrice
+
 /-! ### The integer that wraps
 
 `UInt32` is the one numeric type where `/` and `%` are the operators an author already writes: both sides
@@ -1291,5 +1391,20 @@ def callsUncertified (x : Int) : Int := uncertified x
 /-- error: reify: the call to Lean2Js.Denote.uncertified needs Lean2Js.Denote.uncertified_certificate, which is not in scope -/
 #guard_msgs in
 example : Core.Decl := reify_decl% callsUncertified
+
+/-! A function crosses the boundary as a declaration's name, so a function the author wrote inline has
+no name to cross as. -/
+
+private def pricedInline (amount : Int) : Int := priced (fun x => x) amount
+
+/-- error: reify: fun x => x is a function that is not a declaration, and only a declaration's name crosses the boundary -/
+#guard_msgs in
+example : Core.Decl := reify_decl% pricedInline
+
+private def rulePassedOn (rule : Int → Int) : Int → Int := rule
+
+/-- error: reify: rule is a function, and a function reaches the subset only where it is called or handed to a call -/
+#guard_msgs in
+example : Core.Decl := reify_decl% rulePassedOn
 
 end Lean2Js.Denote

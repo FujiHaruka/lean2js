@@ -325,7 +325,7 @@ lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を�
 | 構成子と射影 | 済。**構成子はプログラムを名指しする** —— `eval` が型を引いてフィールド名を取るので、`findType?` を `rfl` で通すために証明書が `Example.program` についてのものになる。射影は通らない |
 | `none` / `some` / `ok` / `error` | 済。型注釈が形に乗るので `encTy` を通す |
 | `UInt32` の算術と比較 | 済。ラップするので `Int53` の補題は使えず、`+ - * / %` と `< ≤ > ≥` に別系統を置いた。**`/` と `%` は `UInt32` でだけ演算子そのものを読む** —— 両側とも自然数を割って同じ丸めをするので、prelude の関数が要らない |
-| 関数を取る引数 | **まだ**。`.fn` に `Enc` instance は立たない。reifier が `@f` を宣言名に落とす |
+| 関数を取る引数 | 済（1 引数のみ）。`.fn` に `Enc` は立たないので `Enc` の外に `DenotesFn`（名前と利用者の関数を結ぶ）を置いた。関数を取る宣言の証明書はそれを仮定に取り、呼ぶ側が callee 自身の証明書から答える |
 | リテラル・`_` の腕、入れ子 `match` | 済。matcher の splitter がパターンをそのまま返すので、形ごとの規則は要らない。`Option` / `Except` の `match` も同じ道で通る |
 | 型パラメタを取る型 | **まだ**。`Paginated<T>` / `Validated<E, A>` は `deriving Enc` が `numParams == 0` しか受けない |
 
@@ -337,6 +337,19 @@ elaborate されるので、腕が読む外側の変数（`canRefund` の `role`
 その時点で存在しない。**捕捉している変数ごと抽象して、穴として適用し直す** —— 穴は期待型から埋まる。
 `g` を `_` にして推論に任せる手は使えない: `?g ?x =?= ship state trackingId` は引数が 2 つあると
 一次近似が `?g := ship state` を選んで型が合わなくなる。
+
+**関数は値ではなく宣言の名前として渡る。** Lean の関数値はどの宣言なのかを知らないので `Enc` が
+立たない。`Enc` の外に `DenotesFn p name f`（`p` が `name` を宣言していて、それを走らせると `f` に
+なる）を置き、**関数を取る宣言の証明書はそれを仮定に取る** —— `priced_certificate` は
+`ruleName` と `hrule : DenotesFn p ruleName rule` を取り、環境は
+`bindParams pricedCore.params [.fn ruleName, toValue amount]` になる。
+
+- **呼ぶ側は callee 自身の証明書から答える。** `memberPrice` は `priced_certificate` を引くとき、
+  `DenotesFn` を求めている引数の位置を型から探して `tenPercentOff_certificate` で埋める。
+- **関数を取る側は `by assumption` で仮定を引く。** 仮定の名前は利用者のものなので、名前では引けない。
+  `Env.lookup?` が `rfl` で解けた時点で `name` が決まるので、探す型は一意。
+- **1 引数だけ。** `Ty.fn` は n 項だが `DenotesFn` は 1 項で、`encTy` は矢印の右がまた矢印なら断る。
+- 関数がインラインのラムダだったり、呼ばずに返されたりする形は `#guard_msgs` で断りを固定してある。
 
 **`EncBEq` は型ごとに書くものではなかった。** 最初は `deriving Enc` に instance を出させる話に見えたが、
 `Enc` はすでに `ofValue_toValue` で符号化が単射だと言っている。足りないのは「両側の `==` が等価を

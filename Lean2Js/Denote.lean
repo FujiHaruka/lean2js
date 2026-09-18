@@ -164,6 +164,14 @@ def discounted (amount percent : Int) : Int :=
 
 def tenPercentOff (amount : Int) : Int := amount - Int53.div amount 10
 
+def noDiscount (amount : Int) : Int := amount
+
+def priced (rule : Int → Int) (amount : Int) : Int := rule amount
+
+def memberPrice (amount : Int) : Int := priced tenPercentOff amount
+
+def guestPrice (amount : Int) : Int := priced noDiscount amount
+
 def mixChannels (a b : UInt32) : UInt32 := a * b + (a - b)
 
 def bucketOf (key buckets : UInt32) : UInt32 := key % buckets
