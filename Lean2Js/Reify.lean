@@ -23,7 +23,8 @@ same three and `Lean2Js.Denote` pins the wording, so neither side can move alone
 
 /-- What may be a value. -/
 private def valueRule : String :=
-  "the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the types you declare with deriving Enc"
+  "the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the \
+    types you declare with deriving Enc"
 
 /-- How a program repeats. -/
 private def repeatRule : String :=
@@ -31,7 +32,8 @@ private def repeatRule : String :=
 
 /-- Whose vocabulary it reads. -/
 private def vocabularyRule : String :=
-  "the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 vocabulary rather than Lean's own library"
+  "the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 \
+    vocabulary rather than Lean's own library"
 
 /-- How many explicit arguments a cited certificate takes, counted off its statement rather than off the
 `∀` the statement unfolds to. `f ..` would keep going into `Denotes` itself. -/
