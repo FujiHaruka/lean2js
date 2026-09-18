@@ -18,7 +18,7 @@ The `program` placed here is what ships as `packages/verified-example`.
 
 namespace Lean2Js.Example
 
-open Core Core.Dsl Enc
+open Core Enc
 
 @[verified]
 def add (a b : Int) : Int := a + b

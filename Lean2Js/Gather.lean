@@ -99,24 +99,20 @@ def shipped (ns : Name) : CoreM (Array Shipped) := do
   let env ← getEnv
   let members ← namespaceMembers ns
   let mut decls := #[]
-  for (n, info) in members do
-    if verifiedAttr.hasTag env n then
-      let d := declNameFor n
-      unless env.contains d do
-        throwError "{n} is marked `@[verified]` but {d} is not in scope — `declarations%` writes it"
-      decls := decls.push { source := n, decl := d, value := ← evalDecl d }
-    else if info.type.isConstOf ``Core.Decl && !decls.any (·.decl == n) then
-      decls := decls.push { source := n, decl := n, value := ← evalDecl n }
+  for (n, _) in members do
+    unless verifiedAttr.hasTag env n do continue
+    let d := declNameFor n
+    unless env.contains d do
+      throwError "{n} is marked `@[verified]` but {d} is not in scope — `declarations%` writes it"
+    decls := decls.push { source := n, decl := d, value := ← evalDecl d }
   let edges := decls.toList.flatMap fun d => orderings d.value.name d.value.body
   decls.foldlM (placeAfterPrerequisites edges decls []) #[]
 
-/-- The types `ns` declares: what `deriving Enc` wrote a `TypeDef` for, and a `TypeDef` the namespace
-declares itself. -/
+/-- The types `ns` declares, which are the ones `deriving Enc` wrote a `TypeDef` for. -/
 def shippedTypes (ns : Name) : CoreM (Array Name) := do
   let env ← getEnv
   return (← namespaceMembers ns).filterMap fun (n, info) =>
-    if info.type.isConstOf ``Core.TypeDef then some n
-    else if info matches .inductInfo _ then
+    if info matches .inductInfo _ then
       if env.contains (n ++ `typeDef) then some (n ++ `typeDef) else none
     else none
 
