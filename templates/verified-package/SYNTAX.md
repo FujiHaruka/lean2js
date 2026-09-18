@@ -345,8 +345,8 @@ questions this page opens with, in the walk's own words:
 the subset's values are Bool, Int, UInt32, BigInt, String, List, Dict, Option, Except and the types you
   declare with deriving Enc
 the subset repeats only through the array traversals, and a function is never a value
-the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 vocabulary
-  rather than Lean's own library
+the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 / BigInt
+  vocabulary rather than Lean's own library
 ```
 
 **A refusal names the `def`.** `Lean.Expr` carries no position, so the furthest it can point is the

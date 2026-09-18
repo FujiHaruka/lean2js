@@ -32,8 +32,8 @@ private def repeatRule : String :=
 
 /-- Whose vocabulary it reads. -/
 private def vocabularyRule : String :=
-  "the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 \
-    vocabulary rather than Lean's own library"
+  "the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 / \
+    BigInt vocabulary rather than Lean's own library"
 
 /-- How many explicit arguments a cited certificate takes, counted off its statement rather than off the
 `∀` the statement unfolds to. `f ..` would keep going into `Denotes` itself. -/

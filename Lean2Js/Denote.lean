@@ -113,7 +113,7 @@ elaborated term. -/
 private def quotient (a b : Int) : Int := a / b
 
 /-- error: reify: a / b is outside the subset this walk reads
-the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 vocabulary rather than Lean's own library -/
+the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 / BigInt vocabulary rather than Lean's own library -/
 #guard_msgs in
 example : Core.Decl := reify_decl% quotient
 
