@@ -27,8 +27,8 @@ lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケー
 | ファイル | 役割 |
 | --- | --- |
 | `lakefile.toml` | `Lean2Js` への依存。`rev` を固定すると処理系の版が固定される |
-| `MyLogic.lean` | 業務ロジック（`decl%` の表層構文）、定理、`lean2js` が読む manifest |
-| [`SYNTAX.md`](SYNTAX.md) | `decl%` / `type%` の中に書ける構文の全部 |
+| `MyLogic.lean` | 業務ロジック（普通の Lean の `def`）、定理、`lean2js` が読む manifest |
+| [`SYNTAX.md`](SYNTAX.md) | `@[verified]` を付けた `def` の中に書ける Lean の全部 |
 
 `dist/` に出るのは `index.js` / `index.js.map` / `index.d.ts` / `<パッケージ名の末尾>.lean2js` /
 `proof-manifest.json` / `README.md` / `package.json`。生成される `README.md` は
@@ -36,11 +36,12 @@ lake exe lean2js MyLogic --out dist  # 検査して、dist/ に npm パッケー
 
 ## 書き換えるところ
 
-- `MyLogic.lean` の宣言（`invoiceFor` と、それが呼ぶ `invoiceLines` / `discountOn` …）を自分のものに
-  置き換える。`program%` が、同じ名前空間でそれより上に書いた `Decl` と `TypeDef` を集め、
-  呼び出しが前へ進む順に並べるので、書く順序は問わない。
-  **呼び出しは循環できない。** `program%` より下に書いた宣言は集まらず、`lean2js` が落ちる。
-  書ける構文は [`SYNTAX.md`](SYNTAX.md) —— `decl%` の中は Lean の式ではない
+- `MyLogic.lean` の `def`（`invoiceFor` と、それが呼ぶ `invoiceLines` / `discountOn` …）を自分のものに
+  置き換える。出荷するものには `@[verified]` を付ける。`declarations%` がそこから宣言を読み出し、
+  `program%` が集めて呼び出しが前へ進む順に並べ、`certificates%` が宣言ごとの証明書を書く。
+  この 3 行より下に書いた `def` は集まらず、`lean2js` が落ちる。
+  書ける Lean は [`SYNTAX.md`](SYNTAX.md) —— **受け付けるのは Lean の狭い部分集合**で、
+  読めない形は `def` を名指しして断られる
 - `#eval program.check` はそのまま残す。`lean2js` がベクタを走らせる前に断る条件
   （燃料の上限、コンパイルできない宣言）を `lake build` の側で先に落とす
 - 定理を書く。**名前空間の公開定理はすべて、成果物の定理として載る。** 文言は Lean が定理に対して

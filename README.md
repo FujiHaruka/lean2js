@@ -5,9 +5,9 @@ Prove your business logic in Lean 4, and ship it as an ordinary npm package.
 Adding formal verification does not mean replacing your stack. It means adding one package.
 
 ```
-Restricted Lean  →  verified compiler  →  npm package  →  React / Next / Node
-implementation       semantics              index.js         ordinary import
-+ theorem            preservation           index.d.ts       ordinary values
+Ordinary Lean    →  verified compiler  →  npm package  →  React / Next / Node
+def + theorem        semantics              index.js         ordinary import
++ certificate        preservation           index.d.ts       ordinary values
                                             proof-manifest.json
 ```
 
@@ -98,27 +98,41 @@ import Lean2Js
 
 namespace MyLogic
 
-open Lean2Js Lean2Js.Core Lean2Js.Core.Dsl
+open Lean2Js Lean2Js.Core Lean2Js.Enc
 
-def Plan : TypeDef := type% Plan := free | team | enterprise
+inductive Plan where
+  | free
+  | team
+  | enterprise
+  deriving Enc
 
-def includedSeats : Decl := decl%
-  includedSeats(plan : Plan) : Int53 :=
-    match plan { free() => 3 | team() => 5 | enterprise() => 25 }
+@[verified]
+def includedSeats (plan : Plan) : Int :=
+  match plan with
+  | .free => 3
+  | .team => 5
+  | .enterprise => 25
 
-def seatPrice : Decl := decl%
-  seatPrice(plan : Plan) : Int53 :=
-    match plan { free() => 0 | team() => 1200 | enterprise() => 2500 }
+@[verified]
+def seatPrice (plan : Plan) : Int :=
+  match plan with
+  | .free => 0
+  | .team => 1200
+  | .enterprise => 2500
 
-def billableSeats : Decl := decl%
-  billableSeats(plan : Plan, seats : Int53) : Int53 :=
-    (seats.max(0) - includedSeats(plan)).max(0)
+@[verified]
+def billableSeats (plan : Plan) (seats : Int) : Int :=
+  max (max seats 0 - includedSeats plan) 0
 
-def seatCharge : Decl := decl%
-  seatCharge(plan : Plan, seats : Int53) : Int53 :=
-    seatPrice(plan) * billableSeats(plan, seats)
+@[verified]
+def seatCharge (plan : Plan) (seats : Int) : Int :=
+  seatPrice plan * billableSeats plan seats
+
+declarations%
 
 def program : Program := program%
+
+certificates%
 
 #eval program.check
 
@@ -143,8 +157,8 @@ dependency — you never write one. It takes a module name, reads that module's 
 
 It refuses rather than writes when the program reaches outside what it can stand behind: a vector on
 which the generated JavaScript and the reference semantics disagree, a theorem resting on `sorry`, a
-declaration `program%` did not gather, a call that cycles, or a program past the fuel the artifact
-runs at. Nothing lands in `--out` when it refuses, and the vectors are never left behind.
+declaration without a certificate or one `program%` did not gather, or a program past the fuel the
+artifact runs at. Nothing lands in `--out` when it refuses, and the vectors are never left behind.
 
 `templates/verified-package/` is this package with the rest of the example — a discount type, an
 invoice assembled from line items, validation that refuses a negative seat count, and four theorems.
@@ -152,34 +166,42 @@ Copy it and start replacing declarations.
 
 ## Writing the logic
 
-**What goes inside `decl%` and `type%` is not Lean.** It borrows Lean's parser for a separate
-grammar: no `Array` or `String` API from Lean, no lambdas outside traversals, no recursion, no type
-classes. [`SYNTAX.md`](templates/verified-package/SYNTAX.md) is the whole of it.
+**You write ordinary Lean, and `@[verified]` marks what ships.** The subset is narrow — no `Array` or
+`String` API from Lean, no lambdas outside traversals, no recursion, no type classes — and a `def`
+that leaves it is refused by name, with the term the walk stopped at.
+[`SYNTAX.md`](templates/verified-package/SYNTAX.md) is the whole of it.
 
 ```lean
-def Discount : TypeDef := type%
-  Discount := noDiscount | percentOff(percent : Int53) | amountOff(amount : Int53)
+inductive Discount where
+  | noDiscount
+  | percentOff (percent : Int)
+  | amountOff (amount : Int)
+  deriving Enc
 
-def discountOn : Decl := decl%
-  discountOn(discount : Discount, subtotal : Int53) : Int53 :=
-    match discount {
-        noDiscount() => 0
-      | percentOff(percent) =>
-          let rate : Int53 := percent.max(0).min(100);
-          subtotal.max(0) * rate / 100
-      | amountOff(amount) => amount.max(0).min(subtotal.max(0))
-    }
+@[verified]
+def discountOn (discount : Discount) (subtotal : Int) : Int :=
+  match discount with
+  | .noDiscount => 0
+  | .percentOff percent =>
+    let rate := min (max percent 0) 100
+    Int53.div (max subtotal 0 * rate) 100
+  | .amountOff amount => min (max amount 0) (max subtotal 0)
 
-def invoiceFor : Decl := decl%
-  invoiceFor(plan : Plan, seats : Int53, discount : Discount) : Result<Invoice, String> :=
-    if seats < 0 then error<Invoice>("a seat count cannot be negative")
-    else if seats > 10000 then error<Invoice>("a seat count above 10000 needs a sales contract")
-    else
-      let lines : Array<LineItem> := invoiceLines(plan, seats);
-      let subtotal : Int53 := linesTotal(lines);
-      let off : Int53 := discountOn(discount, subtotal);
-      ok<String>(Invoice::Invoice(lines, subtotal, off, subtotal - off))
+@[verified]
+def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String Invoice :=
+  if seats < 0 then .error "a seat count cannot be negative"
+  else if seats > 10000 then .error "a seat count above 10000 needs a sales contract"
+  else
+    let lines := invoiceLines plan seats
+    let subtotal := linesTotal lines
+    let off := discountOn discount subtotal
+    .ok (Invoice.Invoice lines subtotal off (subtotal - off))
 ```
+
+`declarations%` reads a declaration out of every marked `def`, `program%` gathers them in an order
+where every call goes backwards, and `certificates%` writes, per declaration, the proof that it
+computes the `def` it was read from. **A declaration without one does not ship** — there is no way to
+hand the compiler an AST it has not read out of Lean.
 
 The subset is the part of Lean whose correspondence to JavaScript is unambiguous, which is what makes
 a small trusted base and a correctness proof affordable:
@@ -187,20 +209,21 @@ a small trusted base and a correctness proof affordable:
 | In | Out |
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
-| `type%` sums and products (`Money(amount : Int53, ...)`, `guest \| member \| admin`), type parameters, `Option<T>` / `Result<A, E>` | `unsafe` / arbitrary FFI / pointers |
-| Array traversals (`xs.map(fun x => ...)` / `filter` / `reduce` / `find` / `all` / `any` / `slice` / `reverse` / `++`) and `match` (nested, wildcard, literal) | Metaprogramming |
-| Arithmetic (`+` / `-` / `*` / `/` / `%` / `abs()` / `min()` / `max()`) | `Float` / IEEE 754 |
-| Pure functions (`decl% f(x : T) : U := ...`) | Recursion / non-termination / DOM access |
-| Declared functions passed as `@name`, between internal declarations | Functions as values: lambdas outside traversals, closures, function types on the public boundary |
-| Strings (`trim()` / `toUpper()` / `toLower()` / `startsWith()` / `endsWith()` / `includes()` / `split()` / `substring()`) | Regular expressions |
-| `Dict<V>` (string keys, emitted as a `Map`: `get` / `set` / `has` / `delete` / `keys` / `values`) | Plain objects used as dictionaries |
+| `inductive` and `structure` with `deriving Enc`, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
+| List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`) and `match` (nested, wildcard, literal) | Metaprogramming |
+| Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
+| Pure `def`s marked `@[verified]` | Recursion / non-termination / DOM access |
+| A declaration passed to another as a function | Functions as values: lambdas outside traversals, closures, function types on the public boundary |
+| Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.split` / `Str.substring`) | Regular expressions |
+| `Dict V` (string keys, emitted as a `Map`: `get` / `set` / `has` / `erase` / `keys` / `values`) | Plain objects used as dictionaries |
 
 Where JavaScript and Lean disagree, the generated code follows neither silently:
 
 - **Division by zero, `Int53` overflow and out-of-range access trap.** JavaScript would give
   `Infinity`, a silent loss of precision, or `undefined`; the reference semantics stops, and the
   generated code throws the same code at the same point.
-- **`/` truncates**, as JavaScript does, rather than flooring as Lean's `/` does.
+- **`/` truncates**, as JavaScript does, rather than flooring as Lean's `/` does — which is why the
+  subset refuses Lean's `/` on `Int` and has you write `Int53.div`.
 - **String length is counted in code points**, not UTF-16 units, so a surrogate pair is one character
   and `substring` never splits one in half.
 - **Equality is structural and generated per type.** `===` cannot compare two records.
@@ -209,16 +232,19 @@ Where JavaScript and Lean disagree, the generated code follows neither silently:
 
 ## Writing theorems
 
-Theorems are stated about `evalCall` — the reference semantics the generated JavaScript is checked
-against — and they are ordinary Lean theorems, proved however you like:
+Theorems are about your own `def`s. Neither the interpreter nor the AST appears in them, and the
+proofs are the ones you would write about any Lean function:
 
 ```lean
 /-- A workspace on the free plan is never billed for seats, whatever seat count it reports. -/
-theorem free_plan_is_never_charged (seats : Int)
-    (hlo : int53Min ≤ seats) (hhi : seats ≤ int53Max) :
-    evalCall program "seatCharge" [.obj "free" [], .int53 seats] = .ok (.int53 0) := by
-  ...
+theorem free_plan_is_never_charged (seats : Int) : seatCharge .free seats = 0 := by
+  simp [seatCharge, seatPrice]
 ```
+
+What carries that down to the shipped JavaScript is the certificate `certificates%` wrote beside the
+declaration: it says the function the package exports computes this very `def`. The rest — that the
+generated code agrees with the reference semantics, throws the same codes, and refuses at the
+boundary what the semantics would not accept — is proved once, about every program.
 
 **You do not write the list of theorems.** `lean2js` collects every public theorem in the manifest's
 namespace, uses the statement Lean prints for it as the wording and the docstring as the description,
@@ -228,9 +254,9 @@ publish is `private`.
 **`sorry` builds clean**, with nothing but a warning, so `lean2js` looks at the axioms each theorem
 rests on before writing and refuses anything beyond `propext`, `Classical.choice` and `Quot.sound`.
 
-`templates/verified-package/README.md` has the tactics that come up: crossing the entry check once
-with `evalCall_eq`, opening a body with the one-step `evalExpr_*` lemmas, and reaching a call to
-another declaration.
+The certificates are not listed one by one in the manifest. There is one per shipped declaration,
+`lean2js` refuses to write a package missing any, and what a consumer reads is the theorems you
+wrote.
 
 ## What is guaranteed
 
@@ -243,7 +269,9 @@ another declaration.
   twice — the reference semantics against the model of the generated JavaScript inside Lean, and
   against the assembled package loaded into Node. One disagreement and nothing is written.
 - **Proved by you, and carried with the package.** Your theorems ship in `proof-manifest.json` with
-  the axioms they rest on, so what a consumer reads is what Lean checked.
+  the axioms they rest on, so what a consumer reads is what Lean checked. Each is about a `def` of
+  yours, and the certificate beside its declaration is what makes it a claim about the export of the
+  same name.
 
 One caveat, and it is in the types: `Int53` and `UInt32` both map to `number`, so TypeScript accepts
 a number outside their range and the call is refused at run time with `typeError`. Nothing else is

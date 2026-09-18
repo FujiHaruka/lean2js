@@ -67,14 +67,17 @@ Lean2Js/Core.lean     Ty / Expr / Decl / Program  … サブセットの構文�
 Lean2Js/Eval.lean     eval : Program → ... → Except Err Value  … リファレンス意味論（fuel 付き big-step）
 Lean2Js/Js.lean       JS AST + ESM printer + .d.ts printer
 Lean2Js/Compile.lean  Program → Js.Module  … Phase 2 で正しさを証明する対象
-Lean2Js/Syntax.lean   表層構文: type% / decl% / expr% を Core 項へ展開する
+Lean2Js/Denotes.lean  Denotes: ある Core.Expr がある Lean の項を表すこと。形ごとに 1 本の補題
+Lean2Js/Reify.lean    利用者の def を歩いて Core 項と証明項を同時に組み立てる
+Lean2Js/Verified.lean declarations% / certificates%: @[verified] な def から宣言と証明書を書く
 Lean2Js/Builder.lean  Core 項を直接組み立てるための記法（Tests が使う）
 Main.lean            lean2js 実行ファイル: 渡されたモジュールの manifest を読み、Node で全ベクタを当ててから index.js / index.d.ts / proof-manifest.json を出力
 ```
 
-「Restricted Lean」は Lean に埋め込まれた DSL として満たす。定理は `eval` 上で述べる。
-
-通常の `def` を読む frontend は将来の課題として明示的に後回しにする。
+**入力は普通の Lean の `def`。** deep embedding は動かさず、その手前に「歩いて読む」層を置く ——
+`Lean.Expr` から `Core.Expr` を作るときに、同時に「この Lean 関数はこの AST の解釈と一致する」の
+証明項を組み立て、Lean がそれを検査する。ソース言語の意味論を形式化する必要が無いのはこのためで、
+変換器は信頼しない。組み立ては [Lean frontend 計画](lean-frontend-plan.md)にある。
 
 ## JS 意味論との対応（この設計の中身そのもの）
 
