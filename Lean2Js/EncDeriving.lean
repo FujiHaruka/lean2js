@@ -20,15 +20,8 @@ open Lean.Parser.Term (matchAltExpr matchAlt)
 
 private structure CtorShape where
   name : Name
-  fields : Array (String × Lean.Expr)
+  fields : Array (String × Term)
   deriving Inhabited
-
-private def shapeOf (c : Name) : MetaM CtorShape := do
-  let ci ← getConstInfoCtor c
-  forallTelescopeReducing ci.type fun args _ => do
-    let fields ← args.mapM fun a => do
-      return ((← a.fvarId!.getUserName).toString, ← inferType a)
-    return { name := c, fields }
 
 /-- The subset reads a constructor by the name the author wrote, not by its fully qualified one. -/
 private def ctorLit (s : CtorShape) : Term := ⟨Syntax.mkStrLit s.name.getString!⟩
@@ -51,10 +44,37 @@ private partial def typeStx (α : Lean.Expr) : TermElabM Term := do
     if args.isEmpty then return mkIdent n else `($(mkIdent n) $args*)
   | _ => throwError "deriving Enc: a field of type {α} is not a type the subset reads"
 
-private def encTy (α : Lean.Expr) : TermElabM Term := do
-  unless (← synthInstance? (mkApp (mkConst ``Lean2Js.Enc) α)).isSome do
-    throwError "deriving Enc: a field of type {α} has no Enc instance, so it has no subset type"
-  `(Lean2Js.Enc.ty (α := $(← typeStx α)))
+/-- A field's subset type. `Enc` answers for a type that is already known, so a field whose type mentions
+one of the declaration's own parameters cannot go through it: the `TypeDef` is what the program declares
+once for every use, and there the parameter is a `Ty.var` the use substitutes. -/
+private partial def subsetTy (params : Array (Lean.Expr × String)) (α : Lean.Expr) :
+    TermElabM Term := do
+  if let some (_, nm) := params.find? fun (v, _) => v == α then
+    return ← `(Lean2Js.Core.Ty.var $(⟨Syntax.mkStrLit nm⟩))
+  unless params.any fun (v, _) => α.containsFVar v.fvarId! do
+    unless (← synthInstance? (mkApp (mkConst ``Lean2Js.Enc) α)).isSome do
+      throwError "deriving Enc: a field of type {α} has no Enc instance, so it has no subset type"
+    return ← `(Lean2Js.Enc.ty (α := $(← typeStx α)))
+  match α.getAppFnArgs with
+  | (``List, #[β]) => `(Lean2Js.Core.Ty.array $(← subsetTy params β))
+  | (``Option, #[β]) => `(Lean2Js.Core.Ty.option $(← subsetTy params β))
+  | (``Except, #[ε, β]) =>
+    `(Lean2Js.Core.Ty.result $(← subsetTy params β) $(← subsetTy params ε))
+  | (``Lean2Js.Dict, #[β]) => `(Lean2Js.Core.Ty.dict $(← subsetTy params β))
+  | (c, args) =>
+    unless (← getEnv).contains (c ++ `typeDef) do
+      throwError "deriving Enc: a field of type {α} carries a type parameter into a shape the subset \
+        has no type for"
+    `(Lean2Js.Core.Ty.named $(⟨Syntax.mkStrLit c.getString!⟩)
+      [$(← args.mapM (subsetTy params)),*])
+
+private def shapeOf (c : Name) (paramNames : Array String) : TermElabM CtorShape := do
+  let ci ← getConstInfoCtor c
+  forallTelescopeReducing ci.type fun args _ => do
+    let params := (args.extract 0 paramNames.size).zip paramNames
+    let fields ← (args.extract paramNames.size args.size).mapM fun a => do
+      return ((← a.fvarId!.getUserName).toString, ← subsetTy params (← inferType a))
+    return { name := c, fields }
 
 private def toValueAlt (s : CtorShape) : TermElabM (TSyntax ``matchAltExpr) := do
   let entries ← (s.fields.zip (binders s)).mapM fun ((nm, _), x) =>
@@ -90,7 +110,7 @@ private def acceptsAlt (p : Ident) (s : CtorShape) : TermElabM (TSyntax ``matchA
     pure tail
   `(matchAltExpr| | $(← ctorPat s):term => $cond)
 
-private def hasTyAlt (typeDef : Ident) (nameLit : Term) (ctorDef : Term) (s : CtorShape) :
+private def hasTyAlt (typeDef : Ident) (nameLit : Term) (tyArgs : Array Term) (s : CtorShape) :
     TermElabM (TSyntax ``matchAltExpr) := do
   let h := mkIdent `h
   let bs := binders s
@@ -101,17 +121,23 @@ private def hasTyAlt (typeDef : Ident) (nameLit : Term) (ctorDef : Term) (s : Ct
     fields ← `(Lean2Js.Enc.hasFieldTys_toValue _ _ $(bs[j]!) _ _ $(← conjunctAt h n j) $fields)
   let declared ← `(And.left $h)
   `(matchAltExpr| | $(← ctorPat s):term, $h =>
-      (Lean2Js.hasTy_named _ $(ctorLit s) _ $nameLit [] $typeDef $ctorDef $declared rfl).trans
+      (Lean2Js.hasTy_named _ $(ctorLit s) _ $nameLit [$tyArgs,*] $typeDef _ $declared rfl).trans
         $fields)
 
 private def encHandler (types : Array Name) : CommandElabM Bool := do
   let [t] := types.toList | return false
   let indVal ← liftCoreM <| getConstInfoInduct t
-  unless indVal.numParams == 0 && indVal.numIndices == 0 && !indVal.isRec do
-    throwError "deriving Enc: {t} is recursive or takes parameters, which the subset does not carry"
-  let shapes ← liftTermElabM <| indVal.ctors.toArray.mapM fun c => liftM (shapeOf c)
+  unless indVal.numIndices == 0 && !indVal.isRec do
+    throwError "deriving Enc: {t} is recursive or takes indices, which the subset does not carry"
+  let paramNames ← liftTermElabM <| forallBoundedTelescope indVal.type (some indVal.numParams)
+    fun ps _ => ps.mapM fun a => do
+      unless (← inferType a).isType do
+        throwError "deriving Enc: a parameter of {t} is not a type, and the subset carries only types"
+      return (← a.fvarId!.getUserName).toString
+  let shapes ← liftTermElabM <| indVal.ctors.toArray.mapM fun c => shapeOf c paramNames
   let nameLit : Term := ⟨Syntax.mkStrLit t.getString!⟩
-  let typeId := mkIdent t
+  let paramIds : Array Ident := paramNames.map fun nm => mkIdent (Name.mkSimple nm)
+  let paramLits : Array Term := paramNames.map fun nm => ⟨Syntax.mkStrLit nm⟩
   let typeDefId := mkIdent (`_root_ ++ t ++ `typeDef)
   let toValueId := mkIdent (`_root_ ++ t ++ `toValue)
   let ofValueId := mkIdent (`_root_ ++ t ++ `ofValue)
@@ -121,43 +147,49 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
   let bridgeId := mkIdent (`_root_ ++ t ++ `toValue_eq)
   let p := mkIdent `p
   let cmds ← liftTermElabM do
+    let typeId ← if paramIds.isEmpty then `($(mkIdent t)) else `($(mkIdent t) $paramIds*)
+    let tyArgs : Array Term ← paramIds.mapM fun i => `(Lean2Js.Enc.ty (α := $i))
+    let tyStx ← `(Lean2Js.Core.Ty.named $nameLit [$tyArgs,*])
+    let types ← paramIds.mapM fun i => `(Lean.Parser.Term.bracketedBinderF| {$i : Type})
+    let insts ← paramIds.mapM fun i => `(Lean.Parser.Term.bracketedBinderF| [Lean2Js.Enc $i])
+    let carried : Array (TSyntax ``Lean.Parser.Term.bracketedBinder) :=
+      (types ++ insts).map fun b => ⟨b.raw⟩
     let ctorDefs ← shapes.mapM fun s => do
-      let fields ← s.fields.mapM fun (nm, ty) => do
-        let tyStx ← encTy ty
-        `({ name := $(⟨Syntax.mkStrLit nm⟩), ty := $tyStx })
+      let fields ← s.fields.mapM fun (nm, ty) => `({ name := $(⟨Syntax.mkStrLit nm⟩), ty := $ty })
       `({ name := $(ctorLit s), fields := [$fields,*] })
     let toValueAlts ← shapes.mapM toValueAlt
     let ofValueAlts ← shapes.mapM ofValueAlt
     let acceptsAlts ← shapes.mapM (acceptsAlt p)
-    let hasTyAlts ← (shapes.zip ctorDefs).mapM fun (s, cd) => hasTyAlt typeDefId nameLit cd s
+    let hasTyAlts ← shapes.mapM (hasTyAlt typeDefId nameLit tyArgs)
     let x := mkIdent `x
     let v := mkIdent `v
     return #[
       ← `(command| def $typeDefId : Lean2Js.Core.TypeDef :=
-            { name := $nameLit, ctors := [$ctorDefs,*] }),
-      ← `(command| @[simp] def $toValueId ($x : $typeId) : Lean2Js.Value :=
+            { name := $nameLit, params := [$paramLits,*], ctors := [$ctorDefs,*] }),
+      ← `(command| @[simp] def $toValueId $carried* ($x : $typeId) : Lean2Js.Value :=
             match $x:ident with $toValueAlts:matchAlt*),
-      ← `(command| def $ofValueId ($v : Lean2Js.Value) : Option $typeId :=
+      ← `(command| def $ofValueId $carried* ($v : Lean2Js.Value) : Option $typeId :=
             match $v:ident with $ofValueAlts:matchAlt* | _ => none),
-      ← `(command| theorem $roundTripId ($x : $typeId) : $ofValueId ($toValueId $x) = some $x := by
+      ← `(command| theorem $roundTripId $carried* ($x : $typeId) :
+            $ofValueId ($toValueId $x) = some $x := by
             cases $x:ident <;>
               simp only [$toValueId:ident, $ofValueId:ident, Lean2Js.Enc.ofValue_toValue,
                 Option.bind]),
-      ← `(command| def $acceptsId ($p : Lean2Js.Core.Program) ($x : $typeId) : Prop :=
+      ← `(command| def $acceptsId $carried* ($p : Lean2Js.Core.Program) ($x : $typeId) : Prop :=
             Lean2Js.Core.Program.findType? $p $nameLit = some $typeDefId
               ∧ match $x:ident with $acceptsAlts:matchAlt*),
-      ← `(command| theorem $hasTyId {$p : Lean2Js.Core.Program} {$x : $typeId}
+      ← `(command| theorem $hasTyId $carried* {$p : Lean2Js.Core.Program} {$x : $typeId}
             (h : $acceptsId $p $x) :
-            Lean2Js.Value.hasTy $p ($toValueId $x) (.named $nameLit []) = true :=
+            Lean2Js.Value.hasTy $p ($toValueId $x) $tyStx = true :=
             match $x:ident, h with $hasTyAlts:matchAlt*),
-      ← `(command| instance : Lean2Js.Enc $typeId where
-            ty := .named $nameLit []
+      ← `(command| instance $carried:bracketedBinder* : Lean2Js.Enc $typeId where
+            ty := $tyStx
             toValue := $toValueId
             ofValue := $ofValueId
             ofValue_toValue := $roundTripId
             accepts := $acceptsId
             toValue_hasTy := $hasTyId),
-      ← `(command| @[simp] theorem $bridgeId :
+      ← `(command| @[simp] theorem $bridgeId $carried* :
             (Lean2Js.Enc.toValue : $typeId → Lean2Js.Value) = $toValueId := rfl)
     ]
   cmds.forM elabCommand

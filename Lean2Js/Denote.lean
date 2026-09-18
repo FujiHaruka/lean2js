@@ -274,6 +274,35 @@ def dailyLimit (role : Role) : Int :=
   | some value => value
   | none => 0
 
+/-- A type the author declared with a parameter. The `TypeDef` the program carries is the one the
+declaration was written at, with the parameter left as a `Ty.var`, and a use substitutes what it was
+applied to. The parameter's name is the author's: it is what the generated type reads as. -/
+structure Paginated (T : Type) where
+  Paginated ::
+  items : List T
+  total : Int
+  deriving Enc
+
+inductive Validated (E A : Type) where
+  | valid (value : A)
+  | invalid (errors : List E)
+  deriving Enc
+
+def remainingItems (page : Paginated Money) : Int := page.total - Arr.length page.items
+
+def firstPage (amounts : List Int) : Paginated Int :=
+  Paginated.Paginated amounts (Arr.length amounts)
+
+def validateQuantity (quantity : Int) : Validated String Int :=
+  if quantity < 1 then .invalid ["a quantity must be at least 1"]
+  else if quantity > 999 then .invalid ["a quantity may not exceed 999"]
+  else .valid quantity
+
+def validationMessage (outcome : Validated String Int) : String :=
+  match outcome with
+  | .valid value => quantityLabel value
+  | .invalid errors => if Arr.length errors == 0 then "refused" else Arr.get errors 0
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 

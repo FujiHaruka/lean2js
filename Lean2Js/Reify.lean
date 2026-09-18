@@ -84,7 +84,7 @@ private partial def patternOf (binders : Array Lean.Expr) (binderNames : Array N
       unless (← getEnv).contains (ci.induct ++ `typeDef) do
         throwError "reify: {pat} matches on a {ci.induct}, which needs `deriving Enc` before the \
           subset has a type for it"
-      pure (ci.name.getString!, args)
+      pure (ci.name.getString!, args.extract ci.numParams args.size)
   let mut pats := #[]
   let mut bound := #[]
   for a in args do
@@ -458,20 +458,23 @@ where
     let holes : Array Term ← free.mapM fun _ => `(_)
     `($stx $holes*)
   /-- A value of a type the author declared. `eval` looks the type up in the program to pair the
-  arguments with the field names, so the certificate names the program the way a call does. -/
+  arguments with the field names, so the certificate names the program the way a call does. A type the
+  author declared with parameters carries what it was applied to, which is the first of the
+  constructor's arguments. -/
   constructed (ci : ConstructorVal) (callArgs : Array Lean.Expr) : TermElabM (Term × Term) := do
     unless (← getEnv).contains (ci.induct ++ `typeDef) do
       throwError "reify: {ci.name} builds a {ci.induct}, which needs `deriving Enc` before the \
         subset has a type for it"
+    let tyArgs ← (callArgs.extract 0 ci.numParams).mapM encTy
     let mut items := #[]
     let mut proof ← `(Lean2Js.Denote.denotesArgs_nil _ _)
-    for a in callArgs.reverse do
+    for a in (callArgs.extract ci.numParams callArgs.size).reverse do
       let (ae, ap) ← walk ns names xs a
       items := items.push ae
       proof ← `(Lean2Js.Denote.denotesArgs_cons _ _ _ _ _ _ $ap $proof)
     let tLit : Term := ⟨Syntax.mkStrLit ci.induct.getString!⟩
     let cLit : Term := ⟨Syntax.mkStrLit ci.name.getString!⟩
-    return (← `(Lean2Js.Core.Expr.ctor $tLit [] $cLit [$(items.reverse),*]),
+    return (← `(Lean2Js.Core.Expr.ctor $tLit [$tyArgs,*] $cLit [$(items.reverse),*]),
             ← `(Lean2Js.Denote.denotes_ctor _ _ $tLit $cLit _ _ _ _ _ _ rfl rfl rfl $proof rfl))
   /-- Reading a field asks nothing of the program: the encoding of the value already carries it. -/
   projection (field : String) (recv : Lean.Expr) : TermElabM (Term × Term) := do
@@ -1336,6 +1339,52 @@ theorem settleMessage_certificate (p : Program) (outcome : Except String OrderSt
     Denotes p (bindParams settleMessageCore.params [toValue outcome]) settleMessageCore.body
       (settleMessage outcome) :=
   reify_proof% settleMessage
+
+/-! ### A type that takes a parameter
+
+The `TypeDef` the program carries is written once, at the declaration, with the parameter left as a
+`Ty.var`; every use carries what it was applied to and the entry check substitutes. On the Lean side the
+parameter is an ordinary one, and the encoding it needs is the `Enc` instance the use supplies. -/
+
+example : Paginated.typeDef = Example.Paginated := rfl
+
+example : Validated.typeDef = Example.Validated := rfl
+
+abbrev remainingItemsCore : Decl := reify_decl% remainingItems
+
+example : remainingItemsCore = Example.remainingItems := rfl
+
+theorem remainingItems_certificate (p : Program) (page : Paginated Money) :
+    Denotes p (bindParams remainingItemsCore.params [toValue page]) remainingItemsCore.body
+      (remainingItems page) :=
+  reify_proof% remainingItems
+
+abbrev firstPageCore : Decl := reify_decl% firstPage
+
+example : firstPageCore = Example.firstPage := rfl
+
+theorem firstPage_certificate (amounts : List Int) :
+    Denotes Example.program (bindParams firstPageCore.params [toValue amounts]) firstPageCore.body
+      (firstPage amounts) :=
+  reify_proof% firstPage
+
+abbrev validateQuantityCore : Decl := reify_decl% validateQuantity
+
+example : validateQuantityCore = Example.validateQuantity := rfl
+
+theorem validateQuantity_certificate (quantity : Int) :
+    Denotes Example.program (bindParams validateQuantityCore.params [toValue quantity])
+      validateQuantityCore.body (validateQuantity quantity) :=
+  reify_proof% validateQuantity
+
+abbrev validationMessageCore : Decl := reify_decl% validationMessage
+
+example : validationMessageCore = Example.validationMessage := rfl
+
+theorem validationMessage_certificate (outcome : Validated String Int) :
+    Denotes Example.program (bindParams validationMessageCore.params [toValue outcome])
+      validationMessageCore.body (validationMessage outcome) :=
+  reify_proof% validationMessage
 
 /-- A `match` on an `Option`, which is not a type the program declares: the splitter reaches the arms of
 one the same way it reaches an author's own. -/

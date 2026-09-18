@@ -327,7 +327,7 @@ lemma を選ぶ。**数値リテラルも同じ** —— `Expr.int?` は型を�
 | `UInt32` の算術と比較 | 済。ラップするので `Int53` の補題は使えず、`+ - * / %` と `< ≤ > ≥` に別系統を置いた。**`/` と `%` は `UInt32` でだけ演算子そのものを読む** —— 両側とも自然数を割って同じ丸めをするので、prelude の関数が要らない |
 | 関数を取る引数 | 済（1 引数のみ）。`.fn` に `Enc` は立たないので `Enc` の外に `DenotesFn`（名前と利用者の関数を結ぶ）を置いた。関数を取る宣言の証明書はそれを仮定に取り、呼ぶ側が callee 自身の証明書から答える |
 | リテラル・`_` の腕、入れ子 `match` | 済。matcher の splitter がパターンをそのまま返すので、形ごとの規則は要らない。`Option` / `Except` の `match` も同じ道で通る |
-| 型パラメタを取る型 | **まだ**。`Paginated<T>` / `Validated<E, A>` は `deriving Enc` が `numParams == 0` しか受けない |
+| 型パラメタを取る型 | 済。`deriving Enc` がパラメタを `Ty.var` のまま `TypeDef` に書き、instance は `[Enc T]` を担いで `Ty.named` に渡す |
 
 ### ここで分かったこと
 
@@ -337,6 +337,19 @@ elaborate されるので、腕が読む外側の変数（`canRefund` の `role`
 その時点で存在しない。**捕捉している変数ごと抽象して、穴として適用し直す** —— 穴は期待型から埋まる。
 `g` を `_` にして推論に任せる手は使えない: `?g ?x =?= ship state trackingId` は引数が 2 つあると
 一次近似が `?g := ship state` を選んで型が合わなくなる。
+
+**型パラメタは `Enc` を通らない。** `Enc` はすでに分かっている型に答えるものなので、パラメタを
+含むフィールドの型は `Enc.ty` では書けない。`TypeDef` は宣言のときに 1 度だけ書かれるもので、そこでは
+パラメタは `Ty.var` のまま —— 使う側が `Ty.subst` で埋める。`deriving Enc` は
+`List T` / `Option T` / `Except` / `Dict` / 他の宣言型をたどって `Ty` を組み立て、パラメタを含まない
+フィールドはこれまでどおり `Enc.ty` に落とす。
+
+- **`TypeDef.params` の名前は利用者のもの。** `structure Paginated (T : Type)` の `T` がそのまま
+  `params := ["T"]` になり、生成する型定義にも出る。
+- **生成する宣言はパラメタを担ぐ。** `Paginated.toValue` ほかは `{T : Type} [Enc T]` を取り、
+  instance は `ty := .named "Paginated" [Enc.ty (α := T)]`。
+- **構成子とパターンは型引数を先に取る。** `Expr.ctor` の `tyArgs` は構成子適用の先頭
+  `numParams` 個から来る。パターンでも同じ数だけ落とす。
 
 **関数は値ではなく宣言の名前として渡る。** Lean の関数値はどの宣言なのかを知らないので `Enc` が
 立たない。`Enc` の外に `DenotesFn p name f`（`p` が `name` を宣言していて、それを走らせると `f` に
