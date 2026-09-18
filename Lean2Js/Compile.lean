@@ -122,6 +122,11 @@ def strBinResult : StrBinOp → Ty
   | .split => .array .string
   | .indexOf => .option .int53
 
+/-- What each operation takes, rather than two Strings for all of them: an operation whose operands are
+not both Strings is then an arm here, not a new form of `Core.Expr`. -/
+def strBinArgTys : StrBinOp → Ty × Ty
+  | .startsWith | .endsWith | .includes | .split | .indexOf => (.string, .string)
+
 def orderSymbol : BinOp → Option String
   | .lt => some "<"
   | .le => some "<="
@@ -642,8 +647,10 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
   | .strBin op lhs rhs => do
     let (jl, tl) ← compileExpr p ctx lhs
     let (jr, tr) ← compileExpr p ctx rhs
-    if tl != .string then .error s!"{op.name} expects a String, not {tl.render}"
-    else if tr != .string then .error s!"{op.name} takes a String, not {tr.render}"
+    if tl != (strBinArgTys op).1 then
+      .error s!"{op.name} expects a {(strBinArgTys op).1.render}, not {tl.render}"
+    else if tr != (strBinArgTys op).2 then
+      .error s!"{op.name} takes a {(strBinArgTys op).2.render}, not {tr.render}"
     else .ok (.call (strBinHelper op) [jl, jr], strBinResult op)
   | .substring str lo hi => do
     let (js, ts) ← compileExpr p ctx str

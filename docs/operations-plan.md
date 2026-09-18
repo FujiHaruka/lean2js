@@ -296,9 +296,10 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
   `Ty.eq_of_not_bne` で `tl = tr = .string` を出し、`hasTy_string_inv` で両引数を `String` に
   落としてから `helper_strBin` を当てている（`Correct.lean` の `| strBin hl hr` の中）。
   引数型が op 依存になると、この 2 段が op ごとに分かれる。
-- **op 非依存に保つなら `helper_strBin` を上げる。** 今の `applyStrBin op (.str a) (.str b)` 固定を
-  「両引数が `strBinArgTys op` の型を持つ」という仮定つきの `Value` の形に上げれば、場合の側は
-  今の形のまま通る。**これをやるかどうかが Step 4 の最初の判断**で、5 操作ぶんの値段を決める。
+- **`helper_strBin` の持ち上げは済んでいる**（2026-09-19, `HASH2`）。`applyStrBin op (.str a) (.str b)`
+  固定だったものを「両引数が `strBinArgTys op` の型を持つ」仮定つきの `Value` の形に上げ、
+  `Compile` の `strBin` は `strBinArgTys op` と突き合わせるようにした。**生成物は 1 バイトも動かない**
+  （5 操作とも `(.string, .string)` のまま）。`join` と `repeat` は、この腕に型を 1 行足すだけで入る。
 
 **`strBin` は `indexOf?` で初めて落ちる op を持った**（2026-09-19 に入れて分かった）。位置は
 文字列の長さで抑えられるが、その長さに上限が無いので `Str.length` と同じ `int53Overflow` で落ちる。
@@ -410,3 +411,9 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   差分ベクタ 34291 → 35125 件、燃料は 671 → 685。
   leg 4 が気づいた「受け入れ集合が emit のベクタにしか無い」穴は、`Tests.lean` に
   `Str.toInt?` と `Str.indexOf?` の値の `#guard` を置いて塞いだ（`lake build` が見る）。
+- **`strBin` の引数型を開いた**（2026-09-19, `HASH2`） — `Compile.strBinArgTys : StrBinOp → Ty × Ty` を
+  置き、`helper_strBin` / `strBin_err_indexOf` を `Value` と `hasTy` の仮定の形に上げた。
+  `Correct` の `strBin` の 2 箇所（返る側・落ちる側）は `typeSound` から型を取って渡すだけになり、
+  `hasTy_string_inv` はどちらも `helper_strBin` の中に移った。**振る舞いは変わらない**：
+  ベクタ件数も生成物も 1 バイト動かず、`Core.Expr` は 35 形のまま。**残る仕事は `strTer`
+  （`substring` の一般化）だけ**で、これは `replace` / `padStart` が要る。

@@ -447,11 +447,17 @@ theorem indexOfChars_eq (t : List Char) :
   | _ :: rest => by
     rw [Js.Runtime.strIndexOfChars, indexOfChars, indexOfChars_eq t rest]
 
-theorem helper_strBin {op : StrBinOp} {a b : String} {v : Value}
-    (h : applyStrBin op (.str a) (.str b) = .ok v) :
-    Js.helper (Compile.strBinHelper op) [.str a, .str b] = some (.ok (encodeValue v)) := by
+theorem helper_strBin {p : Program} {op : StrBinOp} {av bv v : Value}
+    (hav : Value.hasTy p av (Compile.strBinArgTys op).1 = true)
+    (hbv : Value.hasTy p bv (Compile.strBinArgTys op).2 = true)
+    (h : applyStrBin op av bv = .ok v) :
+    Js.helper (Compile.strBinHelper op) [encodeValue av, encodeValue bv]
+      = some (.ok (encodeValue v)) := by
   cases op with
   | indexOf =>
+    obtain ⟨a, rfl⟩ := hasTy_string_inv hav
+    obtain ⟨b, rfl⟩ := hasTy_string_inv hbv
+    simp only [encodeValue]
     simp only [applyStrBin] at h
     rw [show Js.helper (Compile.strBinHelper StrBinOp.indexOf) [Js.JsValue.str a, Js.JsValue.str b]
         = some (Js.Runtime.strIndexOf a b) from rfl]
@@ -472,6 +478,8 @@ theorem helper_strBin {op : StrBinOp} {a b : String} {v : Value}
         rw [if_neg (show ¬ (Js.Runtime.safeMax < ((n : Nat) : Int)) from hr)]
         simp [encodeValue, encodeFields]
   | _ =>
+    obtain ⟨a, rfl⟩ := hasTy_string_inv hav
+    obtain ⟨b, rfl⟩ := hasTy_string_inv hbv
     simp only [applyStrBin, Except.ok.injEq] at h
     subst h
     first
@@ -481,10 +489,16 @@ theorem helper_strBin {op : StrBinOp} {a b : String} {v : Value}
 
 /-- `indexOf` is the one string pair that can fail: a position past the safe integers traps the way a
 length does. -/
-theorem strBin_err_indexOf {a b : String} {err : Err}
-    (h : applyStrBin .indexOf (.str a) (.str b) = .error err) :
-    err = .int53Overflow ∧ Js.helper (Compile.strBinHelper .indexOf) [.str a, .str b]
-      = some (.error "int53Overflow") := by
+theorem strBin_err_indexOf {p : Program} {av bv : Value} {err : Err}
+    (hav : Value.hasTy p av (Compile.strBinArgTys .indexOf).1 = true)
+    (hbv : Value.hasTy p bv (Compile.strBinArgTys .indexOf).2 = true)
+    (h : applyStrBin .indexOf av bv = .error err) :
+    err = .int53Overflow ∧
+      Js.helper (Compile.strBinHelper .indexOf) [encodeValue av, encodeValue bv]
+        = some (.error "int53Overflow") := by
+  obtain ⟨a, rfl⟩ := hasTy_string_inv hav
+  obtain ⟨b, rfl⟩ := hasTy_string_inv hbv
+  simp only [encodeValue]
   simp only [applyStrBin] at h
   rw [show Js.helper (Compile.strBinHelper StrBinOp.indexOf) [Js.JsValue.str a, Js.JsValue.str b]
       = some (Js.Runtime.strIndexOf a b) from rfl]
@@ -5141,14 +5155,12 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i bv hbv
-    obtain rfl : tl = Ty.string := Ty.eq_of_not_bne htl
-    obtain rfl : tr = Ty.string := Ty.eq_of_not_bne htr
-    obtain ⟨sa, rfl⟩ := hasTy_string_inv
-      (typeSound p hprog f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
-    obtain ⟨sb, rfl⟩ := hasTy_string_inv
-      (typeSound p hprog f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
-    exact eventually_call2 (by simpa [encodeValue] using ihl henv hjenv hcl hav)
-      (by simpa [encodeValue] using ihr henv hjenv hcr hbv) (helper_strBin he)
+    obtain rfl : tl = (Compile.strBinArgTys op).1 := Ty.eq_of_not_bne htl
+    obtain rfl : tr = (Compile.strBinArgTys op).2 := Ty.eq_of_not_bne htr
+    exact eventually_call2 (ihl henv hjenv hcl hav) (ihr henv hjenv hcr hbv)
+      (helper_strBin
+        (typeSound p hprog f ctx env lhsE jl _ av hl.typeChecked henv hcl hav)
+        (typeSound p hprog f ctx env rhsE jr _ bv hr.typeChecked henv hcr hbv) he)
   | substring hs hlo hhi =>
     rename_i strE loE hiE
     have ihs := ih hs
@@ -7240,26 +7252,25 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2L (ihl henv hcov hjenv hcl hle hne)
     rename_i av hav
-    obtain rfl : tl = Ty.string := Ty.eq_of_not_bne htl
-    obtain rfl : tr = Ty.string := Ty.eq_of_not_bne htr
-    obtain ⟨sa, rfl⟩ := hasTy_string_inv
-      (typeSound p hprog f ctx env lhsE jl .string av hl.typeChecked henv hcl hav)
-    have hlv : Eventually m jenv jl (.str sa) := by
-      simpa [encodeValue] using iha hl henv hjenv hcl hav
+    obtain rfl : tl = (Compile.strBinArgTys op).1 := Ty.eq_of_not_bne htl
+    obtain rfl : tr = (Compile.strBinArgTys op).2 := Ty.eq_of_not_bne htr
+    have hlv : Eventually m jenv jl (encodeValue av) := iha hl henv hjenv hcl hav
     split at he
     · rename_i e0 hre
       obtain rfl : err = e0 := (Except.error.inj he).symm
       exact eventuallyErr_call2R hlv (ihr henv hcov hjenv hcr hre hne)
     rename_i bv hbv
-    obtain ⟨sb, rfl⟩ := hasTy_string_inv
-      (typeSound p hprog f ctx env rhsE jr .string bv hr.typeChecked henv hcr hbv)
-    have hrv : Eventually m jenv jr (.str sb) := by
-      simpa [encodeValue] using iha hr henv hjenv hcr hbv
+    have hrv : Eventually m jenv jr (encodeValue bv) := iha hr henv hjenv hcr hbv
+    have hat := typeSound p hprog f ctx env lhsE jl _ av hl.typeChecked henv hcl hav
+    have hbt := typeSound p hprog f ctx env rhsE jr _ bv hr.typeChecked henv hcr hbv
     cases op with
     | indexOf =>
-      obtain ⟨rfl, hh⟩ := strBin_err_indexOf he
+      obtain ⟨rfl, hh⟩ := strBin_err_indexOf hat hbt he
       exact eventuallyErr_call2_helper hlv hrv hh
-    | _ => simp [applyStrBin] at he
+    | _ =>
+      obtain ⟨sa, rfl⟩ := hasTy_string_inv hat
+      obtain ⟨sb, rfl⟩ := hasTy_string_inv hbt
+      simp [applyStrBin] at he
   | substring hs hlo hhi =>
     rename_i strE loE hiE
     have ihs := ih hs
