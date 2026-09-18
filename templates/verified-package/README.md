@@ -28,7 +28,7 @@ axiom other than `propext` / `Classical.choice` / `Quot.sound` fails the run —
 
 | File | What it is |
 | --- | --- |
-| `lakefile.toml` | The dependency on `Lean2Js`. Pinning `rev` pins the compiler |
+| `lakefile.toml` | The dependency on `Lean2Js`, pinned to a tag. That `rev` is what decides which compiler your artifact was built by |
 | `MyLogic.lean` | The business logic (ordinary Lean `def`s), the theorems, and the manifest `lean2js` reads |
 | [`SYNTAX.md`](SYNTAX.md) | Everything a `def` marked `@[ship]` may be written in |
 | [`PROVING.md`](PROVING.md) | What you are proving with, and the shapes a theorem takes |
