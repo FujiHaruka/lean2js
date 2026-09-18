@@ -347,7 +347,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `Example.lean` に `orderReference` を 1 本。公開関数 91 → 92 本、差分ベクタ 31741 → 32270 件。
   `docs/guarantees.md` の燃料の数字は `503` のまま止まっていた（Step 2 の 21 本を数えていない）ので、
   測って `657` に直した。
-- **Step 3 の後半**（2026-09-19, `HEAD`） — `Str.toInt?` が入った。`StrUnOp` に腕 1 つ、`Core.Expr` は
+- **Step 3 の後半**（2026-09-19, `a219e8e`） — `Str.toInt?` が入った。`StrUnOp` に腕 1 つ、`Core.Expr` は
   35 形のまま。`Compile` の `strUn` は結果型を `.string` 固定から `strUnResult` に開いた（`strBin` の
   `strBinResult` と同じ形）ので、`Sound` / `Correct` の `strUn` の場合は op に依らないまま通り、
   仕事は `applyStrUn_hasTy` / `helper_strUn` / `applyStrUn_str` の中だけで済んだ。
