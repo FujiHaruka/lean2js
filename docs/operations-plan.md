@@ -5,8 +5,8 @@
 
 ## 文脈
 
-今の到達点は測った数字で言える。公開関数 98 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
-35924 件、`Core.Expr` は 35 形。実行時ヘルパは 54 本で、模型がヘルパについて仮定している表 39 行の
+今の到達点は測った数字で言える。公開関数 99 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
+36533 件、`Core.Expr` は 35 形。実行時ヘルパは 54 本で、模型がヘルパについて仮定している表 39 行の
 全行が印字器の書き出すソースと一致する（`helpers_ship_as_modelled`）。JS の組み込みへの依存は
 `Helper.lean` が名指ししている `prim` 12 種とメソッド 13 種で、それが読み取れる TCB の全部。
 
@@ -263,8 +263,7 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 `__join` は `+` と `xs[0]` と `slice` で書く。
 
 **`replace` の空パターンは JS 固有。** `"abc".replaceAll("", "-")` は各位置に挿入する。意味論を
-そこに合わせる価値が無いので、空パターンは拒否する（コンパイル時に落とせるのはリテラルのときだけ
-なので、実行時の trap になる）。
+そこに合わせる価値が無いので、そこには合わせない。
 
 **`padStart` / `repeat` はコードポイントで数える。** `Str.length` と同じ基準。ネイティブの
 `padStart` は UTF-16 単位で数えるので手書きヘルパに落ちる。
@@ -281,7 +280,7 @@ Int53 の上限 2^53-1 ≈ 9.007e15 はその下。だから「対応が一意�
 | --- | --- | --- |
 | `join xs sep` | `(List String, String)` | `strBin` は `(String, String)` 固定 |
 | `repeat s n` | `(String, Int53)` | 同上 |
-| `replace s pat rep` | `(String, String, String)` | `substring` は `(String, Int53, Int53)` 固定 |
+| `replace s pat rep` | `(String, String, String)` | `join` と `split` の合成で書けた（下の結果） |
 | `padStart s n pad` | `(String, Int53, String)` | 同上 |
 
 **`Core.Expr` を 35 形のまま通す道がある。** `strUn` の結果型をこの leg で `strUnResult` に開いたのと
@@ -362,7 +361,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
 
 - `README.md` — サブセットの表、「35 の形すべて」
 - `templates/verified-package/SYNTAX.md` — 書けるものの表、Step 0 で足す無いものの表
-- `docs/guarantees.md` — ベクタ件数（今 35924 件）、実行時ヘルパの本数と仮定の表の行数
+- `docs/guarantees.md` — ベクタ件数（今 36533 件）、実行時ヘルパの本数と仮定の表の行数
 - `docs/next-milestone-plan.md` — 「言語が凍っている」を数えている行。**Step 1 と Step 2 では動かない**
   （層 0 は `Core.Expr` に形を足さない）。動くのは Step 3 以降で、そのとき凍結をどの範囲で解いたかを書く
 
@@ -442,3 +441,19 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `Example.lean` に `joinFields` と `referenceFrom` を 1 本ずつ。公開関数 96 → 98 本、宣言 97 → 99、
   差分ベクタ 35125 → 35924 件、燃料は 685 → 699。
   `SYNTAX.md` の「無い操作」から `join` の行と `@[expand] def join` のレシピを消した。
+- **Step 4 の 3 つめ**（2026-09-19, `HASH_REPLACE`） — `Str.replace` が入った。**`strTer` は要らなかった。**
+  `Str.join` が入った時点で `Str.replace s pat rep = Str.join (Str.split s pat) rep` が部分式のまま書けて
+  いて、`@[expand] def` 1 本で済む。**`Core.Expr` も実行時ヘルパも模型の表も 1 つも動いていない**
+  （35 形・54 本・39 行のまま）。動いたのは公開関数 98 → 99 本、宣言 99 → 100、
+  差分ベクタ 35924 → 36533 件、燃料 699 → 706 だけ。
+  **空パターンは trap しない。** 計画は trap すると書いていたが、それは `strTer` で新しい op を置く
+  道の帰結であって目的ではなかった。`Str.split s ""` が既に `[s]` を返すので、合成は `s` をそのまま
+  返す。JS の `replaceAll("", r)` が各位置に挿入するのに合わせない、という判断はどちらでも同じに保てて
+  いて、答えが定義されているぶんこちらのほうが狭い。`SYNTAX.md` は `Str.split` の食い違いの隣に
+  この 1 段落を置き、「無い操作」から `replace` の行を消した。
+  **`padStart` も同じ形で書ける見込みがある**（未検証）: `repeat` が入れば
+  `substring (repeat pad (n - length s)) 0 (n - length s) ++ s` で、コードポイントで数えるのは
+  `Str.length` から来る。**そうなら `strTer` は最後まで要らず、Step 4 の残りは `repeat` 1 つ**——
+  `strBinArgTys .repeat = (.string, .int53)`、長さが伸びるので `indexOf` と同じ `int53Overflow` の
+  落ちる腕、そして「回数で回るループを `Helper.Stmt` に足すか、`String.prototype.repeat` を模型に
+  足すか」の判断が残る。

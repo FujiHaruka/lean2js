@@ -610,6 +610,14 @@ export function referenceFrom(__p0) {
   return __join(parts, "-");
 }
 
+/** refiled : (reference : String, oldSep : String, newSep : String) → String */
+export function refiled(__p0, __p1, __p2) {
+  const reference = __ck(__p0, ["string"]);
+  const oldSep = __ck(__p1, ["string"]);
+  const newSep = __ck(__p2, ["string"]);
+  return __join(__split(reference, oldSep), newSep);
+}
+
 /** sortsBefore : (a : String, b : String) → Bool */
 export function sortsBefore(__p0, __p1) {
   const a = __ck(__p0, ["string"]);

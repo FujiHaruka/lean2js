@@ -121,6 +121,11 @@ separator `referencePrefix` reads back. -/
 @[ship]
 def referenceFrom (parts : List String) : String := Str.join parts "-"
 
+/-- A reference filed under one separator, rewritten under another. Every occurrence moves, and a
+reference carrying none comes back unchanged. -/
+@[ship]
+def refiled (reference oldSep newSep : String) : String := Str.replace reference oldSep newSep
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b

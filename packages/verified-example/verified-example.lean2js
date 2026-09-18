@@ -73,6 +73,9 @@ def joinFields(fields : Array String, separator : String) : String =
 def referenceFrom(parts : Array String) : String =
   parts.join("-")
 
+def refiled(reference : String, oldSep : String, newSep : String) : String =
+  reference.split(oldSep).join(newSep)
+
 def sortsBefore(a : String, b : String) : Bool =
   (a < b)
 

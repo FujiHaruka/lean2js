@@ -187,7 +187,7 @@ priced tenPercentOff amount           handing a declaration to a call
 | On | What you may write |
 | --- | --- |
 | `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` `Int53.toString` |
-| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
+| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.substring` `Str.length` `Str.isEmpty` `Str.toInt?` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
 | `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` |
@@ -205,10 +205,14 @@ are refused along with anything outside the `Int53` range. JavaScript's `Number(
 counts UTF-16 units and answers `-1`. The empty needle sits at `0`, in both. The answer is an index
 `Str.substring` accepts.
 
+`Str.replace s pat rep` rewrites **every** occurrence, the way JavaScript's `replaceAll` does and its
+`replace` does not. An empty `pat` leaves `s` as it is, where `replaceAll("", r)` inserts at every
+position — the same divergence `Str.split s ""` carries, which is what `Str.replace` is written from.
+
 `Opt` and `Exc` are named apart from `Option` and `Except` because Lean's `Option.getD` and `Except.map`
 already exist; writing `o.getD fallback` reaches Lean's, which the walk does not read.
 
-**`Str.isEmpty` and everything from `Arr.take` down is `@[expand]`**, so each call writes the body out
+**`Str.replace`, `Str.isEmpty` and everything from `Arr.take` down is `@[expand]`**, so each call writes the body out
 where it stands. Nothing of them reaches `index.js`, and the fuel the program needs grows with how
 deeply they nest.
 `Arr.contains` needs `BEq T`, which `deriving DecidableEq` gives; `Arr.head?` and `Arr.last?` need
@@ -266,7 +270,6 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | What you reach for | What to write instead |
 | --- | --- |
 | `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
-| `replace` / `replaceAll` | `Str.split` and then `Str.join`. The two differ on the empty pattern: `Str.split s ""` answers with `s` whole, where JavaScript's `replaceAll("", r)` inserts at every position. |
 | `padStart` / `padEnd` / `repeat` | TypeScript. Repeating a string a variable number of times needs recursion, and the subset has none. |
 | regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |

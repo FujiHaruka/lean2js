@@ -164,6 +164,14 @@ export declare function joinFields(fields: readonly string[], separator: string)
 export declare function referenceFrom(parts: readonly string[]): string;
 
 /**
+ * A reference filed under one separator, rewritten under another. Every occurrence moves, and a
+ * reference carrying none comes back unchanged.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function refiled(reference: string, oldSep: string, newSep: string): string;
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.

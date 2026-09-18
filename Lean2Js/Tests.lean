@@ -384,6 +384,13 @@ are what pin down. -/
 #guard Str.join ["", ""] "-" == "-"
 #guard Str.join ["a", "b"] "" == "ab"
 
+#guard Str.replace "a-b-c" "-" "+" == "a+b+c"
+#guard Str.replace "aXXbXXc" "XX" "_" == "a_b_c"
+#guard Str.replace "abc" "d" "-" == "abc"
+#guard Str.replace "" "-" "+" == ""
+#guard Str.replace "--" "-" "+" == "++"
+#guard Str.replace "abc" "" "-" == "abc"
+
 private def Box : TypeDef :=
   struct "Box" [("value", Ty.var "T")] (params := ["T"])
 

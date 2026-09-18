@@ -44,6 +44,8 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   A row of an uploaded file written back out: the fields in order with the separator between them. An empty list of fields writes an empty row.
 - `referenceFrom(parts: readonly string[]): string`
   The reference an order is filed under, built from parts that are already in hand, under the same separator `referencePrefix` reads back.
+- `refiled(reference: string, oldSep: string, newSep: string): string`
+  A reference filed under one separator, rewritten under another. Every occurrence moves, and a reference carrying none comes back unchanged.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`

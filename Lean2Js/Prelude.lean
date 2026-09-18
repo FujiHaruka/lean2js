@@ -129,6 +129,10 @@ def indexOf? (s t : String) : Option Int := (indexOfChars s.toList t.toList).map
 together. An empty list joins to the empty string. -/
 def join (xs : List String) (sep : String) : String := joinStr xs sep
 
+/-- Every occurrence of `pat`, not just the first: this is JS's `replaceAll`, where JS's `replace` takes
+only the first. An empty `pat` leaves `s` as it is, where `replaceAll("", r)` inserts at every position. -/
+@[expand] def replace (s pat rep : String) : String := join (split s pat) rep
+
 @[expand] def isEmpty (s : String) : Bool := length s == 0
 
 end Str

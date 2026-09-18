@@ -130,6 +130,12 @@
       "doc": "The reference an order is filed under, built from parts that are already in hand, under the same\nseparator `referencePrefix` reads back."
     },
     {
+      "name": "refiled",
+      "signature": "(reference : String, oldSep : String, newSep : String) → String",
+      "declaration": "refiled(reference: string, oldSep: string, newSep: string): string",
+      "doc": "A reference filed under one separator, rewritten under another. Every occurrence moves, and a\nreference carrying none comes back unchanged."
+    },
+    {
       "name": "sortsBefore",
       "signature": "(a : String, b : String) → Bool",
       "declaration": "sortsBefore(a: string, b: string): boolean",
