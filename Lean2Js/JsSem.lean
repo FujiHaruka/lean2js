@@ -323,8 +323,12 @@ theorem sizeOf_lookupField (fields : List (String × JsValue)) (k : String) {v :
 
 mutual
 
-/-- Whether a value matches the type its declaration promised. This mirrors `Value.hasTy`; the two are
-held together by the vectors that call an exported function with an argument of the wrong shape.
+/-- Whether a value matches the type its declaration promised. This mirrors `Value.hasTy` on every
+value a caller can hand over; the two are held together by the vectors that call an exported function
+with an argument of the wrong shape. The one value they disagree on is a dictionary holding the same
+key twice, which `hasTy` refuses and this accepts — a `Map` cannot hold one, and
+`dictKeysDistinctList` is the hypothesis that fences it out of the statements that need the two to
+coincide.
 
 A constructor's fields are read by name, so the order they arrive in does not matter and a key the
 descriptor does not name is ignored. `normTy` below is what puts such a value back into the shape
