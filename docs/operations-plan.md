@@ -441,7 +441,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `Example.lean` に `joinFields` と `referenceFrom` を 1 本ずつ。公開関数 96 → 98 本、宣言 97 → 99、
   差分ベクタ 35125 → 35924 件、燃料は 685 → 699。
   `SYNTAX.md` の「無い操作」から `join` の行と `@[expand] def join` のレシピを消した。
-- **Step 4 の 3 つめ**（2026-09-19, `HASH_REPLACE`） — `Str.replace` が入った。**`strTer` は要らなかった。**
+- **Step 4 の 3 つめ**（2026-09-19, `b47f71c`） — `Str.replace` が入った。**`strTer` は要らなかった。**
   `Str.join` が入った時点で `Str.replace s pat rep = Str.join (Str.split s pat) rep` が部分式のまま書けて
   いて、`@[expand] def` 1 本で済む。**`Core.Expr` も実行時ヘルパも模型の表も 1 つも動いていない**
   （35 形・54 本・39 行のまま）。動いたのは公開関数 98 → 99 本、宣言 99 → 100、
