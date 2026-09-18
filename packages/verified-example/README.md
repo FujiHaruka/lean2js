@@ -116,6 +116,33 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   Accepts an order quantity or says why it was refused.
 - `validationMessage(outcome: Validated<string, number>): string`
   The line shown once a quantity has been checked.
+- `amountWithTax(amount: number): readonly number[]`
+  The amount and the tax charged on it, as the two lines they are billed as.
+- `currencyOf(item: Money): string`
+- `previewLines(amounts: readonly number[], upTo: number): readonly number[]`
+  The lines shown before the fold. A count past the end of the order shows the whole of it, where `pageOf` would have refused the window.
+- `linesBelowFold(amounts: readonly number[], upTo: number): readonly number[]`
+- `cartIsEmpty(items: readonly Money[]): boolean`
+- `stocksSku(skus: readonly string[], sku: string): boolean`
+- `amountsTotal(amounts: readonly number[]): number`
+- `spreadsheetCount(fileNames: readonly string[]): number`
+- `firstAmount(amounts: readonly number[]): Option<number>`
+- `latestEvent(events: readonly string[]): Option<string>`
+- `allLines(orders: readonly readonly number[][]): readonly number[]`
+  Every line of every order in one list.
+- `linesWithTax(amounts: readonly number[]): readonly number[]`
+- `noteIsBlank(note: string): boolean`
+- `priceOr(prices: ReadonlyMap<string, number>, sku: string, fallback: number): number`
+  The listed price, or the fallback where the sku is not in the book.
+- `byCurrency(items: readonly Money[]): ReadonlyMap<string, Money>`
+  One line per currency. Where a currency appears twice the later line is the one kept.
+- `quantityOr(quantity: Option<number>, fallback: number): number`
+- `discountedIfAny(amount: Option<number>): Option<number>`
+- `settledOrElse(outcome: Result<Money, string>, fallback: Money): Money`
+- `settledCurrency(outcome: Result<Money, string>): Result<string, string>`
+- `loudRefusal(outcome: Result<Money, string>): Result<Money, string>`
+  The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion the way a shipped declaration does.
+- `settledMoney(outcome: Result<Money, string>): Option<Money>`
 
 ## Errors
 

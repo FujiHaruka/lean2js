@@ -5,8 +5,8 @@
 
 ## 文脈
 
-今の到達点は測った数字で言える。公開関数 70 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
-25511 件、`Core.Expr` は 35 形。実行時ヘルパは 49 本で、模型がヘルパについて仮定している表 35 行の
+今の到達点は測った数字で言える。公開関数 91 本、manifest の定理 27 本、出荷前に照合する差分ベクタ
+31741 件、`Core.Expr` は 35 形。実行時ヘルパは 49 本で、模型がヘルパについて仮定している表 35 行の
 全行が印字器の書き出すソースと一致する（`helpers_ship_as_modelled`）。JS の組み込みへの依存は
 `Helper.lean` が名指ししている `prim` 11 種とメソッド 13 種で、それが読み取れる TCB の全部。
 
@@ -110,38 +110,47 @@
 **燃料は展開した分だけ増える。** 式が深くなるので、`ship_package` の天井（10000）に近づくのは
 呼び出しの数ではなく語彙の入れ子の深さ。
 
-## Step 2. 層 0 の語彙
+## Step 2. 層 0 の語彙（完了）
 
-**書けるようになること**: 意味論を 1 行も動かさずに、下の操作。
+**書けるようになったこと**: 意味論を 1 行も動かさずに、下の 19 操作。全部 `@[expand] def` なので、
+生成物に名前は残らない。
 
-| 受け手 | 足すもの | 既存の形での書き方 |
+| 受け手 | 足したもの | 既存の形での書き方 |
 | --- | --- | --- |
-| `List T` | `take` `drop` | `slice` |
-| | `isEmpty` `contains` `sum` `count` | `length` / `any` / `foldl` |
-| | `head?` `last?` `min?` `max?` | `cond` + `index`、`foldl` |
-| | `indexOf?` `flatten` `flatMap` | `foldl`（添字を持ち回る / `++` で畳む） |
-| | `groupBy`（キーは `String`） | `foldl` + `Dict.get` / `Dict.set` |
-| `Dict V` | `getD` `map` `filter` `ofPairs`（計算キー） | `keys` + `foldl` + `set` |
-| `Option` / `Except` | `getD` `map` `toOption` `mapError` | `match` |
-| `String` | `isEmpty` | `length` |
+| `List T` | `Arr.take` `Arr.drop` | `slice` |
+| | `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` | `length` / `any` / `foldl` |
+| | `Arr.head?` `Arr.last?` | `cond` + `index` |
+| | `Arr.flatten` `Arr.flatMap` | `foldl`（`++` で畳む） |
+| `Dict V` | `Dict.getD` `Dict.ofPairs`（計算キー） | `get` / `foldl` + `set` |
+| `Option` | `Opt.getD` `Opt.map` | `match` |
+| `Except` | `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | `match` |
+| `String` | `Str.isEmpty` | `length` |
+
+**`Opt` / `Exc` が `Option` / `Except` でないのは名前が取られているから。** `Option.getD` と
+`Except.map` は import 済みで `TagAttribute` を付けられず、同名を足すと `open Lean2Js` の下で
+曖昧になる。
+
+**関数を取るものには宣言の名前しか渡せない。** `Arr.count` / `Arr.flatMap` / `Dict.ofPairs` /
+`Opt.map` / `Exc.map` / `Exc.mapError` にその場のラムダを渡すと、展開した先でラムダが呼ばれる形になり
+`reify:` が印を付けた `def` の名前で断る。既存の「ラムダは走査の引数にだけ」という規則の帰結。
 
 **`zip` は入れない。** 2 本の配列から組の配列を作る形だが、`Ty` に組が無い。自分の `structure` を
 宣言すれば書けるので、型を 1 つ足すほどの値打ちが無い。
 
-**`Dict.map` / `Dict.filter` は生成コードが O(n²) になる。** `keys` を回して `get` を引く形なので、
-`Map` の `get` が O(1) でも走査そのものが n 回入る。件数が小さい業務ロジック向けと割り切るか、
-層 1 の走査として足すかは、実際に困ってから決める。
+**触った場所**: `Prelude.lean`（語彙 19 本）、`Example.lean`（語彙ごとに公開宣言 1 本と、関数を
+渡すための `amountWithTax` / `currencyOf` の 2 本）、`SYNTAX.md`。`Reify.lean` は Step 1 の機構が
+効くので動かなかった。
 
-**触る場所**: `Prelude.lean`（語彙を `@[expand] def` として）、`Example.lean`（語彙ごとに公開宣言を
-1 本）、`SYNTAX.md`。`Reify.lean` は Step 1 の機構が効くので動かない。
+### 入らなかったもの（2026-09-18 に測った）
 
-### 先に知っておくこと（2026-09-18 に測った）
-
-**表のうち 6 つは今の `Reify` では書けない。**
+**当初の表のうち 6 つは今の `Reify` では書けない。**
 
 - `indexOf?` — 組を畳み込む形が要るが、`Ty` に組が無く `Prod.mk` は断られる。`structure` を
   `Prelude` に宣言しても、`shippedTypes` は利用者の名前空間しか集めないのでプログラムの `types` に入らない。**外す。**
 - `min?` `max?` `groupBy` `Dict.map` `Dict.filter` — どれも**走査の関数の中の `match`** を要求する。
+  `Dict.map` / `Dict.filter` は入ったとしても生成コードが O(n²) になる（`keys` を回して `get` を
+  引くので、`Map` の `get` が O(1) でも走査が n 回入る）。件数が小さい業務ロジック向けと割り切るか、
+  層 1 の走査として足すかは、実際に困ってから決める。
 
 **走査の関数の中に `match` を書くと、walk は読むが証明書が型が合わない。** `reify:` の拒否ではなく
 `ship_package` での Type mismatch になる。`Example.lean` にはこの形が 1 つも無く、踏んだのは初めて。
@@ -156,14 +165,13 @@
   **`@[expand]` では通らない** —— 展開が `match` をラムダの中へ戻すから。つまりこの 5 つは
   「公開関数を 1 本余分に出す」形でなら今でも書けるが、層 0 の語彙としては出せない。
 
-**だから Step 2 は残りを先に入れる。** 入ることが測って確かめてあるのは
-`take` `drop` `isEmpty` `contains` `sum` `count` `head?` `last?` `flatten` `flatMap` `Str.isEmpty`、
-`Dict.getD` `Dict.ofPairs`、`Opt.*` / `Except.*`（`match` が `def` の直下なので通る）。
-`Option` の語彙は `Opt.*` に置く —— Lean の `Option.getD` は import 済みで、`TagAttribute` は
-import 済みの宣言に付けられない（測った）。`?` で終わる名前は `@[ship]` だと
+**だから入れたのは残りだけ。** `Opt.*` / `Exc.*` が通るのは `match` が `def` の直下にあるからで、
+呼ぶ側も `@[ship] def` の直下に置くかぎり通る —— 走査のラムダの中で呼ぶと、展開が `match` を
+ラムダに戻すので同じ壁に当たる（`SYNTAX.md` に 1 行足した）。`?` で終わる名前は `@[ship]` だと
 `validateIdent` で落ちるが、`@[expand]` はコンパイラに届かないので `Arr.head?` と書ける。
 
-**保証の境界**: 変わらない。`Core.Expr` は 35 形のまま。
+**保証の境界**: 変わらない。`Core.Expr` は 35 形のまま。公開関数が 70 本から 91 本に増えたので、
+`decl_correct` / `decl_traps` / `decl_refuses` が覆う側だけが厚くなった。
 
 ## Step 3. 数値 ⇄ 文字列
 
@@ -241,7 +249,7 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
 
 - `README.md` — サブセットの表、「35 の形すべて」
 - `templates/verified-package/SYNTAX.md` — 書けるものの表、Step 0 で足す無いものの表
-- `docs/guarantees.md` — ベクタ件数（今 25511 件）、実行時ヘルパの本数と仮定の表の行数
+- `docs/guarantees.md` — ベクタ件数（今 31741 件）、実行時ヘルパの本数と仮定の表の行数
 - `docs/next-milestone-plan.md` — 「言語が凍っている」を数えている行。**Step 1 と Step 2 では動かない**
   （層 0 は `Core.Expr` に形を足さない）。動くのは Step 3 以降で、そのとき凍結をどの範囲で解いたかを書く
 
@@ -260,3 +268,9 @@ Step 3 と Step 4 は互いに独立で、Step 3 のほうが実地で先に困�
   `lake env lean` は `reify_decl%` しか走らず、証明書（citing）を作らない——**検証には 3 段階ある**：
   `lake env lean`（walk だけ）⊂ `ship_package`（証明書と compile と燃料）⊂ `lean2js --out`（ベクタを Node で）。
   **以降、文書に載せるコードは `ship_package` まで通す。**
+- **Step 2**（2026-09-18） — 層 0 の語彙 19 本が `Prelude.lean` に入った。`Arr` に 10、`Dict` に 2、
+  新設の `Opt` に 2 と `Exc` に 4、`Str` に 1。全部 `@[expand]` で、`Reify.lean` も `Core` も動いていない。
+  `Example.lean` に公開宣言を 21 本足したので、公開関数は 70 → 91 本、差分ベクタは 25511 → 31741 件。
+  当初の表の `indexOf?` `min?` `max?` `groupBy` `Dict.map` `Dict.filter` は入っていない（理由は Step 2 に）。
+  Step 0 が `SYNTAX.md` に置いた「foldl と Arr.slice で今日書ける 7 行」は、その 7 つが名前を持った
+  ぶん表に移し、残したのは `join` の全文だけ。

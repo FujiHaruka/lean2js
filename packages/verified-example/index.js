@@ -885,4 +885,137 @@ export function validationMessage(__p0) {
   return ((__s) => ((((__s).tag === "valid") ? ((value) => (quantityLabel(value)))((__s).value) : ((errors) => (((__i53((errors).length) === 0) ? "refused" : __at(errors, 0))))((__s).errors))))(outcome);
 }
 
+/** amountWithTax : (amount : Int53) → Array Int53 */
+export function amountWithTax(__p0) {
+  const amount = __ck(__p0, ["int53"]);
+  return [amount, __i53div(amount, 10)];
+}
+
+/** currencyOf : (item : Money) → String */
+export function currencyOf(__p0) {
+  const item = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return (item).currency;
+}
+
+/** previewLines : (amounts : Array Int53, upTo : Int53) → Array Int53 */
+export function previewLines(__p0, __p1) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  const upTo = __ck(__p1, ["int53"]);
+  return __aslice(amounts, 0, upTo);
+}
+
+/** linesBelowFold : (amounts : Array Int53, upTo : Int53) → Array Int53 */
+export function linesBelowFold(__p0, __p1) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  const upTo = __ck(__p1, ["int53"]);
+  return __aslice(amounts, upTo, __i53((amounts).length));
+}
+
+/** cartIsEmpty : (items : Array Money) → Bool */
+export function cartIsEmpty(__p0) {
+  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return (__i53((items).length) === 0);
+}
+
+/** stocksSku : (skus : Array String, sku : String) → Bool */
+export function stocksSku(__p0, __p1) {
+  const skus = __ck(__p0, ["array", ["string"]]);
+  const sku = __ck(__p1, ["string"]);
+  return __any(skus, (y) => ((y === sku)));
+}
+
+/** amountsTotal : (amounts : Array Int53) → Int53 */
+export function amountsTotal(__p0) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __reduce(amounts, 0, (running, y) => (__i53((running + y))));
+}
+
+/** spreadsheetCount : (fileNames : Array String) → Int53 */
+export function spreadsheetCount(__p0) {
+  const fileNames = __ck(__p0, ["array", ["string"]]);
+  return __reduce(fileNames, 0, (running, y) => ((isSpreadsheet(y) ? __i53((running + 1)) : running)));
+}
+
+/** firstAmount : (amounts : Array Int53) → Option Int53 */
+export function firstAmount(__p0) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  return ((__i53((amounts).length) === 0) ? { "tag": "none" } : { "tag": "some", "value": __at(amounts, 0) });
+}
+
+/** latestEvent : (events : Array String) → Option String */
+export function latestEvent(__p0) {
+  const events = __ck(__p0, ["array", ["string"]]);
+  return ((__i53((events).length) === 0) ? { "tag": "none" } : { "tag": "some", "value": __at(events, __i53((__i53((events).length) - 1))) });
+}
+
+/** allLines : (orders : Array Array Int53) → Array Int53 */
+export function allLines(__p0) {
+  const orders = __ck(__p0, ["array", ["array", ["int53"]]]);
+  return __reduce(orders, [], (running, xs) => (__aconcat(running, xs)));
+}
+
+/** linesWithTax : (amounts : Array Int53) → Array Int53 */
+export function linesWithTax(__p0) {
+  const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __reduce(amounts, [], (running, x) => (__aconcat(running, amountWithTax(x))));
+}
+
+/** noteIsBlank : (note : String) → Bool */
+export function noteIsBlank(__p0) {
+  const note = __ck(__p0, ["string"]);
+  return (__i53(__strlen(__trim(note))) === 0);
+}
+
+/** priceOr : (prices : Dict Int53, sku : String, fallback : Int53) → Int53 */
+export function priceOr(__p0, __p1, __p2) {
+  const prices = __ck(__p0, ["dict", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  const fallback = __ck(__p2, ["int53"]);
+  return ((__s) => ((((__s).tag === "some") ? ((a) => (a))((__s).value) : fallback)))(__dget(prices, sku));
+}
+
+/** byCurrency : (items : Array Money) → Dict Money */
+export function byCurrency(__p0) {
+  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __reduce(items, new Map([]), (d, x) => (__dset(d, currencyOf(x), x)));
+}
+
+/** quantityOr : (quantity : Option Int53, fallback : Int53) → Int53 */
+export function quantityOr(__p0, __p1) {
+  const quantity = __ck(__p0, ["option", ["int53"]]);
+  const fallback = __ck(__p1, ["int53"]);
+  return ((__s) => ((((__s).tag === "some") ? ((a) => (a))((__s).value) : fallback)))(quantity);
+}
+
+/** discountedIfAny : (amount : Option Int53) → Option Int53 */
+export function discountedIfAny(__p0) {
+  const amount = __ck(__p0, ["option", ["int53"]]);
+  return ((__s) => ((((__s).tag === "some") ? ((a) => ({ "tag": "some", "value": tenPercentOff(a) }))((__s).value) : { "tag": "none" })))(amount);
+}
+
+/** settledOrElse : (outcome : Result Money String, fallback : Money) → Money */
+export function settledOrElse(__p0, __p1) {
+  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  const fallback = __ck(__p1, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return ((__s) => ((((__s).tag === "ok") ? ((a) => (a))((__s).value) : fallback)))(outcome);
+}
+
+/** settledCurrency : (outcome : Result Money String) → Result String String */
+export function settledCurrency(__p0) {
+  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "ok", "value": currencyOf(a) }))((__s).value) : ((err) => ({ "tag": "error", "error": err }))((__s).error))))(outcome);
+}
+
+/** loudRefusal : (outcome : Result Money String) → Result Money String */
+export function loudRefusal(__p0) {
+  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "ok", "value": a }))((__s).value) : ((err) => ({ "tag": "error", "error": __upper(err) }))((__s).error))))(outcome);
+}
+
+/** settledMoney : (outcome : Result Money String) → Option Money */
+export function settledMoney(__p0) {
+  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "some", "value": a }))((__s).value) : { "tag": "none" })))(outcome);
+}
+
 //# sourceMappingURL=index.js.map

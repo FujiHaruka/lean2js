@@ -396,6 +396,117 @@
       "signature": "(outcome : Validated String Int53) → String",
       "declaration": "validationMessage(outcome: Validated<string, number>): string",
       "doc": "The line shown once a quantity has been checked."
+    },
+    {
+      "name": "amountWithTax",
+      "signature": "(amount : Int53) → Array Int53",
+      "declaration": "amountWithTax(amount: number): readonly number[]",
+      "doc": "The amount and the tax charged on it, as the two lines they are billed as."
+    },
+    {
+      "name": "currencyOf",
+      "signature": "(item : Money) → String",
+      "declaration": "currencyOf(item: Money): string"
+    },
+    {
+      "name": "previewLines",
+      "signature": "(amounts : Array Int53, upTo : Int53) → Array Int53",
+      "declaration": "previewLines(amounts: readonly number[], upTo: number): readonly number[]",
+      "doc": "The lines shown before the fold. A count past the end of the order shows the whole of it, where\n`pageOf` would have refused the window."
+    },
+    {
+      "name": "linesBelowFold",
+      "signature": "(amounts : Array Int53, upTo : Int53) → Array Int53",
+      "declaration": "linesBelowFold(amounts: readonly number[], upTo: number): readonly number[]"
+    },
+    {
+      "name": "cartIsEmpty",
+      "signature": "(items : Array Money) → Bool",
+      "declaration": "cartIsEmpty(items: readonly Money[]): boolean"
+    },
+    {
+      "name": "stocksSku",
+      "signature": "(skus : Array String, sku : String) → Bool",
+      "declaration": "stocksSku(skus: readonly string[], sku: string): boolean"
+    },
+    {
+      "name": "amountsTotal",
+      "signature": "(amounts : Array Int53) → Int53",
+      "declaration": "amountsTotal(amounts: readonly number[]): number"
+    },
+    {
+      "name": "spreadsheetCount",
+      "signature": "(fileNames : Array String) → Int53",
+      "declaration": "spreadsheetCount(fileNames: readonly string[]): number"
+    },
+    {
+      "name": "firstAmount",
+      "signature": "(amounts : Array Int53) → Option Int53",
+      "declaration": "firstAmount(amounts: readonly number[]): Option<number>"
+    },
+    {
+      "name": "latestEvent",
+      "signature": "(events : Array String) → Option String",
+      "declaration": "latestEvent(events: readonly string[]): Option<string>"
+    },
+    {
+      "name": "allLines",
+      "signature": "(orders : Array Array Int53) → Array Int53",
+      "declaration": "allLines(orders: readonly readonly number[][]): readonly number[]",
+      "doc": "Every line of every order in one list."
+    },
+    {
+      "name": "linesWithTax",
+      "signature": "(amounts : Array Int53) → Array Int53",
+      "declaration": "linesWithTax(amounts: readonly number[]): readonly number[]"
+    },
+    {
+      "name": "noteIsBlank",
+      "signature": "(note : String) → Bool",
+      "declaration": "noteIsBlank(note: string): boolean"
+    },
+    {
+      "name": "priceOr",
+      "signature": "(prices : Dict Int53, sku : String, fallback : Int53) → Int53",
+      "declaration": "priceOr(prices: ReadonlyMap<string, number>, sku: string, fallback: number): number",
+      "doc": "The listed price, or the fallback where the sku is not in the book."
+    },
+    {
+      "name": "byCurrency",
+      "signature": "(items : Array Money) → Dict Money",
+      "declaration": "byCurrency(items: readonly Money[]): ReadonlyMap<string, Money>",
+      "doc": "One line per currency. Where a currency appears twice the later line is the one kept."
+    },
+    {
+      "name": "quantityOr",
+      "signature": "(quantity : Option Int53, fallback : Int53) → Int53",
+      "declaration": "quantityOr(quantity: Option<number>, fallback: number): number"
+    },
+    {
+      "name": "discountedIfAny",
+      "signature": "(amount : Option Int53) → Option Int53",
+      "declaration": "discountedIfAny(amount: Option<number>): Option<number>"
+    },
+    {
+      "name": "settledOrElse",
+      "signature": "(outcome : Result Money String, fallback : Money) → Money",
+      "declaration": "settledOrElse(outcome: Result<Money, string>, fallback: Money): Money"
+    },
+    {
+      "name": "settledCurrency",
+      "signature": "(outcome : Result Money String) → Result String String",
+      "declaration": "settledCurrency(outcome: Result<Money, string>): Result<string, string>"
+    },
+    {
+      "name": "loudRefusal",
+      "signature": "(outcome : Result Money String) → Result Money String",
+      "declaration": "loudRefusal(outcome: Result<Money, string>): Result<Money, string>",
+      "doc": "The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion\nthe way a shipped declaration does."
+    },
+    {
+      "name": "settledMoney",
+      "signature": "(outcome : Result Money String) → Option Money",
+      "declaration": "settledMoney(outcome: Result<Money, string>): Option<Money>"
     }
   ],
   "theorems": [

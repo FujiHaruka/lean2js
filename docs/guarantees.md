@@ -9,7 +9,7 @@ your Lean def  ──certificate (one per declaration, all 71 shipped)──  re
       │
       └──your theorems are ordinary Lean equations about this def
 
-reference semantics  ──proof (every expression form, all 70 public functions)──  generated JS
+reference semantics  ──proof (every expression form, all 91 public functions)──  generated JS
       │                                        │
       │                       └──run-time check (every vector of the artifact)──┘
       │
@@ -26,7 +26,7 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   `lean2js` **will not ship a declaration without a certificate**, so there is no way round it by handing
   over an AST. That is why your theorems can be equations about your own functions, like
   `seatCharge .free seats = 0`, and still be claims about what ships.
-- **What the proofs reach** — **all 35 forms** of `Core.Expr` and **all 70 public functions**. Where
+- **What the proofs reach** — **all 35 forms** of `Core.Expr` and **all 91 public functions**. Where
   `eval` returns a value the generated function of the same name returns the same value
   ([`decl_correct`]); where `eval` traps the generated code throws **the same code** ([`decl_traps`]);
   an argument `eval` would not take becomes a `typeError` before the body runs ([`decl_refuses`]). The
@@ -59,7 +59,7 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   directions are in the manifest**. What those three call the `.d.ts` side is `Dts.TsSat` — the declared
   type read as a predicate in Lean. How TypeScript reads the printed `.d.ts` text is the one thing
   trusted here.
-- **Outside the proofs** — every vector generated for the artifact (25511 of them for this example) is
+- **Outside the proofs** — every vector generated for the artifact (31741 of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
   real JavaScript. One disagreement and nothing is written to the output directory.

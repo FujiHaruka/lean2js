@@ -60,20 +60,23 @@ in neither `index.js` nor `index.d.ts`, and a consumer never sees it.
 
 ```lean
 @[expand]
-def take (xs : List α) (n : Int) : List α := Arr.slice xs 0 n
+def firstOr [Inhabited α] (xs : List α) (fallback : α) : α :=
+  if Arr.isEmpty xs then fallback else Arr.get xs 0
 
 @[ship]
-def firstThreeLabels (labels : List String) : List String := take labels 3
+def labelOrBlank (labels : List String) : String := firstOr labels ""
 ```
 
-- **A marked `def` may be polymorphic**, as `take` is here, where a `@[ship] def` may not. A shipped
+- **A marked `def` may be polymorphic**, as `firstOr` is here, where a `@[ship] def` may not. A shipped
   declaration carries a list of parameter types and has nowhere to put a type variable; an expansion
   happens where the call is, and `α` is already `String` there.
 - **It cannot be recursive.** Marking a recursive `def` is refused at the mark. Repetition is what the
   array traversals are for.
 - **It needs no certificate**, and writes no theorem of its own into the manifest. The theorems you prove
-  about the shipped `def`s that call it are about the same terms either way, so `simp [firstThreeLabels,
-  take]` unfolds through it as it would through any `def`.
+  about the shipped `def`s that call it are about the same terms either way, so `simp [labelOrBlank,
+  firstOr]` unfolds through it as it would through any `def`.
+- **The prelude's own vocabulary is written this way.** `Arr.take`, `Opt.getD` and the rest of the table
+  below are marked `def`s, so they are the same thing an author writes, and nothing about them ships.
 - **The body is still the subset.** A body that leaves it is refused naming the marked `def`:
   `reify: writing out MyLogic.half, which is marked @[expand] — reify: x / 2 is outside the subset ...`
 - **The call sites pay for it.** The body appears at each one, so the expression the program is made of
@@ -184,13 +187,30 @@ priced tenPercentOff amount           handing a declaration to a call
 | On | What you may write |
 | --- | --- |
 | `Int` / `UInt32` / `BigInt` | `Int53.abs` `BigInt.abs` `min` `max` |
-| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.split` `Str.substring` `Str.length` |
+| `String` | `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.split` `Str.substring` `Str.length` `Str.isEmpty` |
 | `List T` | `.map` `.filter` `.find?` `.all` `.any` `.foldl` `Arr.slice` `.reverse` `Arr.length` `Arr.get` `++` |
-| `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` |
+| | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` |
+| `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` |
+| `Option T` | `Opt.getD` `Opt.map` |
+| `Except E A` | `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` |
 
 `Arr.length` / `Arr.get` / `Arr.slice` and the `Str.*` functions are the prelude's, not Lean's
 `List.length` or `String.length`. They are separate so that what traps out of range can still be written
 as a total function.
+
+`Opt` and `Exc` are named apart from `Option` and `Except` because Lean's `Option.getD` and `Except.map`
+already exist; writing `o.getD fallback` reaches Lean's, which the walk does not read.
+
+**`Str.isEmpty` and everything from `Arr.take` down is `@[expand]`**, so each call writes the body out
+where it stands. Nothing of them reaches `index.js`, and the fuel the program needs grows with how
+deeply they nest.
+`Arr.contains` needs `BEq T`, which `deriving DecidableEq` gives; `Arr.head?` and `Arr.last?` need
+`Inhabited T`, which is `deriving Inhabited`.
+
+**The one that takes a function takes the name of a declaration**, never a lambda written in place:
+`Arr.count`, `Arr.flatMap`, `Dict.ofPairs`, `Opt.map`, `Exc.map` and `Exc.mapError`. A lambda is refused
+naming the marked `def`: `reify: writing out Lean2Js.Arr.count, which is marked @[expand] —
+reify: (fun n => decide (n > 0))`.
 
 A lambda may be written **only** as the argument of `.map` / `.filter` / `.find?` / `.all` / `.any` /
 `.foldl`, and its body may read the enclosing parameters
@@ -213,7 +233,8 @@ def sumSome (xs : List (Option Int)) : Int := xs.foldl (fun running o => addSome
 ```
 
 `@[expand]` does not help here: the expansion puts the `match` back inside the lambda. The helper has to
-be a declaration the package ships.
+be a declaration the package ships. **`Opt.*` and `Exc.*` are a `match` once written out**, so calling
+one inside a traversal's lambda meets the same wall; call them at the top of a `@[ship] def` instead.
 
 ## Rules that are not syntax
 
@@ -249,17 +270,9 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure. |
 
 An array or string operation that is missing from the tables above but needs no new concept is usually
-already writable. `foldl` is the loop, and `Arr.slice` is the window:
-
-```lean
-Arr.slice xs 0 n                                   take
-Arr.slice xs n (Arr.length xs)                     drop
-Arr.length xs == 0                                 isEmpty
-xs.any (fun y => y == wanted)                      contains
-xs.foldl (fun acc y => acc + y) 0                  sum
-if Arr.length xs == 0 then none else some (Arr.get xs 0)    head?
-xss.foldl (fun acc xs => acc ++ xs) []             flatten
-```
+writable as a `@[expand] def` of your own. `foldl` is the loop and `Arr.slice` is the window, which is
+all `Arr.take` and the rest of the prelude's vocabulary are made of. `join` is the one below that reaches
+far enough to be worth copying:
 
 ```lean
 /-- The parts of `parts` with `sep` between them. This agrees with `Array.prototype.join` as long as no

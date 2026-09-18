@@ -460,3 +460,122 @@ export declare function validateQuantity(quantity: number): Validated<string, nu
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
  */
 export declare function validationMessage(outcome: Validated<string, number>): string;
+
+/**
+ * The amount and the tax charged on it, as the two lines they are billed as.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function amountWithTax(amount: number): readonly number[];
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function currencyOf(item: Money): string;
+
+/**
+ * The lines shown before the fold. A count past the end of the order shows the whole of it, where
+ * `pageOf` would have refused the window.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function previewLines(amounts: readonly number[], upTo: number): readonly number[];
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function linesBelowFold(amounts: readonly number[], upTo: number): readonly number[];
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function cartIsEmpty(items: readonly Money[]): boolean;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function stocksSku(skus: readonly string[], sku: string): boolean;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function amountsTotal(amounts: readonly number[]): number;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function spreadsheetCount(fileNames: readonly string[]): number;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function firstAmount(amounts: readonly number[]): Option<number>;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function latestEvent(events: readonly string[]): Option<string>;
+
+/**
+ * Every line of every order in one list.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function allLines(orders: readonly readonly number[][]): readonly number[];
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function linesWithTax(amounts: readonly number[]): readonly number[];
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function noteIsBlank(note: string): boolean;
+
+/**
+ * The listed price, or the fallback where the sku is not in the book.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function priceOr(prices: ReadonlyMap<string, number>, sku: string, fallback: number): number;
+
+/**
+ * One line per currency. Where a currency appears twice the later line is the one kept.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function byCurrency(items: readonly Money[]): ReadonlyMap<string, Money>;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function quantityOr(quantity: Option<number>, fallback: number): number;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function discountedIfAny(amount: Option<number>): Option<number>;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function settledOrElse(outcome: Result<Money, string>, fallback: Money): Money;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function settledCurrency(outcome: Result<Money, string>): Result<string, string>;
+
+/**
+ * The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion
+ * the way a shipped declaration does.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function loudRefusal(outcome: Result<Money, string>): Result<Money, string>;
+
+/**
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function settledMoney(outcome: Result<Money, string>): Option<Money>;

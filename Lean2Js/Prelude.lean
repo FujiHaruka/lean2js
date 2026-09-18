@@ -7,7 +7,7 @@ import Lean2Js.Expand
 
 An author writes ordinary Lean, and most of it means on the JS side what it means in Lean: `++` on a
 `List` concatenates, `List.reverse` reverses, `String.length` counts the same characters `eval` counts.
-The functions collected here are the ones where that is not so, and each is here for one of two reasons.
+The functions collected here are the ones where that is not so, and each is here for one of three reasons.
 
 **Lean's function computes something else.** `String.trim` strips every Unicode space and `String.toUpper`
 maps `ß` to `SS`, which changes the length of the string; the subset strips four characters and folds only
@@ -17,6 +17,15 @@ behaviour rather than about Lean's.
 **Lean has no partial function to write.** Reading past the end of an array traps on the JS side and so
 does a `substring` whose bounds do not fit. A Lean function is total, so `Arr.get` answers with `default`
 there — the certificate is one-sided, so the answer in the trapping case is never claimed.
+
+**Lean's own is recursive.** `List.take`, `List.contains` and `List.flatMap` repeat by recursion, and
+the walk reads no recursion. The ones collected under `@[expand]` say the same thing with `slice`, `any`
+and `foldl`, and are written out where they are called, so the package ships no function for them.
+
+`Opt` and `Exc` hold the `Option` and `Except` vocabulary under names of their own rather than adding to
+`Option` and `Except`. The mark goes only on a declaration this library elaborates, and `Option.getD` and
+`Except.map` are imported before this file is read; a second `Except.map` would also be ambiguous with
+Lean's under the `open Lean2Js` an author writes.
 
 `Nat` is not in the subset, so the functions that count answer with `Int`.
 
@@ -41,6 +50,39 @@ def get [Inhabited α] (xs : List α) (i : Int) : α := xs.getD i.toNat default
 
 /-- The elements from `lo` up to but not including `hi`. Bounds that do not fit trap. -/
 def slice (xs : List α) (lo hi : Int) : List α := (xs.drop lo.toNat).take (hi - lo).toNat
+
+/-- The first `n` elements, or all of them where there are fewer. -/
+@[expand] def take (xs : List α) (n : Int) : List α := slice xs 0 n
+
+/-- Everything after the first `n` elements. -/
+@[expand] def drop (xs : List α) (n : Int) : List α := slice xs n (length xs)
+
+@[expand] def isEmpty (xs : List α) : Bool := length xs == 0
+
+@[expand] def contains [BEq α] (xs : List α) (wanted : α) : Bool := xs.any (fun y => y == wanted)
+
+/-- The elements added up. Leaving `Int53` on the way traps, as the addition does. -/
+@[expand] def sum (xs : List Int) : Int := xs.foldl (fun running y => running + y) 0
+
+/-- How many elements `p` holds of. -/
+@[expand] def count (xs : List α) (p : α → Bool) : Int :=
+  xs.foldl (fun running y => if p y then running + 1 else running) 0
+
+/-- The first element, or `none` where there is none. Unlike `get`, this never traps — the empty case is
+an answer rather than a read past the end. -/
+@[expand] def head? [Inhabited α] (xs : List α) : Option α :=
+  if length xs == 0 then none else some (get xs 0)
+
+/-- The last element, or `none` where there is none. -/
+@[expand] def last? [Inhabited α] (xs : List α) : Option α :=
+  if length xs == 0 then none else some (get xs (length xs - 1))
+
+/-- The arrays run together, in the order they come in. -/
+@[expand] def flatten (xss : List (List α)) : List α := xss.foldl (fun running xs => running ++ xs) []
+
+/-- Each element replaced by an array, and those run together. -/
+@[expand] def flatMap (xs : List α) (f : α → List β) : List β :=
+  xs.foldl (fun running x => running ++ f x) []
 
 end Arr
 
@@ -74,6 +116,8 @@ def split (s sep : String) : List String := splitStr s sep
 def substring (s : String) (lo hi : Int) : String :=
   String.ofList ((s.toList.drop lo.toNat).take (hi - lo).toNat)
 
+@[expand] def isEmpty (s : String) : Bool := length s == 0
+
 end Str
 
 namespace Int53
@@ -88,6 +132,45 @@ def mod (a b : Int) : Int := a.tmod b
 def abs (a : Int) : Int := a.natAbs
 
 end Int53
+
+namespace Opt
+
+@[expand] def getD (o : Option α) (dflt : α) : α :=
+  match o with
+  | some a => a
+  | none => dflt
+
+@[expand] def map (o : Option α) (f : α → β) : Option β :=
+  match o with
+  | some a => some (f a)
+  | none => none
+
+end Opt
+
+namespace Exc
+
+@[expand] def getD (e : Except ε α) (dflt : α) : α :=
+  match e with
+  | .ok a => a
+  | .error _ => dflt
+
+@[expand] def map (e : Except ε α) (f : α → β) : Except ε β :=
+  match e with
+  | .ok a => .ok (f a)
+  | .error err => .error err
+
+@[expand] def mapError (e : Except ε α) (f : ε → ε') : Except ε' α :=
+  match e with
+  | .ok a => .ok a
+  | .error err => .error (f err)
+
+/-- What the check accepted, with why it refused dropped. -/
+@[expand] def toOption (e : Except ε α) : Option α :=
+  match e with
+  | .ok a => some a
+  | .error _ => none
+
+end Exc
 
 /-- The subset's arbitrary-precision integer. `Int` is already the one that has to fit in a JS number, so
 the one that does not is a wrapper: the two are told apart by their type, never by their values. -/
@@ -153,6 +236,15 @@ def values (d : Dict α) : List α := d.entries.map (·.2)
 
 /-- How many entries, as the `Int53` the subset counts in. -/
 def size (d : Dict α) : Int := Int.ofNat d.entries.length
+
+/-- What `k` is bound to, or `dflt` where it is bound to nothing. -/
+@[expand] def getD (d : Dict α) (k : String) (dflt : α) : α := Opt.getD (d.get k) dflt
+
+/-- An array indexed by a key read off each element. Where two elements give the same key the later one
+wins, and keeps the place the earlier one took. `ofList` takes literal keys; this one takes computed
+ones. -/
+@[expand] def ofPairs (xs : List α) (key : α → String) : Dict α :=
+  xs.foldl (fun d x => d.set (key x) x) (ofList [])
 
 end Dict
 

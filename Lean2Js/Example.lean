@@ -397,6 +397,80 @@ def validationMessage (outcome : Validated String Int) : String :=
   | .valid value => quantityLabel value
   | .invalid errors => if Arr.length errors == 0 then "refused" else Arr.get errors 0
 
+/-- The amount and the tax charged on it, as the two lines they are billed as. -/
+@[ship]
+def amountWithTax (amount : Int) : List Int := [amount, Int53.div amount 10]
+
+@[ship]
+def currencyOf (item : Money) : String := item.currency
+
+/-- The lines shown before the fold. A count past the end of the order shows the whole of it, where
+`pageOf` would have refused the window. -/
+@[ship]
+def previewLines (amounts : List Int) (upTo : Int) : List Int := Arr.take amounts upTo
+
+@[ship]
+def linesBelowFold (amounts : List Int) (upTo : Int) : List Int := Arr.drop amounts upTo
+
+@[ship]
+def cartIsEmpty (items : List Money) : Bool := Arr.isEmpty items
+
+@[ship]
+def stocksSku (skus : List String) (sku : String) : Bool := Arr.contains skus sku
+
+@[ship]
+def amountsTotal (amounts : List Int) : Int := Arr.sum amounts
+
+@[ship]
+def spreadsheetCount (fileNames : List String) : Int := Arr.count fileNames isSpreadsheet
+
+@[ship]
+def firstAmount (amounts : List Int) : Option Int := Arr.head? amounts
+
+@[ship]
+def latestEvent (events : List String) : Option String := Arr.last? events
+
+/-- Every line of every order in one list. -/
+@[ship]
+def allLines (orders : List (List Int)) : List Int := Arr.flatten orders
+
+@[ship]
+def linesWithTax (amounts : List Int) : List Int := Arr.flatMap amounts amountWithTax
+
+@[ship]
+def noteIsBlank (note : String) : Bool := Str.isEmpty (Str.trim note)
+
+/-- The listed price, or the fallback where the sku is not in the book. -/
+@[ship]
+def priceOr (prices : Dict Int) (sku : String) (fallback : Int) : Int := Dict.getD prices sku fallback
+
+/-- One line per currency. Where a currency appears twice the later line is the one kept. -/
+@[ship]
+def byCurrency (items : List Money) : Dict Money := Dict.ofPairs items currencyOf
+
+@[ship]
+def quantityOr (quantity : Option Int) (fallback : Int) : Int := Opt.getD quantity fallback
+
+@[ship]
+def discountedIfAny (amount : Option Int) : Option Int := Opt.map amount tenPercentOff
+
+@[ship]
+def settledOrElse (outcome : Except String Money) (fallback : Money) : Money :=
+  Exc.getD outcome fallback
+
+@[ship]
+def settledCurrency (outcome : Except String Money) : Except String String :=
+  Exc.map outcome currencyOf
+
+/-- The refusal shouted. A prelude function is a name the subset reads, so it crosses into the expansion
+the way a shipped declaration does. -/
+@[ship]
+def loudRefusal (outcome : Except String Money) : Except String Money :=
+  Exc.mapError outcome Str.upper
+
+@[ship]
+def settledMoney (outcome : Except String Money) : Option Money := Exc.toOption outcome
+
 ship_package
 
 

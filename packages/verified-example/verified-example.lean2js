@@ -223,3 +223,66 @@ def validateQuantity(quantity : Int53) : Validated String Int53 =
 def validationMessage(outcome : Validated String Int53) : String =
   match outcome { valid(value) => quantityLabel(value) | invalid(errors) => if (errors.length == 0) then "refused" else errors[0] }
 
+def amountWithTax(amount : Int53) : Array Int53 =
+  [amount, (amount / 10)] : Array Int53
+
+def currencyOf(item : Money) : String =
+  item.currency
+
+def previewLines(amounts : Array Int53, upTo : Int53) : Array Int53 =
+  amounts.slice(0, upTo)
+
+def linesBelowFold(amounts : Array Int53, upTo : Int53) : Array Int53 =
+  amounts.slice(upTo, amounts.length)
+
+def cartIsEmpty(items : Array Money) : Bool =
+  (items.length == 0)
+
+def stocksSku(skus : Array String, sku : String) : Bool =
+  skus.any(y => (y == sku))
+
+def amountsTotal(amounts : Array Int53) : Int53 =
+  amounts.reduce(0, (running, y) => (running + y))
+
+def spreadsheetCount(fileNames : Array String) : Int53 =
+  fileNames.reduce(0, (running, y) => if isSpreadsheet(y) then (running + 1) else running)
+
+def firstAmount(amounts : Array Int53) : Option Int53 =
+  if (amounts.length == 0) then none[Int53] else some(amounts[0])
+
+def latestEvent(events : Array String) : Option String =
+  if (events.length == 0) then none[String] else some(events[(events.length - 1)])
+
+def allLines(orders : Array Array Int53) : Array Int53 =
+  orders.reduce([] : Array Int53, (running, xs) => (running ++ xs))
+
+def linesWithTax(amounts : Array Int53) : Array Int53 =
+  amounts.reduce([] : Array Int53, (running, x) => (running ++ amountWithTax(x)))
+
+def noteIsBlank(note : String) : Bool =
+  (note.trim().length == 0)
+
+def priceOr(prices : Dict Int53, sku : String, fallback : Int53) : Int53 =
+  match prices.get(sku) { some(a) => a | none => fallback }
+
+def byCurrency(items : Array Money) : Dict Money =
+  items.reduce({} : Dict Money, (d, x) => d.set(currencyOf(x), x))
+
+def quantityOr(quantity : Option Int53, fallback : Int53) : Int53 =
+  match quantity { some(a) => a | none => fallback }
+
+def discountedIfAny(amount : Option Int53) : Option Int53 =
+  match amount { some(a) => some(tenPercentOff(a)) | none => none[Int53] }
+
+def settledOrElse(outcome : Result Money String, fallback : Money) : Money =
+  match outcome { ok(a) => a | error(_) => fallback }
+
+def settledCurrency(outcome : Result Money String) : Result String String =
+  match outcome { ok(a) => ok[String](currencyOf(a)) | error(err) => error[String](err) }
+
+def loudRefusal(outcome : Result Money String) : Result Money String =
+  match outcome { ok(a) => ok[String](a) | error(err) => error[Money](err.toUpper()) }
+
+def settledMoney(outcome : Result Money String) : Option Money =
+  match outcome { ok(a) => some(a) | error(_) => none[Money] }
+
