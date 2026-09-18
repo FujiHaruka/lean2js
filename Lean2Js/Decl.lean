@@ -1275,23 +1275,67 @@ theorem evalStmts_const_fail (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name :
   simp only [h]
   rfl
 
-theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (hnames : TypesNamesOk p) (g : Nat) :
-    ∀ (params : List Param) (args : List Value) (i : Nat) (checks rest : List Js.Stmt)
-      (jenv : Js.JsEnv),
+/-- What the entry check hands the body: each JS argument, put in the canonical shape its declared type
+names, is the encoding of the corresponding `Value`. Key order and keys the type does not name are what
+the normalisation absorbs, which is why this is weaker than `jargs = args.map encodeValue`.
+
+A function-typed parameter is the one the entry hands through unchecked, so the only argument it decodes
+is the encoding itself. `Decl.isPublic` rules that case out at the boundary; it is reachable only from a
+call inside the program. -/
+inductive ArgsDecode (p : Program) : List Param → List Js.JsValue → List Value → Prop where
+  | nil : ArgsDecode p [] [] []
+  | cons {param : Param} {ps : List Param} {ja : Js.JsValue} {jas : List Js.JsValue}
+      {a : Value} {as : List Value} {d : Js.TyDesc} :
+      tyDesc p (tyDescBudget p param.ty) param.ty = .ok d →
+      Js.checkTy ja d = true →
+      Js.normTy ja d = encodeValue a →
+      ArgsDecode p ps jas as → ArgsDecode p (param :: ps) (ja :: jas) (a :: as)
+  | fn {param : Param} {ps : List Param} {ja : Js.JsValue} {jas : List Js.JsValue}
+      {a : Value} {as : List Value} :
+      param.ty.isFn = true →
+      ja = encodeValue a →
+      ArgsDecode p ps jas as → ArgsDecode p (param :: ps) (ja :: jas) (a :: as)
+
+theorem ArgsDecode.length {p : Program} :
+    ∀ {params : List Param} {jargs : List Js.JsValue} {args : List Value},
+      ArgsDecode p params jargs args → params.length = args.length
+  | _, _, _, .nil => rfl
+  | _, _, _, .cons _ _ _ hrest => by simp [ArgsDecode.length hrest]
+  | _, _, _, .fn _ _ hrest => by simp [ArgsDecode.length hrest]
+
+theorem ArgsDecode.length_jargs {p : Program} :
+    ∀ {params : List Param} {jargs : List Js.JsValue} {args : List Value},
+      ArgsDecode p params jargs args → params.length = jargs.length
+  | _, _, _, .nil => rfl
+  | _, _, _, .cons _ _ _ hrest => by simp [ArgsDecode.length_jargs hrest]
+  | _, _, _, .fn _ _ hrest => by simp [ArgsDecode.length_jargs hrest]
+
+/-- A type the entry check has a descriptor for is not a function type: that is the one case `tyDesc`
+refuses, and it is what tells the two `ArgsDecode` constructors apart. -/
+theorem tyDesc_isFn {p : Program} {b : Nat} {ty : Ty} {d : Js.TyDesc}
+    (h : tyDesc p b ty = .ok d) : ty.isFn = false := by
+  cases ty
+  case fn a r => rw [tyDesc.eq_def] at h; simp at h
+  all_goals rfl
+
+theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat)
+    {params : List Param} {jargs : List Js.JsValue} {args : List Value}
+    (hdec : ArgsDecode p params jargs args) :
+    ∀ (i : Nat) (checks rest : List Js.Stmt) (jenv : Js.JsEnv),
       paramChecks p i params = .ok checks →
-      ParamsTyped p params args →
       Unreserved params →
-      RawBound jenv i (args.map encodeValue) →
+      RawBound jenv i jargs →
       Js.evalStmts m (g + 2) jenv (checks ++ rest)
-        = Js.evalStmts m (g + 2) (checkedBindings params args ++ jenv) rest
-  | [], [], _, checks, rest, jenv, hchecks, _, _, _ => by
+        = Js.evalStmts m (g + 2) (checkedBindings params args ++ jenv) rest := by
+  induction hdec with
+  | nil =>
+    intro _ checks rest jenv hchecks _ _
     rw [paramChecks.eq_def] at hchecks
     simp only at hchecks
     obtain rfl : checks = [] := (Except.ok.inj hchecks).symm
     simp [checkedBindings]
-  | [], _ :: _, _, _, _, _, _, htyped, _, _ => by simp [ParamsTyped] at htyped
-  | _ :: _, [], _, _, _, _, _, htyped, _, _ => by simp [ParamsTyped] at htyped
-  | param :: ps, a :: as, i, checks, rest, jenv, hchecks, htyped, hres, hraw => by
+  | @cons param ps ja jas a as d hd hcheck hnorm _ ih =>
+    intro i checks rest jenv hchecks hres hraw
     rw [paramChecks.eq_def] at hchecks
     simp only at hchecks
     have hstep : ∀ (val : Js.Expr) (cs : List Js.Stmt),
@@ -1303,8 +1347,33 @@ theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (hnames : TypesNames
       intro val cs hval hcs hrest
       subst hcs
       rw [List.cons_append, evalStmts_const m (g + 2) jenv param.name val _ (cs ++ rest) hval,
-        evalStmts_paramChecks m p hnames g ps as (i + 1) cs rest _ hrest htyped.2 hres.2
-          (RawBound.cons_unreserved hres.1 hraw.2)]
+        ih (i + 1) cs rest _ hrest hres.2 (RawBound.cons_unreserved hres.1 hraw.2)]
+      simp [checkedBindings]
+    split at hchecks
+    · rename_i hif; rw [tyDesc_isFn hd] at hif; simp at hif
+    · rw [hd] at hchecks
+      cases hrest : paramChecks p (i + 1) ps with
+      | error e => rw [hrest] at hchecks; exact (errNeOk hchecks).elim
+      | ok cs =>
+        rw [hrest] at hchecks
+        refine hstep _ cs (by
+          rw [eval_check m (g + 1) jenv d _ ja (eval_ident m g jenv _ _ hraw.1) hcheck, hnorm])
+          (Except.ok.inj hchecks).symm hrest
+  | @fn param ps ja jas a as hif hja _ ih =>
+    intro i checks rest jenv hchecks hres hraw
+    subst hja
+    rw [paramChecks.eq_def] at hchecks
+    simp only at hchecks
+    have hstep : ∀ (val : Js.Expr) (cs : List Js.Stmt),
+        Js.eval m (g + 2) jenv val = .ok (encodeValue a) →
+        checks = Js.Stmt.const param.name val :: cs →
+        paramChecks p (i + 1) ps = .ok cs →
+        Js.evalStmts m (g + 2) jenv (checks ++ rest)
+          = Js.evalStmts m (g + 2) (checkedBindings (param :: ps) (a :: as) ++ jenv) rest := by
+      intro val cs hval hcs hrest
+      subst hcs
+      rw [List.cons_append, evalStmts_const m (g + 2) jenv param.name val _ (cs ++ rest) hval,
+        ih (i + 1) cs rest _ hrest hres.2 (RawBound.cons_unreserved hres.1 hraw.2)]
       simp [checkedBindings]
     split at hchecks
     · cases hrest : paramChecks p (i + 1) ps with
@@ -1312,37 +1381,40 @@ theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (hnames : TypesNames
       | ok cs =>
         rw [hrest] at hchecks
         exact hstep _ cs (eval_ident m (g + 1) jenv _ _ hraw.1) (Except.ok.inj hchecks).symm hrest
+    · rename_i hnf; rw [hif] at hnf; simp at hnf
+
+/-- The canonical spelling is one of the spellings the entry accepts: an argument already in the shape
+its declared type names passes the check, and the normalisation leaves it where it is. This is what
+carries the general statement back to the call a declaration makes from inside the program. -/
+theorem argsDecode_encodeValue (p : Program) (hnames : TypesNamesOk p) :
+    ∀ (params : List Param) (args : List Value) (i : Nat) (checks : List Js.Stmt),
+      paramChecks p i params = .ok checks →
+      ParamsTyped p params args →
+      ArgsDecode p params (args.map encodeValue) args
+  | [], [], _, _, _, _ => .nil
+  | [], _ :: _, _, _, _, htyped => by simp [ParamsTyped] at htyped
+  | _ :: _, [], _, _, _, htyped => by simp [ParamsTyped] at htyped
+  | param :: ps, a :: as, i, checks, hchecks, htyped => by
+    rw [paramChecks.eq_def] at hchecks
+    simp only at hchecks
+    rw [List.map_cons]
+    split at hchecks
+    · rename_i hif
+      cases hrest : paramChecks p (i + 1) ps with
+      | error e => rw [hrest] at hchecks; exact (errNeOk hchecks).elim
+      | ok cs =>
+        exact .fn hif rfl (argsDecode_encodeValue p hnames ps as (i + 1) cs hrest htyped.2)
     · cases hdesc : tyDesc p (tyDescBudget p param.ty) param.ty with
       | error e => rw [hdesc] at hchecks; exact (errNeOk hchecks).elim
       | ok desc =>
         cases hrest : paramChecks p (i + 1) ps with
         | error e => rw [hdesc, hrest] at hchecks; exact (errNeOk hchecks).elim
         | ok cs =>
-          rw [hdesc, hrest] at hchecks
           have hdo := descOk_tyDesc hnames _ _ desc hdesc
-          refine hstep _ cs (by
-            rw [eval_check m (g + 1) jenv desc _ _ (eval_ident m g jenv _ _ hraw.1)
-                (checkTy_encodeValue p param.ty _ desc a hdesc hdo htyped.1),
-              normTy_encodeValue p param.ty _ desc a hdesc hdo htyped.1])
-            (Except.ok.inj hchecks).symm hrest
+          exact .cons hdesc (checkTy_encodeValue p param.ty _ desc a hdesc hdo htyped.1)
+            (normTy_encodeValue p param.ty _ desc a hdesc hdo htyped.1)
+            (argsDecode_encodeValue p hnames ps as (i + 1) cs hrest htyped.2)
 termination_by params => params.length
-
-/-- What the entry check hands the body: each JS argument, put in the canonical shape its declared type
-names, is the encoding of the corresponding `Value`. Key order and keys the type does not name are what
-the normalisation absorbs, which is why this is weaker than `jargs = args.map encodeValue`. -/
-inductive ArgsDecode (p : Program) : List Param → List Js.JsValue → List Value → Prop where
-  | nil : ArgsDecode p [] [] []
-  | cons {param : Param} {ps : List Param} {ja : Js.JsValue} {jas : List Js.JsValue}
-      {a : Value} {as : List Value} {d : Js.TyDesc} :
-      tyDesc p (tyDescBudget p param.ty) param.ty = .ok d →
-      Js.normTy ja d = encodeValue a →
-      ArgsDecode p ps jas as → ArgsDecode p (param :: ps) (ja :: jas) (a :: as)
-
-theorem ArgsDecode.length {p : Program} :
-    ∀ {params : List Param} {jargs : List Js.JsValue} {args : List Value},
-      ArgsDecode p params jargs args → params.length = args.length
-  | _, _, _, .nil => rfl
-  | _, _, _, .cons _ _ hrest => by simp [ArgsDecode.length hrest]
 
 /-- Walking the same entry, the other way. At each parameter the check either throws or hands back a
 `Value` the argument is the encoding of, so reaching the body at all means every argument decoded. -/
@@ -1397,7 +1469,7 @@ theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (hnames : Type
             · exact Or.inl hfail
             · refine Or.inr ?_
               obtain ⟨v, hnv, hv⟩ := checkTy_sound p ja param.ty _ desc hdesc hdo hcheck hk.1
-              exact ⟨v :: args, .cons hdesc hnv hdec, hv, htyped⟩
+              exact ⟨v :: args, .cons hdesc hcheck hnv hdec, hv, htyped⟩
 termination_by params => params.length
 
 theorem envCovers_bindParams :
@@ -2201,12 +2273,28 @@ A call runs the callee's body at one less fuel than the call itself, and the cal
 the expression-level statement and the declaration-level one have to be proved together. Both are stated
 at one amount of fuel and the induction below hands each the other at the fuel it needs. -/
 
+/-- Every declaration a compiled program has accepts the canonical spelling of its arguments: the one
+`encodeValue` writes. This is the hypothesis a caller who has not reordered anything discharges. -/
+theorem argsDecode_of_compileProgram {p : Program} {m : Js.Module} {fn : String} {d : Decl}
+    {args : List Value} (hm : compileProgram p = .ok m) (hd : p.find? fn = some d)
+    (htyped : ParamsTyped p d.params args) :
+    ArgsDecode p d.params (args.map encodeValue) args := by
+  obtain ⟨_, hf, _⟩ := compileProgram_find hm hd
+  obtain ⟨_, _, checks, _, _, _, hchecks, _⟩ := compileDecl_shape hf
+  exact argsDecode_encodeValue p (typesNamesOk_of_compileProgram hm) d.params args 0 checks hchecks
+    htyped
+
 /-- The declaration-level statement at one fuel, from the expression-level statement at every fuel up to
-it. The body a call runs is compiled the same way a public function's is, so this is `decl_correct`
-without the entry the call did not go through. -/
-theorem decl_agrees_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
-    (iha : ∀ g, g ≤ f → AgreesAt p m g) : DeclAgrees p m f := by
-  intro fn d args v hd hlen htyped hbody
+it, at every spelling of the arguments the entry check accepts. The body a call runs is compiled the same
+way a public function's is, so this is `decl_correct` without the entry the call did not go through. -/
+theorem decl_agrees_jargs (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
+    (iha : ∀ g, g ≤ f → AgreesAt p m g) (fn : String) (d : Decl) (jargs : List Js.JsValue)
+    (args : List Value) (v : Value)
+    (hd : p.find? fn = some d)
+    (htyped : ParamsTyped p d.params args)
+    (hdec : ArgsDecode p d.params jargs args)
+    (hbody : evalExpr p f (bindParams d.params args) d.body = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .ok (encodeValue v) := by
   have hsig := signatureOk_of_compileProgram hm
   have hprog := programTyped_of_compileProgram hm
   obtain ⟨fnc, hf, hfindf⟩ := compileProgram_find hm hd
@@ -2215,7 +2303,7 @@ theorem decl_agrees_at (p : Program) (m : Js.Module) (hm : compileProgram p = .o
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_correct m p hsig hprog f iha (InFragment.all d.body) (Nat.le_refl f) hcb
       (envTyped_bindParams p d.params args htyped)
-      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres
+      (jsEnvAgrees_checkedBindings d.params args _ hdec.length hdist hres
         (bindAll_rawParams_reserved d.params _ 0)) hbody
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
@@ -2223,16 +2311,21 @@ theorem decl_agrees_at (p : Program) (m : Js.Module) (hm : compileProgram p = .o
   obtain ⟨g, rfl⟩ : ∃ g, g' = g + 2 := ⟨g' - 2, by omega⟩
   rw [Js.callFunctionAt, hfindf]
   simp only [hparams, hfbody]
-  rw [if_neg (by simp [rawParams_length, hlen]),
-    evalStmts_paramChecks m p (typesNamesOk_of_compileProgram hm) g d.params args 0 checks stmts _
-      hchecks htyped hres
-      (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
+  rw [if_neg (by simp [rawParams_length, hdec.length_jargs]),
+    evalStmts_paramChecks m p g hdec 0 checks stmts _ hchecks hres
+      (rawBound_bindAll d.params jargs 0 hdec.length_jargs)]
   exact hgB (g + 2) (by omega)
 
 /-- The same on the other side. -/
-theorem decl_traps_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
-    (iha : ∀ g, g ≤ f → AgreesAt p m g) (iht : ∀ g, g ≤ f → TrapsAt p m g) : DeclTraps p m f := by
-  intro fn d args err hd hlen htyped hbody hne
+theorem decl_traps_jargs (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
+    (iha : ∀ g, g ≤ f → AgreesAt p m g) (iht : ∀ g, g ≤ f → TrapsAt p m g) (fn : String) (d : Decl)
+    (jargs : List Js.JsValue) (args : List Value) (err : Err)
+    (hd : p.find? fn = some d)
+    (htyped : ParamsTyped p d.params args)
+    (hdec : ArgsDecode p d.params jargs args)
+    (hbody : evalExpr p f (bindParams d.params args) d.body = .error err)
+    (hne : Mirrorable err) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .error err.code := by
   have hsig := signatureOk_of_compileProgram hm
   have hprog := programTyped_of_compileProgram hm
   obtain ⟨fnc, hf, hfindf⟩ := compileProgram_find hm hd
@@ -2241,8 +2334,8 @@ theorem decl_traps_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_traps m p hsig hprog f iha iht (InFragment.all d.body) (Nat.le_refl f) hcb
       (envTyped_bindParams p d.params args htyped)
-      (envCovers_bindParams d.params args hlen)
-      (jsEnvAgrees_checkedBindings d.params args _ hlen hdist hres
+      (envCovers_bindParams d.params args hdec.length)
+      (jsEnvAgrees_checkedBindings d.params args _ hdec.length hdist hres
         (bindAll_rawParams_reserved d.params _ 0)) hbody hne
   simp only [List.reverse_nil, List.nil_append] at hinner
   subst hinner
@@ -2250,11 +2343,24 @@ theorem decl_traps_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok
   obtain ⟨g, rfl⟩ : ∃ g, g' = g + 2 := ⟨g' - 2, by omega⟩
   rw [Js.callFunctionAt, hfindf]
   simp only [hparams, hfbody]
-  rw [if_neg (by simp [rawParams_length, hlen]),
-    evalStmts_paramChecks m p (typesNamesOk_of_compileProgram hm) g d.params args 0 checks stmts _
-      hchecks htyped hres
-      (rawBound_bindAll d.params (args.map encodeValue) 0 (by simp [hlen]))]
+  rw [if_neg (by simp [rawParams_length, hdec.length_jargs]),
+    evalStmts_paramChecks m p g hdec 0 checks stmts _ hchecks hres
+      (rawBound_bindAll d.params jargs 0 hdec.length_jargs)]
   exact hgB (g + 2) (by omega)
+
+/-- What the mutual induction needs, which is the spelling a call from inside the program writes. -/
+theorem decl_agrees_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
+    (iha : ∀ g, g ≤ f → AgreesAt p m g) : DeclAgrees p m f := by
+  intro fn d args v hd _ htyped hbody
+  exact decl_agrees_jargs p m hm f iha fn d _ args v hd htyped
+    (argsDecode_of_compileProgram hm hd htyped) hbody
+
+/-- The same on the other side. -/
+theorem decl_traps_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
+    (iha : ∀ g, g ≤ f → AgreesAt p m g) (iht : ∀ g, g ≤ f → TrapsAt p m g) : DeclTraps p m f := by
+  intro fn d args err hd _ htyped hbody hne
+  exact decl_traps_jargs p m hm f iha iht fn d _ args err hd htyped
+    (argsDecode_of_compileProgram hm hd htyped) hbody hne
 
 /-- Distinct names make membership and lookup the same thing. -/
 theorem find?_of_mem_nodup :
@@ -2365,57 +2471,59 @@ theorem fragment_traps_in (p : Program) (m : Js.Module) (hm : compileProgram p =
 
 /-! ## One public function
 
-What a caller of an exported function gets: for any arguments of the declared types, if the reference
-semantics returns a value then the generated module's function returns the same value, at every large
-enough amount of the model's fuel. The run-time agreement check's "the vectors we tried agreed" replaced
-by "any arguments at all", for every declaration the program has. -/
+What a caller of an exported function gets: for any JS arguments the entry check accepts, if the
+reference semantics returns a value then the generated module's function returns the same value, at every
+large enough amount of the model's fuel. The run-time agreement check's "the vectors we tried agreed"
+replaced by "any arguments at all", for every declaration the program has.
 
-theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
-    (v : Value)
+`ArgsDecode` is the spelling the claim is at, and it is the whole set the entry admits: key order and
+keys the declared type does not name are absorbed by the normalisation, so `{currency, amount}` and
+`{amount, currency}` are both covered, and `decl_refuses` says everything else throws. -/
+
+theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl)
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
     (hm : compileProgram p = .ok m)
     (hd : p.find? fn = some d)
+    (hdec : ArgsDecode p d.params jargs args)
     (he : evalCall p fn args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v) := by
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .ok (encodeValue v) := by
   obtain ⟨hlen, htyped, hbody⟩ := evalCall_inv hd he
-  exact decl_agrees_at p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
-    fn d args v hd hlen htyped hbody
+  exact decl_agrees_jargs p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
+    fn d jargs args v hd htyped hdec hbody
 
 /-- The companion to `decl_correct` on the other side of the reference semantics. For arguments the
 entry accepts, if `eval` throws then the generated module's function throws the same code.
 
 The failures this carries are the ones `Correct.Mirrorable` names: every one but `outOfFuel`, which is
 the reference side's alone. -/
-theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl) (args : List Value)
-    (err : Err)
+theorem decl_traps (p : Program) (m : Js.Module) (fn : String) (d : Decl)
+    (jargs : List Js.JsValue) (args : List Value) (err : Err)
     (hm : compileProgram p = .ok m)
     (hd : p.find? fn = some d)
-    (hlen : d.params.length = args.length)
     (htyped : ParamsTyped p d.params args)
+    (hdec : ArgsDecode p d.params jargs args)
     (he : evalCall p fn args = .error err)
     (hne : Mirrorable err) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code := by
-  rw [evalCall_body hd hlen htyped] at he
-  exact decl_traps_at p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
-    (fun g _ => (levels p m hm g g (Nat.le_refl g)).2) fn d args err hd hlen htyped he hne
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .error err.code := by
+  rw [evalCall_body hd hdec.length htyped] at he
+  exact decl_traps_jargs p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
+    (fun g _ => (levels p m hm g g (Nat.le_refl g)).2) fn d jargs args err hd htyped hdec he hne
 
 /-- The same claim with no fuel disclaimer. `Cost.progOk` and the fuel bound are decided from the program
 alone, once, by the emitter -- so what could not be discharged from the result is now discharged from the
 input, and `outOfFuel` is simply not among the answers `eval` can give. -/
 theorem decl_traps_at_cost (p : Program) (m : Js.Module) (fn : String) (d : Decl)
-    (args : List Value) (err : Err)
+    (jargs : List Js.JsValue) (args : List Value) (err : Err)
     (hm : compileProgram p = .ok m)
     (hd : p.find? fn = some d)
     (hpub : d.isPublic = true)
     (hok : Cost.progOk p = true)
     (hfuel : Cost.cost p ≤ defaultFuel)
-    (hlen : d.params.length = args.length)
     (htyped : ParamsTyped p d.params args)
+    (hdec : ArgsDecode p d.params jargs args)
     (he : evalCall p fn args = .error err) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code :=
-  decl_traps p m fn d args err hm hd hlen htyped he
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .error err.code :=
+  decl_traps p m fn d jargs args err hm hd htyped hdec he
     (fun hc => Cost.evalCall_ne_outOfFuel hok hfuel hd hpub (hc ▸ he))
 
 /-! ## One public function refuses

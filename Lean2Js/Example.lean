@@ -481,7 +481,11 @@ theorem same_currency_adds (x y : Int) (currency : String)
 
 `Decl.fragment_correct` is about a compiled expression. `Decl.decl_correct` carries it up to a call of
 the generated function, entry check and all. It holds of every declaration the program has: the fragment
-covers the whole subset. -/
+covers the whole subset.
+
+The arguments are whatever `Decl.ArgsDecode` admits, which is the set the entry check lets through and
+not just the canonical spelling: a JS value whose keys are in another order, or which carries keys the
+declared type does not name, decodes to the same `Value` and is covered by the same theorem. -/
 
 private theorem find_discounted : program.find? "discounted" = some discountedDecl := rfl
 
@@ -492,25 +496,28 @@ private theorem find_cartTotal : program.find? "cartTotal" = some cartTotalDecl 
 /-- Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
 is a single binary operation. -/
 theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (v : Value) (he : evalCall program "add" args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "add" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "add" addDecl args v hm find_add he
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
+    (hdec : Decl.ArgsDecode program addDecl.params jargs args)
+    (he : evalCall program "add" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "add" jargs = .ok (encodeValue v) :=
+  Decl.decl_correct program m "add" addDecl jargs args v hm find_add hdec he
 
 /-- The same for a body that opens with a `let`, which the compiler emits as a `const` statement. -/
 theorem discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (v : Value) (he : evalCall program "discounted" args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "discounted" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "discounted" discountedDecl args v hm find_discounted he
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
+    (hdec : Decl.ArgsDecode program discountedDecl.params jargs args)
+    (he : evalCall program "discounted" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "discounted" jargs = .ok (encodeValue v) :=
+  Decl.decl_correct program m "discounted" discountedDecl jargs args v hm find_discounted hdec he
 
 /-- And for a body whose second `let` rebinds a name already in scope, which the compiler leaves as an
 expression rather than a statement. -/
 theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (v : Value) (he : evalCall program "rebindTwice" args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "rebindTwice" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "rebindTwice" rebindTwiceDecl args v hm find_rebindTwice he
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
+    (hdec : Decl.ArgsDecode program rebindTwiceDecl.params jargs args)
+    (he : evalCall program "rebindTwice" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "rebindTwice" jargs = .ok (encodeValue v) :=
+  Decl.decl_correct program m "rebindTwice" rebindTwiceDecl jargs args v hm find_rebindTwice hdec he
 
 private theorem find_memberPrice : program.find? "memberPrice" = some memberPriceDecl := rfl
 
@@ -518,10 +525,11 @@ private theorem find_memberPrice : program.find? "memberPrice" = some memberPric
 proof leaves the expression it is looking at: `priced` applies the function it was given, so the claim
 about `memberPrice` rests on the same claim about `tenPercentOff`. -/
 theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (v : Value) (he : evalCall program "memberPrice" args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "memberPrice" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "memberPrice" memberPriceDecl args v hm find_memberPrice he
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
+    (hdec : Decl.ArgsDecode program memberPriceDecl.params jargs args)
+    (he : evalCall program "memberPrice" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "memberPrice" jargs = .ok (encodeValue v) :=
+  Decl.decl_correct program m "memberPrice" memberPriceDecl jargs args v hm find_memberPrice hdec he
 
 /-! ### Throwing what the reference semantics throws
 
@@ -536,19 +544,18 @@ set_option maxRecDepth 8000 in
 /-- The second: the fuel the artifact runs at covers the deepest call this program can make. -/
 theorem program_cost_fits : Cost.cost program ≤ defaultFuel := Nat.le_of_ble_eq_true rfl
 
-/-- For arguments of the count and types `add` declares, whenever `eval` refuses to return a value the
-generated function throws the code `eval` threw. Its body can reach `int53Overflow`. Running out of fuel
-is not among the answers: the two checks above rule it out for this program. What falls outside those
-types never reaches the body at all — that is `add_refuses`. -/
+/-- For arguments the entry check decodes to the count and types `add` declares, whenever `eval` refuses
+to return a value the generated function throws the code `eval` threw. Its body can reach `int53Overflow`.
+Running out of fuel is not among the answers: the two checks above rule it out for this program. What
+falls outside those types never reaches the body at all — that is `add_refuses`. -/
 theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (err : Err)
-    (hlen : addDecl.params.length = args.length)
+    (jargs : List Js.JsValue) (args : List Value) (err : Err)
     (htyped : ParamsTyped program addDecl.params args)
+    (hdec : Decl.ArgsDecode program addDecl.params jargs args)
     (he : evalCall program "add" args = .error err) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "add" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps_at_cost program m "add" addDecl args err hm find_add rfl program_progOk
-    program_cost_fits hlen htyped he
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "add" jargs = .error err.code :=
+  Decl.decl_traps_at_cost program m "add" addDecl jargs args err hm find_add rfl program_progOk
+    program_cost_fits htyped hdec he
 
 /-- The trap is reachable, and reached the same way on both sides: one past the top of `Int53` throws
 `int53Overflow` out of the generated function. -/
@@ -561,44 +568,48 @@ theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program
   have hty : Value.hasTy program (.int53 int53Max) .int53 = true ∧
       Value.hasTy program (.int53 1) .int53 = true := by
     constructor <;> (rw [hasTy_int53]; simp [int53Min, int53Max])
-  have h := add_traps m hm [.int53 int53Max, .int53 1] .int53Overflow rfl
-    ⟨hty.1, hty.2, trivial⟩ hcall
+  have htyped : ParamsTyped program addDecl.params [Value.int53 int53Max, .int53 1] :=
+    ⟨hty.1, hty.2, trivial⟩
+  have h := add_traps m hm _ [.int53 int53Max, .int53 1] .int53Overflow htyped
+    (Decl.argsDecode_of_compileProgram hm find_add htyped) hcall
   simpa [encodeValue, Err.code] using h
 
 /-- The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,
 and builds a `Result` around a constructor. -/
 theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (v : Value) (he : evalCall program "addMoney" args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "addMoney" addMoneyDecl args v hm find_addMoney he
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
+    (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)
+    (he : evalCall program "addMoney" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "addMoney" jargs = .ok (encodeValue v) :=
+  Decl.decl_correct program m "addMoney" addMoneyDecl jargs args v hm find_addMoney hdec he
 
 /-- The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads
 the fields that arm binds. -/
 theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (v : Value) (he : evalCall program "ship" args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "ship" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "ship" shipDecl args v hm find_ship he
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
+    (hdec : Decl.ArgsDecode program shipDecl.params jargs args)
+    (he : evalCall program "ship" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "ship" jargs = .ok (encodeValue v) :=
+  Decl.decl_correct program m "ship" shipDecl jargs args v hm find_ship hdec he
 
 /-- And an array traversal: `cartTotal` folds a body over the elements, each under its own binding. -/
 theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (v : Value) (he : evalCall program "cartTotal" args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .ok (encodeValue v) :=
-  Decl.decl_correct program m "cartTotal" cartTotalDecl args v hm find_cartTotal he
+    (jargs : List Js.JsValue) (args : List Value) (v : Value)
+    (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)
+    (he : evalCall program "cartTotal" args = .ok v) :
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "cartTotal" jargs = .ok (encodeValue v) :=
+  Decl.decl_correct program m "cartTotal" cartTotalDecl jargs args v hm find_cartTotal hdec he
 
 /-- The trap side of a traversal: a fold whose running sum leaves `Int53` throws where `eval` does, at
 the element that overflowed rather than at the end. -/
 theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (err : Err)
-    (hlen : cartTotalDecl.params.length = args.length)
+    (jargs : List Js.JsValue) (args : List Value) (err : Err)
     (htyped : ParamsTyped program cartTotalDecl.params args)
+    (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)
     (he : evalCall program "cartTotal" args = .error err) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "cartTotal" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps_at_cost program m "cartTotal" cartTotalDecl args err hm find_cartTotal rfl
-    program_progOk program_cost_fits hlen htyped he
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "cartTotal" jargs = .error err.code :=
+  Decl.decl_traps_at_cost program m "cartTotal" cartTotalDecl jargs args err hm find_cartTotal rfl
+    program_progOk program_cost_fits htyped hdec he
 
 /-! ### Refusing what the reference semantics refuses
 
@@ -622,7 +633,8 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
   refine add_refuses m hm _ (by simp [Js.dictKeysDistinctList, Js.dictKeysDistinct]) ?_
   rintro ⟨args, hargs, -, htyped⟩
   cases hargs with
-  | cons hdesc hnorm _ =>
+  | fn hif _ _ => simp [Ty.isFn] at hif
+  | cons hdesc _ hnorm _ =>
     obtain ⟨i, rfl⟩ := hasTy_int53_inv htyped.1
     rw [Compile.tyDesc.eq_def] at hdesc
     simp only at hdesc
@@ -633,14 +645,13 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
 /-- The same for `addMoney`, under the same declared types: the only way its body throws is the `Int53`
 overflow of the sum, and the generated function throws that code. -/
 theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
-    (args : List Value) (err : Err)
-    (hlen : addMoneyDecl.params.length = args.length)
+    (jargs : List Js.JsValue) (args : List Value) (err : Err)
     (htyped : ParamsTyped program addMoneyDecl.params args)
+    (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)
     (he : evalCall program "addMoney" args = .error err) :
-    ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' "addMoney" (args.map encodeValue) = .error err.code :=
-  Decl.decl_traps_at_cost program m "addMoney" addMoneyDecl args err hm find_addMoney rfl
-    program_progOk program_cost_fits hlen htyped he
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "addMoney" jargs = .error err.code :=
+  Decl.decl_traps_at_cost program m "addMoney" addMoneyDecl jargs args err hm find_addMoney rfl
+    program_progOk program_cost_fits htyped hdec he
 
 /-- The text `lean2js` writes for this program reads back as the module the compiler built. Nothing in
 between is assumed: the roundtrip holds of whatever `compileProgram` produces, so the claim carries no

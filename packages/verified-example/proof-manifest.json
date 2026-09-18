@@ -307,22 +307,22 @@
     },
     {
       "name": "add_calls_agree",
-      "statement": "add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"add\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "statement": "add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program addDecl.params jargs args)\n  (he : evalCall program \"add\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" jargs = Except.ok (encodeValue v)",
       "doc": "Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body\nis a single binary operation."
     },
     {
       "name": "discounted_calls_agree",
-      "statement": "discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"discounted\" args = Except.ok v) :\n  ∃ g,\n    ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"discounted\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "statement": "discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program discountedDecl.params jargs args)\n  (he : evalCall program \"discounted\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"discounted\" jargs = Except.ok (encodeValue v)",
       "doc": "The same for a body that opens with a `let`, which the compiler emits as a `const` statement."
     },
     {
       "name": "rebindTwice_calls_agree",
-      "statement": "rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"rebindTwice\" args = Except.ok v) :\n  ∃ g,\n    ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"rebindTwice\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "statement": "rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program rebindTwiceDecl.params jargs args)\n  (he : evalCall program \"rebindTwice\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"rebindTwice\" jargs = Except.ok (encodeValue v)",
       "doc": "And for a body whose second `let` rebinds a name already in scope, which the compiler leaves as an\nexpression rather than a statement."
     },
     {
       "name": "memberPrice_calls_agree",
-      "statement": "memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"memberPrice\" args = Except.ok v) :\n  ∃ g,\n    ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"memberPrice\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "statement": "memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program memberPriceDecl.params jargs args)\n  (he : evalCall program \"memberPrice\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"memberPrice\" jargs = Except.ok (encodeValue v)",
       "doc": "And for a body that calls another declaration, handing it a third by name. The call is where the\nproof leaves the expression it is looking at: `priced` applies the function it was given, so the claim\nabout `memberPrice` rests on the same claim about `tenPercentOff`."
     },
     {
@@ -337,8 +337,8 @@
     },
     {
       "name": "add_traps",
-      "statement": "add_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : addDecl.params.length = args.length) (htyped : ParamsTyped program addDecl.params args)\n  (he : evalCall program \"add\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" (List.map encodeValue args) = Except.error err.code",
-      "doc": "For arguments of the count and types `add` declares, whenever `eval` refuses to return a value the\ngenerated function throws the code `eval` threw. Its body can reach `int53Overflow`. Running out of fuel\nis not among the answers: the two checks above rule it out for this program. What falls outside those\ntypes never reaches the body at all — that is `add_refuses`."
+      "statement": "add_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (err : Err) (htyped : ParamsTyped program addDecl.params args)\n  (hdec : Decl.ArgsDecode program addDecl.params jargs args) (he : evalCall program \"add\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" jargs = Except.error err.code",
+      "doc": "For arguments the entry check decodes to the count and types `add` declares, whenever `eval` refuses\nto return a value the generated function throws the code `eval` threw. Its body can reach `int53Overflow`.\nRunning out of fuel is not among the answers: the two checks above rule it out for this program. What\nfalls outside those types never reaches the body at all — that is `add_refuses`."
     },
     {
       "name": "add_overflow_throws",
@@ -347,22 +347,22 @@
     },
     {
       "name": "addMoney_calls_agree",
-      "statement": "addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"addMoney\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "statement": "addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)\n  (he : evalCall program \"addMoney\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" jargs = Except.ok (encodeValue v)",
       "doc": "The fragment reaches business logic, not just arithmetic: `addMoney` reads two fields, compares them,\nand builds a `Result` around a constructor."
     },
     {
       "name": "ship_calls_agree",
-      "statement": "ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (v : Value)\n  (he : evalCall program \"ship\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"ship\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "statement": "ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program shipDecl.params jargs args)\n  (he : evalCall program \"ship\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"ship\" jargs = Except.ok (encodeValue v)",
       "doc": "The fragment reaches a `match`: `ship` chooses an arm by the constructor of its scrutinee and reads\nthe fields that arm binds."
     },
     {
       "name": "cartTotal_calls_agree",
-      "statement": "cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value)\n  (v : Value) (he : evalCall program \"cartTotal\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" (List.map encodeValue args) = Except.ok (encodeValue v)",
+      "statement": "cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)\n  (he : evalCall program \"cartTotal\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" jargs = Except.ok (encodeValue v)",
       "doc": "And an array traversal: `cartTotal` folds a body over the elements, each under its own binding."
     },
     {
       "name": "cartTotal_traps",
-      "statement": "cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : cartTotalDecl.params.length = args.length) (htyped : ParamsTyped program cartTotalDecl.params args)\n  (he : evalCall program \"cartTotal\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" (List.map encodeValue args) = Except.error err.code",
+      "statement": "cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (err : Err) (htyped : ParamsTyped program cartTotalDecl.params args)\n  (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)\n  (he : evalCall program \"cartTotal\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"cartTotal\" jargs = Except.error err.code",
       "doc": "The trap side of a traversal: a fold whose running sum leaves `Int53` throws where `eval` does, at\nthe element that overflowed rather than at the end."
     },
     {
@@ -377,7 +377,7 @@
     },
     {
       "name": "addMoney_traps",
-      "statement": "addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (args : List Value) (err : Err)\n  (hlen : addMoneyDecl.params.length = args.length) (htyped : ParamsTyped program addMoneyDecl.params args)\n  (he : evalCall program \"addMoney\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" (List.map encodeValue args) = Except.error err.code",
+      "statement": "addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)\n  (args : List Value) (err : Err) (htyped : ParamsTyped program addMoneyDecl.params args)\n  (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)\n  (he : evalCall program \"addMoney\" args = Except.error err) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"addMoney\" jargs = Except.error err.code",
       "doc": "The same for `addMoney`, under the same declared types: the only way its body throws is the `Int53`\noverflow of the sum, and the generated function throws that code."
     },
     {

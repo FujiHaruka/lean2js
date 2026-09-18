@@ -272,8 +272,9 @@ wrote.
 One caveat, and it is in the types: `Int53` and `UInt32` both map to `number`, so TypeScript accepts
 a number that is not an integer, or is outside their range, and the call is refused at run time with
 `typeError`. Nothing else is narrower than it looks — fields are read by name, so their order is free,
-and keys the type does not declare are ignored. What the theorems state at the canonical spelling of an
-argument, the vectors check at the other spellings the `.d.ts` admits.
+and keys the type does not declare are ignored. Every spelling the entry check accepts is inside what
+the theorems state: reordered and undeclared keys normalise to the same value, and the same theorem
+carries the call.
 
 [`docs/guarantees.md`](docs/guarantees.md) has the whole assembly, and the
 [Lean reference](https://fujiharuka.github.io/lean2js/) has the statements, their hypotheses and the

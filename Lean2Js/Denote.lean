@@ -26,23 +26,23 @@ theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
 either answers what the author's own `def` computes or throws one of the codes `Err` enumerates. The
 certificate is the only part of this that changes from one declaration to the next. -/
 theorem decl_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
-    (fn : String) (d : Decl) (args : List Value) {α : Type} [Enc α] (t : α)
+    (fn : String) (d : Decl) (jargs : List Js.JsValue) (args : List Value) {α : Type} [Enc α] (t : α)
     (hd : Example.program.find? fn = some d)
     (hpub : d.isPublic = true)
-    (hlen : d.params.length = args.length)
     (htyped : _root_.Lean2Js.ParamsTyped Example.program d.params args)
+    (hdec : Decl.ArgsDecode Example.program d.params jargs args)
     (hcert : Denotes Example.program (bindParams d.params args) d.body t) :
     ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue (toValue t))
-      ∨ ∃ err : Err, Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code := by
+      Js.callFunctionAt m g' fn jargs = .ok (encodeValue (toValue t))
+      ∨ ∃ err : Err, Js.callFunctionAt m g' fn jargs = .error err.code := by
   cases he : evalCall Example.program fn args with
   | ok v =>
-    obtain ⟨g, hg⟩ := Decl.decl_correct Example.program m fn d args v hm hd he
+    obtain ⟨g, hg⟩ := Decl.decl_correct Example.program m fn d jargs args v hm hd hdec he
     refine ⟨g, fun g' hle => Or.inl ?_⟩
-    rw [hg g' hle, hcert (Nat.le_refl _) v (by rwa [Decl.evalCall_body hd hlen htyped] at he)]
+    rw [hg g' hle, hcert (Nat.le_refl _) v (by rwa [Decl.evalCall_body hd hdec.length htyped] at he)]
   | error err =>
-    obtain ⟨g, hg⟩ := Decl.decl_traps_at_cost Example.program m fn d args err hm hd hpub
-      Example.program_progOk Example.program_cost_fits hlen htyped he
+    obtain ⟨g, hg⟩ := Decl.decl_traps_at_cost Example.program m fn d jargs args err hm hd hpub
+      Example.program_progOk Example.program_cost_fits htyped hdec he
     exact ⟨g, fun g' hle => Or.inr ⟨err, hg g' hle⟩⟩
 
 theorem add_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
@@ -50,8 +50,10 @@ theorem add_ships (m : Js.Module) (hm : Compile.compileProgram Example.program =
     ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' "add" [.num a, .num b] = .ok (.num (Example.add a b))
       ∨ ∃ err : Err, Js.callFunctionAt m g' "add" [.num a, .num b] = .error err.code := by
-  have h := decl_ships m hm "add" Example.addDecl [toValue a, toValue b] (Example.add a b)
-    rfl rfl rfl ⟨toValue_hasTy ha, toValue_hasTy hb, trivial⟩ (Example.add_certificate a b)
+  have htyped : _root_.Lean2Js.ParamsTyped Example.program Example.addDecl.params
+      [toValue a, toValue b] := ⟨toValue_hasTy ha, toValue_hasTy hb, trivial⟩
+  have h := decl_ships m hm "add" Example.addDecl _ [toValue a, toValue b] (Example.add a b)
+    rfl rfl htyped (Decl.argsDecode_of_compileProgram (fn := "add") hm rfl htyped) (Example.add_certificate a b)
   simpa [encodeValue] using h
 
 /-- The one that makes the shape worth the trouble: `lineTotal` calls `clampQuantity`, and the step that
@@ -64,9 +66,12 @@ theorem lineTotal_ships (m : Js.Module) (hm : Compile.compileProgram Example.pro
           = .ok (.num (Example.lineTotal unitPrice quantity))
       ∨ ∃ err : Err,
           Js.callFunctionAt m g' "lineTotal" [.num unitPrice, .num quantity] = .error err.code := by
-  have h := decl_ships m hm "lineTotal" Example.lineTotalDecl [toValue unitPrice, toValue quantity]
-    (Example.lineTotal unitPrice quantity) rfl rfl rfl
-    ⟨toValue_hasTy hp, toValue_hasTy hq, trivial⟩ (Example.lineTotal_certificate unitPrice quantity)
+  have htyped : _root_.Lean2Js.ParamsTyped Example.program Example.lineTotalDecl.params
+      [toValue unitPrice, toValue quantity] := ⟨toValue_hasTy hp, toValue_hasTy hq, trivial⟩
+  have h := decl_ships m hm "lineTotal" Example.lineTotalDecl _
+    [toValue unitPrice, toValue quantity] (Example.lineTotal unitPrice quantity) rfl rfl htyped
+    (Decl.argsDecode_of_compileProgram (fn := "lineTotal") hm rfl htyped)
+    (Example.lineTotal_certificate unitPrice quantity)
   simpa [encodeValue] using h
 
 theorem roleRank_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
@@ -76,8 +81,10 @@ theorem roleRank_ships (m : Js.Module) (hm : Compile.compileProgram Example.prog
           = .ok (.num (Example.roleRank r))
       ∨ ∃ err : Err,
           Js.callFunctionAt m g' "roleRank" [encodeValue (toValue r)] = .error err.code := by
-  have h := decl_ships m hm "roleRank" Example.roleRankDecl [toValue r] (Example.roleRank r)
-    rfl rfl rfl ⟨toValue_hasTy ⟨rfl, by cases r <;> trivial⟩, trivial⟩
+  have htyped : _root_.Lean2Js.ParamsTyped Example.program Example.roleRankDecl.params [toValue r] :=
+    ⟨toValue_hasTy ⟨rfl, by cases r <;> trivial⟩, trivial⟩
+  have h := decl_ships m hm "roleRank" Example.roleRankDecl _ [toValue r] (Example.roleRank r)
+    rfl rfl htyped (Decl.argsDecode_of_compileProgram (fn := "roleRank") hm rfl htyped)
     (Example.roleRank_certificate r)
   simpa [encodeValue] using h
 
