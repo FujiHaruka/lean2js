@@ -172,6 +172,18 @@ def strJoin (xs : List String) (sep : String) : String :=
   | [] => ""
   | s :: rest => strJoinFrom sep s rest
 
+/-- `s` written `n` times over, one copy at a time. -/
+def strRepeatFrom (s : String) : Nat → String
+  | 0 => ""
+  | n + 1 => s ++ strRepeatFrom s n
+
+/-- A result longer than the safe integers is what `__i53` refuses, exactly as a length is. An empty
+string answers before the bound is consulted, because no count makes it longer. -/
+def strRepeat (s : String) (n : Int) : JsResult :=
+  if s.toList.length = 0 then .ok (.str "")
+  else if safeMax < (s.toList.length : Int) * n then fail "int53Overflow"
+  else .ok (.str (strRepeatFrom s n.toNat))
+
 /-- An array holding anything but Strings is past what the compiler builds, so the table leaves it
 unanswered rather than modelling what JS would print for it. -/
 def strsOf : List JsValue → Option (List String)
@@ -288,6 +300,7 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__split", [.str s, .str sep] => some (.ok (.arr (strSplit s sep)))
   | "__indexOf", [.str s, .str t] => some (strIndexOf s t)
   | "__join", [.arr xs, .str sep] => (strsOf xs).map fun ss => .ok (.str (strJoin ss sep))
+  | "__repeat", [.str s, .num n] => some (strRepeat s n)
   | "__substring", [.str s, .num a, .num b] => some (strSlice s a b)
   | _, _ => none
 
@@ -340,6 +353,7 @@ inductive HelperRow : String → List JsValue → Prop where
   | split (s sep : String) : HelperRow "__split" [.str s, .str sep]
   | indexOf (s t : String) : HelperRow "__indexOf" [.str s, .str t]
   | join (ss : List String) (sep : String) : HelperRow "__join" [.arr (ss.map .str), .str sep]
+  | «repeat» (s : String) (n : Int) : HelperRow "__repeat" [.str s, .num n]
   | substring (s : String) (a b : Int) : HelperRow "__substring" [.str s, .num a, .num b]
 
 theorem helper_row {name : String} {args : List JsValue} {r : JsResult}

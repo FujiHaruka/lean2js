@@ -133,6 +133,11 @@ def join (xs : List String) (sep : String) : String := joinStr xs sep
 only the first. An empty `pat` leaves `s` as it is, where `replaceAll("", r)` inserts at every position. -/
 @[expand] def replace (s pat rep : String) : String := join (split s pat) rep
 
+/-- `s` written `n` times over, counted in code points the way `Str.length` counts them. A count of
+zero or less gives the empty string, where JS's own `repeat` throws on a negative one. A result longer
+than an Int53 traps, the same bound `Str.length` lives under. -/
+def «repeat» (s : String) (n : Int) : String := repeatStr s n.toNat
+
 @[expand] def isEmpty (s : String) : Bool := length s == 0
 
 end Str

@@ -428,6 +428,29 @@ def join : Def :=
         .setVar "out" (.bin "+" (.bin "+" (.var "out") (.var "sep")) (.var "x"))],
       .ret (.var "out")] }
 
+def «repeat» : Def :=
+
+  { name := "__repeat", params := ["s", "n"]
+    doc := ["The bound is divided out rather than the length multiplied up: the product is the thing",
+            "that overflows, and __i53div divides exactly where Math.trunc(a / b) does not."]
+    body := .expr (.cond (.bin "===" (.call "__strlen" [(.var "s")]) (.num 0)) (.str "")
+      (.cond (.bin ">" (.var "n")
+          (.call "__i53div" [.num 9007199254740991, .call "__strlen" [(.var "s")]]))
+        (.call "__fail" [.str "int53Overflow"])
+        (.call "__rep" [(.var "s"), (.var "n")]))) }
+
+def rep : Def :=
+
+  { name := "__rep", params := ["s", "n"]
+    doc := ["Doubling rather than counting: adding one copy at a time would need a loop that runs a",
+            "number of times, and the only loop here runs over an array."]
+    body := .block [
+      .ifThen (.bin "<=" (.var "n") (.num 0)) [.ret (.str "")],
+      .const "half" (.call "__rep" [.bin "+" (.var "s") (.var "s"),
+        .prim "Math.trunc" [.bin "/" (.var "n") (.num 2)]]),
+      .ret (.cond (.bin "===" (.bin "%" (.var "n") (.num 2)) (.num 1))
+        (.bin "+" (.var "s") (.var "half")) (.var "half"))] }
+
 def substring : Def :=
 
   { name := "__substring", params := ["s", "lo", "hi"]
@@ -770,7 +793,7 @@ def ck : Def :=
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
   str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
-  startsAt, indexOf, join, substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues,
+  startsAt, indexOf, join, «repeat», rep, substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues,
   ddelete, eq, map, filter, find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
 ]
 

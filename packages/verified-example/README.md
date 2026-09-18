@@ -46,6 +46,8 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   The reference an order is filed under, built from parts that are already in hand, under the same separator `referencePrefix` reads back.
 - `refiled(reference: string, oldSep: string, newSep: string): string`
   A reference filed under one separator, rewritten under another. Every occurrence moves, and a reference carrying none comes back unchanged.
+- `receiptRule(mark: string): string`
+  The rule a printed receipt puts between its sections, one `mark` per column at the width the receipt is printed to.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`

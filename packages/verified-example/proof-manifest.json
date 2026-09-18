@@ -136,6 +136,12 @@
       "doc": "A reference filed under one separator, rewritten under another. Every occurrence moves, and a\nreference carrying none comes back unchanged."
     },
     {
+      "name": "receiptRule",
+      "signature": "(mark : String) → String",
+      "declaration": "receiptRule(mark: string): string",
+      "doc": "The rule a printed receipt puts between its sections, one `mark` per column at the width the\nreceipt is printed to."
+    },
+    {
       "name": "sortsBefore",
       "signature": "(a : String, b : String) → Bool",
       "declaration": "sortsBefore(a: string, b: string): boolean",

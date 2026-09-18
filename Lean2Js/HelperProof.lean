@@ -1162,6 +1162,128 @@ theorem calls_join (ext : Ext) (ss : List String) (sep : String) (f : Nat) :
     walk
     simp only [strJoin]
 
+theorem find_rep : Helper.defs.find? (·.name == "__rep") = some Helper.rep := rfl
+
+theorem find_repeat : Helper.defs.find? (·.name == "__repeat") = some Helper.repeat := rfl
+
+private theorem repeatFrom_double (s : String) : ∀ m : Nat,
+    strRepeatFrom (s ++ s) m = strRepeatFrom s (2 * m)
+  | 0 => rfl
+  | m + 1 => by
+    show (s ++ s) ++ strRepeatFrom (s ++ s) m = _
+    rw [repeatFrom_double s m, String.append_assoc,
+      show 2 * (m + 1) = 2 * m + 1 + 1 from by omega]
+    rfl
+
+private theorem calls_rep_aux (ext : Ext) : ∀ (k : Nat) (s : String) (n : Int), n.toNat < k →
+    ∀ (f : Nat), callDef ext (f + 4 * n.toNat + 16) "__rep" [.str s, .num n]
+      = .ok (.str (strRepeatFrom s n.toNat)) := by
+  intro k
+  induction k with
+  | zero => intro s n h; exact absurd h (by omega)
+  | succ k ih =>
+    intro s n hlt f
+    rw [show f + 4 * n.toNat + 16 = (f + 4 * n.toNat + 15) + 1 from rfl,
+      callDef_block find_rep rfl rfl]
+    simp only [Helper.rep]
+    walk
+    by_cases hn : n ≤ 0
+    · rw [cmp_le hn, show n.toNat = 0 from by omega]
+      walk
+      rfl
+    · rw [cmp_not_le hn]
+      obtain ⟨m, rfl⟩ : ∃ m : Nat, n = (m : Int) := ⟨n.toNat, by omega⟩
+      rw [show ((m : Int)).toNat = m from rfl] at hlt ⊢
+      have hm : 1 ≤ m := by omega
+      walk
+      rw [show ((m : Int)).tdiv 2 = ((m / 2 : Nat) : Int) from rfl,
+        show ((m : Int)).tmod 2 = ((m % 2 : Nat) : Int) from rfl,
+        show f + 4 * m + 12
+            = (f + 4 * m + 12 - 4 * (m / 2) - 16) + 4 * (((m / 2 : Nat) : Int)).toNat + 16 from by
+          rw [show (((m / 2 : Nat) : Int)).toNat = m / 2 from rfl]; omega,
+        ih (s ++ s) ((m / 2 : Nat) : Int)
+          (by rw [show (((m / 2 : Nat) : Int)).toNat = m / 2 from rfl]; omega),
+        show (((m / 2 : Nat) : Int)).toNat = m / 2 from rfl, repeatFrom_double]
+      by_cases hp : m % 2 = 1
+      · rw [hp, show ((1 : Nat) : Int) = 1 from rfl]
+        walk
+        obtain ⟨j, rfl⟩ : ∃ j, m = j + 1 := ⟨m - 1, by omega⟩
+        rw [show 2 * ((j + 1) / 2) = j from by omega]
+        exact rfl
+      · rw [show m % 2 = 0 from by omega, show ((0 : Nat) : Int) = 0 from rfl]
+        walk
+        rw [show 2 * (m / 2) = m from by omega]
+
+theorem calls_rep (ext : Ext) (s : String) (n : Int) (f : Nat) :
+    callDef ext (f + 4 * n.toNat + 16) "__rep" [.str s, .num n]
+      = .ok (.str (strRepeatFrom s n.toNat)) :=
+  calls_rep_aux ext (n.toNat + 1) s n (by omega) f
+
+/-- The bound `__repeat` tests is the one `applyStrBin` states, divided through by the length: the
+product is what overflows, and dividing keeps the test itself inside the safe integers. -/
+private theorem div_bound (M L : Nat) (n : Int) (hL : 1 ≤ L) :
+    (((M / L : Nat) : Int) < n) ↔ ((M : Int) < (L : Int) * n) := by
+  have h := Nat.div_add_mod M L
+  have hr : M % L < L := Nat.mod_lt M (by omega)
+  have hdm : (L : Int) * ((M / L : Nat) : Int) + ((M % L : Nat) : Int) = (M : Int) := by
+    rw [← Int.natCast_mul, ← Int.natCast_add, h]
+  have hrI : ((M % L : Nat) : Int) < (L : Int) := by exact_mod_cast hr
+  have hL0 : (0 : Int) ≤ (L : Int) := Int.natCast_nonneg L
+  constructor
+  · intro hlt
+    have h1 : (L : Int) * (((M / L : Nat) : Int) + 1) ≤ (L : Int) * n :=
+      Int.mul_le_mul_of_nonneg_left (by omega) hL0
+    rw [Int.mul_add, Int.mul_one] at h1
+    omega
+  · intro hlt
+    by_cases h' : ((M / L : Nat) : Int) < n
+    · exact h'
+    · exfalso
+      have h2 : (L : Int) * n ≤ (L : Int) * ((M / L : Nat) : Int) :=
+        Int.mul_le_mul_of_nonneg_left (by omega) hL0
+      omega
+
+theorem calls_repeat (ext : Ext) (s : String) (n : Int) (f : Nat) :
+    callDef ext (f + 4 * n.toNat + 45) "__repeat" [.str s, .num n]
+      = (if s.toList.length = 0 then .ok (.str "")
+         else if safeMax < (s.toList.length : Int) * n then .thrown "int53Overflow"
+         else .ok (.str (strRepeatFrom s n.toNat))) := by
+  rw [show f + 4 * n.toNat + 45 = (f + 4 * n.toNat + 44) + 1 from rfl,
+    callDef_expr find_repeat rfl rfl]
+  simp only [Helper.repeat]
+  walk
+  rw [show f + 4 * n.toNat + 41 = (f + 4 * n.toNat + 32) + 9 from by omega, calls_strlen]
+  walk
+  by_cases h0 : s.toList.length = 0
+  · rw [show (((s.toList.length : Nat) : Int) == 0) = true from by simp [h0], if_pos h0]
+  · rw [show (((s.toList.length : Nat) : Int) == 0) = false from by
+          have hs : ¬ s = "" := fun hc => h0 (by rw [hc]; rfl)
+          simp [hs], if_neg h0]
+    walk
+    rw [show f + 4 * n.toNat + 37 = (f + 4 * n.toNat + 28) + 9 from by omega, calls_strlen]
+    walk
+    rw [show f + 4 * n.toNat + 40 = (f + 4 * n.toNat + 31) + 9 from by omega, calls_i53div,
+      if_neg (by omega),
+      show (9007199254740991 : Int).tdiv ((s.toList.length : Nat) : Int)
+        = ((9007199254740991 / s.toList.length : Nat) : Int) from rfl]
+    walk
+    by_cases hb : ((9007199254740991 / s.toList.length : Nat) : Int) < n
+    · rw [cmp_gt hb, if_pos (by
+        have hx := (div_bound 9007199254740991 s.toList.length n (by omega)).mp hb
+        have hc : ((9007199254740991 : Nat) : Int) = safeMax := by rfl
+        rw [hc] at hx
+        exact hx)]
+      walk
+      rw [show f + 4 * n.toNat + 32 + 9 = (f + 4 * n.toNat + 36) + 5 from by omega, calls_fail]
+    · rw [cmp_not_gt hb, if_neg (by
+        intro hcon
+        refine hb ((div_bound 9007199254740991 s.toList.length n (by omega)).mpr ?_)
+        have hc : ((9007199254740991 : Nat) : Int) = safeMax := by rfl
+        rw [hc]
+        exact hcon)]
+      walk
+      rw [show f + 4 * n.toNat + 32 + 9 = (f + 25) + 4 * n.toNat + 16 from by omega, calls_rep]
+
 private theorem compare_cons_ne {a b : Char} (l m : List Char) (h : a ≠ b) :
     compare (a :: l) (b :: m) = compare a b := by
   simp only [compare, List.compareLex, compareOfLessAndEq]

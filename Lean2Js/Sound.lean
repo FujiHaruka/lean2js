@@ -624,6 +624,16 @@ theorem applyStrBin_hasTy {p : Program} {op : StrBinOp} {a b v : Value}
            · simp only [Except.ok.injEq] at h
              subst h
              simp [Compile.strBinResult, hasTy_none])
+  | «repeat» =>
+    cases a <;> cases b <;>
+      first
+        | (exfalso; simp [applyStrBin] at h; done)
+        | (simp only [applyStrBin] at h
+           split at h
+           · simp only [Except.ok.injEq] at h; subst h; exact hasTy_str p _
+           · split at h
+             · exact absurd h (by simp)
+             · simp only [Except.ok.injEq] at h; subst h; exact hasTy_str p _)
   | join =>
     cases a <;> cases b <;>
       first

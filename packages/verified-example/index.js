@@ -163,6 +163,20 @@ const __join = (xs, sep) => {
   return out;
 };
 
+// The bound is divided out rather than the length multiplied up: the product is the thing
+// that overflows, and __i53div divides exactly where Math.trunc(a / b) does not.
+const __repeat = (s, n) => ((__strlen(s) === 0) ? "" : ((n > __i53div(9007199254740991, __strlen(s))) ? __fail("int53Overflow") : __rep(s, n)));
+
+// Doubling rather than counting: adding one copy at a time would need a loop that runs a
+// number of times, and the only loop here runs over an array.
+const __rep = (s, n) => {
+  if ((n <= 0)) {
+    return "";
+  }
+  const half = __rep((s + s), Math.trunc((n / 2)));
+  return (((n % 2) === 1) ? (s + half) : half);
+};
+
 // Indices count code points, and one outside the string fails rather than being clamped.
 const __substring = (s, lo, hi) => {
   const xs = __chars(s);
@@ -616,6 +630,12 @@ export function refiled(__p0, __p1, __p2) {
   const oldSep = __ck(__p1, ["string"]);
   const newSep = __ck(__p2, ["string"]);
   return __join(__split(reference, oldSep), newSep);
+}
+
+/** receiptRule : (mark : String) → String */
+export function receiptRule(__p0) {
+  const mark = __ck(__p0, ["string"]);
+  return __repeat(mark, 32);
 }
 
 /** sortsBefore : (a : String, b : String) → Bool */

@@ -463,6 +463,11 @@ theorem noFn_applyStrBin {op : StrBinOp} {a b v : Value} (h : applyStrBin op a b
   · split at h
     · (injection h with h; subst h); rw [noFn]
     · injection h
+  · split at h
+    · (injection h with h; subst h); rw [noFn]
+    · split at h
+      · injection h
+      · (injection h with h; subst h); rw [noFn]
   · injection h
 
 theorem noFn_sliceStr {s lo hi v : Value} (h : sliceStr s lo hi = .ok v) : noFn v = true := by

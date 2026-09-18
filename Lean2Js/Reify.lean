@@ -260,6 +260,7 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
   | (``Lean2Js.Str.split, #[l, r]) => strBin `split ``Lean2Js.Denote.denotes_split l r
   | (``Lean2Js.Str.indexOf?, #[l, r]) => strBin `indexOf ``Lean2Js.Denote.denotes_indexOf l r
   | (``Lean2Js.Str.join, #[l, r]) => strBin `join ``Lean2Js.Denote.denotes_join l r
+  | (``Lean2Js.Str.repeat, #[l, r]) => strBin `repeat ``Lean2Js.Denote.denotes_repeat l r
   | (``Lean2Js.Str.substring, #[l, lo, hi]) =>
     let (ae, ap) ← walk citing ns names xs l
     let (loe, lop) ← walk citing ns names xs lo

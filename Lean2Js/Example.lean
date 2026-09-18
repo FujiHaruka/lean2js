@@ -126,6 +126,11 @@ reference carrying none comes back unchanged. -/
 @[ship]
 def refiled (reference oldSep newSep : String) : String := Str.replace reference oldSep newSep
 
+/-- The rule a printed receipt puts between its sections, one `mark` per column at the width the
+receipt is printed to. -/
+@[ship]
+def receiptRule (mark : String) : String := Str.repeat mark 32
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b

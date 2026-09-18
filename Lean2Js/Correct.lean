@@ -459,6 +459,10 @@ theorem joinStr_eq (ss : List String) (sep : String) :
   | nil => rfl
   | cons a rest => simp only [Js.Runtime.strJoin, joinStr, joinFrom_eq]
 
+theorem repeatFrom_eq (s : String) : ∀ n : Nat, Js.Runtime.strRepeatFrom s n = repeatStr s n
+  | 0 => rfl
+  | n + 1 => by rw [Js.Runtime.strRepeatFrom, repeatStr, repeatFrom_eq s n]
+
 theorem helper_strBin {p : Program} {op : StrBinOp} {av bv v : Value}
     (hav : Value.hasTy p av (Compile.strBinArgTys op).1 = true)
     (hbv : Value.hasTy p bv (Compile.strBinArgTys op).2 = true)
@@ -489,6 +493,29 @@ theorem helper_strBin {p : Program} {op : StrBinOp} {av bv v : Value}
         subst h
         rw [if_neg (show ¬ (Js.Runtime.safeMax < ((n : Nat) : Int)) from hr)]
         simp [encodeValue, encodeFields]
+  | «repeat» =>
+    obtain ⟨a, rfl⟩ := hasTy_string_inv hav
+    obtain ⟨n, rfl⟩ := hasTy_int53_inv hbv
+    simp only [encodeValue]
+    simp only [applyStrBin] at h
+    rw [show Js.helper (Compile.strBinHelper StrBinOp.repeat) [Js.JsValue.str a, Js.JsValue.num n]
+        = some (Js.Runtime.strRepeat a n) from rfl]
+    simp only [Js.Runtime.strRepeat]
+    by_cases h0 : a.toList.length = 0
+    · rw [if_pos h0] at h
+      rw [if_pos h0]
+      simp only [Except.ok.injEq] at h
+      subst h
+      simp [encodeValue]
+    · rw [if_neg h0] at h
+      rw [if_neg h0]
+      by_cases hr : int53Max < (a.toList.length : Int) * n
+      · rw [if_pos hr] at h; simp at h
+      · rw [if_neg hr] at h
+        simp only [Except.ok.injEq] at h
+        subst h
+        rw [if_neg (show ¬ (Js.Runtime.safeMax < ((a.toList.length : Nat) : Int) * n) from hr)]
+        simp [encodeValue, repeatFrom_eq]
   | join =>
     obtain ⟨ss, rfl⟩ := hasTy_string_array_inv hav
     obtain ⟨sep, rfl⟩ := hasTy_string_inv hbv
@@ -530,6 +557,33 @@ theorem strBin_err_indexOf {p : Program} {av bv : Value} {err : Err}
     · rw [if_pos hr] at h
       obtain rfl : err = Err.int53Overflow := (Except.error.inj h).symm
       exact ⟨rfl, by rw [if_pos (show Js.Runtime.safeMax < ((n : Nat) : Int) from hr)]; rfl⟩
+    · rw [if_neg hr] at h; simp at h
+
+/-- `repeat` is the other one: a result longer than the safe integers traps before the string is
+built. -/
+theorem strBin_err_repeat {p : Program} {av bv : Value} {err : Err}
+    (hav : Value.hasTy p av (Compile.strBinArgTys .repeat).1 = true)
+    (hbv : Value.hasTy p bv (Compile.strBinArgTys .repeat).2 = true)
+    (h : applyStrBin .repeat av bv = .error err) :
+    err = .int53Overflow ∧
+      Js.helper (Compile.strBinHelper .repeat) [encodeValue av, encodeValue bv]
+        = some (.error "int53Overflow") := by
+  obtain ⟨a, rfl⟩ := hasTy_string_inv hav
+  obtain ⟨n, rfl⟩ := hasTy_int53_inv hbv
+  simp only [encodeValue]
+  simp only [applyStrBin] at h
+  rw [show Js.helper (Compile.strBinHelper StrBinOp.repeat) [Js.JsValue.str a, Js.JsValue.num n]
+      = some (Js.Runtime.strRepeat a n) from rfl]
+  simp only [Js.Runtime.strRepeat]
+  by_cases h0 : a.toList.length = 0
+  · rw [if_pos h0] at h; simp at h
+  · rw [if_neg h0] at h
+    rw [if_neg h0]
+    by_cases hr : int53Max < (a.toList.length : Int) * n
+    · rw [if_pos hr] at h
+      obtain rfl : err = Err.int53Overflow := (Except.error.inj h).symm
+      exact ⟨rfl, by
+        rw [if_pos (show Js.Runtime.safeMax < ((a.toList.length : Nat) : Int) * n from hr)]; rfl⟩
     · rw [if_neg hr] at h; simp at h
 
 theorem applyStrUn_str (op : StrUnOp) (s : String) : ∃ v, applyStrUn op (.str s) = .ok v := by
@@ -7285,6 +7339,9 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     cases op with
     | indexOf =>
       obtain ⟨rfl, hh⟩ := strBin_err_indexOf hat hbt he
+      exact eventuallyErr_call2_helper hlv hrv hh
+    | «repeat» =>
+      obtain ⟨rfl, hh⟩ := strBin_err_repeat hat hbt he
       exact eventuallyErr_call2_helper hlv hrv hh
     | join =>
       obtain ⟨ss, rfl⟩ := hasTy_string_array_inv hat

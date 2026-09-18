@@ -877,6 +877,26 @@ theorem denotes_indexOf (p : Program) (env : Env) (l r : Expr) (a b : String)
         rfl)
     hl hr
 
+theorem denotes_repeat (p : Program) (env : Env) (l r : Expr) (a : String) (n : Int)
+    (hl : Denotes p env l a) (hr : Denotes p env r n) :
+    Denotes p env (.strBin .repeat l r) (Str.repeat a n) :=
+  denotes_strBin p env .repeat l r a n _
+    (fun w hw => by
+      rw [toValue_str, toValue_int] at hw
+      simp only [applyStrBin] at hw
+      split at hw
+      · rename_i h0
+        simp only [Except.ok.injEq] at hw
+        rw [← hw, toValue_str]
+        have ha : a = "" := String.length_eq_zero_iff.mp h0
+        rw [ha, Str.repeat, repeatStr_empty]
+      · split at hw
+        · exact absurd hw (by simp)
+        · simp only [Except.ok.injEq] at hw
+          rw [← hw, toValue_str]
+          rfl)
+    hl hr
+
 theorem denotes_join (p : Program) (env : Env) (l r : Expr) (xs : List String) (sep : String)
     (hl : Denotes p env l xs) (hr : Denotes p env r sep) :
     Denotes p env (.strBin .join l r) (Str.join xs sep) :=

@@ -150,6 +150,17 @@ def joinStr (xs : List String) (sep : String) : String :=
   | [] => ""
   | s :: rest => joinFrom sep s rest
 
+/-- `s` written `n` times over, one copy at a time. The halving the emitted helper uses is proved equal
+to this in `Correct`; this is the shape the docstring claims. -/
+def repeatStr (s : String) : Nat → String
+  | 0 => ""
+  | n + 1 => s ++ repeatStr s n
+
+theorem repeatStr_empty (n : Nat) : repeatStr "" n = "" := by
+  induction n with
+  | zero => rfl
+  | succ n ih => simp only [repeatStr, ih]; rfl
+
 def valueStrs : List Value → Option (List String)
   | [] => some []
   | .str s :: rest => (valueStrs rest).map (s :: ·)
@@ -226,6 +237,10 @@ def applyStrBin : StrBinOp → Value → Value → Except Err Value
     match valueStrs xs with
     | some ss => .ok (.str (joinStr ss sep))
     | none => .error (.typeError "join expects an Array of Strings")
+  | .repeat, .str s, .int53 n =>
+    if s.toList.length = 0 then .ok (.str "")
+    else if int53Max < (s.toList.length : Int) * n then .error .int53Overflow
+    else .ok (.str (repeatStr s n.toNat))
   | op, _, _ => .error (.typeError s!"{op.name} got operands of the wrong type")
 
 /-- Indices count code points, and one outside the string traps the way an array read does. Clamping is

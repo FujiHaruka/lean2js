@@ -172,6 +172,14 @@ export declare function referenceFrom(parts: readonly string[]): string;
 export declare function refiled(reference: string, oldSep: string, newSep: string): string;
 
 /**
+ * The rule a printed receipt puts between its sections, one `mark` per column at the width the
+ * receipt is printed to.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function receiptRule(mark: string): string;
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.

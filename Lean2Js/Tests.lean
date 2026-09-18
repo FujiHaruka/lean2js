@@ -391,6 +391,18 @@ are what pin down. -/
 #guard Str.replace "--" "-" "+" == "++"
 #guard Str.replace "abc" "" "-" == "abc"
 
+/-! ## What `Str.repeat` does with a count it cannot honour
+
+A count of zero or less answers rather than trapping, the way `Str.split` on the empty separator
+answers. The trap is on the length of the result, and `applyStrBin` is where it lives. -/
+
+#guard Str.repeat "ab" 3 == "ababab"
+#guard Str.repeat "ab" 1 == "ab"
+#guard Str.repeat "ab" 0 == ""
+#guard Str.repeat "ab" (-1) == ""
+#guard Str.repeat "" 5 == ""
+#guard Str.repeat astralThenA 2 == astralThenA ++ astralThenA
+
 private def Box : TypeDef :=
   struct "Box" [("value", Ty.var "T")] (params := ["T"])
 

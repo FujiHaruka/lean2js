@@ -371,6 +371,19 @@ theorem agree_join (ext : Ext) (ss : List String) (sep : String) (f : Nat) :
   rw [show f + (ss.length + 20) = f + ss.length + 20 from by omega]
   simp only [ofJs_str, ofJs_arr, List.map_map, Function.comp_def, calls_join, ofRes_ok]
 
+theorem agree_repeat (ext : Ext) (x : String) (n : Int) (f : Nat) :
+    callDef ext (f + (4 * n.toNat + 45)) "__repeat" [ofJs (.str x), ofJs (.num n)]
+      = ofRes (strRepeat x n) := by
+  rw [show f + (4 * n.toNat + 45) = f + 4 * n.toNat + 45 from by omega]
+  simp only [ofJs_str, ofJs_num, calls_repeat, strRepeat]
+  by_cases h0 : x.toList.length = 0
+  · rw [if_pos h0, if_pos h0]
+    simp [ofRes, ofJs]
+  · rw [if_neg h0, if_neg h0]
+    by_cases hb : safeMax < (x.toList.length : Int) * n
+    · simp [hb, fail]
+    · simp [hb, ofRes]
+
 theorem agree_substring (ext : Ext) (x : String) (lo hi : Int) (f : Nat) :
     callDef ext (f + 11) "__substring" [ofJs (.str x), ofJs (.num lo), ofJs (.num hi)]
       = ofRes (strSlice x lo hi) := by
@@ -655,6 +668,7 @@ theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : 
       | exact eventually_of_offset _ (fun f => agree_max_big ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_strcmp ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_eq ext _ _ f hok)
+      | exact eventually_of_offset _ (fun f => agree_repeat ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_at ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_aslice ext _ _ _ f)
       | exact eventually_of_offset _ (fun f => agree_aconcat ext _ _ f)

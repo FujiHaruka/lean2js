@@ -117,18 +117,21 @@ def strBinHelper : StrBinOp → String
   | .split => "__split"
   | .indexOf => "__indexOf"
   | .join => "__join"
+  | .repeat => "__repeat"
 
 def strBinResult : StrBinOp → Ty
   | .startsWith | .endsWith | .includes => .bool
   | .split => .array .string
   | .indexOf => .option .int53
   | .join => .string
+  | .repeat => .string
 
 /-- What each operation takes, rather than two Strings for all of them: an operation whose operands are
 not both Strings is then an arm here, not a new form of `Core.Expr`. -/
 def strBinArgTys : StrBinOp → Ty × Ty
   | .startsWith | .endsWith | .includes | .split | .indexOf => (.string, .string)
   | .join => (.array .string, .string)
+  | .repeat => (.string, .int53)
 
 def orderSymbol : BinOp → Option String
   | .lt => some "<"

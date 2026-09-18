@@ -76,6 +76,9 @@ def referenceFrom(parts : Array String) : String =
 def refiled(reference : String, oldSep : String, newSep : String) : String =
   reference.split(oldSep).join(newSep)
 
+def receiptRule(mark : String) : String =
+  mark.repeat(32)
+
 def sortsBefore(a : String, b : String) : Bool =
   (a < b)
 
