@@ -451,13 +451,13 @@ where
       proof ← `(Lean2Js.Denote.denotesItems_cons _ _ _ _ _ _ $ip $proof)
     return (← `(Lean2Js.Core.Expr.arrayLit $(← encTy α) [$(itemStx.reverse),*]),
             ← `(Lean2Js.Denote.denotes_arrayLit _ _ _ _ _ $proof))
-  /-- The `match` as a function of its scrutinee, which is what the splitter's motive is stated over. The
-  scrutinee is a term rather than a variable — an author may match on what a call answered — so it is
-  abstracted by occurrence. An arm may read a variable bound outside the `match`, and that variable does
-  not exist where this syntax is elaborated, so those are abstracted too and handed back as holes for the
-  expected type to fill. -/
-  matchedFn (scrut : Lean.Expr) (e : Lean.Expr) : TermElabM Term := do
-    let core := .lam `y (← inferType scrut) (← kabstract e scrut) .default
+  /-- The `match` as a function of its scrutinee, which is what the splitter's motive is stated over.
+  Only the discriminant moves: an arm that reads the scrutinee itself, or a `let` above the `match` whose
+  value did, keeps the term it was written with, and the environment the arm runs in still binds it.
+  An arm may read a variable bound outside the `match`, and that variable does not exist where this
+  syntax is elaborated, so those are abstracted and handed back as holes for the expected type to fill. -/
+  matchedFn (app : MatcherApp) (scrut : Lean.Expr) : TermElabM Term := do
+    let core := .lam `y (← inferType scrut) ({ app with discrs := #[.bvar 0] }.toExpr) .default
     let free := xs.filter fun y => y.isFVar && core.hasAnyFVar (· == y.fvarId!)
     let stx ← exprToSyntax (← mkLambdaFVars free core)
     if free.isEmpty then return stx
@@ -559,7 +559,7 @@ where
         armProofs := armProofs.push pr
       return (altStx, armProofs)
     let ast ← `(Lean2Js.Core.Expr.matchE $se [$altStx,*])
-    let gStx ← matchedFn scrut e
+    let gStx ← matchedFn app scrut
     let motive ← `(fun y => Lean2Js.Denote.Denotes _ _ $se y →
       Lean2Js.Denote.Denotes _ _ $ast ($gStx y))
     return (ast, ← `($(mkCIdent eqns.splitterName) (motive := $motive) _ $armProofs* $sp))

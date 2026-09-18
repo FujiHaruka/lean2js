@@ -94,6 +94,14 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
   let mut certificates : Array Name := #[]
   for (n, _) in members do
     unless Core.Dsl.verifiedAttr.hasTag (← getEnv) n do continue
+    let declName := Core.Dsl.declNameFor n
+    unless (← getEnv).contains declName do
+      throwError "{n} is marked `@[verified]` but {declName} is not in scope, so the walk never read \
+        it: `declarations%` writes it, and only what stands above it"
+    let d ← evalConstCheck Core.Decl ``Core.Decl declName
+    unless program.decls.any (·.name == d.name) do
+      throwError "{n} is marked `@[verified]` but {programConst} does not carry it: program% gathers \
+        only what is declared above it"
     let cert := Core.Dsl.certificateNameFor n
     unless ((← getEnv).find? cert) matches some (.thmInfo _) do
       throwError "{n} is marked `@[verified]` but {cert} is not in scope, so nothing says the \

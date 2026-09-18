@@ -52,14 +52,13 @@ cp MyLogic.lean MyLogic.lean.orig
 cat >> MyLogic.lean <<'LEAN'
 
 namespace MyLogic
-open Lean2Js.Core Lean2Js.Core.Dsl
-def lateTotal : Decl := decl% lateTotal(x : Int53) : Int53 := x
+@[verified] def lateTotal (x : Int) : Int := x
 end MyLogic
 LEAN
 if lake exe lean2js MyLogic --out late 2> late.err; then
   echo "lean2js wrote a package without a declaration program% did not gather"; exit 1
 fi
-grep -q 'would not ship' late.err || { cat late.err; echo "lean2js refused for another reason"; exit 1; }
+grep -q 'not in scope' late.err || { cat late.err; echo "lean2js refused for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
 cat >> MyLogic.lean <<'LEAN'
 
