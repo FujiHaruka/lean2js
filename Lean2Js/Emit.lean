@@ -1,4 +1,5 @@
 import Lean2Js.Agree
+import Lean2Js.Bound
 import Lean2Js.Cost
 import Lean2Js.Compile
 import Lean2Js.Manifest
@@ -42,12 +43,14 @@ private def packageJson (m : Manifest) : Json :=
 
 /-- Everything `emit` refuses by reading the program alone, and the module it compiles to when it refuses
 nothing. The fuel check is not per vector but per program: `Cost.cost` is decided from the syntax alone,
-so one comparison covers every call any caller can make. -/
+so one comparison covers every call any caller can make. `Bound.programBounded` is the same shape for the
+one result that grows with a value instead of with the syntax. -/
 def Core.Program.checked (p : Core.Program) : Except String Js.Module := do
   unless Cost.progOk p do
     throw "a call in this program does not go backwards, so no fuel bound covers it"
   if defaultFuel < Cost.cost p then
     throw s!"this program can need {Cost.cost p} fuel, past the {defaultFuel} the artifact runs at"
+  Bound.programBounded p
   match Compile.compileProgram p with
   | .error e => throw s!"compile failed: {e}"
   | .ok jsModule => return jsModule

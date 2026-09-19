@@ -75,7 +75,9 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
 mathematical, and the only bound on a length is the Int53 one that `Str.length` traps past; a JavaScript
 engine gives up long before. The two operations that take a length as a number, `Str.repeat` and
 `Str.padStart` which is written from it, are what reach that far from small arguments. Both trap at the
-same Int53 bound on the result length rather than at the engine's, which nothing here names.
+same Int53 bound on the result length rather than at the engine's, which nothing here names — and a
+shipped declaration cannot reach either, because a count the program text leaves unbounded, or bounds
+above 4096 copies, is refused by the declaration's name before anything is compiled.
 
 **An argument that satisfies the `.d.ts` passes the entry check, with one caveat.** `Int53` and `UInt32`
 both map to `number`, so a number that is not an integer, or is outside the range, satisfies TypeScript

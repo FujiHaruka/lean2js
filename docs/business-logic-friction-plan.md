@@ -101,12 +101,22 @@ SYNTAX.md はこれを予告してはいる ——「`Str.repeat` と `Str.padSt
 `Int53` の境界を超える文字列を要求できる。それは trap し、エンジンはその手前でメモリを使い切る」——
 が、書いてあるのは**生成したコードを動かしたときの話**で、`lean2js` 自身が落ちる話ではない。
 
-**`Str.repeat` の 2 つの顔を両方塞ぐ:**
+**入った直し:** 長さは**プログラムの本文が縛る**ことにして、縛られていない `Str.repeat` を
+`Core.Program.checked` が宣言名で断る（`Lean2Js/Bound.lean`）。`ship_package` が同じ関数を呼ぶので、
+断りは `lake exe lean2js` ではなく `lake build` に出る。
 
-- emit がベクタで長さに大きな値を選ばない（あるいは選んでも Lean 側の評価が abort ではなく trap する）。
-- どちらにせよ、**abort ではなく `lean2js` の断りにする。** 宣言を名指し、長さを縛れと言う。
-  いま返ってくる素の stack overflow は、この処理系が「落ちたときに直すのはコンパイラか意味論であって
-  検査の側ではない」と言えるための最低条件を満たしていない —— 何が落ちたのか分からない。
+```
+error: MyLogic.lean:6:0: rightAlign repeats a string as many times as a value says, and nothing in
+the program bounds that value. Clamp the count -- `min (max n 0) 64` -- so the bound is in the text.
+(`Str.padStart` repeats its pad up to the width, so a width a caller chooses is the same thing.)
+```
+
+上限 `maxRepeat = 4096` は測って決めた。`Str.repeat` は 1 つずつ連結するので差分テストは長さの 2 乗で
+効く —— 公開関数 1 本・リテラル長で emit まで **4096 で 7 秒、16384 で 17 秒、65536 で 198 秒**、
+262144 は 20 分でも返らなかった。`min`/`max`・四則・`cond`/`match` の枝・`let` を辿って上界を読むので、
+`min (max n 0) 15` は通り、`let width := min (max n 0) 64` も通る。入れ子は掛け算で効く
+（`Str.repeat (Str.repeat s 4096) 4096` は断る）。`Example.lean` の `Str.repeat mark 32` と
+`Str.padStart (Int53.toString amount) 12 " "` はそのまま通る。
 
 ## フェーズ 2 — 証明の足場（P0）
 

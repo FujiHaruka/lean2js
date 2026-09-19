@@ -318,9 +318,12 @@ sides to it.
   `replace` does not. An empty `pat` leaves `s` as it is, where `replaceAll("", r)` inserts at every
   position — the same divergence `Str.split s ""` carries, which is what `Str.replace` is written from.
 - `Str.repeat s n` gives `""` for a count of zero or less, where JavaScript's own throws on a negative
-  one. It and `Str.padStart`, which is written from it, are the two operations that take a length as a
-  number, so they are the two that can ask for a string past the `Int53` bound on a length; that traps,
-  and an engine will run out of memory below it.
+  one. It and `Str.padStart`, which is written from it, are the two operations whose result grows with a
+  *value* rather than with the text, so **the count has to be bounded by the program**: a literal, a
+  `min` / `max` clamp, or arithmetic over those, up to 4096 copies. `Str.padStart s width " "` with a
+  width the caller chooses is refused by name at `lake build`; `Str.padStart s (min (max width 0) 15) " "`
+  is not. The bound is what the checks can carry — every vector of the differential test holds the result
+  whole, twice — and not what an engine can hold.
 - `Arr.sortByKey xs key` is **stable**, and the order is the key type's: `Int` compares as `≤`, `String`
   by code point — the order `<` on two strings already has here, not the UTF-16 one JavaScript's `<`
   uses. The generated code runs a merge sort written out in the runtime rather than

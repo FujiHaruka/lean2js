@@ -1,3 +1,4 @@
+import Lean2Js.Bound
 import Lean2Js.Compile
 import Lean2Js.Cost
 import Lean2Js.Builder
@@ -415,6 +416,37 @@ string already reaches, and an empty pad, leave the string alone. -/
 #guard Str.padStart "7" 4 "ab" == "aba7"
 #guard Str.padStart "7" 3 "" == "7"
 #guard Str.padStart "" 3 "x" == "xxx"
+
+/-! ## What bounds a `Str.repeat`
+
+`Str.repeat` is the one result whose size a value decides, and `eval`, the model of the JS and the JSON
+handed to Node each hold that result whole. `Bound.programBounded` is where the count has to be bounded by
+the program text; these are the shapes either side of that line. A clamp reads through a `let`, and a
+binder that shadows the clamped name stops it. -/
+
+private def boundOk (body : Expr) : Bool :=
+  (Bound.programBounded
+    { decls := [decl "rule" [("mark", .string), ("n", .int53), ("xs", .array .int53)] .string body] }).isOk
+
+private def repeatsBy (count : Expr) : Expr := «repeat» (v "mark") count
+
+private def clampTo (limit : Int) : Expr := min' (max' (v "n") (int53 0)) (int53 limit)
+
+#guard boundOk (repeatsBy (int53 32))
+#guard boundOk (repeatsBy (clampTo 64))
+#guard boundOk (repeatsBy (int53 12 -' len (v "mark")))
+#guard boundOk (repeatsBy (matchOn (v "n") [altP (pInt53 0) (int53 8), altP pWild (int53 16)]))
+#guard boundOk (letIn "width" .int53 (clampTo 64) (repeatsBy (v "width")))
+#guard boundOk (repeatsBy (int53 4096))
+
+#guard !boundOk (repeatsBy (v "n"))
+#guard !boundOk (repeatsBy (v "n" -' len (v "mark")))
+#guard !boundOk (repeatsBy (int53 4097))
+#guard !boundOk (repeatsBy (max' (v "n") (int53 0)))
+#guard !boundOk («repeat» (repeatsBy (int53 4096)) (int53 4096))
+#guard !boundOk
+  (letIn "width" .int53 (clampTo 64) (map' (v "xs") "width" (repeatsBy (v "width"))))
+
 
 private def Box : TypeDef :=
   struct "Box" [("value", Ty.var "T")] (params := ["T"])
