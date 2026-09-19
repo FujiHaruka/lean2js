@@ -1,103 +1,54 @@
-# lean2js project rules
+# lean2js
 
-Lean 4 で証明した業務ロジックを、普通の npm パッケージとして JS / TS へ届けるための処理系。
-売っているのは「証明した実装が動いていること」なので、**保証を弱めて緑にすることだけはしない**。
+A compiler that carries business logic proved in Lean 4 to JS / TS as an ordinary npm package. What is
+sold is "the proved implementation is the one running", so **never weaken a guarantee to make something
+green.**
 
-## 中心にある不変条件
+## Invariants
 
-**`packages/verified-example/` は生成物。手で編集しない。** 中を変えたいときは Lean を変えて
-`pnpm lean:emit` を回し、生成された差分をコミットする。CI は
-`git diff --exit-code -- packages/verified-example` で「コミットされた生成物が今の Lean から
-再生成できること」を見ている。手で直したものは、次に誰かが emit した瞬間に消える。
+- **`packages/verified-example/` is generated. Never edit it by hand.** Change the Lean, run
+  `pnpm lean:emit`, commit the generated diff. CI checks it with
+  `git diff --exit-code -- packages/verified-example`.
+- **`lean2js` checks before it writes.** `emit` goes through `checkAgreement` and the Node check, so a
+  package is written only where `eval`, the JS model inside Lean and the assembled package running on
+  Node agree on every generated vector. When that fails, the thing to fix is the compiler or the
+  semantics — never the check, and never the set of vectors it runs.
+- **Never weaken the claim to close the proof.** No `sorry` (`Lean2Js/Axioms.lean` would fail), no
+  narrowing a theorem so the proof goes through, no softening a sentence in `docs/guarantees.md` so a
+  weak theorem matches it.
+- **Shipped theorems are not written by hand.** `lean2js` gathers every public theorem in the manifest's
+  namespace and uses the signature Lean prints, so the published list cannot drift from the proofs. Add
+  a public theorem to `Lean2Js/Example.lean` → add its `#print axioms` line to `Lean2Js/Axioms.lean`.
+- **The guarantee boundary is the product.** Move it and `docs/guarantees.md` changes in the same
+  commit.
 
-**`lean2js` は書き出す前に検査する。** `emit` は `checkAgreement` と Node 上の検査を通ってから
-ファイルを書くので、生成したベクタ全件について `eval` と JS の模型、`eval` と Node で動かした
-生成物が一致しなければ書き出し自体が失敗する。落ちたときに直すのはコンパイラか意味論であって、検査の側ではない。
+`sorryAx`-free is necessary, not sufficient: a theorem nothing can satisfy proves cleanly and ships as a
+claim. `/proof-audit` is what looks for that; run it after adding or changing a public theorem, its
+hypotheses or its docstring, or after strengthening a sentence in `README.md` or `docs/guarantees.md`.
 
-**manifest に載る定理は手で書かない。** `lean2js` が manifest と同じ名前空間の公開定理をすべて集め、
-文言は Lean が印字する定理のシグネチャになるので、一覧が証明とずれない。`sorry` は項として通って
-しまうが、`lean2js` が書き出す前に各定理の公理集合を見て `propext` / `Classical.choice` / `Quot.sound`
-以外があれば落ちる。`Lean2Js/Axioms.lean` の `#print axioms` 固定はこれを `lake build` の側にも置いた
-もので、**`Example.lean` に公開定理を足したら Axioms.lean に行も足す。**
+## Gates
 
-## 開発の進め方
-
-**main に直接プッシュする。ブランチも PR も作らない**（決定 2026-09-07, ユーザーの指示）。
-**コミットとプッシュは自律的に行い、いちいち報告しない。** メッセージは英語 1 行。
-
-レビューが挟まらないぶん、赤はそのまま main の赤になる。**プッシュ前にゲートを全部ローカルで通す**:
+Run all of them locally before pushing. A Lean change reaches both the generated package and the
+Node-side tests, so a partial run decides nothing.
 
 ```sh
-pnpm lean:build     # Lean ライブラリ・定理・#guard
-pnpm lean:emit      # 生成物を作り直す（checkAgreement を通る）
-pnpm typecheck
-pnpm test
-pnpm lint
-pnpm package:check  # publint / attw
-pnpm template:check # 利用者向けテンプレートが空のディレクトリから build & emit できる
+pnpm lean:build && pnpm lean:emit
+pnpm typecheck && pnpm test && pnpm lint
+pnpm package:check && pnpm template:check
 git diff --exit-code -- packages/verified-example
 ```
 
-`.github/workflows/ci.yml` が見ているのはこれと同じもの。**一部だけ回した結果を判断に使わない** —
-Lean 側の変更は生成物と Node 側のテストの両方に届く。
+`.github/workflows/ci.yml` runs the same set. `lake` runs at the repository root — `lakefile.toml` and
+the Lean sources are both there.
 
-`lake` はリポジトリ root で動かす（`lakefile.toml` も Lean のソースも root にある）。
+## Workflow
 
-## 言語
+Push straight to `main`: no branch, no PR (user's decision, 2026-09-07). Commit and push on your own
+rather than asking each time. Commit messages are one line of English.
 
-（決定 2026-09-07, ユーザーの指示）
+## Language
 
-- **コードに日本語を書かない。** 識別子・コメント・docstring・`describe` / `it` のテスト名・
-  エラーメッセージ・生成する JS に埋め込むコメント・コミットメッセージ、すべて英語。
-- **利用者に届く文書も英語**（決定 2026-09-18）。`README.md` / `templates/**/*.md` /
-  `docs/guarantees.md` / `docs/index.md` —— 英語の README から入った読者が、その先で読めなくなる
-  ところに保証の本文と受け付ける構文があった。
-- **日本語なのは開発の内部文書（`docs/*-plan.md`）と この `CLAUDE.md` だけ。**
-- **例外は `Vectors.lean` の `"日本語"` / `"日本"` だけ。** 散文ではなく、JS の UTF-16 単位と
-  コードポイントが割れることを踏むための非 ASCII テストデータなので、英訳しない。
-
-## コメント
-
-- **既定は「書かない」。** 何を / どうやっては、コードが言う。コードをなぞるコメントは、コードが
-  変わった瞬間に黙って嘘になる。
-- コメントを書きたくなったら、まずそれを設計の匂いとして読む。名前・分割・型・データ構造で同じことを
-  言えないか先に試し、**そちらに落ちないことを確かめてから**書く。
-- 書いてよいのは**非自明な why not** だけ ——「一見こう書けばよさそうなのに、なぜそうしなかったか」。
-  読み手が「こう書けばいいのでは」と思う場所に 1 行で、できれば**その判断を覆す条件**も添えて。
-
-## ドキュメント衛生
-
-- **README と docs は最終状態だけを書く。** 差分・経緯・「以前はこうだった」・却下した案は書かない。
-  基準は「文脈をまったく持たない読み手にとって価値があるか」。履歴は git が持っている。
-  - 例外は**今日の読み手の行動を変える事実**だけ。
-  - **設計判断の理由は経緯ではない。** deep embedding を選んだ理由や、ゼロ除算・Int53 溢れを trap
-    する理由のように、読み手が今日の振る舞いとして出会うものは理由ごと残す。
-- **予測と結果が食い違ったら、結果が SoT。** プラン側を直す（逆をやらない）。
-- **数字は測ったものだけ書く。** ベクタ件数のような数字を動かしたら、それを引用している場所
-  （`README.md`、`docs/guarantees.md`、`docs/mvp-plan.md`）を同じコミットで直す。
-
-## 保証の境界
-
-証明が届いている範囲は狭く、その外は `Agree` の実行時検査と、書き出す前に Node 上で回す差分テストが受け持っている。
-**この境界は成果物そのものなので、動かしたら `docs/guarantees.md` と `docs/mvp-plan.md` の
-到達点を同じコミットで直す。**
-
-- 証明できないからといって、命題のほうを弱めて通さない。
-- `sorry` で塞がない（塞げば `Axioms.lean` が落ちる）。
-- 実行時検査が落ちたときに、検査対象のベクタを減らして緑にしない。
-
-## 定理が主張どおりかを見る
-
-`sorryAx` が無いことは必要条件であって十分条件ではない。**仮説を誰も満たさない定理は、`sorry` 無しで
-証明できて公理ゲートを素通りし、そのまま公開一覧に載る。** `sorry` を書けないこの構成では、未完成の証明は
-未完成として出荷されず、**より小さい主張の完成した証明として**出荷される —— 嘘は証明項ではなく、仮説・
-結論の `∃`・docstring・`docs/guarantees.md` の文に移る。
-
-`readArtifact` は manifest 名前空間の公開定理の docstring をそのまま `proof-manifest.json` と
-パッケージの README に載せる。**出荷する定理の docstring はコメントではなく公開された主張**で、
-シグネチャと同じ監査対象。
-
-機械が見ないこの一点は `/proof-audit` が見る（判定は `.claude/agents/proof-auditor.md`、
-検査項目は `.claude/skills/proof-audit/references/honesty-checks.md`）。回すのは、公開定理を足した /
-シグネチャを変えた / 出荷する定理に仮説を足した / その docstring を書き換えた / `README.md` か
-`docs/guarantees.md` の主張を強めたときで、毎プッシュではない。
+Everything is English: identifiers, comments, docstrings, `describe` / `it` names, error messages,
+comments in the generated JS, commit messages, and every document. Two exceptions, both deliberate: the
+`"日本語"` / `"日本"` strings in `Lean2Js/Vectors.lean`, which are non-ASCII test data rather than prose,
+and `docs/proposal.html`, a pitch written for a Japanese audience.

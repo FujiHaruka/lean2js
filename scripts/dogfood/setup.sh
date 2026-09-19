@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Builds one sandbox for the documentation-only dogfood described in
-# docs/business-logic-friction-plan.md: an isolated clone of this compiler plus a fresh copy of the
-# template, with the template's git require redirected at the clone. The clone is what the session
-# is allowed to read three files of; this checkout stays untouched.
+# Builds one sandbox for a documentation-only dogfood: an isolated clone of this compiler plus a fresh
+# copy of the template, with the template's git require redirected at the clone. The clone is what the
+# session is allowed to read three files of; this checkout stays untouched.
 #
 #   scripts/dogfood/setup.sh <sandbox-root> <name>
 #

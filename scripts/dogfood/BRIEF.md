@@ -47,7 +47,7 @@ compiler's source, the experiment is worthless.
 **Forbidden — do not read, grep, glob, or open:**
 
 - Anything else under `DEP/` — in particular `DEP/Lean2Js/**` (the compiler source, incl.
-  `Example.lean`), `DEP/Main.lean`, `DEP/packages/**`, `DEP/docs/*-plan.md`, `DEP/CLAUDE.md`,
+  `Example.lean`), `DEP/Main.lean`, `DEP/packages/**`, `DEP/.claude/**`, `DEP/CLAUDE.md`,
   `DEP/CHANGELOG.md`.
 - The checkout `DEP` was cloned from — never touch it.
 - The other sandboxes — you are alone.

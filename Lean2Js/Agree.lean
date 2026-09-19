@@ -11,7 +11,7 @@ agree.
 
 The guarantee comes in two layers. Here we check that `eval` and `JsSem` agree; the differential test on
 Node checks that the behaviour `JsSem` assumes and the real JS agree. The former lives on the model, so
-the gap that Phase 2's compiler correctness has to close as a proof is exactly here.
+the gap that compiler correctness has to close as a proof is exactly here.
 -/
 
 namespace Lean2Js

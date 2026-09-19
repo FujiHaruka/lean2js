@@ -3,8 +3,8 @@ import Lean2Js.Value
 /-!
 # The reference semantics of the subset, as a fuelled big-step evaluator
 
-The reference semantics of the subset. Every Phase 2 theorem is stated as agreement between "the result
-of this `eval`" and "the result of evaluating the generated JS".
+The reference semantics of the subset. Every correctness theorem is stated as agreement between "the
+result of this `eval`" and "the result of evaluating the generated JS".
 
 It is a fuelled big-step semantics because `partial` would make termination an axiom, putting it beyond
 the reach of proof.

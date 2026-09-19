@@ -63,7 +63,7 @@ agreement claim.
 | `overclaimed_prose` | Fix the prose, or prove the stronger claim |
 
 **Never the third way.** Narrowing a theorem, excluding vectors, or softening `docs/guarantees.md` so
-a weak proof matches it is exactly what `CLAUDE.md` 「保証の境界」 forbids — that is the defect this
+a weak proof matches it is exactly what `CLAUDE.md` forbids under **Invariants** — that is the defect this
 audit exists to find, not a way to close it.
 
 **5. Re-run the gates.** A statement change touches the generated artifact and the Node-side tests
@@ -75,8 +75,7 @@ pnpm package:check && pnpm template:check
 git diff --exit-code -- packages/verified-example
 ```
 
-If the finding moved the guarantee boundary, `docs/guarantees.md` and `docs/mvp-plan.md` are fixed in
-the same commit.
+If the finding moved the guarantee boundary, `docs/guarantees.md` is fixed in the same commit.
 
 ## Reporting back
 

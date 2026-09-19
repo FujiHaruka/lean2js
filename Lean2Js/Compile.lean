@@ -5,7 +5,7 @@ import Lean2Js.Ident
 /-!
 # Core to JS, type checking and code generation in one pass
 
-The translation from Core to JS. This function is what Phase 2 proves correct.
+The translation from Core to JS. This function is what the correctness proofs are about.
 
 Type checking and code generation are a single pass because emitting even one `+` needs the type of its
 operands. Keeping them apart would put the same typing rules on the compiler's trusted base twice.

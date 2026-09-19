@@ -3,9 +3,8 @@
 
 Holds the syntax of the Lean subset destined for JavaScript as a standalone AST inside Lean.
 
-This is a deep embedding rather than a reader of ordinary Lean `def`s because Phase 2's compiler
+This is a deep embedding rather than a reader of ordinary Lean `def`s because compiler
 correctness cannot even be stated without holding the source language's semantics in our own hands.
-See `docs/mvp-plan.md`.
 -/
 
 namespace Lean2Js.Core
@@ -224,7 +223,7 @@ inductive Pat where
 annotation.
 
 The array combinators carry their binder and body rather than taking a function, so no value in the
-subset is ever a function. See `docs/business-logic-plan.md`. -/
+subset is ever a function. -/
 inductive Expr where
   | lit (l : Lit)
   | var (name : String)

@@ -9,7 +9,7 @@ import Lean2Js.Helper
 The AST of the JavaScript to emit, and the ESM / `.d.ts` printers.
 
 Parentheses are always written, without consulting precedence. A precedence table would go on the
-compiler's trusted base while buying nothing in Phase 1. Readable output is Phase 3's problem.
+compiler's trusted base and buy only prettier output.
 -/
 
 namespace Lean2Js.Js

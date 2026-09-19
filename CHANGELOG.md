@@ -8,7 +8,7 @@ what decides which compiler your artifact was built by.
 
 The first tagged release.
 
-- A Lean 4 subset — 35 expression forms — that compiles to ESM with a `.d.ts`, a source map and a proof
+- A Lean 4 subset — 36 expression forms — that compiles to ESM with a `.d.ts`, a source map and a proof
   manifest, and carries no runtime and no dependencies.
 - `@[ship]` reads a declaration out of a `def` and `ship_package` writes, per declaration, the proof that
   the declaration computes it. A declaration without that certificate is not written out.
