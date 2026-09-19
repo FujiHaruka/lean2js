@@ -28,21 +28,21 @@ inductive Plan where
   | free
   | team
   | enterprise
-  deriving Enc
+  deriving Enc, Repr
 
 /-- What comes off a bill: nothing, a percentage, or a fixed amount. -/
 inductive Discount where
   | noDiscount
   | percentOff (percent : Int)
   | amountOff (amount : Int)
-  deriving Enc
+  deriving Enc, Repr
 
 /-- One line of an invoice. Amounts are in minor units, so a price is always a whole number. -/
 structure LineItem where
   LineItem ::
   label : String
   amount : Int
-  deriving Enc
+  deriving Enc, Repr
 
 /-- A month's bill: what it is made of, and what it comes to. -/
 structure Invoice where
@@ -51,7 +51,7 @@ structure Invoice where
   subtotal : Int
   discount : Int
   total : Int
-  deriving Enc
+  deriving Enc, Repr
 
 @[ship]
 def planName (plan : Plan) : String :=

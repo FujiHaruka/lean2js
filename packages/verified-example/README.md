@@ -223,6 +223,16 @@ A settlement that failed carries no order id, whatever it failed with.
 theorem failed_settlement_has_no_order_id (message : String) : settledOrderId (Except.error message) = 0
 ```
 
+### reference_from_three_parts
+
+Three parts come out of `referenceFrom` in the order they went in, with a hyphen written between each
+neighbouring pair. Hyphens the parts themselves carry are not counted, so this says nothing about how many
+the answer holds.
+
+```lean
+theorem reference_from_three_parts (a b c : String) : referenceFrom [a, b, c] = a ++ "-" ++ b ++ "-" ++ c
+```
+
 ### draft_never_ships
 
 A draft order cannot ship, whatever tracking id comes with it.

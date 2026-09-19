@@ -98,6 +98,70 @@ def slice (xs : List α) (lo hi : Int) : List α := (xs.drop lo.toNat).take (hi 
 @[expand] def count (xs : List α) (p : α → Bool) : Int :=
   xs.foldl (fun running y => if p y then running + 1 else running) 0
 
+/-! ### The equations to reason with
+
+Every one of these is written as a `foldl` or a `List.any` so that the walk can read it, and neither
+shape reduces on the empty array and the one built from `::` the way an author's goal needs. These are
+the two cases as `simp` lemmas, so a theorem about a literal array closes without naming `List.foldl`,
+and one about `x :: xs` peels a single element. -/
+
+@[simp] theorem length_nil : length ([] : List α) = 0 := rfl
+
+@[simp] theorem length_cons (x : α) (xs : List α) : length (x :: xs) = length xs + 1 := rfl
+
+@[simp] theorem isEmpty_nil : isEmpty ([] : List α) = true := rfl
+
+@[simp] theorem isEmpty_cons (x : α) (xs : List α) : isEmpty (x :: xs) = false := by
+  simp [isEmpty, length]
+  omega
+
+@[simp] theorem contains_nil [BEq α] (wanted : α) : contains [] wanted = false := rfl
+
+@[simp] theorem contains_cons [BEq α] (x : α) (xs : List α) (wanted : α) :
+    contains (x :: xs) wanted = (x == wanted || contains xs wanted) := rfl
+
+/-- The accumulator a `foldl` starts from comes out of it as a summand. Without this `sum (x :: xs)`
+only ever reduces to a fold that has already eaten `x`, which no induction hypothesis matches. -/
+private theorem foldl_add (a : Int) : ∀ xs : List Int,
+    xs.foldl (fun running y => running + y) a = a + xs.foldl (fun running y => running + y) 0
+  | [] => by simp
+  | x :: rest => by
+    simp only [List.foldl_cons]
+    rw [foldl_add (a + x) rest, foldl_add (0 + x) rest]
+    omega
+
+@[simp] theorem sum_nil : sum [] = 0 := rfl
+
+@[simp] theorem sum_cons (x : Int) (xs : List Int) : sum (x :: xs) = x + sum xs := by
+  simp only [sum, List.foldl_cons]
+  rw [foldl_add (0 + x) xs]
+  omega
+
+private theorem foldl_count (p : α → Bool) (a : Int) : ∀ xs : List α,
+    xs.foldl (fun running y => if p y then running + 1 else running) a
+      = a + xs.foldl (fun running y => if p y then running + 1 else running) 0
+  | [] => by simp
+  | x :: rest => by
+    simp only [List.foldl_cons]
+    by_cases hx : p x = true
+    · simp only [hx, if_true]
+      rw [foldl_count p (a + 1) rest, foldl_count p (0 + 1) rest]
+      omega
+    · simp only [hx, Bool.false_eq_true, if_false]
+      rw [foldl_count p a rest]
+
+@[simp] theorem count_nil (p : α → Bool) : count [] p = 0 := rfl
+
+@[simp] theorem count_cons (x : α) (xs : List α) (p : α → Bool) :
+    count (x :: xs) p = (if p x then 1 else 0) + count xs p := by
+  simp only [count, List.foldl_cons]
+  by_cases hx : p x = true
+  · simp only [hx, if_true]
+    rw [foldl_count p (0 + 1) xs]
+    omega
+  · simp only [hx, Bool.false_eq_true, if_false]
+    omega
+
 /-- The first element, or `none` where there is none. Unlike `get`, this never traps — the empty case is
 an answer rather than a read past the end. -/
 @[expand] def head? [Inhabited α] (xs : List α) : Option α :=
@@ -113,6 +177,44 @@ an answer rather than a read past the end. -/
 /-- Each element replaced by an array, and those run together. -/
 @[expand] def flatMap (xs : List α) (f : α → List β) : List β :=
   xs.foldl (fun running x => running ++ f x) []
+
+@[simp] theorem head?_nil [Inhabited α] : head? ([] : List α) = none := rfl
+
+@[simp] theorem head?_cons [Inhabited α] (x : α) (xs : List α) : head? (x :: xs) = some x := by
+  simp [head?, get, length]
+  omega
+
+@[simp] theorem last?_nil [Inhabited α] : last? ([] : List α) = none := rfl
+
+private theorem foldl_append (a : List α) : ∀ xss : List (List α),
+    xss.foldl (fun running xs => running ++ xs) a
+      = a ++ xss.foldl (fun running xs => running ++ xs) []
+  | [] => by simp
+  | xs :: rest => by
+    simp only [List.foldl_cons, List.nil_append]
+    rw [foldl_append (a ++ xs) rest, foldl_append xs rest, List.append_assoc]
+
+@[simp] theorem flatten_nil : flatten ([] : List (List α)) = [] := rfl
+
+@[simp] theorem flatten_cons (xs : List α) (xss : List (List α)) :
+    flatten (xs :: xss) = xs ++ flatten xss := by
+  simp only [flatten, List.foldl_cons, List.nil_append]
+  exact foldl_append xs xss
+
+private theorem foldl_appendMap (f : α → List β) (a : List β) : ∀ xs : List α,
+    xs.foldl (fun running x => running ++ f x) a
+      = a ++ xs.foldl (fun running x => running ++ f x) []
+  | [] => by simp
+  | x :: rest => by
+    simp only [List.foldl_cons, List.nil_append]
+    rw [foldl_appendMap f (a ++ f x) rest, foldl_appendMap f (f x) rest, List.append_assoc]
+
+@[simp] theorem flatMap_nil (f : α → List β) : flatMap [] f = [] := rfl
+
+@[simp] theorem flatMap_cons (x : α) (xs : List α) (f : α → List β) :
+    flatMap (x :: xs) f = f x ++ flatMap xs f := by
+  simp only [flatMap, List.foldl_cons, List.nil_append]
+  exact foldl_appendMap f (f x) xs
 
 end Arr
 
@@ -177,6 +279,44 @@ pads astral text short. -/
   if isEmpty pad || n ≤ length s then s
   else substring (Str.repeat pad (n - length s)) 0 (n - length s) ++ s
 
+/-! ### The equations to reason with
+
+`Str.join` is the one that needs saying. It is written from `joinStr`, which is written from `joinFrom`,
+and unfolding it walks a goal one private name at a time to a fold whose accumulator has already eaten the
+first element. What an author wants is the list peeled from the front, which is what these three give. -/
+
+@[simp] theorem length_empty : length "" = 0 := rfl
+
+@[simp] theorem isEmpty_empty : isEmpty "" = true := rfl
+
+/-- What the accumulator carries comes out in front, which is what lets `join` peel one element. -/
+private theorem joinFrom_append (sep p : String) : ∀ (q : String) (rest : List String),
+    joinFrom sep (p ++ q) rest = p ++ joinFrom sep q rest
+  | _, [] => rfl
+  | q, s :: r => by
+    simp only [joinFrom, String.append_assoc]
+    exact joinFrom_append sep p (q ++ (sep ++ s)) r
+
+@[simp] theorem join_nil (sep : String) : join [] sep = "" := rfl
+
+@[simp] theorem join_singleton (s sep : String) : join [s] sep = s := rfl
+
+@[simp] theorem join_cons (a b sep : String) (rest : List String) :
+    join (a :: b :: rest) sep = a ++ sep ++ join (b :: rest) sep :=
+  joinFrom_append sep (a ++ sep) b rest
+
+@[simp] theorem repeat_zero (s : String) : Str.repeat s 0 = "" := rfl
+
+@[simp] theorem repeat_nonpos (s : String) {n : Int} (h : n ≤ 0) : Str.repeat s n = "" := by
+  have hn : n.toNat = 0 := by omega
+  rw [Str.repeat, hn]
+  rfl
+
+/-- The width already reached is the case a padding theorem starts from, and the guard is what says so. -/
+@[simp] theorem padStart_of_le (s pad : String) {n : Int} (h : n ≤ length s) :
+    padStart s n pad = s := by
+  simp [padStart, h]
+
 end Str
 
 namespace Int53
@@ -208,6 +348,14 @@ namespace Opt
   | some a => some (f a)
   | none => none
 
+@[simp] theorem getD_some (a dflt : α) : getD (some a) dflt = a := rfl
+
+@[simp] theorem getD_none (dflt : α) : getD (none : Option α) dflt = dflt := rfl
+
+@[simp] theorem map_some (a : α) (f : α → β) : map (some a) f = some (f a) := rfl
+
+@[simp] theorem map_none (f : α → β) : map (none : Option α) f = none := rfl
+
 end Opt
 
 namespace Exc
@@ -232,6 +380,24 @@ namespace Exc
   match e with
   | .ok a => some a
   | .error _ => none
+
+@[simp] theorem getD_ok (a dflt : α) : getD (.ok a : Except ε α) dflt = a := rfl
+
+@[simp] theorem getD_error (err : ε) (dflt : α) : getD (.error err : Except ε α) dflt = dflt := rfl
+
+@[simp] theorem map_ok (a : α) (f : α → β) : map (.ok a : Except ε α) f = .ok (f a) := rfl
+
+@[simp] theorem map_error (err : ε) (f : α → β) :
+    map (.error err : Except ε α) f = .error err := rfl
+
+@[simp] theorem mapError_ok (a : α) (f : ε → ε') : mapError (.ok a : Except ε α) f = .ok a := rfl
+
+@[simp] theorem mapError_error (err : ε) (f : ε → ε') :
+    mapError (.error err : Except ε α) f = .error (f err) := rfl
+
+@[simp] theorem toOption_ok (a : α) : toOption (.ok a : Except ε α) = some a := rfl
+
+@[simp] theorem toOption_error (err : ε) : toOption (.error err : Except ε α) = none := rfl
 
 end Exc
 

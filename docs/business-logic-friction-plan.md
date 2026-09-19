@@ -157,6 +157,27 @@ the program bounds that value. Clamp the count -- `min (max n 0) 64` -- so the b
 入る場合を排除していないので「ハイフンがちょうど 2 本」は証明していない。docstring は正直に
 「順に連結する」と書いてあるので `/proof-audit` の既存項目には掛からない。**名前だけが強い**という形。
 
+**入った直し:** `Prelude.lean` に空・`cons` の `@[simp]` 等式を付けた —— `Arr.length` / `isEmpty` /
+`contains` / `sum` / `count` / `head?` / `last?` / `flatten` / `flatMap`、`Str.length` / `isEmpty` /
+`join` / `repeat` / `padStart`、`Opt` と `Exc` の全構成子。`sum` と `count` と `flatten` と `flatMap` は
+`foldl` の蓄積子を前に出す補題を経由する。`Example.lean` の `reference_from_three_parts` が
+`Str.join` の等式を実際に引いて出荷する（5 番が諦めたのと同じ形）。
+
+PROVING.md は書き直した。追加でこちらの追試で出たものが 2 件ある:
+
+- **`decide` は自前の `structure` / `Except` の等式に届かない** ——「`Decidable` が降ってこない」は
+  実測どおりで、テンプレ上で `failed to synthesize Decidable` を再現した。同じ命題が `rfl` では通る。
+- **`simp` の既定集合に `String` の補題は入っていない。** `(a ++ b) ++ c = a ++ (b ++ c)` は
+  `String.append_assoc` を名指す必要があり、`Example.lean` の新しい定理がそれを踏んだ。
+  Lean 本体の `List` 補題は入っている、という 3 番の観測と対になる。
+
+`simp [f, h]` の件は**条件付き**だった。壊れるのは `h` が `f` の呼び出し自体についてのとき
+（`h : totalOf amounts = 500` に `simp [totalOf, h]`）で、ヒントは実際に `h` を unused と名指し
+`simp [totalOf]` を勧める。`h` が `f` の本体の中のものについてのとき（`h : prices.get sku = none`）は
+逆に `f` を展開しないと当たらない。テンプレのサンドボックスで両方を再現して書き分けた。
+
+`#eval` は `deriving Enc, Repr` で通る。テンプレの 4 つの型すべてに `Repr` を足した。
+
 ## フェーズ 3 — 文書に無い規則（P1）
 
 いずれも「ビルドを落として 1 つずつ発見する」以外に知る道がないもの。

@@ -627,6 +627,11 @@
       "doc": "A settlement that failed carries no order id, whatever it failed with."
     },
     {
+      "name": "reference_from_three_parts",
+      "statement": "reference_from_three_parts (a b c : String) : referenceFrom [a, b, c] = a ++ \"-\" ++ b ++ \"-\" ++ c",
+      "doc": "Three parts come out of `referenceFrom` in the order they went in, with a hyphen written between each\nneighbouring pair. Hyphens the parts themselves carry are not counted, so this says nothing about how many\nthe answer holds."
+    },
+    {
       "name": "draft_never_ships",
       "statement": "draft_never_ships (trackingId : String) :\n  evalCall program \"ship\" [Value.obj \"draft\" [], Value.str trackingId] =\n    Except.ok (Value.obj \"error\" [(\"error\", Value.str \"a draft order cannot ship\")])",
       "doc": "A draft order cannot ship, whatever tracking id comes with it."

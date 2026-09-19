@@ -578,6 +578,13 @@ theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role :=
 theorem failed_settlement_has_no_order_id (message : String) :
     settledOrderId (.error message) = 0 := rfl
 
+/-- Three parts come out of `referenceFrom` in the order they went in, with a hyphen written between each
+neighbouring pair. Hyphens the parts themselves carry are not counted, so this says nothing about how many
+the answer holds. -/
+theorem reference_from_three_parts (a b c : String) :
+    referenceFrom [a, b, c] = a ++ "-" ++ b ++ "-" ++ c := by
+  simp [referenceFrom, String.append_assoc]
+
 private theorem find_clampQuantity : program.find? "clampQuantity" = some clampQuantityDecl := rfl
 
 private theorem find_ship : program.find? "ship" = some shipDecl := rfl
