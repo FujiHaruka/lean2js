@@ -55,7 +55,7 @@ structure Artifact where
   docs : List (String × String) := []
 
 /-- Kept alongside the lakefile's `version`; `scripts/check-template.sh` fails when the two drift. -/
-def compilerVersion : String := "0.1.0"
+def compilerVersion : String := "0.2.0"
 
 /-- The transcribed source ships under the package's own name rather than a fixed one, so that a stack
 trace through the source map names the package the frame came from. -/

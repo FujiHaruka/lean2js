@@ -4,7 +4,7 @@ Versions follow the `version` in `lakefile.toml`, which is also the `compiler.ve
 `proof-manifest.json`. Pin a package to a tag rather than to `main`: the `rev` in your `lakefile.toml` is
 what decides which compiler your artifact was built by.
 
-## Unreleased
+## 0.2.0
 
 - A declared type may name itself, directly or through a `List` of itself, and the type a consumer reads
   in the `.d.ts` names itself the same way. The entry check follows a value of one as deep as it goes:
