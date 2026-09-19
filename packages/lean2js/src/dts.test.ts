@@ -113,10 +113,16 @@ describe("where the two do not line up", () => {
 });
 
 describe("a union the generated types hand back", () => {
-  it("narrows on its tag, both ways round", () => {
-    const outcome = ship({ tag: "placed", orderId: 7 }, "T-1");
+  it("narrows on the key its own type declares, both ways round", () => {
+    const outcome = ship({ kind: "placed", orderId: 7 }, "T-1");
     if (outcome.tag !== "ok") throw new Error(outcome.error);
     const state: OrderState = outcome.value;
-    expect(state).toEqual({ tag: "shipped", orderId: 7, trackingId: "T-1" });
+    expect(state).toEqual({ kind: "shipped", orderId: 7, trackingId: "T-1" });
+  });
+
+  it("refuses the key another type is told apart by", () => {
+    // @ts-expect-error `OrderState` is told apart by `kind`, not by `tag`
+    const call = () => ship({ tag: "placed", orderId: 7 }, "T-1");
+    expect(call).toThrowError(typeError);
   });
 });

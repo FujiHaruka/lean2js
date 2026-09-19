@@ -289,6 +289,10 @@ structure Money where
   currency : String
   deriving DecidableEq, Enc
 
+/-- Told apart by `kind` rather than the default `tag`: which key reads well is the author's call, and
+the mark above the type is where it is made. The rest of the types here keep `tag`, so the generated
+package carries both. -/
+@[discriminator "kind"]
 inductive OrderState where
   | draft
   | placed (orderId : Int)
@@ -700,6 +704,12 @@ private theorem find_rebindTwice : program.find? "rebindTwice" = some rebindTwic
 
 private theorem find_cartTotal : program.find? "cartTotal" = some cartTotalDecl := rfl
 
+/-! The claims below hold for every reading of the keys the program compiles under, which for this
+program is the one its types declare: the compiled module and the encoding read one and the same, so
+the agreement does not depend on which. -/
+
+variable [Discriminators]
+
 /-- Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
 is a single binary operation. -/
 theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
@@ -726,6 +736,7 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "rebindTwice" jargs = .ok (encodeValue v) :=
   Decl.decl_correct program m "rebindTwice" rebindTwiceDecl jargs args v hm find_rebindTwice hdec he
 
+omit [Discriminators] in
 private theorem find_memberPrice : program.find? "memberPrice" = some memberPriceDecl := rfl
 
 /-- And for a body that calls another declaration, handing it a third by name. The call is where the
@@ -743,10 +754,12 @@ theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
 `Decl.decl_traps` is the other half of `decl_correct`: for arguments the entry accepts, a body that
 throws is matched by a generated function that throws the same code. -/
 
+omit [Discriminators] in
 /-- The first of the two checks the emitter runs on a program before it writes anything: every call goes
 backwards. -/
 theorem program_progOk : Cost.progOk program = true := rfl
 
+omit [Discriminators] in
 set_option maxRecDepth 8000 in
 /-- The second: the fuel the artifact runs at covers the deepest call this program can make. -/
 theorem program_cost_fits : Cost.cost program ≤ defaultFuel := Nat.le_of_ble_eq_true rfl
@@ -867,6 +880,7 @@ theorem file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = .
     Parse.parseModule (Js.Module.render m).toList = some m :=
   Compile.parseModule_render_of_compileProgram hm
 
+omit [Discriminators] in
 /-- The runtime helpers are the last hand-written JavaScript in the artifact, and the model of the
 generated code reaches most of them through one table. Every row of that table is what the source the
 compiler prints actually computes; `helperArgsOk` is what a call to a row is still asked for, and it asks
@@ -881,6 +895,7 @@ theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : L
     HelperSem.Helper.Calls ext name (args.map HelperSem.ofJs) (HelperSem.ofRes r) :=
   HelperSem.helper_agrees ext name args r hok h
 
+omit [Discriminators] in
 /-- Everything the entry check lets through is a value the published `.d.ts` type admits. The two are
 not the same set: the check reads a number's range, which a TypeScript type cannot say, so a call the
 `.d.ts` accepts can still be refused at the boundary. -/
@@ -907,6 +922,7 @@ theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram prog
     Dts.TsSat program ty (encodeValue v) :=
   Dts.hasTy_tsSat program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
 
+omit [Discriminators] in
 /-- The small-step machine, given enough steps, answers every call to a public function exactly as `eval`
 does. -/
 theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d)

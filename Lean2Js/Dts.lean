@@ -25,6 +25,12 @@ namespace Lean2Js.Dts
 
 open Lean2Js.Core
 
+-- Which key a constructor's name is carried under is in scope for the whole module, so a lemma that
+-- does not read it carries the binder and nothing else; that is what this linter would report, once per
+-- lemma.
+set_option linter.unusedSectionVars false
+variable [Discriminators]
+
 mutual
 
 inductive TsSat (p : Program) : Ty → Js.JsValue → Prop where
@@ -52,7 +58,7 @@ inductive TsSat (p : Program) : Ty → Js.JsValue → Prop where
   | named {n : String} {args : List Ty} {t : TypeDef} {c : CtorDef}
       {jfs : List (String × Js.JsValue)} :
       p.findType? n = some t → c ∈ t.ctorsAt args →
-      Js.lookupField jfs "tag" = some (.str c.name) →
+      Js.lookupField jfs t.discriminator = some (.str c.name) →
       TsSatFields p c.fields jfs →
       TsSat p (.named n args) (.obj jfs)
 
@@ -75,8 +81,8 @@ theorem TsSatFields.weaken {p : Program} : ∀ {fs : List Field}
       rw [Js.lookupField_cons_ne (hne f (List.mem_cons_self ..))]
       exact hm
 
-theorem lookup_tag (ctor : String) (rest : List (String × Js.JsValue)) :
-    Js.lookupField (("tag", .str ctor) :: rest) "tag" = some (.str ctor) :=
+theorem lookup_key (key ctor : String) (rest : List (String × Js.JsValue)) :
+    Js.lookupField ((key, .str ctor) :: rest) key = some (.str ctor) :=
   Js.lookupField_head _ _ _
 
 mutual
@@ -113,12 +119,12 @@ theorem hasTy_tsSat (p : Program) (hn : Decl.TypesNamesOk p) :
     rcases hasTy_option_fields hv with ⟨rfl, rfl⟩ | ⟨rfl, hfs⟩
     · rw [show encodeValue (Value.obj "none" []) = .obj [("tag", .str "none")] from by
         simp [encodeValue, encodeFields]]
-      exact .none (lookup_tag _ _)
+      exact .none (lookup_key _ _ _)
     · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
       rw [show encodeValue (Value.obj "some" [("value", x)])
             = .obj (("tag", .str "some") :: [("value", encodeValue x)]) from by
           simp [encodeValue, encodeFields]]
-      exact .some (lookup_tag _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x elem hx)
+      exact .some (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x elem hx)
   | v, .result ok err, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_result_inv hv
     rcases hasTy_result_fields hv with ⟨rfl, hfs⟩ | ⟨rfl, hfs⟩
@@ -126,12 +132,12 @@ theorem hasTy_tsSat (p : Program) (hn : Decl.TypesNamesOk p) :
       rw [show encodeValue (Value.obj "ok" [("value", x)])
             = .obj (("tag", .str "ok") :: [("value", encodeValue x)]) from by
           simp [encodeValue, encodeFields]]
-      exact .ok (lookup_tag _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x ok hx)
+      exact .ok (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x ok hx)
     · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
       rw [show encodeValue (Value.obj "error" [("error", x)])
             = .obj (("tag", .str "error") :: [("error", encodeValue x)]) from by
           simp [encodeValue, encodeFields]]
-      exact .error (lookup_tag _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x err hx)
+      exact .error (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x err hx)
   | v, .array elem, hv => by
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hv
     rw [hasTy_array] at hv
@@ -147,11 +153,16 @@ theorem hasTy_tsSat (p : Program) (hn : Decl.TypesNamesOk p) :
     obtain ⟨t, c, ht, hc, hfs⟩ := hasTy_named_fields hv
     have hname : c.name = ctor := by simpa using List.find?_some hc
     rw [show encodeValue (Value.obj ctor fields)
-          = .obj (("tag", .str ctor) :: encodeFields fields) from by rw [encodeValue.eq_def]]
-    obtain ⟨hnotag, hnodup⟩ := (hn n args t ht).2 c (List.mem_of_find?_eq_some hc)
-    exact .named ht (List.mem_of_find?_eq_some hc) (hname ▸ lookup_tag ctor _)
+          = .obj ((keyFor ctor, .str ctor) :: encodeFields fields) from by rw [encodeValue.eq_def]]
+    obtain ⟨hkey, hnotag, hnodup⟩ := (hn n args t ht).2 c (List.mem_of_find?_eq_some hc)
+    have hkey' : keyFor ctor = t.discriminator := by rw [← hname]; exact hkey
+    have hlook : Js.lookupField ((t.discriminator, Js.JsValue.str ctor) :: encodeFields fields)
+        t.discriminator = some (.str c.name) := by
+      rw [hname]; exact lookup_key _ _ _
+    rw [hkey']
+    exact .named ht (List.mem_of_find?_eq_some hc) hlook
       ((tsSatFields_encodeFields p hn c.fields fields hnodup hfs).weaken _
-        (fun f hf => Ne.symm (hnotag f hf)))
+        (fun f hf => Ne.symm (hname ▸ hkey' ▸ hnotag f hf)))
 termination_by v => sizeOf v
 
 theorem tsSatList_encodeList (p : Program) (hn : Decl.TypesNamesOk p) :
@@ -198,6 +209,9 @@ termination_by _ fs => sizeOf fs
 
 end
 
+-- Neither direction of this block reads the keys: the `.d.ts` and the descriptor both carry the type's
+-- own, so the claim is the same under every reading and the shipped statement says so.
+omit [Discriminators] in
 mutual
 
 /-- What the entry check lets through, the `.d.ts` admits. `tsSat_checkTy` is the other direction, which
@@ -369,8 +383,8 @@ def inRange : Js.JsValue → Js.TyDesc → Bool
     | some (.str "ok") => inRangeFields fields [("value", ok)]
     | some (.str "error") => inRangeFields fields [("error", err)]
     | _ => true
-  | .obj fields, .ctors alts =>
-    match Js.lookupField fields "tag" with
+  | .obj fields, .ctors key alts =>
+    match Js.lookupField fields key with
     | some (.str ctor) =>
       match alts.find? (·.1 == ctor) with
       | some alt => inRangeFields fields alt.2
@@ -431,11 +445,11 @@ theorem inRange_error {fields : List (String × Js.JsValue)} {dok derr : Js.TyDe
     inRange (.obj fields) (.result dok derr) = inRangeFields fields [("error", derr)] := by
   rw [inRange.eq_def]; simp [h]
 
-theorem inRange_ctors {fields : List (String × Js.JsValue)} {ctor : String}
+theorem inRange_ctors {fields : List (String × Js.JsValue)} {key ctor : String}
     {alts : List (String × List (String × Js.TyDesc))} {alt : String × List (String × Js.TyDesc)}
-    (htag : Js.lookupField fields "tag" = some (.str ctor))
+    (htag : Js.lookupField fields key = some (.str ctor))
     (hf : alts.find? (·.1 == ctor) = some alt) :
-    inRange (.obj fields) (.ctors alts) = inRangeFields fields alt.2 := by
+    inRange (.obj fields) (.ctors key alts) = inRangeFields fields alt.2 := by
   rw [inRange.eq_def]; simp [htag, hf]
 
 theorem inRangeList_cons (x : Js.JsValue) (xs : List Js.JsValue) (d : Js.TyDesc) :
@@ -609,7 +623,7 @@ theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
       obtain ⟨hnodup, -⟩ := hn nm targs _ ht
       obtain ⟨ds, hfindalts, hds⟩ := Decl.tyDescAlts_find p b' _ alts _ _
         halts (find?_of_mem_nodup hc hnodup)
-      rw [Decl.checkTy_ctors _ jfs alts ds htag hfindalts]
+      rw [Decl.checkTy_ctors _ _ jfs alts ds htag hfindalts]
       simp only [inRange_ctors htag hfindalts] at hr
       exact tsSatFields_checkFields p hn jfs _ b' ds hds hfields hr
 termination_by jv => (sizeOf jv, 1, 0)

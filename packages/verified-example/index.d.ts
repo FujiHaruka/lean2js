@@ -16,10 +16,10 @@ export type Role =
 export type Money = { readonly tag: "Money"; readonly amount: number; readonly currency: string };
 
 export type OrderState =
-  | { readonly tag: "draft" }
-  | { readonly tag: "placed"; readonly orderId: number }
-  | { readonly tag: "shipped"; readonly orderId: number; readonly trackingId: string }
-  | { readonly tag: "cancelled"; readonly reason: string };
+  | { readonly kind: "draft" }
+  | { readonly kind: "placed"; readonly orderId: number }
+  | { readonly kind: "shipped"; readonly orderId: number; readonly trackingId: string }
+  | { readonly kind: "cancelled"; readonly reason: string };
 
 export type Paginated<T> = { readonly tag: "Paginated"; readonly items: readonly T[]; readonly total: number };
 

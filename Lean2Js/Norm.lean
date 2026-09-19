@@ -103,12 +103,12 @@ theorem normTy_error {fields : List (String × JsValue)} {ok err : TyDesc}
       = .obj (("tag", .str "error") :: normFields fields [("error", err)]) := by
   rw [normTy.eq_def]; simp [h]
 
-theorem normTy_ctors {fields : List (String × JsValue)} {ctor : String}
+theorem normTy_ctors {fields : List (String × JsValue)} {key ctor : String}
     {alts : List (String × List (String × TyDesc))} {alt : String × List (String × TyDesc)}
-    (htag : lookupField fields "tag" = some (.str ctor))
+    (htag : lookupField fields key = some (.str ctor))
     (hf : alts.find? (·.1 == ctor) = some alt) :
-    normTy (.obj fields) (.ctors alts)
-      = .obj (("tag", .str ctor) :: normFields fields alt.2) := by
+    normTy (.obj fields) (.ctors key alts)
+      = .obj ((key, .str ctor) :: normFields fields alt.2) := by
   rw [normTy.eq_def]; simp [htag, hf]
 
 theorem normEntries_keys : ∀ (es : List (String × JsValue)) (t : TyDesc),
@@ -208,9 +208,9 @@ theorem checkFields_skip (e : String × JsValue) (rest : List (String × JsValue
     have : (e.1 == n) = false := by simp [Ne.symm (h n hn)]
     simp only [lookupField, List.find?, this])
 
-theorem namesOk_head {n : String} {t : TyDesc} {ts : List (String × TyDesc)}
-    (h : namesOk ((n, t) :: ts) = true) :
-    (∀ m ∈ ts.map (·.1), m ≠ n) ∧ namesOk ts = true := by
+theorem namesOk_head {key n : String} {t : TyDesc} {ts : List (String × TyDesc)}
+    (h : namesOk key ((n, t) :: ts) = true) :
+    (∀ m ∈ ts.map (·.1), m ≠ n) ∧ namesOk key ts = true := by
   simp only [namesOk, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true',
     List.any_eq_false] at h
   obtain ⟨⟨_, hno⟩, hrest⟩ := h
@@ -219,8 +219,8 @@ theorem namesOk_head {n : String} {t : TyDesc} {ts : List (String × TyDesc)}
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp hm
   exact fun heq => hno e he (by simp [heq])
 
-theorem namesOk_not_tag : ∀ {fs : List (String × TyDesc)}, namesOk fs = true →
-    ∀ m ∈ fs.map (·.1), m ≠ "tag" := by
+theorem namesOk_not_key {key : String} : ∀ {fs : List (String × TyDesc)}, namesOk key fs = true →
+    ∀ m ∈ fs.map (·.1), m ≠ key := by
   intro fs
   induction fs with
   | nil => intro _ m hm; simp at hm
@@ -233,10 +233,10 @@ theorem namesOk_not_tag : ∀ {fs : List (String × TyDesc)}, namesOk fs = true 
     · exact h.1.1
     · exact ih h.2 m hm
 
-theorem altsOk_find {alts : List (String × List (String × TyDesc))} {ctor : String}
+theorem altsOk_find {alts : List (String × List (String × TyDesc))} {key ctor : String}
     {alt : String × List (String × TyDesc)}
-    (h : altsOk alts = true) (hf : alts.find? (·.1 == ctor) = some alt) :
-    namesOk alt.2 = true ∧ fieldsOk alt.2 = true := by
+    (h : altsOk key alts = true) (hf : alts.find? (·.1 == ctor) = some alt) :
+    namesOk key alt.2 = true ∧ fieldsOk alt.2 = true := by
   induction alts with
   | nil => simp [List.find?] at hf
   | cons a rest ih =>

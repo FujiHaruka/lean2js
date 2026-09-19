@@ -24,6 +24,14 @@ namespace Lean2Js
 
 open Core
 
+/-! Which key a constructor is carried under does not reach a type: the statements below are about
+`eval` and the types the compiler read, and hold for whatever reading the program declares. -/
+-- Which key a constructor's name is carried under is in scope for the whole module, so a lemma that
+-- does not read it carries the binder and nothing else; that is what this linter would report, once per
+-- lemma.
+set_option linter.unusedSectionVars false
+variable [Discriminators]
+
 /-- Every name the compiler's context has typed holds, if the environment binds it at all, a value of
 that type, and every name it binds is one the context has.
 
@@ -1568,8 +1576,6 @@ private theorem compileExpr_proj_inv {p : Program} {ctx : Compile.Ctx} {e : Expr
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
-  split at hc
-  · simp at hc
   rename_i xPair hcx
   obtain ⟨jx, tx⟩ := xPair
   split at hc
@@ -1579,6 +1585,8 @@ private theorem compileExpr_proj_inv {p : Program} {ctx : Compile.Ctx} {e : Expr
     rename_i t ht
     split at hc
     · rename_i c hctors
+      split at hc
+      · simp at hc
       split at hc
       · rename_i f hf
         simp only [Except.ok.injEq, Prod.mk.injEq] at hc

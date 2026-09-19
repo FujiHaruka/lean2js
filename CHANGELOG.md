@@ -6,6 +6,12 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- A declared type chooses the key its constructors are told apart by: `@[discriminator "kind"]` above
+  the type carries them under `kind` rather than under `tag`, in the `.d.ts`, in the generated code and
+  in the entry check. It is per type, and `Option` / `Except` keep `tag`. Refused: a key that is not a
+  JavaScript identifier, a key a constructor of that type also uses as a field name, two types keying a
+  constructor name differently, and a type keyed by anything but `tag` that names a constructor `none`,
+  `some`, `ok` or `error`.
 - A list of lists now prints as `readonly (readonly number[])[]` in the `.d.ts` and in the signatures
   the manifest carries. It printed as `readonly readonly number[][]`, which TypeScript refuses outright,
   and which reads as an array of *mutable* arrays wherever a build is told to carry on past the error.

@@ -755,9 +755,14 @@ def hasResult : List Stmt := [
   .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "error"),
     .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]]])]
 
+/-! The key a declared type tells its constructors apart by is read off the descriptor rather than
+spelled in: an author chooses it per type, and the helpers are one copy for the whole package. The
+`tag`s below are `__find`'s own answer, which is an `Option` and not the value being checked. -/
+
 def hasCtors : List Stmt := [
-  .const "alt" (.call "__find" [.index (.var "t") (.num 1),
-    .lam ["c"] (.bin "===" (.index (.var "c") (.num 0)) (.field (.var "x") "tag"))]),
+  .const "alt" (.call "__find" [.index (.var "t") (.num 2),
+    .lam ["c"] (.bin "===" (.index (.var "c") (.num 0))
+      (.index (.var "x") (.index (.var "t") (.num 1))))]),
   .ret (and2 [.bin "===" (.field (.var "alt") "tag") (.str "some"),
     .call "__hasFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1)]])]
 
@@ -781,15 +786,16 @@ def has : Def :=
       .ifThen (.not (.call "__isObj" [(.var "x")])) [.ret (.bool false)] ::
       hasObjKinds) }
 
-/-! `__norm` rebuilds a value the entry check accepted in the shape `encodeValue` writes: `tag` first,
-then the constructor's fields in the order the descriptor names them. Keys the descriptor does not name
-are dropped. Branches are named for the reason `__has`'s are. -/
+/-! `__norm` rebuilds a value the entry check accepted in the shape `encodeValue` writes: the key the
+constructor's name is carried under first, then the constructor's fields in the order the descriptor
+names them. Keys the descriptor does not name are dropped. Branches are named for the reason `__has`'s
+are. -/
 
 def normFields : Def :=
 
-  { name := "__normFields", params := ["x", "fields"]
+  { name := "__normFields", params := ["x", "key", "fields"]
     body := .block [
-      .const "out" (.arrayLit [.arrayLit [.str "tag", .field (.var "x") "tag"]]),
+      .const "out" (.arrayLit [.arrayLit [.var "key", .index (.var "x") (.var "key")]]),
       .forOf "f" (.var "fields") [
         .ifThen (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)]) [
           .push "out" (.arrayLit [.index (.var "f") (.num 0),
@@ -812,26 +818,28 @@ def normDict : List Stmt := [
 
 def normOption : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
-    [.ret (.call "__normFields" [(.var "x"), .arrayLit []])],
+    [.ret (.call "__normFields" [(.var "x"), .str "tag", .arrayLit []])],
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "some"))
-    [.ret (.call "__normFields" [(.var "x"),
+    [.ret (.call "__normFields" [(.var "x"), .str "tag",
       .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
   .ret (.var "x")]
 
 def normResult : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
-    [.ret (.call "__normFields" [(.var "x"),
+    [.ret (.call "__normFields" [(.var "x"), .str "tag",
       .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "error"))
-    [.ret (.call "__normFields" [(.var "x"),
+    [.ret (.call "__normFields" [(.var "x"), .str "tag",
       .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]])],
   .ret (.var "x")]
 
 def normCtors : List Stmt := [
-  .const "alt" (.call "__find" [.index (.var "t") (.num 1),
-    .lam ["c"] (.bin "===" (.index (.var "c") (.num 0)) (.field (.var "x") "tag"))]),
+  .const "alt" (.call "__find" [.index (.var "t") (.num 2),
+    .lam ["c"] (.bin "===" (.index (.var "c") (.num 0))
+      (.index (.var "x") (.index (.var "t") (.num 1))))]),
   .ifThen (.bin "===" (.field (.var "alt") "tag") (.str "some"))
-    [.ret (.call "__normFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1)])],
+    [.ret (.call "__normFields" [(.var "x"), .index (.var "t") (.num 1),
+      .index (.field (.var "alt") "value") (.num 1)])],
   .ret (.var "x")]
 
 def norm : Def :=

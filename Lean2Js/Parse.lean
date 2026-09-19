@@ -262,6 +262,12 @@ theorem parseStr_cons (s : String) (tail : List Char) :
   rw [escapeString]
   simp [parseStr, unescape_escapeChars, String.ofList_toList]
 
+/-- The head of a descriptor for a declared type, read back while `parseStr` stays folded: the key that
+follows it is a string the author chose, and reading that one needs `parseStr_cons`. -/
+theorem parseStr_ctors (tail : List Char) :
+    parseStr ('"' :: 'c' :: 't' :: 'o' :: 'r' :: 's' :: '"' :: tail) = some ("ctors", tail) := by
+  simp [parseStr, unescape]
+
 /-! ## Identifiers -/
 
 def parseIdentChars : List Char → List Char × List Char
@@ -324,7 +330,7 @@ def descSize : Js.TyDesc → Nat
   | .bool | .int53 | .uint32 | .string | .bigint => 1
   | .option t | .array t | .dict t => descSize t + 1
   | .result ok err => descSize ok + descSize err + 1
-  | .ctors alts => altsSize alts + 1
+  | .ctors _ alts => altsSize alts + 1
 termination_by d => sizeOf d
 
 def altsSize : List (String × List (String × Js.TyDesc)) → Nat
@@ -375,10 +381,12 @@ def parseDesc : Nat → List Char → Option (Js.TyDesc × List Char)
       let cs ← expect [']'] cs
       pure (.result ok err, cs)
     | "ctors" => do
+      let cs ← expect [',', ' '] cs
+      let (key, cs) ← parseStr cs
       let cs ← expect [',', ' ', '['] cs
       let (alts, cs) ← parseAlts f cs
       let cs ← expect [']', ']'] cs
-      pure (.ctors alts, cs)
+      pure (.ctors key alts, cs)
     | _ => none
 
 def parseAlts : Nat → List Char →
@@ -493,13 +501,14 @@ theorem parseDesc_append (d : Js.TyDesc) (f : Nat) (hf : descSize d ≤ f) (rest
         ' ' :: ((Js.TyDesc.render ok).toList ++ (',' :: ' ' ::
           ((Js.TyDesc.render err).toList ++ (']' :: rest))))) = _
       simp [parseDesc, expect, parseStr, unescape, ihok, iherr]
-    | .ctors alts =>
+    | .ctors key alts =>
       have ih := parseAlts_append alts f (by rw [descSize] at hf; omega) (']' :: ']' :: rest) ⟨_, rfl⟩
-      rw [Js.TyDesc.render, String.toList_append, String.toList_append]
-      simp only [List.append_assoc]
+      rw [Js.TyDesc.render]
+      simp only [String.toList_append, List.append_assoc]
       show parseDesc (f + 1) ('[' :: '"' :: 'c' :: 't' :: 'o' :: 'r' :: 's' :: '"' :: ',' :: ' ' ::
-        '[' :: ((Js.TyDesc.renderAlts alts).toList ++ (']' :: ']' :: rest))) = _
-      simp [parseDesc, expect, parseStr, unescape, ih]
+        '"' :: ((escapeString key).toList ++ ('"' :: ',' :: ' ' :: '[' ::
+          ((Js.TyDesc.renderAlts alts).toList ++ (']' :: ']' :: rest))))) = _
+      simp [parseDesc, expect, parseStr_ctors, parseStr_cons, ih]
 termination_by f
 
 theorem parseAlts_append (alts : List (String × List (String × Js.TyDesc))) (f : Nat)
@@ -944,8 +953,9 @@ private def x : Js.Expr := .ident "x"
   .dictLit [], .dictLit [("k", x)], .dictLit [("k", x), ("l", .num 2)],
   .check .bool x, .check .int53 x, .check .uint32 x, .check .string x, .check .bigint x,
   .check (.option .bool) x, .check (.result .bool .string) x, .check (.array .int53) x,
-  .check (.dict (.array .bool)) x, .check (.ctors []) x,
-  .check (.ctors [("none", []), ("some", [("value", .int53)])]) x,
+  .check (.dict (.array .bool)) x, .check (.ctors "tag" []) x,
+  .check (.ctors "tag" [("none", []), ("some", [("value", .int53)])]) x,
+  .check (.ctors "kind" [("free", []), ("team", [("seats", .int53)])]) x,
   .mapJs x "e" x, .filterJs x "e" x, .findJs x "e" x,
   .quantJs .all x "e" x, .quantJs .any x "e" x, .reduceJs x (.num 0) "a" "e" x].all roundTrips
 

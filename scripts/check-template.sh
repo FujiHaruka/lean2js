@@ -73,7 +73,7 @@ LEAN
 if lake build > unnamed.err 2>&1; then
   echo "deriving Enc accepted a structure whose constructor has no name"; exit 1
 fi
-grep -q 'would ship as the tag' unnamed.err || { cat unnamed.err; echo "the build failed for another reason"; exit 1; }
+grep -q 'would ship as "mk"' unnamed.err || { cat unnamed.err; echo "the build failed for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
 cat >> MyLogic.lean <<'LEAN'
 
@@ -146,6 +146,67 @@ if lake build > recursive.err 2>&1; then
 fi
 grep -q 'cannot be recursive' recursive.err \
   || { cat recursive.err; echo "the build failed for another reason"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
+
+# Which key a type's constructors are told apart by is the author's call, written above the type. The
+# happy path goes all the way through the differential run on Node before anything is written.
+cat > MyLogic.lean <<'LEAN'
+import Lean2Js
+
+namespace MyLogic
+
+open Lean2Js Lean2Js.Core Lean2Js.Enc
+
+/-- Told apart by `kind` rather than by the default `tag`. -/
+@[discriminator "kind"]
+inductive Plan where
+  | free
+  | team
+  deriving Enc
+
+@[ship] def planName (plan : Plan) : String :=
+  match plan with
+  | .free => "Free"
+  | .team => "Team"
+
+def manifest : Manifest := { package := "@example/my-logic", version := "0.1.0" }
+
+ship_package
+
+end MyLogic
+LEAN
+lake exe lean2js MyLogic --out keyed
+grep -q 'readonly kind: "free"' keyed/index.d.ts \
+  || { echo "the key an author wrote did not reach the generated type"; exit 1; }
+grep -q '"kind"' keyed/index.js || { echo "the key an author wrote did not reach the module"; exit 1; }
+
+# The key has to stay free as a field name, whatever the author keyed the type by.
+cat > MyLogic.lean <<'LEAN'
+import Lean2Js
+
+namespace MyLogic
+
+open Lean2Js Lean2Js.Core Lean2Js.Enc
+
+@[discriminator "kind"]
+structure Quota where
+  Quota ::
+  kind : Int
+  deriving Enc
+
+@[ship] def quotaOf (q : Quota) : Int := q.kind
+
+def manifest : Manifest := { package := "@example/my-logic", version := "0.1.0" }
+
+ship_package
+
+end MyLogic
+LEAN
+if lake build > keyfield.err 2>&1; then
+  echo "a field named the key its own type is told apart by was accepted"; exit 1
+fi
+grep -q 'may not have a field named kind' keyfield.err \
+  || { cat keyfield.err; echo "the build failed for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
 
 # A program written by hand rather than by ship_package carries no certificate for its declarations, and

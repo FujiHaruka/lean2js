@@ -466,12 +466,12 @@ const __has = (x, t) => {
     }
     return (((x).tag === "error") && __hasFields(x, [["error", (t)[2]]]));
   }
-  const alt = __find((t)[1], ((c) => ((c)[0] === (x).tag)));
+  const alt = __find((t)[2], ((c) => ((c)[0] === (x)[(t)[1]])));
   return (((alt).tag === "some") && __hasFields(x, ((alt).value)[1]));
 };
 
-const __normFields = (x, fields) => {
-  const out = [["tag", (x).tag]];
+const __normFields = (x, key, fields) => {
+  const out = [[key, (x)[key]]];
   for (const f of fields) {
     if (Object.hasOwn(x, (f)[0])) {
       out.push([(f)[0], __norm((x)[(f)[0]], (f)[1])]);
@@ -498,26 +498,26 @@ const __norm = (x, t) => {
   }
   if ((k === "option")) {
     if (((x).tag === "none")) {
-      return __normFields(x, []);
+      return __normFields(x, "tag", []);
     }
     if (((x).tag === "some")) {
-      return __normFields(x, [["value", (t)[1]]]);
+      return __normFields(x, "tag", [["value", (t)[1]]]);
     }
     return x;
   }
   if ((k === "result")) {
     if (((x).tag === "ok")) {
-      return __normFields(x, [["value", (t)[1]]]);
+      return __normFields(x, "tag", [["value", (t)[1]]]);
     }
     if (((x).tag === "error")) {
-      return __normFields(x, [["error", (t)[2]]]);
+      return __normFields(x, "tag", [["error", (t)[2]]]);
     }
     return x;
   }
   if ((k === "ctors")) {
-    const alt = __find((t)[1], ((c) => ((c)[0] === (x).tag)));
+    const alt = __find((t)[2], ((c) => ((c)[0] === (x)[(t)[1]])));
     if (((alt).tag === "some")) {
-      return __normFields(x, ((alt).value)[1]);
+      return __normFields(x, (t)[1], ((alt).value)[1]);
     }
     return x;
   }
@@ -552,7 +552,7 @@ export function lineTotal(__p0, __p1) {
 
 /** roleRank : (role : Role) → Int53 */
 export function roleRank(__p0) {
-  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
   return ((__s) => ((((__s).tag === "guest") ? 0 : (((__s).tag === "member") ? 1 : 2))))(role);
 }
 
@@ -741,7 +741,7 @@ export function isSpreadsheet(__p0) {
 
 /** limitsFor : (role : Role) → Dict Int53 */
 export function limitsFor(__p0) {
-  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
   return ((__s) => ((((__s).tag === "guest") ? new Map([["daily", 10], ["monthly", 100]]) : (((__s).tag === "member") ? new Map([["daily", 100], ["monthly", 3000]]) : new Map([["daily", 1000], ["monthly", 30000]])))))(role);
 }
 
@@ -938,33 +938,33 @@ export function atLeast(__p0, __p1) {
 
 /** addMoney : (a : Money, b : Money) → Result Money String */
 export function addMoney(__p0, __p1) {
-  const a = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
-  const b = __ck(__p1, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const a = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const b = __ck(__p1, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   return (((a).currency !== (b).currency) ? { "tag": "error", "error": "currency mismatch" } : { "tag": "ok", "value": { "tag": "Money", "amount": __i53(((a).amount + (b).amount)), "currency": (a).currency } });
 }
 
 /** sameMoney : (a : Money, b : Money) → Bool */
 export function sameMoney(__p0, __p1) {
-  const a = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
-  const b = __ck(__p1, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const a = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const b = __ck(__p1, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   return __eq(a, b);
 }
 
 /** currenciesOf : (items : Array Money) → Array String */
 export function currenciesOf(__p0) {
-  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
   return __map(items, (item) => ((item).currency));
 }
 
 /** cartTotal : (items : Array Money) → Int53 */
 export function cartTotal(__p0) {
-  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
   return __reduce(items, 0, (subtotal, item) => (__i53((subtotal + (item).amount))));
 }
 
 /** cheapestFirst : (items : Array Money) → Array Money */
 export function cheapestFirst(__p0) {
-  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
   return __sortBy(items, (item) => ((item).amount));
 }
 
@@ -982,35 +982,35 @@ export function total(__p0) {
 
 /** trackingOf : (state : OrderState) → Option String */
 export function trackingOf(__p0) {
-  const state = __ck(__p0, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
-  return ((__s) => ((((__s).tag === "draft") ? { "tag": "none" } : (((__s).tag === "placed") ? { "tag": "none" } : (((__s).tag === "shipped") ? ((trackingId) => ({ "tag": "some", "value": trackingId }))((__s).trackingId) : { "tag": "none" })))))(state);
+  const state = __ck(__p0, ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
+  return ((__s) => ((((__s).kind === "draft") ? { "tag": "none" } : (((__s).kind === "placed") ? { "tag": "none" } : (((__s).kind === "shipped") ? ((trackingId) => ({ "tag": "some", "value": trackingId }))((__s).trackingId) : { "tag": "none" })))))(state);
 }
 
 /** canRefund : (role : Role, state : OrderState) → Bool */
 export function canRefund(__p0, __p1) {
-  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
-  const state = __ck(__p1, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
-  return ((__s) => ((((__s).tag === "draft") ? false : (((__s).tag === "placed") ? (roleRank(role) >= 1) : (((__s).tag === "shipped") ? (roleRank(role) >= 2) : false)))))(state);
+  const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
+  const state = __ck(__p1, ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
+  return ((__s) => ((((__s).kind === "draft") ? false : (((__s).kind === "placed") ? (roleRank(role) >= 1) : (((__s).kind === "shipped") ? (roleRank(role) >= 2) : false)))))(state);
 }
 
 /** firstTracking : (states : Array OrderState) → Option String */
 export function firstTracking(__p0) {
-  const states = __ck(__p0, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
+  const states = __ck(__p0, ["array", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
   return ((__i53((states).length) === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
 }
 
 /** refundableOnly : (role : Role, states : Array OrderState) → Array OrderState */
 export function refundableOnly(__p0, __p1) {
-  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
-  const states = __ck(__p1, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
+  const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
+  const states = __ck(__p1, ["array", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
   return __filter(states, (state) => (canRefund(role, state)));
 }
 
 /** ship : (state : OrderState, trackingId : String) → Result OrderState String */
 export function ship(__p0, __p1) {
-  const state = __ck(__p0, ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
+  const state = __ck(__p0, ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
   const trackingId = __ck(__p1, ["string"]);
-  return ((__s) => ((((__s).tag === "draft") ? { "tag": "error", "error": "a draft order cannot ship" } : (((__s).tag === "placed") ? ((orderId) => (((trackingId === "") ? { "tag": "error", "error": "a tracking id is required" } : { "tag": "ok", "value": { "tag": "shipped", "orderId": orderId, "trackingId": trackingId } })))((__s).orderId) : (((__s).tag === "shipped") ? { "tag": "error", "error": "the order has already shipped" } : { "tag": "error", "error": "a cancelled order cannot ship" })))))(state);
+  return ((__s) => ((((__s).kind === "draft") ? { "tag": "error", "error": "a draft order cannot ship" } : (((__s).kind === "placed") ? ((orderId) => (((trackingId === "") ? { "tag": "error", "error": "a tracking id is required" } : { "tag": "ok", "value": { "kind": "shipped", "orderId": orderId, "trackingId": trackingId } })))((__s).orderId) : (((__s).kind === "shipped") ? { "tag": "error", "error": "the order has already shipped" } : { "tag": "error", "error": "a cancelled order cannot ship" })))))(state);
 }
 
 /** quantityLabel : (quantity : Int53) → String */
@@ -1027,37 +1027,37 @@ export function renewalLabel(__p0) {
 
 /** chargeable : (amount : Money) → Bool */
 export function chargeable(__p0) {
-  const amount = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const amount = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   return ((__s) => (((((__s).tag === "Money") && ((__s).amount === 0)) ? false : ((((__s).tag === "Money") && ((__s).currency === "")) ? false : ((value) => ((value > 0)))((__s).amount)))))(amount);
 }
 
 /** settleMessage : (outcome : Result OrderState String) → String */
 export function settleMessage(__p0) {
-  const outcome = __ck(__p0, ["result", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
-  return ((__s) => (((((__s).tag === "ok") && (((__s).value).tag === "shipped")) ? ((trackingId) => (trackingId))(((__s).value).trackingId) : ((((__s).tag === "ok") && (((__s).value).tag === "placed")) ? "awaiting shipment" : (((__s).tag === "ok") ? "no update" : ((message) => (message))((__s).error))))))(outcome);
+  const outcome = __ck(__p0, ["result", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
+  return ((__s) => (((((__s).tag === "ok") && (((__s).value).kind === "shipped")) ? ((trackingId) => (trackingId))(((__s).value).trackingId) : ((((__s).tag === "ok") && (((__s).value).kind === "placed")) ? "awaiting shipment" : (((__s).tag === "ok") ? "no update" : ((message) => (message))((__s).error))))))(outcome);
 }
 
 /** settledOrderId : (outcome : Result OrderState String) → Int53 */
 export function settledOrderId(__p0) {
-  const outcome = __ck(__p0, ["result", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
-  return ((__s) => (((((__s).tag === "ok") && (((__s).value).tag === "placed")) ? ((orderId) => (orderId))(((__s).value).orderId) : 0)))(outcome);
+  const outcome = __ck(__p0, ["result", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
+  return ((__s) => (((((__s).tag === "ok") && (((__s).value).kind === "placed")) ? ((orderId) => (orderId))(((__s).value).orderId) : 0)))(outcome);
 }
 
 /** dailyLimit : (role : Role) → Int53 */
 export function dailyLimit(__p0) {
-  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
   return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(limitsFor(role), "daily"));
 }
 
 /** monthlyLimit : (role : Role) → Int53 */
 export function monthlyLimit(__p0) {
-  const role = __ck(__p0, ["ctors", [["guest", []], ["member", []], ["admin", []]]]);
+  const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
   return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(limitsFor(role), "monthly"));
 }
 
 /** remainingItems : (page : Paginated Money) → Int53 */
 export function remainingItems(__p0) {
-  const page = __ck(__p0, ["ctors", [["Paginated", [["items", ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]], ["total", ["int53"]]]]]]);
+  const page = __ck(__p0, ["ctors", "tag", [["Paginated", [["items", ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]], ["total", ["int53"]]]]]]);
   return __i53(((page).total - __i53(((page).items).length)));
 }
 
@@ -1075,7 +1075,7 @@ export function validateQuantity(__p0) {
 
 /** validationMessage : (outcome : Validated String Int53) → String */
 export function validationMessage(__p0) {
-  const outcome = __ck(__p0, ["ctors", [["valid", [["value", ["int53"]]]], ["invalid", [["errors", ["array", ["string"]]]]]]]);
+  const outcome = __ck(__p0, ["ctors", "tag", [["valid", [["value", ["int53"]]]], ["invalid", [["errors", ["array", ["string"]]]]]]]);
   return ((__s) => ((((__s).tag === "valid") ? ((value) => (quantityLabel(value)))((__s).value) : ((errors) => (((__i53((errors).length) === 0) ? "refused" : __at(errors, 0))))((__s).errors))))(outcome);
 }
 
@@ -1087,7 +1087,7 @@ export function amountWithTax(__p0) {
 
 /** currencyOf : (item : Money) → String */
 export function currencyOf(__p0) {
-  const item = __ck(__p0, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const item = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   return (item).currency;
 }
 
@@ -1107,7 +1107,7 @@ export function linesBelowFold(__p0, __p1) {
 
 /** cartIsEmpty : (items : Array Money) → Bool */
 export function cartIsEmpty(__p0) {
-  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
   return (__i53((items).length) === 0);
 }
 
@@ -1170,7 +1170,7 @@ export function priceOr(__p0, __p1, __p2) {
 
 /** byCurrency : (items : Array Money) → Dict Money */
 export function byCurrency(__p0) {
-  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
   return __reduce(items, new Map([]), (d, x) => (__dset(d, currencyOf(x), x)));
 }
 
@@ -1189,33 +1189,33 @@ export function discountedIfAny(__p0) {
 
 /** settledOrElse : (outcome : Result Money String, fallback : Money) → Money */
 export function settledOrElse(__p0, __p1) {
-  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
-  const fallback = __ck(__p1, ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  const fallback = __ck(__p1, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   return ((__s) => ((((__s).tag === "ok") ? ((a) => (a))((__s).value) : fallback)))(outcome);
 }
 
 /** settledCurrency : (outcome : Result Money String) → Result String String */
 export function settledCurrency(__p0) {
-  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
   return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "ok", "value": currencyOf(a) }))((__s).value) : ((err) => ({ "tag": "error", "error": err }))((__s).error))))(outcome);
 }
 
 /** loudRefusal : (outcome : Result Money String) → Result Money String */
 export function loudRefusal(__p0) {
-  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
   return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "ok", "value": a }))((__s).value) : ((err) => ({ "tag": "error", "error": __upper(err) }))((__s).error))))(outcome);
 }
 
 /** settledMoney : (outcome : Result Money String) → Option Money */
 export function settledMoney(__p0) {
-  const outcome = __ck(__p0, ["result", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
   return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "some", "value": a }))((__s).value) : { "tag": "none" })))(outcome);
 }
 
 /** trackingIds : (states : Array OrderState) → Array String */
 export function trackingIds(__p0) {
-  const states = __ck(__p0, ["array", ["ctors", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
-  return __map(states, (state) => (((__s) => ((((__s).tag === "shipped") ? ((trackingId) => (trackingId))((__s).trackingId) : "")))(state)));
+  const states = __ck(__p0, ["array", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
+  return __map(states, (state) => (((__s) => ((((__s).kind === "shipped") ? ((trackingId) => (trackingId))((__s).trackingId) : "")))(state)));
 }
 
 /** refundCount : (amounts : Array Int53) → Int53 */

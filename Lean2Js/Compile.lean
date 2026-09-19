@@ -272,8 +272,11 @@ structure Arm where
   body : Js.Expr
   ty : Ty
 
-def objOf (ctor : String) (fields : List (String × Js.Expr)) : Js.Expr :=
-  .objLit (("tag", .str ctor) :: fields)
+/-- A constructor value, under the key its name is carried under. `Agree.encodeValue` reads the key the
+same way, from the constructor's name alone, so the object the compiler writes and the object the
+reference semantics is encoded to are the same one. -/
+def objOf [Discriminators] (ctor : String) (fields : List (String × Js.Expr)) : Js.Expr :=
+  .objLit ((keyFor ctor, .str ctor) :: fields)
 
 /-- A literal pattern is held to the same rules as a literal expression: an Int53 outside the safe range
 is no more matchable than it is writable. -/
@@ -297,7 +300,7 @@ code runs and the names it binds, each paired with the path it is read from.
 
 The tests are conjoined left to right by the caller, so an inner test is only reached once the tag it
 sits under has been confirmed and the path it reads is known to exist. -/
-def patParts (types : List TypeDef) (ty : Ty) (path : Js.Expr) :
+def patParts [Discriminators] (types : List TypeDef) (ty : Ty) (path : Js.Expr) :
     Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
   | .wild => .ok ([], [])
   | .bind name => do
@@ -316,10 +319,10 @@ def patParts (types : List TypeDef) (ty : Ty) (path : Js.Expr) :
         else do
           let (tests, binds) ← patPartsList types (fields.map (·.2))
             (fields.map fun f => Js.Expr.member path f.1) args
-          .ok (.binary "===" (.member path "tag") (.str name) :: tests, binds)
+          .ok (.binary "===" (.member path (keyFor name)) (.str name) :: tests, binds)
 termination_by pat => sizeOf pat
 
-def patPartsList (types : List TypeDef) (tys : List Ty) (paths : List Js.Expr) :
+def patPartsList [Discriminators] (types : List TypeDef) (tys : List Ty) (paths : List Js.Expr) :
     List Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
   | [] => .ok ([], [])
   | pat :: pats =>
@@ -335,7 +338,7 @@ end
 
 mutual
 
-def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr × Ty) :=
+def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr × Ty) :=
   match e with
   | .lit (.bool b) => .ok (.bool b, .bool)
   | .lit (.int53 i) =>
@@ -462,9 +465,6 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
         else
           .ok (objOf ctorName ((c.fields.map (·.name)).zip (js.map (·.1))), .named typeName tyArgs)
   | .proj e field => do
-    if field == "tag" then
-      .error "tag is the discriminator of a constructor value, not a field"
-    else
     let (je, te) ← compileExpr p ctx e
     match te with
     | .named n args =>
@@ -473,6 +473,9 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
       | some t =>
         match t.ctorsAt args with
         | [c] =>
+          if field == keyFor c.name then
+            .error s!"{field} is what {n} carries its constructor's name under, not a field"
+          else
           match c.fields.find? (·.name == field) with
           | some f => .ok (.member je field, f.ty)
           | none => .error s!"{n} has no field named {field}"
@@ -688,7 +691,7 @@ where
   apply (a : Arm) : Js.Expr :=
     if a.names.isEmpty then a.body else .arrowCall a.names a.body a.paths
 
-def compileArgs (p : Program) (ctx : Ctx) (es : List Expr) :
+def compileArgs [Discriminators] (p : Program) (ctx : Ctx) (es : List Expr) :
     Except String (List (Js.Expr × Ty)) :=
   match es with
   | [] => .ok []
@@ -698,7 +701,7 @@ def compileArgs (p : Program) (ctx : Ctx) (es : List Expr) :
     .ok (head :: tail)
 termination_by sizeOf es
 
-def compileValues (p : Program) (ctx : Ctx) :
+def compileValues [Discriminators] (p : Program) (ctx : Ctx) :
     List (String × Expr) → Except String (List (Js.Expr × Ty))
   | [] => .ok []
   | (_, e) :: rest => do
@@ -707,7 +710,7 @@ def compileValues (p : Program) (ctx : Ctx) :
     .ok (head :: tail)
 termination_by es => sizeOf es
 
-def compileAlts (p : Program) (ctx : Ctx) (ty : Ty) (alts : List Alt) :
+def compileAlts [Discriminators] (p : Program) (ctx : Ctx) (ty : Ty) (alts : List Alt) :
     Except String (List Arm) :=
   match alts with
   | [] => .ok []
@@ -726,12 +729,12 @@ end
 /-- Unfolds a tail `let` into a `const` statement. A `let` appearing mid-expression has to be wrapped in
 an immediately invoked arrow to preserve evaluation order, but wrapping the `let`s lined up at the head of
 a function as well would make the output unreadable. -/
-def compileFinish (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
+def compileFinish [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
     Except String (List Js.Stmt × Ty) := do
   let (je, te) ← compileExpr p ctx e
   .ok (acc.reverse ++ [.ret je], te)
 
-def compileBody (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
+def compileBody [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) (acc : List Js.Stmt) :
     Except String (List Js.Stmt × Ty) :=
   match e with
   | .letE name ty val body =>
@@ -774,7 +777,7 @@ def tyDesc (p : Program) : Nat → Ty → Except String Js.TyDesc
   | budget + 1, .named n args =>
     match p.findType? n with
     | none => .error s!"unknown type: {n}"
-    | some t => do .ok (.ctors (← tyDescAlts p budget (t.ctorsAt args)))
+    | some t => do .ok (.ctors t.discriminator (← tyDescAlts p budget (t.ctorsAt args)))
 termination_by budget ty => (budget, 0, sizeOf ty)
 
 def tyDescAlts (p : Program) (budget : Nat) :
@@ -830,7 +833,7 @@ def declSig : List Param → String
   | [] => ""
   | param :: rest => param.name ++ " : " ++ param.ty.render ++ declSigRest rest
 
-def compileDecl (p : Program) (d : Decl) : Except String Js.Func := do
+def compileDecl [Discriminators] (p : Program) (d : Decl) : Except String Js.Func := do
   validateIdent "function" d.name
   d.params.forM fun param => validateIdent "parameter" param.name
   validateDistinct "parameter" (d.params.map (·.name))
@@ -866,12 +869,22 @@ private partial def mentions (p : Program) (target : String) (seen : List String
       | some t => t.ctors.any fun c => c.fields.any fun f => mentions p target (n :: seen) f.ty
   | _ => false
 
-/-- `tag` is used to tell constructors apart, so it has to stay free as a field name.
+/-- A constructor is carried under the key its own type declares. Written as its own step rather than
+as an `if` in the walk below so that the reading can be taken back out of a validated program. -/
+def keyDeclared [Discriminators] (t : TypeDef) (c : CtorDef) : Except String Unit :=
+  if keyFor c.name == t.discriminator then .ok ()
+  else .error s!"{t.name}.{c.name} would be carried under {keyFor c.name} rather than \
+    {t.discriminator}: a value carries its constructor's name and not the type it came from, so two \
+    types declaring a constructor of the same name have to agree on the key"
+
+/-- The key a type's constructors are told apart by has to stay free as a field name, and it has to be
+the key the constructor's *name* is carried under: a value carries that name and not the type it came
+from, so two types declaring a constructor of the same name cannot key it differently.
 
 Recursive types are rejected at their declaration rather than where they cross the boundary, because the
 type expansions downstream — the entry check, the vector generator — all diverge on one and only the entry
 check is in a position to report an error. -/
-def validateType (p : Program) (t : TypeDef) : Except String Unit := do
+def validateType [Discriminators] (p : Program) (t : TypeDef) : Except String Unit := do
   validateIdent "type" t.name
   t.params.forM (validateIdent "type parameter")
   validateDistinct "type parameter" t.params
@@ -879,9 +892,12 @@ def validateType (p : Program) (t : TypeDef) : Except String Unit := do
   t.ctors.forM fun c => do
     validateIdent "constructor" c.name
     validateDistinct "field" (c.fields.map (·.name))
+    keyDeclared t c
     c.fields.forM fun f => do
       validateIdent "field" f.name
-      if f.name == "tag" then .error s!"{c.name} may not have a field named tag"
+      if f.name == t.discriminator then
+        .error s!"{c.name} may not have a field named {f.name}, which is what {t.name} carries its \
+          constructor's name under"
       wfTy p t.params f.ty
       if mentions p t.name [] f.ty then
         .error s!"{t.name} refers to itself; a recursive type cannot cross the boundary"
@@ -954,7 +970,7 @@ private def callsPrecedeAlts (p : Program) (limit : Nat) : List Alt → Except S
 
 end
 
-def compileDecls (p : Program) : Nat → List Decl → Except String (List Js.Func)
+def compileDecls [Discriminators] (p : Program) : Nat → List Decl → Except String (List Js.Func)
   | _, [] => .ok []
   | i, d :: rest => do
     callsPrecede p i d.body
@@ -964,11 +980,18 @@ def compileDecls (p : Program) : Nat → List Decl → Except String (List Js.Fu
 calling itself or a later one. That is what keeps nontermination out of the subset: `eval`'s fuel bounds
 the proof, not the language. Traversal is `map` / `filter` / `reduce`, which are syntax and cannot
 recur. -/
-def compileProgram (p : Program) : Except String Js.Module := do
+def compileProgram [Discriminators] (p : Program) : Except String Js.Module := do
   validateDistinct "type" (p.types.map (·.name))
   p.types.forM (validateType p)
   validateDistinct "function" (p.decls.map (·.name))
   let funcs ← compileDecls p 0 p.decls
   .ok { funcs }
+
+/-- The module a program compiles to under the reading its own types declare. `compileProgram` takes a
+reading as given, because what is proved about it holds for any; this is where a program's own one is
+installed, and where a program whose keys are no reading at all is refused. -/
+def compileDeclared (p : Program) : Except String Js.Module := do
+  let _keys : Discriminators ← p.discriminators?
+  compileProgram p
 
 end Lean2Js.Compile

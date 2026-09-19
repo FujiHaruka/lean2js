@@ -36,7 +36,12 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   all three directions speak for every spelling of the arguments the entry check accepts**
   (`ArgsDecode`) — the order of keys and keys the declaration does not name are carried by the same
   theorems as the canonical spelling. That one excluded shape exists only because the model holds a
-  dictionary as an association list; a `Map` arriving at run time cannot be built that way. Running out
+  dictionary as an association list; a `Map` arriving at run time cannot be built that way. The key a
+  declared type's constructors are told apart by — `tag`, or what `@[discriminator]` says — is the
+  `Discriminators` a statement carries: the three directions hold **for every reading of the keys the
+  program compiles under**, and the compiled module and the encoding read the same one. There is one
+  such reading and the artifact is written at it: `lean2js` installs the reading the program's own types
+  declare ([`discriminators?`]), and refuses any that disagrees with them. Running out
   of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on the fuel
   needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against the
   ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
@@ -110,6 +115,7 @@ spellings.
 [`decl_correct`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_correct
 [`decl_traps`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_traps
 [`decl_refuses`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_refuses
+[`discriminators?`]: https://fujiharuka.github.io/lean2js/Lean2Js/Core.html#Lean2Js.Core.Program.discriminators%3F
 [`cost`]: https://fujiharuka.github.io/lean2js/Lean2Js/Cost.html#Lean2Js.Cost.cost
 [`progOk`]: https://fujiharuka.github.io/lean2js/Lean2Js/Cost.html#Lean2Js.Cost.progOk
 [`typeSound`]: https://fujiharuka.github.io/lean2js/Lean2Js/Sound.html#Lean2Js.typeSound

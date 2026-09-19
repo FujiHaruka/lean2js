@@ -20,6 +20,12 @@ namespace Lean2Js.Correct
 
 open Core
 
+-- Which key a constructor's name is carried under is in scope for the whole module, so a lemma that
+-- does not read it carries the binder and nothing else; that is what this linter would report, once per
+-- lemma.
+set_option linter.unusedSectionVars false
+variable [Discriminators]
+
 /-- The syntax the proof reaches. -/
 inductive InFragment : Expr → Prop where
   | lit (l : Lit) : InFragment (.lit l)
@@ -316,8 +322,8 @@ private theorem eval_str_of_pos {m : Js.Module} {env : Js.JsEnv} {s : String} {g
   | _ + 1 => rw [Js.eval.eq_def]
 
 /-- A constructor value is an object literal whose first field is the tag. -/
-theorem eventually_objLit0 (m : Js.Module) (env : Js.JsEnv) (ctor : String) :
-    Eventually m env (.objLit [("tag", .str ctor)]) (.obj [("tag", .str ctor)]) := by
+theorem eventually_objLit0 (m : Js.Module) (env : Js.JsEnv) (key ctor : String) :
+    Eventually m env (.objLit [(key, .str ctor)]) (.obj [(key, .str ctor)]) := by
   refine ⟨2, fun g' hgle => ?_⟩
   match g' with
   | 0 => omega
@@ -327,10 +333,10 @@ theorem eventually_objLit0 (m : Js.Module) (env : Js.JsEnv) (ctor : String) :
     rw [eval_str_of_pos (m := m) (env := env) (s := ctor) (by omega)]
     rfl
 
-theorem eventually_objLit1 {m : Js.Module} {env : Js.JsEnv} {ctor field : String} {jx : Js.Expr}
-    {w : Js.JsValue} (h : Eventually m env jx w) :
-    Eventually m env (.objLit [("tag", .str ctor), (field, jx)])
-      (.obj [("tag", .str ctor), (field, w)]) := by
+theorem eventually_objLit1 {m : Js.Module} {env : Js.JsEnv} {key ctor field : String}
+    {jx : Js.Expr} {w : Js.JsValue} (h : Eventually m env jx w) :
+    Eventually m env (.objLit [(key, .str ctor), (field, jx)])
+      (.obj [(key, .str ctor), (field, w)]) := by
   obtain ⟨g1, hg1⟩ := h
   refine ⟨g1 + 2, fun g' hgle => ?_⟩
   match g' with
@@ -685,7 +691,7 @@ theorem encodeFields_find (entries : List (String × Value)) (k : String) :
   | cons e rest ih =>
     obtain ⟨key, v⟩ := e
     simp only [encodeFields, List.find?_cons]
-    cases hk : key == k <;> simp [hk, ih]
+    cases key == k <;> simp [ih]
 
 theorem encodeFields_any (entries : List (String × Value)) (k : String) :
     (encodeFields entries).any (·.1 == k) = entries.any (·.1 == k) := by
@@ -732,8 +738,8 @@ theorem encodeValue_dictLookup (entries : List (String × Value)) (k : String) :
          | some v => .obj [("tag", .str "some"), ("value", v)]
          | none => .obj [("tag", .str "none")]) := by
   rw [dictLookup, encodeFields_find]
-  cases h : ((entries.find? (·.1 == k)).map (·.2)) <;>
-    simp [h, encodeValue, encodeFields]
+  cases ((entries.find? (·.1 == k)).map (·.2)) <;>
+    simp [encodeValue, encodeFields]
 
 theorem helper_dget (entries : List (String × Js.JsValue)) (k : String) :
     Js.helper "__dget" [.dict entries, .str k]
@@ -758,14 +764,15 @@ theorem helper_ddelete (entries : List (String × Js.JsValue)) (k : String) :
     Js.helper "__ddelete" [.dict entries, .str k]
       = some (.ok (.dict (entries.filter (·.1 != k)))) := rfl
 
-/-- A field read finds the field, not the tag the constructor value carries in front of it. The two
-cannot collide: a type may not declare a field named `tag`, and the fragment reads no such name. -/
-theorem member_encodeObj {ctor field : String} {fields : List (String × Value)} {v : Value}
-    (hne : field ≠ "tag")
+/-- A field read finds the field, not the constructor's name the value carries in front of it. The two
+cannot collide: a type may not declare a field named the key it carries that name under, and the
+fragment reads no such name. -/
+theorem member_encodeObj {key ctor field : String} {fields : List (String × Value)} {v : Value}
+    (hne : field ≠ key)
     (hf : (fields.find? (·.1 == field)).map (·.2) = some v) :
-    ((("tag", Js.JsValue.str ctor) :: encodeFields fields).find? (·.1 == field)).map (·.2)
+    (((key, Js.JsValue.str ctor) :: encodeFields fields).find? (·.1 == field)).map (·.2)
       = some (encodeValue v) := by
-  have htag : ("tag" == field) = false := by simpa using Ne.symm hne
+  have htag : (key == field) = false := by simpa using Ne.symm hne
   simp only [List.find?_cons, htag]
   rw [encodeFields_find, hf]
   rfl
@@ -1242,39 +1249,40 @@ theorem beq_encodeValue (p : Program) : ∀ (t : Ty) (a b : Value),
     obtain ⟨cb, fb, rfl⟩ := hasTy_named_inv hb
     obtain ⟨ta, ka, hta, hka, hfa⟩ := hasTy_named_fields ha
     obtain ⟨tb, kb, htb, hkb, hfb⟩ := hasTy_named_fields hb
-    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq,
-      beq_self_eq_true, Bool.true_and]
+    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq]
     by_cases hcc : ca = cb
     · subst hcc
       have htt : ta = tb := Option.some.inj (hta ▸ htb)
       subst htt
       have hkk : ka = kb := Option.some.inj (hka ▸ hkb)
       subst hkk
+      simp only [beq_self_eq_true, Bool.true_and]
       rw [beq_encodeFields p _ fa fb hfa hfb]
     · rw [beq_eq_false_iff_ne.mpr hcc]
       simp
   | .option elem, a, b, ha, hb => by
     obtain ⟨ca, fa, rfl⟩ := hasTy_option_inv ha
     obtain ⟨cb, fb, rfl⟩ := hasTy_option_inv hb
-    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq,
-      beq_self_eq_true, Bool.true_and]
+    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq]
     rcases hasTy_option_fields ha with ⟨rfl, rfl⟩ | ⟨rfl, hfa⟩ <;>
       rcases hasTy_option_fields hb with ⟨rfl, rfl⟩ | ⟨rfl, hfb⟩
     · simp [encodeFields, Js.JsValue.beqFields, Value.beqFields]
     · simp [encodeFields]
     · simp [encodeFields]
-    · rw [beq_encodeFields p [("value", elem)] fa fb hfa hfb]
+    · simp only [beq_self_eq_true, Bool.true_and]
+      rw [beq_encodeFields p [("value", elem)] fa fb hfa hfb]
   | .result ok err, a, b, ha, hb => by
     obtain ⟨ca, fa, rfl⟩ := hasTy_result_inv ha
     obtain ⟨cb, fb, rfl⟩ := hasTy_result_inv hb
-    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq,
-      beq_self_eq_true, Bool.true_and]
+    simp only [encodeValue, Js.JsValue.beq, Js.JsValue.beqFields, Value.beq]
     rcases hasTy_result_fields ha with ⟨rfl, hfa⟩ | ⟨rfl, hfa⟩ <;>
       rcases hasTy_result_fields hb with ⟨rfl, hfb⟩ | ⟨rfl, hfb⟩
-    · rw [beq_encodeFields p [("value", ok)] fa fb hfa hfb]
+    · simp only [beq_self_eq_true, Bool.true_and]
+      rw [beq_encodeFields p [("value", ok)] fa fb hfa hfb]
     · simp
     · simp
-    · rw [beq_encodeFields p [("error", err)] fa fb hfa hfb]
+    · simp only [beq_self_eq_true, Bool.true_and]
+      rw [beq_encodeFields p [("error", err)] fa fb hfa hfb]
   | .array elem, a, b, ha, hb => by
     obtain ⟨xs, rfl⟩ := hasTy_array_inv ha
     obtain ⟨ys, rfl⟩ := hasTy_array_inv hb
@@ -1566,9 +1574,9 @@ theorem eventuallyErr_arrowBody {m : Js.Module} {env : Js.JsEnv} {name : String}
     rw [hg1 g (by omega)]
     simpa [Js.bindAll] using hg2 g (by omega)
 
-theorem eventuallyErr_objLit1 {m : Js.Module} {env : Js.JsEnv} {ctor field : String}
+theorem eventuallyErr_objLit1 {m : Js.Module} {env : Js.JsEnv} {key ctor field : String}
     {jx : Js.Expr} {code : String} (h : EventuallyErr m env jx code) :
-    EventuallyErr m env (.objLit [("tag", .str ctor), (field, jx)]) code := by
+    EventuallyErr m env (.objLit [(key, .str ctor), (field, jx)]) code := by
   obtain ⟨g1, hg1⟩ := h
   refine ⟨g1 + 2, fun g' hgle => ?_⟩
   match g' with
@@ -1603,14 +1611,15 @@ theorem eventually_ctorObj {m : Js.Module} {env : Js.JsEnv} {ctorName : String}
     {names : List String} {jes : List Js.Expr} {vs : List Js.JsValue}
     (hlen : names.length = jes.length) (h : EventuallyList m env jes vs) :
     Eventually m env (Compile.objOf ctorName (names.zip jes))
-      (.obj (("tag", .str ctorName) :: names.zip vs)) := by
-  have h1 : (("tag", Js.Expr.str ctorName) :: names.zip jes).map (·.2)
+      (.obj ((keyFor ctorName, .str ctorName) :: names.zip vs)) := by
+  have h1 : ((keyFor ctorName, Js.Expr.str ctorName) :: names.zip jes).map (·.2)
       = Js.Expr.str ctorName :: jes := by
     simp [List.map_snd_zip (by omega : jes.length ≤ names.length)]
-  have h2 : (("tag", Js.Expr.str ctorName) :: names.zip jes).map (·.1) = "tag" :: names := by
+  have h2 : ((keyFor ctorName, Js.Expr.str ctorName) :: names.zip jes).map (·.1)
+      = keyFor ctorName :: names := by
     simp [List.map_fst_zip (by omega : names.length ≤ jes.length)]
   have hev := eventually_objLit (m := m) (env := env)
-    (fields := ("tag", Js.Expr.str ctorName) :: names.zip jes)
+    (fields := (keyFor ctorName, Js.Expr.str ctorName) :: names.zip jes)
     (vs := Js.JsValue.str ctorName :: vs)
     (by rw [h1]; exact eventuallyList_cons (eventually_str m env ctorName) h)
   rw [h2] at hev
@@ -1684,10 +1693,10 @@ theorem eventuallyErr_ctorObj {m : Js.Module} {env : Js.JsEnv} {ctorName : Strin
     {names : List String} {jes : List Js.Expr} {code : String} (hlen : names.length = jes.length)
     (h : EventuallyListErr m env jes code) :
     EventuallyErr m env (Compile.objOf ctorName (names.zip jes)) code := by
-  have h1 : (("tag", Js.Expr.str ctorName) :: names.zip jes).map (·.2)
+  have h1 : ((keyFor ctorName, Js.Expr.str ctorName) :: names.zip jes).map (·.2)
       = Js.Expr.str ctorName :: jes := by
     simp [List.map_snd_zip (by omega : jes.length ≤ names.length)]
-  refine eventuallyErr_objLit (fields := ("tag", Js.Expr.str ctorName) :: names.zip jes) ?_
+  refine eventuallyErr_objLit (fields := (keyFor ctorName, Js.Expr.str ctorName) :: names.zip jes) ?_
   rw [h1]
   exact eventuallyListErr_tail (eventually_str m env ctorName) h
 
@@ -2200,11 +2209,8 @@ private theorem compileExpr_proj_parts {p : Program} {ctx : Compile.Ctx} {e : Ex
     ∃ jx n targs t c f, Compile.compileExpr p ctx e = .ok (jx, .named n targs)
       ∧ p.findType? n = some t ∧ t.ctorsAt targs = [c]
       ∧ c.fields.find? (·.name == field) = some f
-      ∧ je = .member jx field ∧ ty = f.ty ∧ field ≠ "tag" := by
+      ∧ je = .member jx field ∧ ty = f.ty ∧ field ≠ keyFor c.name := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
-  split at hc
-  · simp at hc
-  rename_i hnottag
   split at hc
   · simp at hc
   rename_i xPair hcx
@@ -2217,10 +2223,13 @@ private theorem compileExpr_proj_parts {p : Program} {ctx : Compile.Ctx} {e : Ex
     split at hc
     · rename_i c hctors
       split at hc
+      · simp at hc
+      rename_i hnotkey
+      split at hc
       · rename_i f hf
         simp only [Except.ok.injEq, Prod.mk.injEq] at hc
         exact ⟨jx, n, targs, t, c, f, htx ▸ hcx, ht, hctors, hf, hc.1.symm, hc.2.symm,
-          by simpa using hnottag⟩
+          by simpa using hnotkey⟩
       · simp at hc
     · simp at hc
   · simp at hc
@@ -2799,7 +2808,7 @@ private theorem eventuallyFind_of_items (p : Program) (m : Js.Module) (hprog : P
       subst hes
       refine ⟨g1 + 1, fun g' hgle => ?_⟩
       rw [encodeList, Js.evalFindJs]
-      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, encodeFields]
+      simp only [bind, Except.bind, hg1 g' (by omega), encodeValue, encodeFields, keyFor_some]
     | false =>
       simp only at hes
       obtain ⟨g2, hg2⟩ := ihr v hxs.2 hes
@@ -3099,22 +3108,48 @@ theorem eventuallyEach_members {m : Js.Module} {jenv : Js.JsEnv} {path : Js.Expr
     ⟨eventually_member hpath h.1, eventuallyEach_members hpath fs vs h.2⟩
 
 /-- What the arm chain needs from the program's type declarations: a constructor's fields are named apart
-from each other and from `tag`, which the generated object carries its discriminator under.
-`Compile.validateType` checks both and `compileProgram` runs it over every declared type, so
-`Decl.decl_correct` discharges this from the module it was handed. -/
+from each other and from the key its name is carried under, and every value the type admits carries its
+own constructor under that same key — an arm tests one key, and the value it is tested against wrote the
+key of whatever constructor it was built with. `Compile.validateType` checks both and `compileProgram`
+runs it over every declared type, so `Decl.decl_correct` discharges this from the module it was handed. -/
 def SignatureOk (p : Program) : Prop :=
-  ∀ (ty : Ty) (heads : List (Compile.Head × List (String × Ty))) (h : Compile.Head)
+  ∀ (ty : Ty) (heads : List (Compile.Head × List (String × Ty))) (name : String)
     (fs : List (String × Ty)),
-    Compile.signature p.types ty = some heads → (h, fs) ∈ heads →
-      (∀ f ∈ fs, f.1 ≠ "tag") ∧ (fs.map (·.1)).Nodup
+    Compile.signature p.types ty = some heads → (.ctor name, fs) ∈ heads →
+      (∀ f ∈ fs, f.1 ≠ keyFor name) ∧ (fs.map (·.1)).Nodup
+        ∧ ∀ (ctor : String) (flds : List (String × Value)),
+            Value.hasTy p (.obj ctor flds) ty = true → keyFor ctor = keyFor name
+
+private theorem signatureOk_at {p : Program} (hsig : SignatureOk p) {ty : Ty}
+    {heads : List (Compile.Head × List (String × Ty))} {name : String}
+    {ftys : List (String × Ty)} (hs : Compile.signature p.types ty = some heads)
+    (hfind : ((heads.find? (·.1 == Compile.Head.ctor name)).map (·.2)) = some ftys) :
+    (∀ f ∈ ftys, f.1 ≠ keyFor name) ∧ (ftys.map (·.1)).Nodup
+      ∧ ∀ (ctor : String) (flds : List (String × Value)),
+          Value.hasTy p (.obj ctor flds) ty = true → keyFor ctor = keyFor name := by
+  obtain ⟨pair, hpair, rfl⟩ := Option.map_eq_some_iff.mp hfind
+  obtain ⟨hd, fs⟩ := pair
+  obtain rfl : hd = Compile.Head.ctor name :=
+    Exhaustive.head_beq_eq (List.find?_some
+      (p := fun x : Compile.Head × List (String × Ty) => x.1 == Compile.Head.ctor name) hpair)
+  exact hsig ty heads name fs hs (List.mem_of_find?_eq_some hpair)
 
 theorem signatureOk_fields {p : Program} (hsig : SignatureOk p) {ty : Ty}
     {heads : List (Compile.Head × List (String × Ty))} {name : String}
     {ftys : List (String × Ty)} (hs : Compile.signature p.types ty = some heads)
     (hfind : ((heads.find? (·.1 == Compile.Head.ctor name)).map (·.2)) = some ftys) :
-    (∀ f ∈ ftys, f.1 ≠ "tag") ∧ (ftys.map (·.1)).Nodup := by
-  obtain ⟨pair, hpair, rfl⟩ := Option.map_eq_some_iff.mp hfind
-  exact hsig ty heads pair.1 pair.2 hs (List.mem_of_find?_eq_some hpair)
+    (∀ f ∈ ftys, f.1 ≠ keyFor name) ∧ (ftys.map (·.1)).Nodup :=
+  let h := signatureOk_at hsig hs hfind
+  ⟨h.1, h.2.1⟩
+
+/-- The key an arm tests is the key the value it is tested against wrote its constructor under. -/
+theorem signatureOk_key {p : Program} (hsig : SignatureOk p) {ty : Ty}
+    {heads : List (Compile.Head × List (String × Ty))} {name ctor : String}
+    {ftys : List (String × Ty)} {flds : List (String × Value)}
+    (hs : Compile.signature p.types ty = some heads)
+    (hfind : ((heads.find? (·.1 == Compile.Head.ctor name)).map (·.2)) = some ftys)
+    (hv : Value.hasTy p (.obj ctor flds) ty = true) : keyFor ctor = keyFor name :=
+  (signatureOk_at hsig hs hfind).2.2 ctor flds hv
 
 /-- A constructor pattern only compiles against a type whose values are objects. `bool` has a signature
 too, but its heads are literals, so the lookup by constructor name fails before this is reached. -/
@@ -3207,12 +3242,13 @@ theorem eventually_litTest {p : Program} {m : Js.Module} {jenv : Js.JsEnv} {ty :
   rwa [sameValue_comm, sameValue_encodeValue hsc hlt hv] at this
 
 theorem eventually_tagTest {m : Js.Module} {jenv : Js.JsEnv} {path : Js.Expr}
-    {ctor name : String} {fields : List (String × Value)}
+    {ctor name : String} {fields : List (String × Value)} (hkey : keyFor ctor = keyFor name)
     (hpath : Eventually m jenv path (encodeValue (Value.obj ctor fields))) :
-    Eventually m jenv (.binary "===" (.member path "tag") (.str name)) (.bool (ctor == name)) := by
+    Eventually m jenv (.binary "===" (.member path (keyFor name)) (.str name))
+      (.bool (ctor == name)) := by
   rw [encodeValue] at hpath
-  have hmem : Eventually m jenv (.member path "tag") (.str ctor) :=
-    eventually_member hpath (by simp)
+  have hmem : Eventually m jenv (.member path (keyFor name)) (.str ctor) :=
+    eventually_member hpath (by rw [← hkey]; simp)
   have := eventually_eqq hmem (eventually_str m jenv name)
   simpa [Js.arith.sameValue] using this
 
@@ -3304,10 +3340,10 @@ theorem patParts_matched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig :
       obtain ⟨rfl, rfl⟩ := hpp
       have hft := hasFieldTys_of_signature hs hfind hv
       obtain ⟨hnotag, hnodup⟩ := signatureOk_fields hsig hs hfind
-      have hlk : LookupsAgree (("tag", Js.JsValue.str name) :: encodeFields fields) ftys
+      have hlk : LookupsAgree ((keyFor name, Js.JsValue.str name) :: encodeFields fields) ftys
           (fields.map (·.2)) := by
         have := lookupsAgree_of_hasFieldTys fields ftys hft hnodup
-          [("tag", Js.JsValue.str name)] (by
+          [(keyFor name, Js.JsValue.str name)] (by
             intro n hn
             obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hn
             simp only [List.find?_cons, List.find?_nil]
@@ -3323,7 +3359,7 @@ theorem patParts_matched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig :
       refine ⟨?_, hbinds⟩
       intro t ht
       rcases List.mem_cons.mp ht with rfl | hrest
-      · have := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields) hpath
+      · have := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields) rfl hpath
         rwa [beq_self_eq_true] at this
       · exact htests t hrest
     · simp at hm
@@ -3378,17 +3414,18 @@ theorem patParts_unmatched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig
     simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
     obtain ⟨ctor, fields, rfl⟩ := obj_of_signature_ctor hs hfind hv
     obtain ⟨rfl, rfl⟩ := hpp
-    have htag := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields) hpath
+    have htag := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields)
+      (signatureOk_key hsig hs hfind hv) hpath
     rw [matchPat] at hm
     split at hm
     · rename_i hname
       obtain rfl : name = ctor := by simpa using hname
       have hft := hasFieldTys_of_signature hs hfind hv
       obtain ⟨hnotag, hnodup⟩ := signatureOk_fields hsig hs hfind
-      have hlk : LookupsAgree (("tag", Js.JsValue.str name) :: encodeFields fields) ftys
+      have hlk : LookupsAgree ((keyFor name, Js.JsValue.str name) :: encodeFields fields) ftys
           (fields.map (·.2)) := by
         have := lookupsAgree_of_hasFieldTys fields ftys hft hnodup
-          [("tag", Js.JsValue.str name)] (by
+          [(keyFor name, Js.JsValue.str name)] (by
             intro n hn
             obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hn
             simp only [List.find?_cons, List.find?_nil]
@@ -5188,7 +5225,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rw [evalExpr_noneE] at he
     simp only [Except.ok.injEq] at he
     subst he
-    simpa [encodeValue, encodeFields, Compile.objOf] using eventually_objLit0 m jenv "none"
+    simpa [encodeValue, encodeFields, Compile.objOf] using eventually_objLit0 m jenv (keyFor "none") "none"
   | someE hx =>
     have ihx := ih hx
     intro ctx env jenv je ty v henv hjenv hc he
@@ -5700,6 +5737,13 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rename_i av hav
     have hat := typeSound p hprog f ctx env xE jx (.named n targs) av hx.typeChecked henv hcx hav
     obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hat
+    obtain ⟨t', c', ht', hc', -⟩ := hasTy_named_fields hat
+    obtain rfl : t' = t := Option.some.inj (ht' ▸ ht)
+    have hcname : c.name = ctor := by
+      rw [TypeDef.findAt?, hctors, List.find?_cons] at hc'
+      split at hc'
+      · next hb => simpa using hb
+      · simp at hc'
     split at he
     · rename_i ctor' fields' hobj
       injection hobj with hc1 hc2
@@ -5710,7 +5754,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         simp only [Except.ok.injEq] at he
         subst he
         refine eventually_member (by simpa [encodeValue] using ihx henv hjenv hcx hav) ?_
-        exact member_encodeObj hne hw
+        exact member_encodeObj (hcname ▸ hne) hw
       · simp at he
     · rename_i hno
       exact (hno ctor fields rfl).elim

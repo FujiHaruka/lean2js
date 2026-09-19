@@ -1,3 +1,5 @@
+import Lean2Js.Ident
+
 /-!
 # The syntax of the Lean subset destined for JavaScript
 
@@ -285,12 +287,50 @@ structure CtorDef where
 
 /-- A `structure` / `inductive` declared by the user. The single-constructor ones are the `structure`s.
 
-`params` names the type parameters that the field types may mention as `Ty.var`. -/
+`params` names the type parameters that the field types may mention as `Ty.var`.
+
+`discriminator` is the key the generated JavaScript tells this type's constructors apart by: `tag`
+unless the author wrote `@[discriminator "..."]` above the type. -/
 structure TypeDef where
   name : String
   params : List String := []
   ctors : List CtorDef
+  discriminator : String := "tag"
   deriving Repr, BEq, Inhabited
+
+/-- The constructor names the subset spells itself, in `Option` and `Result`. No `TypeDef` declares
+them, so they are carried under `tag` and a declared type may not key one of them elsewhere. -/
+def builtinCtors : List String := ["none", "some", "ok", "error"]
+
+/-- Which key a constructor's name is carried under in the generated JavaScript.
+
+A value the reference semantics returns carries the name of its constructor and not the type it came
+from, so the key that name is written with has to be decided by the name alone. The compiler and
+`encodeValue` both read it from here, which is what makes the two write the same object;
+`Compile.validateType` is what checks this reading against what each type declares.
+
+The two laws are what the generated code needs of a key wherever it is written rather than read off a
+type, so they are carried here and not asked again at each use. `Program.discriminators?` is where a
+program's own reading is checked against them. -/
+class Discriminators where
+  keyFor : String → String
+  /-- A key is written as a property, so it has to be a name the generated code may write. -/
+  keyFor_okName (ctor : String) : okName (keyFor ctor) = true
+  /-- `Option` and `Result` are written by the subset itself, under `tag`. -/
+  keyFor_builtin (ctor : String) : builtinCtors.contains ctor → keyFor ctor = "tag"
+
+export Discriminators (keyFor keyFor_okName keyFor_builtin)
+
+/-! The law spelled out for each of the four, so that a proof about `Option` or `Result` meets `tag`
+where it expects it. -/
+
+@[simp] theorem keyFor_none [Discriminators] : keyFor "none" = "tag" := keyFor_builtin _ (by decide)
+
+@[simp] theorem keyFor_some [Discriminators] : keyFor "some" = "tag" := keyFor_builtin _ (by decide)
+
+@[simp] theorem keyFor_ok [Discriminators] : keyFor "ok" = "tag" := keyFor_builtin _ (by decide)
+
+@[simp] theorem keyFor_error [Discriminators] : keyFor "error" = "tag" := keyFor_builtin _ (by decide)
 
 def TypeDef.find? (t : TypeDef) (ctor : String) : Option CtorDef :=
   t.ctors.find? (·.name == ctor)
@@ -333,5 +373,91 @@ def Program.findType? (p : Program) (name : String) : Option TypeDef :=
 scrutinee's type, so only the typing of `ctor` uses this. -/
 def Program.ownerOf? (p : Program) (ctor : String) : Option TypeDef :=
   p.types.find? fun t => t.ctors.any (·.name == ctor)
+
+/-- What a type's key has to be before a constructor's name can be read as carrying it. -/
+def TypeDef.checkedKey (t : TypeDef) : Except String Unit := do
+  validateIdent "discriminator" t.discriminator
+  if t.discriminator != "tag" && t.ctors.any (fun c => builtinCtors.contains c.name) then
+    .error s!"{t.name} tells its constructors apart by {t.discriminator}, so it may not name one of \
+      {String.intercalate ", " builtinCtors}: that is how the subset writes Option and Result, and \
+      those are carried under tag"
+  else .ok ()
+
+/-- Written as a recursion rather than `forM` so that the two readings below can be taken back out of
+it. -/
+def checkedKeys : List TypeDef → Except String Unit
+  | [] => .ok ()
+  | t :: rest => do t.checkedKey; checkedKeys rest
+
+private theorem okName_of_checkedKeys : ∀ {ts : List TypeDef} {u : Unit}, checkedKeys ts = .ok u →
+    ∀ t ∈ ts, okName t.discriminator = true
+  | [], _, _, _, ht => absurd ht (by simp)
+  | s :: rest, _, h, t, ht => by
+    rw [checkedKeys] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · exact absurd h (by simp)
+    rename_i hs
+    rcases List.mem_cons.mp ht with rfl | hm
+    · rw [TypeDef.checkedKey] at hs
+      simp only [bind, Except.bind] at hs
+      split at hs
+      · exact absurd hs (by simp)
+      rename_i hv
+      exact okName_of_validateIdent hv
+    · exact okName_of_checkedKeys h t hm
+
+private theorem tag_of_checkedKeys : ∀ {ts : List TypeDef} {u : Unit}, checkedKeys ts = .ok u →
+    ∀ t ∈ ts, ∀ ctor : String, t.ctors.any (·.name == ctor) = true →
+      builtinCtors.contains ctor = true → t.discriminator = "tag"
+  | [], _, _, _, ht, _, _, _ => absurd ht (by simp)
+  | s :: rest, _, h, t, ht, ctor, hany, hb => by
+    rw [checkedKeys] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · exact absurd h (by simp)
+    rename_i hs
+    rcases List.mem_cons.mp ht with rfl | hm
+    · rw [TypeDef.checkedKey] at hs
+      simp only [bind, Except.bind] at hs
+      split at hs
+      · exact absurd hs (by simp)
+      split at hs
+      · exact absurd hs (by simp)
+      rename_i hcond
+      simp only [Bool.and_eq_false_imp, bne_iff_ne, ne_eq, Bool.not_eq_true] at hcond
+      by_cases hne : t.discriminator = "tag"
+      · exact hne
+      · obtain ⟨c, hc, hname⟩ := List.any_eq_true.mp hany
+        have hall : (t.ctors.any fun c => builtinCtors.contains c.name) = true :=
+          List.any_eq_true.mpr ⟨c, hc, by rw [eq_of_beq hname]; exact hb⟩
+        exact absurd (hcond hne) (by rw [hall]; simp)
+    · exact tag_of_checkedKeys h t hm ctor hany hb
+
+/-- The reading this program declares: a constructor is carried under the key of the type that declares
+it, and under `tag` when no type does — which is `Option` and `Result`, whose constructors are the
+subset's own. Checked, because the reading is what the compiler and `encodeValue` share and the laws
+above are what the generated code needs of it. -/
+def Program.discriminators? (p : Program) : Except String Discriminators :=
+  match h : checkedKeys p.types with
+  | .error e => .error e
+  | .ok _ =>
+    .ok {
+      keyFor ctor := ((p.ownerOf? ctor).map (·.discriminator)).getD "tag"
+      keyFor_okName ctor := by
+        cases hw : p.ownerOf? ctor with
+        | none => decide
+        | some t =>
+          simp only [Option.map_some, Option.getD_some]
+          simp only [Program.ownerOf?] at hw
+          exact okName_of_checkedKeys h t (List.mem_of_find?_eq_some hw)
+      keyFor_builtin ctor hb := by
+        cases hw : p.ownerOf? ctor with
+        | none => rfl
+        | some t =>
+          simp only [Option.map_some, Option.getD_some]
+          simp only [Program.ownerOf?] at hw
+          exact tag_of_checkedKeys h t (List.mem_of_find?_eq_some hw) ctor
+            (List.find?_some (p := fun t : TypeDef => t.ctors.any (·.name == ctor)) hw) hb }
 
 end Lean2Js.Core

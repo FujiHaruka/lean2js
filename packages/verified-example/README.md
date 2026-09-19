@@ -280,8 +280,8 @@ Whatever arguments the entry check accepts, the generated `add` returns what `ev
 is a single binary operation.
 
 ```lean
-theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program addDecl.params jargs args)
+theorem add_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program addDecl.params jargs args)
   (he : evalCall program "add" args = Except.ok v) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "add" jargs = Except.ok (encodeValue v)
 ```
@@ -291,8 +291,9 @@ theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = E
 The same for a body that opens with a `let`, which the compiler emits as a `const` statement.
 
 ```lean
-theorem discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program discountedDecl.params jargs args)
+theorem discounted_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (v : Value)
+  (hdec : Decl.ArgsDecode program discountedDecl.params jargs args)
   (he : evalCall program "discounted" args = Except.ok v) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "discounted" jargs = Except.ok (encodeValue v)
 ```
@@ -303,8 +304,9 @@ And for a body whose second `let` rebinds a name already in scope, which the com
 expression rather than a statement.
 
 ```lean
-theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program rebindTwiceDecl.params jargs args)
+theorem rebindTwice_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (v : Value)
+  (hdec : Decl.ArgsDecode program rebindTwiceDecl.params jargs args)
   (he : evalCall program "rebindTwice" args = Except.ok v) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "rebindTwice" jargs = Except.ok (encodeValue v)
 ```
@@ -316,8 +318,9 @@ proof leaves the expression it is looking at: `priced` applies the function it w
 about `memberPrice` rests on the same claim about `tenPercentOff`.
 
 ```lean
-theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program memberPriceDecl.params jargs args)
+theorem memberPrice_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (v : Value)
+  (hdec : Decl.ArgsDecode program memberPriceDecl.params jargs args)
   (he : evalCall program "memberPrice" args = Except.ok v) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "memberPrice" jargs = Except.ok (encodeValue v)
 ```
@@ -347,7 +350,7 @@ Running out of fuel is not among the answers: the two checks above rule it out f
 falls outside those types never reaches the body at all — that is `add_refuses`.
 
 ```lean
-theorem add_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
+theorem add_traps [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
   (args : List Value) (err : Err) (htyped : ParamsTyped program addDecl.params args)
   (hdec : Decl.ArgsDecode program addDecl.params jargs args) (he : evalCall program "add" args = Except.error err) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "add" jargs = Except.error err.code
@@ -359,7 +362,7 @@ The trap is reachable, and reached the same way on both sides: one past the top 
 `int53Overflow` out of the generated function.
 
 ```lean
-theorem add_overflow_throws (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :
+theorem add_overflow_throws [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :
   ∃ g,
     ∀ (g' : Nat),
       g ≤ g' → Js.callFunctionAt m g' "add" [Js.JsValue.num int53Max, Js.JsValue.num 1] = Except.error "int53Overflow"
@@ -371,8 +374,9 @@ The fragment reaches business logic, not just arithmetic: `addMoney` reads two f
 and builds a `Result` around a constructor.
 
 ```lean
-theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)
+theorem addMoney_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (v : Value)
+  (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)
   (he : evalCall program "addMoney" args = Except.ok v) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "addMoney" jargs = Except.ok (encodeValue v)
 ```
@@ -383,8 +387,8 @@ The fragment reaches a `match`: `ship` chooses an arm by the constructor of its 
 the fields that arm binds.
 
 ```lean
-theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program shipDecl.params jargs args)
+theorem ship_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program shipDecl.params jargs args)
   (he : evalCall program "ship" args = Except.ok v) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "ship" jargs = Except.ok (encodeValue v)
 ```
@@ -394,8 +398,9 @@ theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = 
 And an array traversal: `cartTotal` folds a body over the elements, each under its own binding.
 
 ```lean
-theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)
+theorem cartTotal_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (v : Value)
+  (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)
   (he : evalCall program "cartTotal" args = Except.ok v) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "cartTotal" jargs = Except.ok (encodeValue v)
 ```
@@ -406,8 +411,8 @@ The trap side of a traversal: a fold whose running sum leaves `Int53` throws whe
 the element that overflowed rather than at the end.
 
 ```lean
-theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (err : Err) (htyped : ParamsTyped program cartTotalDecl.params args)
+theorem cartTotal_traps [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (err : Err) (htyped : ParamsTyped program cartTotalDecl.params args)
   (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)
   (he : evalCall program "cartTotal" args = Except.error err) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "cartTotal" jargs = Except.error err.code
@@ -420,9 +425,9 @@ function throws instead of computing. The one shape left out is a dictionary hol
 `Map` cannot hold.
 
 ```lean
-theorem add_refuses (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (hk : Js.dictKeysDistinctList jargs = true) (hno : ¬Decl.EvalAccepts program addDecl jargs) :
-  Js.callFunction m "add" jargs = Except.error "typeError"
+theorem add_refuses [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (hk : Js.dictKeysDistinctList jargs = true)
+  (hno : ¬Decl.EvalAccepts program addDecl jargs) : Js.callFunction m "add" jargs = Except.error "typeError"
 ```
 
 ### add_refuses_string
@@ -431,7 +436,7 @@ The hypothesis discharged on a concrete call: a string where an `Int53` was decl
 no `Int53` encodes to one.
 
 ```lean
-theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :
+theorem add_refuses_string [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :
   Js.callFunction m "add" [Js.JsValue.str "1", Js.JsValue.num 2] = Except.error "typeError"
 ```
 
@@ -441,8 +446,8 @@ The same for `addMoney`, under the same declared types: the only way its body th
 overflow of the sum, and the generated function throws that code.
 
 ```lean
-theorem addMoney_traps (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jargs : List Js.JsValue)
-  (args : List Value) (err : Err) (htyped : ParamsTyped program addMoneyDecl.params args)
+theorem addMoney_traps [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jargs : List Js.JsValue) (args : List Value) (err : Err) (htyped : ParamsTyped program addMoneyDecl.params args)
   (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)
   (he : evalCall program "addMoney" args = Except.error err) :
   ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' "addMoney" jargs = Except.error err.code
@@ -455,7 +460,7 @@ between is assumed: the roundtrip holds of whatever `compileProgram` produces, s
 side condition about the shape of the module.
 
 ```lean
-theorem file_reads_back (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :
+theorem file_reads_back [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) :
   Parse.parseModule m.render.toList = some m
 ```
 
@@ -495,9 +500,9 @@ the entry check accepts. `Dts.inRange` is the whole of what is assumed about the
 not read, and neither are keys the type does not declare.
 
 ```lean
-theorem dts_fits_entry_check (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (jv : Js.JsValue) (ty : Ty)
-  (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d) (hts : Dts.TsSat program ty jv)
-  (hr : Dts.inRange jv d = true) : Js.checkTy jv d = true
+theorem dts_fits_entry_check [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d)
+  (hts : Dts.TsSat program ty jv) (hr : Dts.inRange jv d = true) : Js.checkTy jv d = true
 ```
 
 ### encoded_values_fit_dts
@@ -507,8 +512,8 @@ encodes to one the published `.d.ts` admits. `typeSound` gives that type to what
 returns, and `decl_correct` says the generated function returns its encoding.
 
 ```lean
-theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value) (ty : Ty)
-  (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeValue v)
+theorem encoded_values_fit_dts [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value)
+  (ty : Ty) (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeValue v)
 ```
 
 ### steps_agree

@@ -18,10 +18,10 @@ namespace Lean2Js.Tests
 open Core Core.Builder
 
 private def compiles (d : Decl) : Bool :=
-  (Compile.compileProgram { decls := [d] }).isOk
+  (Compile.compileDeclared { decls := [d] }).isOk
 
 private def compilesAll (ds : List Decl) : Bool :=
-  (Compile.compileProgram { decls := ds }).isOk
+  (Compile.compileDeclared { decls := ds }).isOk
 
 private def identity (name : String) (param : String) : Decl :=
   decl name [(param, .int53)] .int53 (v param)
@@ -55,7 +55,7 @@ private def Point : TypeDef :=
   struct "Point" [("x", Ty.int53), ("y", Ty.int53)]
 
 private def withTypes (d : Decl) : Bool :=
-  (Compile.compileProgram { types := [Colour, Point], decls := [d] }).isOk
+  (Compile.compileDeclared { types := [Colour, Point], decls := [d] }).isOk
 
 private def rank (alts : List Alt) : Decl :=
   decl "rank" [("c", .named "Colour" [])] .int53 (matchOn (v "c") alts)
@@ -129,8 +129,57 @@ private def nested (alts : List Alt) : Decl :=
   (decl "taggedField" [] .int53
     (proj (ctor "Tagged" [] "Tagged" [int53 1]) "tag"))
 
-#guard !(Compile.compileProgram {
+#guard !(Compile.compileDeclared {
     types := [struct "Tagged" [("tag", Ty.int53)]], decls := [] }).isOk
+
+/-! ## The key a type's constructors are told apart by
+
+`tag` unless the author wrote `@[discriminator "..."]` above the type. What a type declares has to be a
+name the generated code can write and has to stay free as a field name; and because a value carries its
+constructor's name and not the type it came from, the key has to follow the name — two types cannot key
+one name two ways, and the subset's own `Option` and `Result` constructors stay under `tag`. -/
+
+private def keyed (name key : String) (fields : List (String × Ty)) : TypeDef :=
+  { struct name fields with discriminator := key }
+
+#guard (Compile.compileDeclared {
+    types := [keyed "Money" "kind" [("amount", .int53)]],
+    decls := [decl "amountOf" [("m", .named "Money" [])] .int53 (proj (v "m") "amount")] }).isOk
+
+#guard !(Compile.compileDeclared {
+    types := [keyed "Money" "kind" [("kind", Ty.int53)]], decls := [] }).isOk
+
+#guard (Compile.compileDeclared {
+    types := [keyed "Money" "kind" [("tag", Ty.int53)]], decls := [] }).isOk
+
+#guard !(Compile.compileDeclared {
+    types := [keyed "Money" "has space" [("amount", Ty.int53)]], decls := [] }).isOk
+
+#guard !(Compile.compileDeclared {
+    types := [{ enum "Left" [("only", [])] with discriminator := "kind" },
+              enum "Right" [("only", [])]], decls := [] }).isOk
+
+#guard !(Compile.compileDeclared {
+    types := [{ enum "Outcome" [("ok", [("value", Ty.int53)])] with discriminator := "kind" }],
+    decls := [] }).isOk
+
+#guard (Compile.compileDeclared {
+    types := [enum "Outcome" [("ok", [("value", Ty.int53)])]], decls := [] }).isOk
+
+#guard !(Compile.compileDeclared {
+    types := [keyed "Money" "kind" [("amount", .int53)]],
+    decls := [decl "keyOf" [("m", .named "Money" [])] .string (proj (v "m") "kind")] }).isOk
+
+/-- The reading a program does not declare. `compileDeclared` never installs this one; what it pins is
+that the compiler refuses a reading the types disagree with rather than compiling against it. -/
+@[instance_reducible] private def allTag : Discriminators :=
+  ⟨fun _ => "tag", fun _ => by decide, fun _ _ => rfl⟩
+
+#guard !(@Compile.compileProgram allTag {
+    types := [keyed "Money" "kind" [("amount", .int53)]], decls := [] }).isOk
+
+#guard (@Compile.compileProgram allTag {
+    types := [struct "Money" [("amount", .int53)]], decls := [] }).isOk
 
 #guard withTypes (decl "sizeOfList" [("xs", .array .int53)] .int53 (len (v "xs")))
 #guard !withTypes (decl "badIndex" [("xs", .array .int53)] .int53 (at' (v "xs") (bool true)))
@@ -456,7 +505,7 @@ private def Pair : TypeDef :=
     (params := ["A", "B"])
 
 private def withGenerics (d : Decl) : Bool :=
-  (Compile.compileProgram { types := [Box, Pair], decls := [d] }).isOk
+  (Compile.compileDeclared { types := [Box, Pair], decls := [d] }).isOk
 
 #guard withGenerics (decl "unbox" [("b", .named "Box" [.int53])] .int53 (proj (v "b") "value"))
 #guard !withGenerics (decl "unbox" [("b", .named "Box" [.int53])] .string (proj (v "b") "value"))
@@ -485,7 +534,7 @@ private def withGenerics (d : Decl) : Bool :=
     (ctor "Pair" [.string, .string] "second" [v "s"]))
 
 private def typesOk (ts : List TypeDef) : Bool :=
-  (Compile.compileProgram { types := ts, decls := [] }).isOk
+  (Compile.compileDeclared { types := ts, decls := [] }).isOk
 
 #guard typesOk [Box, Pair]
 #guard !typesOk [struct "Loose" [("value", Ty.var "T")]]
@@ -495,7 +544,7 @@ private def typesOk (ts : List TypeDef) : Bool :=
 #guard !typesOk [Box, struct "Wrap" [("inner", .named "Box" [.named "Wrap" []])]]
 
 private def inOrder (ds : List Decl) : Bool :=
-  (Compile.compileProgram { decls := ds }).isOk
+  (Compile.compileDeclared { decls := ds }).isOk
 
 private def callsIdentity (name callee : String) : Decl :=
   decl name [("value", .int53)] .int53 (call callee [v "value"])
@@ -585,7 +634,7 @@ def program : Program := program%
 
 #guard program.decls.map (·.name) == ["base", "withRule", "twice", "lateCaller"]
 #guard Cost.progOk program
-#guard (Compile.compileProgram program).isOk
+#guard (Compile.compileDeclared program).isOk
 
 end Gathered
 

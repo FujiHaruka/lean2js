@@ -455,8 +455,8 @@ def checkTy : JsValue → TyDesc → Bool
     | some (.str "ok") => checkFields fields [("value", ok)]
     | some (.str "error") => checkFields fields [("error", err)]
     | _ => false
-  | .obj fields, .ctors alts =>
-    match lookupField fields "tag" with
+  | .obj fields, .ctors key alts =>
+    match lookupField fields key with
     | some (.str ctor) =>
       match alts.find? (·.1 == ctor) with
       | some alt => checkFields fields alt.2
@@ -489,13 +489,14 @@ end
 
 /-! ### Descriptors a compiled type renders
 
-Field names a constructor may carry: distinct, and none of them `tag`. `Compile.lean` rejects a field
-called `tag`, and `Decl.lean` proves the names distinct for a well-formed type. Without both, the object
-this reads by name and the `Value` the reference semantics reads by position are different readings. -/
+Field names a constructor may carry: distinct, and none of them the key the constructor's own name is
+carried under. `Compile.lean` rejects a field named that key, and `Decl.lean` proves the names distinct
+for a well-formed type. Without both, the object this reads by name and the `Value` the reference
+semantics reads by position are different readings. -/
 
-def namesOk : List (String × TyDesc) → Bool
+def namesOk (key : String) : List (String × TyDesc) → Bool
   | [] => true
-  | (n, _) :: rest => n != "tag" && !rest.any (·.1 == n) && namesOk rest
+  | (n, _) :: rest => n != key && !rest.any (·.1 == n) && namesOk key rest
 
 mutual
 
@@ -503,7 +504,7 @@ def descOk : TyDesc → Bool
   | .bool | .int53 | .uint32 | .string | .bigint => true
   | .option t | .array t | .dict t => descOk t
   | .result ok err => descOk ok && descOk err
-  | .ctors alts => altsOk alts
+  | .ctors key alts => altsOk key alts
 termination_by d => sizeOf d
 
 def fieldsOk : List (String × TyDesc) → Bool
@@ -511,9 +512,9 @@ def fieldsOk : List (String × TyDesc) → Bool
   | (_, d) :: rest => descOk d && fieldsOk rest
 termination_by fs => sizeOf fs
 
-def altsOk : List (String × List (String × TyDesc)) → Bool
+def altsOk (key : String) : List (String × List (String × TyDesc)) → Bool
   | [] => true
-  | (_, fields) :: rest => namesOk fields && fieldsOk fields && altsOk rest
+  | (_, fields) :: rest => namesOk key fields && fieldsOk fields && altsOk key rest
 termination_by alts => sizeOf alts
 
 end
@@ -521,9 +522,9 @@ end
 /-! ### The canonical shape
 
 `checkTy` reads a constructor's fields by name, so a value it accepts may carry them in any order and may
-carry keys the descriptor does not name. `normTy` rebuilds it with `tag` first and the constructor's
-fields in declared order, dropping the keys the descriptor does not name, so what reaches the body is the
-value `encodeValue` writes. -/
+carry keys the descriptor does not name. `normTy` rebuilds it with the key the constructor's name is
+carried under first and the constructor's fields in declared order, dropping the keys the descriptor does
+not name, so what reaches the body is the value `encodeValue` writes. -/
 
 mutual
 
@@ -540,11 +541,11 @@ def normTy : JsValue → TyDesc → JsValue
     | some (.str "ok") => .obj (("tag", .str "ok") :: normFields fields [("value", ok)])
     | some (.str "error") => .obj (("tag", .str "error") :: normFields fields [("error", err)])
     | _ => .obj fields
-  | .obj fields, .ctors alts =>
-    match lookupField fields "tag" with
+  | .obj fields, .ctors key alts =>
+    match lookupField fields key with
     | some (.str ctor) =>
       match alts.find? (·.1 == ctor) with
-      | some alt => .obj (("tag", .str ctor) :: normFields fields alt.2)
+      | some alt => .obj ((key, .str ctor) :: normFields fields alt.2)
       | none => .obj fields
     | _ => .obj fields
   | v, _ => v

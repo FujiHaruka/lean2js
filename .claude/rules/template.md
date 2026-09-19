@@ -22,7 +22,9 @@ is sold on, each by the message the user would see:
 
 - a declaration `ship_package` did not gather (`does not carry it`)
 - a theorem proved with `sorry` (`rests on sorryAx`)
-- a `structure` whose constructor was never named (`would ship as the tag`)
+- a `structure` whose constructor was never named (`would ship as "mk"`)
+- a field named the key its own type is told apart by (`may not have a field named kind`), beside the
+  happy path for `@[discriminator]`, which goes all the way through the differential run
 - an `@[expand] def` whose body leaves the subset, named at the mark (`which is marked @[expand]`)
 - a recursive `@[expand] def` (`cannot be recursive`)
 - a hand-built `Program` with no certificate (`with no certificate`)

@@ -48,6 +48,26 @@ export type Invoice = { readonly tag: "Invoice"; readonly lines: readonly LineIt
 export declare function invoiceFor(plan: Plan, seats: number, discount: Discount): Result<Invoice, string>;
 ```
 
+The key a union is told apart by is `tag` unless the type says otherwise. Writing
+`@[discriminator "kind"]` above the type carries its constructors under `kind` instead — in the
+generated types, in the generated code and in the entry check alike:
+
+```lean
+@[discriminator "kind"]
+inductive OrderState where
+  | draft
+  | placed (orderId : Int)
+  deriving Enc
+```
+
+```ts
+export type OrderState =
+  | { readonly kind: "draft" }
+  | { readonly kind: "placed"; readonly orderId: number };
+```
+
+It is per type, and the subset's own `Option` and `Result` keep `tag`.
+
 An argument the declared type does not admit never reaches the body — the generated function checks
 it at the boundary and throws. Arithmetic that leaves `Int53`, division by zero and out-of-range
 access throw as well, carrying the code the reference semantics reports:

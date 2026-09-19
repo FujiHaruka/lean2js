@@ -19,6 +19,9 @@ namespace Lean2Js.Denote
 
 open Core Enc Lean2Js.Reify
 
+section
+variable [Discriminators]
+
 theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 
@@ -97,6 +100,8 @@ theorem add_comm_ships (m : Js.Module) (hm : Compile.compileProgram Example.prog
       ∨ ∃ err : Err, Js.callFunctionAt m g' "add" [.num a, .num b] = .error err.code := by
   rw [← Example.add_comm a b]
   exact add_ships m hm a b ha hb
+
+end
 
 /-! ### What the walk refuses
 

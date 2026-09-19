@@ -121,10 +121,10 @@ private def randomTuples (p : Program) (s : UInt64) (tys : List Ty) : Nat → Li
       (acc ++ [randomValue p seed ty], nextSeed seed)
     row :: randomTuples p (nextSeed s') tys n
 
-/-- How an argument is written on the JS side. `encodeValue` puts `tag` first and the declared fields in
-declared order, but the `.d.ts` names no order and tolerates keys the type does not declare, so both of
-those readings need vectors of their own. Neither is a `Value`: the perturbation rides alongside the
-argument and is applied to its encoding. -/
+/-- How an argument is written on the JS side. `encodeValue` puts the key the constructor's name is
+carried under first and the declared fields in declared order, but the `.d.ts` names no order and
+tolerates keys the type does not declare, so both of those readings need vectors of their own. Neither
+is a `Value`: the perturbation rides alongside the argument and is applied to its encoding. -/
 inductive ArgShape where
   | canonical
   | reversed
@@ -148,14 +148,16 @@ structure TestVector where
 
 def TestVector.shapeAt (v : TestVector) (i : Nat) : ArgShape := v.shapes.getD i .canonical
 
-partial def Value.toJson : Value → Json
+/-- The key a constructor's name is carried under travels with the vector: the script on Node builds the
+argument the way the generated code expects it, and that is the type's own key rather than a fixed one. -/
+partial def Value.toJson [Discriminators] : Value → Json
   | .bool b => .obj [("t", .str "bool"), ("v", .bool b)]
   | .int53 i => .obj [("t", .str "int53"), ("v", .num i)]
   | .uint32 n => .obj [("t", .str "uint32"), ("v", .num n.toNat)]
   | .str s => .obj [("t", .str "string"), ("v", .str s)]
   | .bigint i => .obj [("t", .str "bigint"), ("v", .str (toString i))]
   | .obj ctor fields =>
-    .obj [("t", .str "obj"), ("ctor", .str ctor),
+    .obj [("t", .str "obj"), ("key", .str (keyFor ctor)), ("ctor", .str ctor),
           ("fields", .obj (fields.map fun (k, v) => (k, Value.toJson v)))]
   | .arr xs => .obj [("t", .str "arr"), ("v", .arr (xs.map Value.toJson))]
   | .dict entries =>
@@ -163,7 +165,7 @@ partial def Value.toJson : Value → Json
           ("v", .arr (entries.map fun (k, v) => .arr [.str k, Value.toJson v]))]
   | .fn name => .obj [("t", .str "fn"), ("v", .str name)]
 
-def TestVector.toJson (v : TestVector) : Json :=
+def TestVector.toJson [Discriminators] (v : TestVector) : Json :=
   let outcome :=
     match v.expected with
     | .ok value => [("ok", Json.bool true), ("value", value.toJson)]
@@ -279,7 +281,8 @@ private def undeclaredTrap (p : Program) (vectors : List TestVector) : Option (S
       if (Traps.forName p traps v.fn).contains e.code then none else some (v.fn, e.code)
     | .ok _ => none
 
-def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String :=
+def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String := do
+  let _keys : Discriminators ← p.discriminators?
   let vectors := allTestVectors p edgeLimit randomCount
   match outOfFuelIn vectors with
   | some v => .error s!"{v.fn} ran out of fuel; the subset excludes nontermination"

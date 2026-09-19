@@ -6,8 +6,9 @@ before the program runs, how long it can take.
 
 **1. A value is one of the seven things JavaScript has.** `boolean`, `number`, `bigint`, `string`,
 `Array`, `Map`, and the tagged object `{ tag: ... }`. `Option`, `Except` and the types you declare with
-`deriving Enc` are all the tagged object, `Dict` is the `Map`, and `Int` / `UInt32` / `BigInt` are three
-names because JavaScript has two number types and a safe range inside one of them. Nothing else crosses
+`deriving Enc` are all the tagged object (under the key the type declares, `tag` unless you write one),
+`Dict` is the `Map`, and `Int` / `UInt32` / `BigInt` are three names because JavaScript has two number
+types and a safe range inside one of them. Nothing else crosses
 the boundary — the one thing the subset has besides the seven is a function, and a function is only ever a
 name, which is line 2. The vocabulary follows from the same line: `Arr.*`, `Str.*`, `Dict.*`, `Int53.*`
 and `BigInt.*` name the JavaScript operation, which is why Lean's function of the same name is not read
@@ -96,9 +97,16 @@ ship_package
   `@[ship]` or `@[expand]`.
 - **A type needs `deriving Enc`.** `Enc` says where the type sits in `Value` and puts a `TypeDef` into
   the program. Add `DecidableEq` as well if you compare values of it with `==`.
-- **A `structure` has to name its constructor** (`Money ::`). The constructor's name is the `tag` a
-  consumer reads in the generated TypeScript, and Lean's default name, `mk`, says nothing to them. A
-  structure without the line is refused.
+- **A `structure` has to name its constructor** (`Money ::`). The constructor's name is what a consumer
+  reads in the generated TypeScript, and Lean's default name, `mk`, says nothing to them. A structure
+  without the line is refused.
+- **`@[discriminator "kind"]` above a type changes the key its constructors are told apart by**, from
+  `tag` to whatever you write, in the generated types and in the generated code alike. It is per type,
+  so one package may carry several. Three things are refused: a key that is not a JavaScript
+  identifier, a key that a constructor of that type also uses as a field name, and — because a value
+  carries its constructor's name and not the type it came from — two types declaring a constructor of
+  the same name under different keys. `Option` and `Except` are the subset's own and stay under `tag`,
+  so a type keyed by anything else may not name a constructor `none`, `some`, `ok` or `error`.
 - Parameters need names. `def f : Role → Int | .guest => 0` has none, so it is refused.
 - **A name JavaScript has taken is refused.** Declaration names, parameter names, field names and
   constructor names all become identifiers in `index.js`, so the keywords and the globals a rebinding
@@ -162,7 +170,7 @@ def labelOrBlank (labels : List String) : String := firstOr labels ""
 | `Except E A` | `{ tag: "ok", value: A } \| { tag: "error", error: E }` |
 | `List T` | `readonly T[]` |
 | `Dict V` | `ReadonlyMap<string, V>` |
-| your own type with `deriving Enc` | a tagged object |
+| your own type with `deriving Enc` | `{ tag: "Money", ... }`, under the key the type declares |
 | `Int → Int` | cannot be published; a declaration taking a function is internal |
 
 `Int` maps to `Int53`. Lean's `Int` is unbounded and `Int53` is not, so the certificate states one
@@ -458,7 +466,7 @@ all `Arr.take` and the rest of the subset's vocabulary are made of.
 | `Nat` | `reify: Nat is not a subset type; the subset's integer is Int, ...` |
 | `Float` | `reify: Float is not a subset type; the subset has no floating point, ...` |
 | any other type without `deriving Enc` | `reify: T has no Enc instance, so there is no subset type to give it` |
-| a `structure` whose constructor is not named | `deriving Enc: T.mk would ship as the tag "mk", ...` |
+| a `structure` whose constructor is not named | `deriving Enc: T.mk would ship as "mk", ...` |
 | anything else | `reify: <term> is outside the subset this walk reads`, and the rule of the three it broke |
 
 **A refusal closes with the rule where it has nothing better to say.** The three sentences are the two

@@ -27,7 +27,7 @@ function decode(value) {
     case "bigint":
       return BigInt(value.v);
     case "obj": {
-      const out = { tag: value.ctor };
+      const out = { [value.key]: value.ctor };
       for (const [key, field] of Object.entries(value.fields)) out[key] = decode(field);
       return out;
     }

@@ -17,6 +17,12 @@ namespace Lean2Js.Compile
 
 open Core Lean2Js.Parse
 
+-- Which key a constructor's name is carried under is in scope for the whole module, so a lemma that
+-- does not read it carries the binder and nothing else; that is what this linter would report, once per
+-- lemma.
+set_option linter.unusedSectionVars false
+variable [Discriminators]
+
 /-! ## No `*` reaches the doc comment
 
 A doc comment goes into `/** */` unescaped, so `Renderable` asks it not to spell `*/`. The doc is built
@@ -541,8 +547,8 @@ theorem renderable_patParts {p : Program} (hfn : FieldNamesOk p) :
       obtain ⟨rfl, rfl⟩ := h
       obtain ⟨htests, hbinds⟩ := ih hpaths rtests rbinds hrec
       refine ⟨?_, hbinds⟩
-      have hmem : RenderableExpr (Js.Expr.member path "tag") = true := by
-        rw [RenderableExpr]; simp [hpath, show okName "tag" = true by decide]
+      have hmem : RenderableExpr (Js.Expr.member path (keyFor name)) = true := by
+        rw [RenderableExpr]; simp [hpath, keyFor_okName name]
       have hstr : RenderableExpr (Js.Expr.str name) = true := by rw [RenderableExpr]
       rw [RenderableList, RenderableExpr]
       simp [hmem, hstr, htests, show okOp "===" = true by decide]
@@ -1016,25 +1022,19 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
                 all_goals
                   exact renderable_of_ok h
                     (renderable_objOf _ _ (renderablePairs_zip _ _ (ihargs hctx js hjs)))))))
-  -- 25, 26: a field read
-  · intro ctx e field hg _ j t h
-    rw [compileExpr] at h
-    peel h
-    all_goals (simp only [hg, if_true] at h; peel h)
-  · intro ctx e field _ ihe hctx j t h
+  -- 25: a field read
+  · intro ctx e field ihe hctx j t h
     rw [compileExpr] at h
     peel h
     all_goals
-      (split at h <;> peel h
+      (obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
+       try simp only at h
+       have hje := ihe hctx je te he
+       shred h
        all_goals
-         (obtain ⟨⟨je, te⟩, he, h⟩ := bind_ok h
-          try simp only at h
-          have hje := ihe hctx je te he
-          shred h
-          all_goals
-            exact renderable_of_ok h
-              (renderable_member hje
-                (okName_of_proj hfn (by assumption) (by assumption) (by assumption)))))
+         exact renderable_of_ok h
+           (renderable_member hje
+             (okName_of_proj hfn (by assumption) (by assumption) (by assumption))))
   -- 27: a match
   · intro ctx scrut alts ihs iha hctx j t h
     rw [compileExpr] at h
@@ -1673,6 +1673,7 @@ theorem fieldNamesOk_of_validated {p : Program} (ts : List TypeDef)
   obtain ⟨_, _, h1⟩ := bind_ok h1
   obtain ⟨_, _, h1⟩ := bind_ok h1
   obtain ⟨_, h2⟩ := forM_ok _ h1 c hc
+  obtain ⟨_, _, h2⟩ := bind_ok h2
   obtain ⟨_, _, h2⟩ := bind_ok h2
   obtain ⟨_, _, h2⟩ := bind_ok h2
   obtain ⟨_, h3⟩ := forM_ok _ h2 f hf

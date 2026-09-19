@@ -280,10 +280,13 @@ def field (recv : Val) (name : String) : Res Val :=
   | .dict _, _ => .ok .undef
   | _, _ => .stuck
 
+/-- `x[k]` for a string `k` is `x.k`, so it reads the same way `field` does: the helpers index an object
+with a key the descriptor carries, and a `Map` answers such a read out of its prototype rather than out
+of its entries. -/
 def index (recv : Val) (i : Val) : Res Val :=
   match recv, i with
   | .arr xs, .num n => .ok (if 0 ≤ n then (xs[n.toNat]?).getD .undef else .undef)
-  | .obj fs, .str key => .ok (lookupV fs key)
+  | recv, .str key => field recv key
   | _, _ => .stuck
 
 /-! ## The evaluator -/

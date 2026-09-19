@@ -15,6 +15,12 @@ namespace Lean2Js.Exhaustive
 
 open Core Compile
 
+-- Which key a constructor's name is carried under is in scope for the whole module, so a lemma that
+-- does not read it carries the binder and nothing else; that is what this linter would report, once per
+-- lemma.
+set_option linter.unusedSectionVars false
+variable [Discriminators]
+
 /-- Some row of the matrix accepts the value vector. -/
 def Covers (rows : List (List Pat)) (vs : List Value) : Prop :=
   ∃ row ∈ rows, (matchPats row vs).isSome

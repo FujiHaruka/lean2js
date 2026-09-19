@@ -27,7 +27,9 @@ inductive TyDesc where
   | result (ok err : TyDesc)
   | array (t : TyDesc)
   | dict (value : TyDesc)
-  | ctors (alts : List (String × List (String × TyDesc)))
+  /-- `key` is what the value carries its constructor's name under; the built-in `option` and `result`
+  above have no room for one because their shapes are the subset's own, and those are `tag`. -/
+  | ctors (key : String) (alts : List (String × List (String × TyDesc)))
   deriving Inhabited, BEq
 
 mutual
@@ -44,7 +46,8 @@ def TyDesc.render : TyDesc → String
   | .result ok err => "[\"result\", " ++ ok.render ++ ", " ++ err.render ++ "]"
   | .array t => "[\"array\", " ++ t.render ++ "]"
   | .dict v => "[\"dict\", " ++ v.render ++ "]"
-  | .ctors alts => "[\"ctors\", [" ++ TyDesc.renderAlts alts ++ "]]"
+  | .ctors key alts =>
+    "[\"ctors\", \"" ++ escapeString key ++ "\", [" ++ TyDesc.renderAlts alts ++ "]]"
 termination_by d => sizeOf d
 
 def TyDesc.renderFields : List (String × TyDesc) → String
@@ -246,15 +249,15 @@ termination_by ts => sizeOf ts
 
 end
 
-private def renderCtor (c : Core.CtorDef) : String :=
+private def renderCtor (key : String) (c : Core.CtorDef) : String :=
   let fields := c.fields.map fun f => s!"; readonly {f.name}: {tsType f.ty}"
-  "{ readonly tag: \"" ++ c.name ++ "\"" ++ String.join fields ++ " }"
+  "{ readonly " ++ key ++ ": \"" ++ c.name ++ "\"" ++ String.join fields ++ " }"
 
 private def declareType (t : Core.TypeDef) : String :=
   let head :=
     if t.params.isEmpty then t.name
     else t.name ++ "<" ++ String.intercalate ", " t.params ++ ">"
-  match t.ctors.map renderCtor with
+  match t.ctors.map (renderCtor t.discriminator) with
   | [only] => "export type " ++ head ++ " = " ++ only ++ ";"
   | ctors => "export type " ++ head ++ " =\n  | " ++ String.intercalate "\n  | " ctors ++ ";"
 

@@ -18,6 +18,24 @@ namespace Lean2Js.Enc
 open Lean Elab Command Term Meta
 open Lean.Parser.Term (matchAltExpr matchAlt)
 
+/-- The key the generated JavaScript tells a type's constructors apart by, written above the type it
+belongs to rather than beside the package: which key reads well is a fact about the type. -/
+syntax (name := discriminator) "discriminator " str : attr
+
+initialize discriminatorAttr : ParametricAttribute String ←
+  registerParametricAttribute {
+    name := `discriminator
+    descr := "the key the generated JavaScript tells this type's constructors apart by"
+    getParam := fun _ stx =>
+      match stx with
+      | `(attr| discriminator $key:str) => return key.getString
+      | _ => throwError "expected `discriminator \"<key>\"`"
+  }
+
+/-- The key the type is told apart by, which is `tag` unless the author wrote one above it. -/
+private def discriminatorOf (t : Name) : CommandElabM String :=
+  return (discriminatorAttr.getParam? (← getEnv) t).getD "tag"
+
 private structure CtorShape where
   name : Name
   fields : Array (String × Term)
@@ -136,11 +154,12 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
       return (← a.fvarId!.getUserName).toString
   for c in indVal.ctors do
     if c.getString! == "mk" then
-      throwError "deriving Enc: {c} would ship as the tag \"mk\", which says nothing to a consumer \
-        reading the generated type. Name the constructor — `structure {t.getString!} where\n  \
-        {t.getString!} ::` — and the tag is that name"
+      throwError "deriving Enc: {c} would ship as \"mk\", which says nothing to a consumer reading \
+        the generated type. Name the constructor — `structure {t.getString!} where\n  \
+        {t.getString!} ::` — and what a consumer reads is that name"
   let shapes ← liftTermElabM <| indVal.ctors.toArray.mapM fun c => shapeOf c paramNames
   let nameLit : Term := ⟨Syntax.mkStrLit t.getString!⟩
+  let discLit : Term := ⟨Syntax.mkStrLit (← discriminatorOf t)⟩
   let paramIds : Array Ident := paramNames.map fun nm => mkIdent (Name.mkSimple nm)
   let paramLits : Array Term := paramNames.map fun nm => ⟨Syntax.mkStrLit nm⟩
   let typeDefId := mkIdent (`_root_ ++ t ++ `typeDef)
@@ -171,7 +190,8 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
     let v := mkIdent `v
     return #[
       ← `(command| def $typeDefId : Lean2Js.Core.TypeDef :=
-            { name := $nameLit, params := [$paramLits,*], ctors := [$ctorDefs,*] }),
+            { name := $nameLit, params := [$paramLits,*], ctors := [$ctorDefs,*],
+              discriminator := $discLit }),
       ← `(command| @[simp] def $toValueId $carried* ($x : $typeId) : Lean2Js.Value :=
             match $x:ident with $toValueAlts:matchAlt*),
       ← `(command| def $ofValueId $carried* ($v : Lean2Js.Value) : Option $typeId :=

@@ -20,24 +20,27 @@ open Core
 
 mutual
 
-def encodeValue : Value → Js.JsValue
+/-- A constructor value is written under the key its name is carried under. The key follows the name
+rather than the type, because that is all a `Value` carries: `Compile.objOf` reads it the same way, so
+the compiler and this write the same object. -/
+def encodeValue [Discriminators] : Value → Js.JsValue
   | .bool b => .bool b
   | .int53 i => .num i
   | .uint32 n => .num n.toNat
   | .str s => .str s
   | .bigint i => .bigint i
-  | .obj ctor fields => .obj (("tag", .str ctor) :: encodeFields fields)
+  | .obj ctor fields => .obj ((keyFor ctor, .str ctor) :: encodeFields fields)
   | .arr xs => .arr (encodeList xs)
   | .dict entries => .dict (encodeFields entries)
   | .fn name => .fn name
 termination_by v => sizeOf v
 
-def encodeFields : List (String × Value) → List (String × Js.JsValue)
+def encodeFields [Discriminators] : List (String × Value) → List (String × Js.JsValue)
   | [] => []
   | (k, v) :: rest => (k, encodeValue v) :: encodeFields rest
 termination_by fields => sizeOf fields
 
-def encodeList : List Value → List Js.JsValue
+def encodeList [Discriminators] : List Value → List Js.JsValue
   | [] => []
   | x :: rest => encodeValue x :: encodeList rest
 termination_by xs => sizeOf xs
@@ -60,12 +63,12 @@ partial def reshapeJs (shape : ArgShape) : Js.JsValue → Js.JsValue
 
 /-- The arguments the generated code is called with: each `Value` encoded, then written the way the
 vector says a caller may write it. -/
-def TestVector.jsArgs (v : TestVector) : List Js.JsValue :=
+def TestVector.jsArgs [Discriminators] (v : TestVector) : List Js.JsValue :=
   v.args.zipIdx.map fun (a, i) => reshapeJs (v.shapeAt i) (encodeValue a)
 
 /-- Whether the result of `eval` and the result of the model are the same. Two failures are compared by
 the thrown `code`. -/
-def agrees : Except Err Value → Js.JsResult → Bool
+def agrees [Discriminators] : Except Err Value → Js.JsResult → Bool
   | .ok a, .ok b => encodeValue a == b
   | .error e, .error code => e.code == code
   | _, _ => false
@@ -93,15 +96,19 @@ def Disagreement.render (d : Disagreement) : String :=
     | .error code => s!"throw {code}"
   s!"{d.fn}({args}): eval says {expected} but the compiled module says {actual}"
 
-def disagreementsIn (m : Js.Module) (vectors : List TestVector) :
+def disagreementsIn [Discriminators] (m : Js.Module) (vectors : List TestVector) :
     List Disagreement :=
   vectors.filterMap fun v =>
     let actual := Js.callFunction m v.fn v.jsArgs
     if agrees v.expected actual then none
     else some { fn := v.fn, args := v.args, shapes := v.shapes, expected := v.expected, actual }
 
-/-- Checks that the artifact does not disagree with the reference semantics, before writing it out. -/
+/-- Checks that the artifact does not disagree with the reference semantics, before writing it out.
+
+The keys the program declares are installed here, so the compiler and the encoding read one reading —
+`Compile.validateType` is what checks that reading against every type the program declares. -/
 def checkAgreement (p : Program) (edgeLimit randomCount : Nat) : Except String Unit := do
+  let _keys : Discriminators ← p.discriminators?
   let m ← Compile.compileProgram p
   let vectors := allTestVectors p edgeLimit randomCount
   match disagreementsIn m vectors with

@@ -51,7 +51,7 @@ def Core.Program.checked (p : Core.Program) : Except String Js.Module := do
   if defaultFuel < Cost.cost p then
     throw s!"this program can need {Cost.cost p} fuel, past the {defaultFuel} the artifact runs at"
   Bound.programBounded p
-  match Compile.compileProgram p with
+  match Compile.compileDeclared p with
   | .error e => throw s!"compile failed: {e}"
   | .ok jsModule => return jsModule
 
