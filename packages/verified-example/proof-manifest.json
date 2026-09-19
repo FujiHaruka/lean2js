@@ -743,7 +743,7 @@
     },
     {
       "name": "dts_fits_entry_check",
-      "statement": "dts_fits_entry_check [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)\n  (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d)\n  (hts : Dts.TsSat program ty jv) (hr : Dts.inRange jv d = true) : Js.checkTy [] jv d = true",
+      "statement": "dts_fits_entry_check [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)\n  (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d)\n  (hts : Dts.TsSat program ty jv) (hr : Dts.inRange [] jv d = true) : Js.checkTy [] jv d = true",
       "doc": "The other direction, and the one a caller feels: an argument the published `.d.ts` type admits is one\nthe entry check accepts. `Dts.inRange` is the whole of what is assumed about the value — the `Int53` and\n`UInt32` ranges the check reads, which a TypeScript type cannot express. The order the keys arrive in is\nnot read, and neither are keys the type does not declare."
     },
     {

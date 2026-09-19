@@ -856,7 +856,7 @@ theorem add_refuses_string (m : Js.Module) (hm : Compile.compileProgram program 
   | fn hif _ _ => simp [Ty.isFn] at hif
   | cons hdesc _ hnorm _ =>
     obtain ⟨i, rfl⟩ := hasTy_int53_inv htyped.1
-    rw [Compile.tyDesc.eq_def] at hdesc
+    rw [Compile.tyDesc, Compile.tyDescIn.eq_def] at hdesc
     simp only at hdesc
     obtain rfl : Js.TyDesc.int53 = _ := (Except.ok.inj hdesc)
     rw [Js.normTy.eq_def, encodeValue.eq_def] at hnorm
@@ -902,7 +902,7 @@ not the same set: the check reads a number's range, which a TypeScript type cann
 theorem entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
     (hd : Compile.tyDesc program b ty = .ok d) (hc : Js.checkTy [] jv d = true) :
     Dts.TsSat program ty jv :=
-  Dts.checkTy_tsSat program jv ty b d hd hc
+  Dts.checkTy_tsSat program jv ty [] [] b d hd .nil hc
 
 /-- The other direction, and the one a caller feels: an argument the published `.d.ts` type admits is one
 the entry check accepts. `Dts.inRange` is the whole of what is assumed about the value — the `Int53` and
@@ -911,8 +911,8 @@ not read, and neither are keys the type does not declare. -/
 theorem dts_fits_entry_check (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
     (hd : Compile.tyDesc program b ty = .ok d) (hts : Dts.TsSat program ty jv)
-    (hr : Dts.inRange jv d = true) : Js.checkTy [] jv d = true :=
-  Dts.tsSat_checkTy program (Decl.typesNamesOk_of_compileProgram hm) jv ty b d hd hts hr
+    (hr : Dts.inRange [] jv d = true) : Js.checkTy [] jv d = true :=
+  Dts.tsSat_checkTy program (Decl.typesNamesOk_of_compileProgram hm) jv ty [] [] b d hd .nil hts hr
 
 /-- What comes back, rather than what goes in: a value the reference semantics gives a declared type to
 encodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration

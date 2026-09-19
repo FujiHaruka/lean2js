@@ -23,139 +23,229 @@ holds them together. -/
 theorem errNeOk {ε α : Type} {e : ε} {d : α}
     (h : (Except.error e : Except ε α) = .ok d) : False := by simp at h
 
+/-! ### The environment a descriptor is read under
+
+`tyDescIn` walks under a stack of the declared types it is inside; the entry check walks under an
+environment of what those types bound. `StackAgrees` is the two lined up: the `k`-th binder of the
+environment is what expanding the `k`-th name on the stack produces, from that point outwards. -/
+
+/-- What a descriptor adds to the environment when the walk enters it: a binder if it is one, nothing
+otherwise. -/
+def envFor (d : Js.TyDesc) (env : Js.TyEnv) : Js.TyEnv :=
+  match d with
+  | .mu key alts => (key, alts) :: env
+  | _ => env
+
+def StackAgrees (p : Program) (st : Compile.Stack) (env : Js.TyEnv) : Prop :=
+  st.length = env.length ∧
+  ∀ (k : Nat) (e : String × Js.TyAlts), env[k]? = some e →
+    ∃ (na : String × List Ty) (b : Nat), st[k]? = some na ∧
+      Compile.tyDescIn p (st.drop (k + 1)) b (.named na.1 na.2) = .ok (.mu e.1 e.2)
+
+theorem StackAgrees.nil {p : Program} : StackAgrees p [] [] := ⟨rfl, by intro k e h; simp at h⟩
+
+theorem StackAgrees.drop {p : Program} {st : Compile.Stack} {env : Js.TyEnv}
+    (h : StackAgrees p st env) (j : Nat) : StackAgrees p (st.drop j) (env.drop j) := by
+  refine ⟨by simp [h.1], ?_⟩
+  intro k e hk
+  rw [List.getElem?_drop] at hk
+  obtain ⟨na, b, hna, hd⟩ := h.2 (j + k) e hk
+  refine ⟨na, b, ?_, ?_⟩
+  · rw [List.getElem?_drop]; exact hna
+  · rw [List.drop_drop, show j + (k + 1) = j + k + 1 from by omega]; exact hd
+
+theorem StackAgrees.cons {p : Program} {st : Compile.Stack} {env : Js.TyEnv} {n : String}
+    {args : List Ty} {key : String} {alts : Js.TyAlts} {b : Nat}
+    (h : StackAgrees p st env)
+    (hd : Compile.tyDescIn p st b (.named n args) = .ok (.mu key alts)) :
+    StackAgrees p ((n, args) :: st) ((key, alts) :: env) := by
+  refine ⟨by simp [h.1], ?_⟩
+  intro k e hk
+  match k with
+  | 0 =>
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
+    subst hk
+    exact ⟨(n, args), b, rfl, hd⟩
+  | k + 1 =>
+    simp only [List.getElem?_cons_succ] at hk ⊢
+    obtain ⟨na, b', hna, hd'⟩ := h.2 k e hk
+    exact ⟨na, b', hna, hd'⟩
+
+variable {st : Compile.Stack} {env : Js.TyEnv}
+
 theorem tyDesc_bool_inv {p : Program} {b : Nat} {d : Js.TyDesc}
-    (h : tyDesc p b .bool = .ok d) : d = .bool := by
-  rw [tyDesc.eq_def] at h; simpa using h.symm
+    (h : tyDescIn p st b .bool = .ok d) : d = .bool := by
+  rw [tyDescIn.eq_def] at h; simpa using h.symm
 
 theorem tyDesc_int53_inv {p : Program} {b : Nat} {d : Js.TyDesc}
-    (h : tyDesc p b .int53 = .ok d) : d = .int53 := by
-  rw [tyDesc.eq_def] at h; simpa using h.symm
+    (h : tyDescIn p st b .int53 = .ok d) : d = .int53 := by
+  rw [tyDescIn.eq_def] at h; simpa using h.symm
 
 theorem tyDesc_uint32_inv {p : Program} {b : Nat} {d : Js.TyDesc}
-    (h : tyDesc p b .uint32 = .ok d) : d = .uint32 := by
-  rw [tyDesc.eq_def] at h; simpa using h.symm
+    (h : tyDescIn p st b .uint32 = .ok d) : d = .uint32 := by
+  rw [tyDescIn.eq_def] at h; simpa using h.symm
 
 theorem tyDesc_string_inv {p : Program} {b : Nat} {d : Js.TyDesc}
-    (h : tyDesc p b .string = .ok d) : d = .string := by
-  rw [tyDesc.eq_def] at h; simpa using h.symm
+    (h : tyDescIn p st b .string = .ok d) : d = .string := by
+  rw [tyDescIn.eq_def] at h; simpa using h.symm
 
 theorem tyDesc_bigint_inv {p : Program} {b : Nat} {d : Js.TyDesc}
-    (h : tyDesc p b .bigint = .ok d) : d = .bigint := by
-  rw [tyDesc.eq_def] at h; simpa using h.symm
+    (h : tyDescIn p st b .bigint = .ok d) : d = .bigint := by
+  rw [tyDescIn.eq_def] at h; simpa using h.symm
 
 theorem tyDesc_var_inv {p : Program} {b : Nat} {n : String} {d : Js.TyDesc}
-    (h : tyDesc p b (.var n) = .ok d) : False := by
-  rw [tyDesc.eq_def] at h; simp at h
+    (h : tyDescIn p st b (.var n) = .ok d) : False := by
+  rw [tyDescIn.eq_def] at h; simp at h
 
 theorem tyDesc_fn_inv {p : Program} {b : Nat} {ps : List Ty} {r : Ty} {d : Js.TyDesc}
-    (h : tyDesc p b (.fn ps r) = .ok d) : False := by
-  rw [tyDesc.eq_def] at h; simp at h
+    (h : tyDescIn p st b (.fn ps r) = .ok d) : False := by
+  rw [tyDescIn.eq_def] at h; simp at h
 
 theorem tyDesc_option_inv {p : Program} {b : Nat} {t : Ty} {d : Js.TyDesc}
-    (h : tyDesc p b (.option t) = .ok d) : ∃ dt, tyDesc p b t = .ok dt ∧ d = .option dt := by
-  rw [tyDesc.eq_def] at h
+    (h : tyDescIn p st b (.option t) = .ok d) :
+    ∃ dt, tyDescIn p st b t = .ok dt ∧ d = .option dt := by
+  rw [tyDescIn.eq_def] at h
   simp only at h
-  cases ht : tyDesc p b t with
+  cases ht : tyDescIn p st b t with
   | error e => rw [ht] at h; exact (errNeOk h).elim
   | ok dt => rw [ht] at h; exact ⟨dt, rfl, (Except.ok.inj h).symm⟩
 
 theorem tyDesc_array_inv {p : Program} {b : Nat} {t : Ty} {d : Js.TyDesc}
-    (h : tyDesc p b (.array t) = .ok d) : ∃ dt, tyDesc p b t = .ok dt ∧ d = .array dt := by
-  rw [tyDesc.eq_def] at h
+    (h : tyDescIn p st b (.array t) = .ok d) :
+    ∃ dt, tyDescIn p st b t = .ok dt ∧ d = .array dt := by
+  rw [tyDescIn.eq_def] at h
   simp only at h
-  cases ht : tyDesc p b t with
+  cases ht : tyDescIn p st b t with
   | error e => rw [ht] at h; exact (errNeOk h).elim
   | ok dt => rw [ht] at h; exact ⟨dt, rfl, (Except.ok.inj h).symm⟩
 
 theorem tyDesc_dict_inv {p : Program} {b : Nat} {t : Ty} {d : Js.TyDesc}
-    (h : tyDesc p b (.dict t) = .ok d) : ∃ dt, tyDesc p b t = .ok dt ∧ d = .dict dt := by
-  rw [tyDesc.eq_def] at h
+    (h : tyDescIn p st b (.dict t) = .ok d) :
+    ∃ dt, tyDescIn p st b t = .ok dt ∧ d = .dict dt := by
+  rw [tyDescIn.eq_def] at h
   simp only at h
-  cases ht : tyDesc p b t with
+  cases ht : tyDescIn p st b t with
   | error e => rw [ht] at h; exact (errNeOk h).elim
   | ok dt => rw [ht] at h; exact ⟨dt, rfl, (Except.ok.inj h).symm⟩
 
 theorem tyDesc_result_inv {p : Program} {b : Nat} {ok err : Ty} {d : Js.TyDesc}
-    (h : tyDesc p b (.result ok err) = .ok d) :
-    ∃ dok derr, tyDesc p b ok = .ok dok ∧ tyDesc p b err = .ok derr ∧ d = .result dok derr := by
-  rw [tyDesc.eq_def] at h
+    (h : tyDescIn p st b (.result ok err) = .ok d) :
+    ∃ dok derr, tyDescIn p st b ok = .ok dok ∧ tyDescIn p st b err = .ok derr ∧
+      d = .result dok derr := by
+  rw [tyDescIn.eq_def] at h
   simp only at h
-  cases hok : tyDesc p b ok with
+  cases hok : tyDescIn p st b ok with
   | error e => rw [hok] at h; exact (errNeOk h).elim
   | ok dok =>
-    cases herr : tyDesc p b err with
+    cases herr : tyDescIn p st b err with
     | error e => rw [hok, herr] at h; exact (errNeOk h).elim
     | ok derr => rw [hok, herr] at h; exact ⟨dok, derr, rfl, rfl, (Except.ok.inj h).symm⟩
 
+/-- A declared type expands one of three ways: to a `ref` where the name has come round again at the
+same arguments, to a `mu` where the type can reach itself, and to a `ctors` where it cannot. The last
+two differ only in what the walk is left standing under, which is what `envFor` says. -/
 theorem tyDesc_named_inv {p : Program} {b : Nat} {n : String} {args : List Ty} {d : Js.TyDesc}
-    (h : tyDesc p b (.named n args) = .ok d) :
-    ∃ b' t alts, b = b' + 1 ∧ p.findType? n = some t ∧
-      tyDescAlts p b' (t.ctorsAt args) = .ok alts ∧ d = .ctors t.discriminator alts := by
-  cases b with
-  | zero => rw [tyDesc.eq_def] at h; simp at h
-  | succ b' =>
-    rw [tyDesc.eq_def] at h
-    simp only at h
-    split at h
-    · simp at h
-    · rename_i t ht
-      cases ha : tyDescAlts p b' (t.ctorsAt args) with
-      | error e => rw [ha] at h; exact (errNeOk h).elim
-      | ok alts =>
-        rw [ha] at h
-        exact ⟨b', t, alts, rfl, ht, ha, (Except.ok.inj h).symm⟩
+    (h : tyDescIn p st b (.named n args) = .ok d) :
+    (∃ k, st[k]? = some (n, args) ∧ d = .ref k) ∨
+    (∃ (t : TypeDef) (alts : Js.TyAlts) (b' : Nat), p.findType? n = some t ∧
+      ((d = .ctors t.discriminator alts ∧ tyDescAlts p st b' (t.ctorsAt args) = .ok alts) ∨
+       (d = .mu t.discriminator alts ∧
+         tyDescAlts p ((n, args) :: st) b' (t.ctorsAt args) = .ok alts))) := by
+  rw [tyDescIn.eq_def] at h
+  simp only at h
+  split at h
+  · rename_i k hk
+    refine Or.inl ⟨k, ?_, (Except.ok.inj h).symm⟩
+    obtain ⟨he, hcond, -⟩ := List.findIdx?_eq_some_iff_getElem.mp hk
+    simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+    rw [List.getElem?_eq_getElem he]
+    exact congrArg some (Prod.ext hcond.1 hcond.2)
+  · cases b with
+    | zero => simp at h
+    | succ b' =>
+      simp only at h
+      split at h
+      · simp at h
+      · rename_i t ht
+        split at h
+        · cases ha : tyDescAlts p ((n, args) :: st) b' (t.ctorsAt args) with
+          | error e => rw [ha] at h; exact (errNeOk h).elim
+          | ok alts =>
+            rw [ha] at h
+            exact Or.inr ⟨t, alts, b', ht, Or.inr ⟨(Except.ok.inj h).symm, ha⟩⟩
+        · cases ha : tyDescAlts p st b' (t.ctorsAt args) with
+          | error e => rw [ha] at h; exact (errNeOk h).elim
+          | ok alts =>
+            rw [ha] at h
+            exact Or.inr ⟨t, alts, b', ht, Or.inl ⟨(Except.ok.inj h).symm, ha⟩⟩
+
+/-- A `ctors` and the `mu` that binds it are checked the same way, under environments that differ by
+that binder. -/
+theorem checkTy_envFor {env : Js.TyEnv} {jv : Js.JsValue} {key : String} {alts : Js.TyAlts}
+    {d : Js.TyDesc} (h : d = .ctors key alts ∨ d = .mu key alts) :
+    Js.checkTy env jv d = Js.checkTy (envFor d env) jv (.ctors key alts) := by
+  rcases h with rfl | rfl
+  · rfl
+  · rw [Js.checkTy, envFor]
+
+theorem normTy_envFor {env : Js.TyEnv} {jv : Js.JsValue} {key : String} {alts : Js.TyAlts}
+    {d : Js.TyDesc} (h : d = .ctors key alts ∨ d = .mu key alts) :
+    Js.normTy env jv d = Js.normTy (envFor d env) jv (.ctors key alts) := by
+  rcases h with rfl | rfl
+  · rfl
+  · rw [Js.normTy, envFor]
 
 /-! ### Reading the shape check
 
 `Js.checkTy` is well-founded too, so it needs the same one-lemma-per-shape treatment `Value.hasTy` got. -/
 
-theorem checkTy_bool (b : Bool) : Js.checkTy [] (.bool b) .bool = true := by
+theorem checkTy_bool (b : Bool) : Js.checkTy env (.bool b) .bool = true := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_int53 (i : Int) :
-    Js.checkTy [] (.num i) .int53
+    Js.checkTy env (.num i) .int53
       = (decide (Js.Runtime.safeMin ≤ i) && decide (i ≤ Js.Runtime.safeMax)) := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_uint32 (i : Int) :
-    Js.checkTy [] (.num i) .uint32 = (decide (0 ≤ i) && decide (i < Js.Runtime.wrap32)) := by
+    Js.checkTy env (.num i) .uint32 = (decide (0 ≤ i) && decide (i < Js.Runtime.wrap32)) := by
   rw [Js.checkTy.eq_def]
 
-theorem checkTy_string (s : String) : Js.checkTy [] (.str s) .string = true := by
+theorem checkTy_string (s : String) : Js.checkTy env (.str s) .string = true := by
   rw [Js.checkTy.eq_def]
 
-theorem checkTy_bigint (i : Int) : Js.checkTy [] (.bigint i) .bigint = true := by
+theorem checkTy_bigint (i : Int) : Js.checkTy env (.bigint i) .bigint = true := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_array (xs : List Js.JsValue) (d : Js.TyDesc) :
-    Js.checkTy [] (.arr xs) (.array d) = Js.checkList [] xs d := by
+    Js.checkTy env (.arr xs) (.array d) = Js.checkList env xs d := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_dict (es : List (String × Js.JsValue)) (d : Js.TyDesc) :
-    Js.checkTy [] (.dict es) (.dict d) = Js.checkEntries [] es d := by
+    Js.checkTy env (.dict es) (.dict d) = Js.checkEntries env es d := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_none (fields : List (String × Js.JsValue)) (d : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "none")) :
-    Js.checkTy [] (.obj fields) (.option d) = true := by
+    Js.checkTy env (.obj fields) (.option d) = true := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
 theorem checkTy_some (fields : List (String × Js.JsValue)) (d : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "some")) :
-    Js.checkTy [] (.obj fields) (.option d) = Js.checkFields [] fields [("value", d)] := by
+    Js.checkTy env (.obj fields) (.option d) = Js.checkFields env fields [("value", d)] := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
 theorem checkTy_ok (fields : List (String × Js.JsValue)) (dok derr : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "ok")) :
-    Js.checkTy [] (.obj fields) (.result dok derr) = Js.checkFields [] fields [("value", dok)] := by
+    Js.checkTy env (.obj fields) (.result dok derr) = Js.checkFields env fields [("value", dok)] := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
 theorem checkTy_error (fields : List (String × Js.JsValue)) (dok derr : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "error")) :
-    Js.checkTy [] (.obj fields) (.result dok derr) = Js.checkFields [] fields [("error", derr)] := by
+    Js.checkTy env (.obj fields) (.result dok derr) = Js.checkFields env fields [("error", derr)] := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
@@ -164,22 +254,22 @@ theorem checkTy_ctors (key ctor : String) (fields : List (String × Js.JsValue))
     (flds : List (String × Js.TyDesc))
     (htag : Js.lookupField fields key = some (.str ctor))
     (hf : alts.find? (·.1 == ctor) = some (ctor, flds)) :
-    Js.checkTy [] (.obj fields) (.ctors key alts) = Js.checkFields [] fields flds := by
+    Js.checkTy env (.obj fields) (.ctors key alts) = Js.checkFields env fields flds := by
   rw [Js.checkTy.eq_def]
   simp [htag, hf]
 
-theorem checkList_nil (d : Js.TyDesc) : Js.checkList [] [] d = true := by rw [Js.checkList.eq_def]
+theorem checkList_nil (d : Js.TyDesc) : Js.checkList env [] d = true := by rw [Js.checkList.eq_def]
 
 theorem checkList_cons (x : Js.JsValue) (rest : List Js.JsValue) (d : Js.TyDesc) :
-    Js.checkList [] (x :: rest) d = (Js.checkTy [] x d && Js.checkList [] rest d) := by
+    Js.checkList env (x :: rest) d = (Js.checkTy env x d && Js.checkList env rest d) := by
   rw [Js.checkList.eq_def]
 
-theorem checkEntries_nil (d : Js.TyDesc) : Js.checkEntries [] [] d = true := by
+theorem checkEntries_nil (d : Js.TyDesc) : Js.checkEntries env [] d = true := by
   rw [Js.checkEntries.eq_def]
 
 theorem checkEntries_cons (key : String) (v : Js.JsValue) (rest : List (String × Js.JsValue))
     (d : Js.TyDesc) :
-    Js.checkEntries [] ((key, v) :: rest) d = (Js.checkTy [] v d && Js.checkEntries [] rest d) := by
+    Js.checkEntries env ((key, v) :: rest) d = (Js.checkTy env v d && Js.checkEntries env rest d) := by
   rw [Js.checkEntries.eq_def]
 
 /-! ### Finding a constructor's descriptor
@@ -187,19 +277,19 @@ theorem checkEntries_cons (key : String) (v : Js.JsValue) (rest : List (String �
 `Value.hasTy` looks the constructor up in the declaration; the generated check looks it up in the
 descriptor list the compiler built from that same declaration. -/
 
-theorem tyDescAlts_find (p : Program) (b : Nat) :
+theorem tyDescAlts_find (p : Program) (st : Compile.Stack) (b : Nat) :
     ∀ (cs : List CtorDef) (alts : List (String × List (String × Js.TyDesc)))
       (ctor : String) (c : CtorDef),
-      tyDescAlts p b cs = .ok alts → cs.find? (·.name == ctor) = some c →
-      ∃ ds, alts.find? (·.1 == ctor) = some (c.name, ds) ∧ tyDescFields p b c.fields = .ok ds
+      tyDescAlts p st b cs = .ok alts → cs.find? (·.name == ctor) = some c →
+      ∃ ds, alts.find? (·.1 == ctor) = some (c.name, ds) ∧ tyDescFields p st b c.fields = .ok ds
   | [], _, _, _, _, hfind => by simp at hfind
   | c₀ :: rest, alts, ctor, c, halts, hfind => by
     rw [tyDescAlts.eq_def] at halts
     simp only at halts
-    cases hds : tyDescFields p b c₀.fields with
+    cases hds : tyDescFields p st b c₀.fields with
     | error e => rw [hds] at halts; exact (errNeOk halts).elim
     | ok ds₀ =>
-      cases hrest : tyDescAlts p b rest with
+      cases hrest : tyDescAlts p st b rest with
       | error e => rw [hds, hrest] at halts; exact (errNeOk halts).elim
       | ok altsRest =>
         rw [hds, hrest] at halts
@@ -214,7 +304,7 @@ theorem tyDescAlts_find (p : Program) (b : Nat) :
         | false =>
           rw [hname] at hfind
           simp only at hfind
-          obtain ⟨ds, hfind', hdsc⟩ := tyDescAlts_find p b rest altsRest ctor c hrest hfind
+          obtain ⟨ds, hfind', hdsc⟩ := tyDescAlts_find p st b rest altsRest ctor c hrest hfind
           exact ⟨ds, by simp [hname, hfind'], hdsc⟩
 
 /-! ### The entry check agrees
@@ -254,41 +344,107 @@ theorem hasFieldTys_singleton_inv {p : Program} {fs : List (String × Value)} {k
     | [] => exact ⟨v, rfl, hv⟩
     | _ :: _ => rw [Value.hasFieldTys.eq_def] at hrest; simp at hrest
 
+omit [Discriminators] in
+/-- However a declared type's descriptor was reached — written out, bound as a `mu`, or named by a `ref`
+back to a binder — what the walk does next is read the constructors of one `ctors` node, under the
+environment that node stands in. This is that node, and what it is read under.
+
+What the node's field names have to be is carried as an implication rather than as a hypothesis: the
+`.d.ts` direction needs the node and not the names. -/
+theorem named_unfolds {p : Program} {st : Compile.Stack} {env : Js.TyEnv} {b : Nat}
+    {n : String} {args : List Ty} {d : Js.TyDesc}
+    (hd : Compile.tyDescIn p st b (.named n args) = .ok d) (hsa : StackAgrees p st env) :
+    ∃ (t : TypeDef) (alts : Js.TyAlts) (b' : Nat) (stC : Compile.Stack) (envC : Js.TyEnv),
+      p.findType? n = some t ∧ Compile.tyDescAlts p stC b' (t.ctorsAt args) = .ok alts ∧
+      StackAgrees p stC envC ∧
+      (∀ jv, Js.checkTy env jv d = Js.checkTy envC jv (.ctors t.discriminator alts)) ∧
+      (∀ jv, Js.normTy env jv d = Js.normTy envC jv (.ctors t.discriminator alts)) ∧
+      (d = .ctors t.discriminator alts ∧ envC = env ∨
+        d = .mu t.discriminator alts ∧ envC = (t.discriminator, alts) :: env ∨
+        ∃ k, d = .ref k ∧ env[k]? = some (t.discriminator, alts) ∧ env.drop k = envC) ∧
+      (Js.envOk env = true → Js.descOk env.length d = true →
+        Js.envOk envC = true ∧ Js.altsOk envC.length t.discriminator alts = true) := by
+  rcases tyDesc_named_inv hd with ⟨k, hk, rfl⟩ | ⟨t, alts, b', ht, hcase⟩
+  · have hkst : k < st.length := (List.getElem?_eq_some_iff.mp hk).1
+    have hklt : k < env.length := hsa.1 ▸ hkst
+    obtain ⟨e, he⟩ : ∃ e, env[k]? = some e := ⟨_, List.getElem?_eq_getElem hklt⟩
+    obtain ⟨ek, ea⟩ := e
+    obtain ⟨na, b'', hna, hmu⟩ := hsa.2 k (ek, ea) he
+    rw [hk] at hna
+    obtain rfl : (n, args) = na := Option.some.inj hna
+    rcases tyDesc_named_inv hmu with ⟨k', hk', hbad⟩ | ⟨t, alts, b3, ht, hcase⟩
+    · exact absurd hbad (by simp)
+    rcases hcase with ⟨hbad, -⟩ | ⟨heq, halts⟩
+    · exact absurd hbad (by simp)
+    obtain ⟨rfl, rfl⟩ : t.discriminator = ek ∧ alts = ea := by
+      injection heq with h1 h2
+      exact ⟨h1.symm, h2.symm⟩
+    have hdrop : env.drop k = (t.discriminator, alts) :: env.drop (k + 1) := by
+      rw [List.drop_eq_getElem_cons hklt]
+      congr 1
+      rw [List.getElem?_eq_getElem hklt] at he
+      exact Option.some.inj he
+    refine ⟨t, alts, b3, (n, args) :: st.drop (k + 1),
+      (t.discriminator, alts) :: env.drop (k + 1), ht, halts, (hsa.drop (k + 1)).cons hmu,
+      (fun jv => by rw [Js.checkTy, he, hdrop]), (fun jv => by rw [Js.normTy, he, hdrop]),
+      Or.inr (Or.inr ⟨k, rfl, he, hdrop⟩), ?_⟩
+    intro henv _
+    have hok : Js.altsOk ((t.discriminator, alts) :: env.drop (k + 1)).length
+        t.discriminator alts = true := by
+      have := Js.envOk_getElem henv he
+      rw [hdrop] at this
+      simpa using this
+    refine ⟨?_, hok⟩
+    rw [Js.envOk, Bool.and_eq_true]
+    exact ⟨by simpa using hok, Js.envOk_drop (k + 1) henv⟩
+  · rcases hcase with ⟨rfl, halts⟩ | ⟨rfl, halts⟩
+    · exact ⟨t, alts, b', st, env, ht, halts, hsa, fun _ => rfl, fun _ => rfl, Or.inl ⟨rfl, rfl⟩,
+        fun henv hdo => ⟨henv, by rw [Js.descOk] at hdo; exact hdo⟩⟩
+    · refine ⟨t, alts, b', (n, args) :: st, (t.discriminator, alts) :: env, ht, halts,
+        hsa.cons hd, (fun jv => by rw [Js.checkTy]), (fun jv => by rw [Js.normTy]),
+        Or.inr (Or.inl ⟨rfl, rfl⟩), ?_⟩
+      intro henv hdo
+      rw [Js.descOk] at hdo
+      refine ⟨?_, by simpa using hdo⟩
+      rw [Js.envOk, Bool.and_eq_true]
+      exact ⟨by simpa using hdo, henv⟩
+
 mutual
 
 theorem checkTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
-    ∀ (ty : Ty) (b : Nat) (d : Js.TyDesc) (v : Value),
-      tyDesc p b ty = .ok d → Js.descOk 0 d = true → Value.hasTy p v ty = true →
-      Js.checkTy [] (encodeValue v) d = true
-  | .bool, _, _, v, hd, _, hv => by
+    ∀ (ty : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (v : Value),
+      tyDescIn p st b ty = .ok d → StackAgrees p st env → Js.envOk env = true → Js.descOk env.length d = true →
+      Value.hasTy p v ty = true →
+      Js.checkTy env (encodeValue v) d = true
+  | .bool, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
     rw [tyDesc_bool_inv hd]
     simp [encodeValue, checkTy_bool]
-  | .int53, _, _, v, hd, _, hv => by
+  | .int53, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨i, rfl⟩ := hasTy_int53_inv hv
     rw [hasTy_int53] at hv
     rw [tyDesc_int53_inv hd]
     simp only [encodeValue, checkTy_int53, Js.Runtime.safeMin, Js.Runtime.safeMax]
     simp only [Bool.and_eq_true, int53Min, int53Max] at hv ⊢
     exact hv
-  | .uint32, _, _, v, hd, _, hv => by
+  | .uint32, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨n, rfl⟩ := hasTy_uint32_inv hv
     rw [tyDesc_uint32_inv hd]
     simp only [encodeValue, checkTy_uint32, Bool.and_eq_true, decide_eq_true_eq]
     simp only [Js.Runtime.wrap32]
     have hlt : n.toNat < 4294967296 := n.toNat_lt_size
     omega
-  | .string, _, _, v, hd, _, hv => by
+  | .string, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨x, rfl⟩ := hasTy_string_inv hv
     rw [tyDesc_string_inv hd]
     simp [encodeValue, checkTy_string]
-  | .bigint, _, _, v, hd, _, hv => by
+  | .bigint, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨i, rfl⟩ := hasTy_bigint_inv hv
     rw [tyDesc_bigint_inv hd]
     simp [encodeValue, checkTy_bigint]
-  | .var _, _, _, _, hd, _, _ => (tyDesc_var_inv hd).elim
-  | .fn _ _, _, _, _, hd, _, _ => (tyDesc_fn_inv hd).elim
-  | .option elem, b, _, v, hd, hdo, hv => by
+  | .var _, st, env, _, _, _, hd, hsa, henv, _, _ => (tyDesc_var_inv hd).elim
+  | .fn _ _, st, env, _, _, _, hd, hsa, henv, _, _ => (tyDesc_fn_inv hd).elim
+  | .option elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_option_inv hv
     obtain ⟨de, hde, rfl⟩ := tyDesc_option_inv hd
     rw [Js.descOk] at hdo
@@ -302,9 +458,9 @@ theorem checkTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
           simp [encodeValue, encodeFields],
         checkTy_some _ _ (Js.lookupField_head _ _ _),
         Js.checkFields_found (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
-        checkTy_encodeValue p hn elem b de x hde hdo hx, Js.checkFields_nil]
+        checkTy_encodeValue p hn elem st env b de x hde hsa henv hdo hx, Js.checkFields_nil]
       simp
-  | .result ok err, b, _, v, hd, hdo, hv => by
+  | .result ok err, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_result_inv hv
     obtain ⟨dok, derr, hdok, hderr, rfl⟩ := tyDesc_result_inv hd
     rw [Js.descOk, Bool.and_eq_true] at hdo
@@ -315,7 +471,7 @@ theorem checkTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
           simp [encodeValue, encodeFields],
         checkTy_ok _ _ _ (Js.lookupField_head _ _ _),
         Js.checkFields_found (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
-        checkTy_encodeValue p hn ok b dok x hdok hdo.1 hx, Js.checkFields_nil]
+        checkTy_encodeValue p hn ok st env b dok x hdok hsa henv hdo.1 hx, Js.checkFields_nil]
       simp
     · obtain ⟨x, rfl, hx⟩ := hasFieldTys_singleton_inv hfs
       rw [show encodeValue (.obj "error" [("error", x)])
@@ -323,65 +479,68 @@ theorem checkTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
           simp [encodeValue, encodeFields],
         checkTy_error _ _ _ (Js.lookupField_head _ _ _),
         Js.checkFields_found (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
-        checkTy_encodeValue p hn err b derr x hderr hdo.2 hx, Js.checkFields_nil]
+        checkTy_encodeValue p hn err st env b derr x hderr hsa henv hdo.2 hx, Js.checkFields_nil]
       simp
-  | .array elem, b, _, v, hd, hdo, hv => by
+  | .array elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hv
     obtain ⟨de, hde, rfl⟩ := tyDesc_array_inv hd
     rw [Js.descOk] at hdo
     rw [hasTy_array] at hv
     rw [show encodeValue (.arr xs) = .arr (encodeList xs) by rw [encodeValue.eq_def], checkTy_array]
-    exact checkList_encodeList p hn elem b de xs hde hdo hv
-  | .dict elem, b, _, v, hd, hdo, hv => by
+    exact checkList_encodeList p hn elem st env b de xs hde hsa henv hdo hv
+  | .dict elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨es, rfl⟩ := hasTy_dict_inv hv
     obtain ⟨de, hde, rfl⟩ := tyDesc_dict_inv hd
     rw [Js.descOk] at hdo
     rw [hasTy_dict, Bool.and_eq_true] at hv
     rw [show encodeValue (.dict es) = .dict (encodeFields es) by rw [encodeValue.eq_def], checkTy_dict]
-    exact checkEntries_encodeFields p hn elem b de es hde hdo hv.2
-  | .named n args, b, _, v, hd, hdo, hv => by
+    exact checkEntries_encodeFields p hn elem st env b de es hde hsa henv hdo hv.2
+  | .named n args, st, env, b, d, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hv
-    obtain ⟨b', t, alts, rfl, ht, halts, rfl⟩ := tyDesc_named_inv hd
+    obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', hck, -, -, hok⟩ := named_unfolds hd hsa
+    obtain ⟨henv', hdoC⟩ := hok henv hdo
+    rw [hck]
     obtain ⟨t', c, ht', hc, hfs⟩ := hasTy_named_fields hv
     rw [ht] at ht'
-    have htt : t' = t := (Option.some.inj ht').symm
-    subst htt
-    obtain ⟨ds, hfind, hds⟩ := tyDescAlts_find p b' (t'.ctorsAt args) alts ctor c halts hc
+    obtain rfl : t = t' := Option.some.inj ht'
+    obtain ⟨ds, hfind, hds⟩ := tyDescAlts_find p stC b' (t.ctorsAt args) alts ctor c halts hc
     have hcname : c.name = ctor := by
       have := List.find?_some hc
       simpa using this
-    have hkey : keyFor ctor = t'.discriminator :=
-      hcname ▸ ((hn n args t' ht).2 c (List.mem_of_find?_eq_some hc)).1
-    rw [Js.descOk] at hdo
-    obtain ⟨hnames, hflds⟩ := Js.altsOk_find hdo (hcname ▸ hfind)
+    have hkey : keyFor ctor = t.discriminator :=
+      hcname ▸ ((hn n args t ht).2 c (List.mem_of_find?_eq_some hc)).1
+    obtain ⟨hnames, hflds⟩ := Js.altsOk_find hdoC (hcname ▸ hfind)
     rw [show encodeValue (.obj ctor fields)
           = .obj ((keyFor ctor, .str ctor) :: encodeFields fields) by rw [encodeValue.eq_def],
       hkey,
-      checkTy_ctors t'.discriminator ctor _ alts ds (Js.lookupField_head _ _ _) (hcname ▸ hfind),
-      Js.checkFields_skip (t'.discriminator, Js.JsValue.str ctor) _ ds
+      checkTy_ctors t.discriminator ctor _ alts ds (Js.lookupField_head _ _ _) (hcname ▸ hfind),
+      Js.checkFields_skip (t.discriminator, Js.JsValue.str ctor) _ ds
         (fun m hm => Js.namesOk_not_key hnames m hm)]
-    exact checkFields_encodeFields p hn c.fields b' ds t'.discriminator fields hds hnames hflds hfs
-termination_by _ _ _ v => sizeOf v
+    exact checkFields_encodeFields p hn c.fields stC envC b' ds t.discriminator fields hds hsa'
+      henv' hnames hflds hfs
+termination_by _ _ _ _ _ v => sizeOf v
 
 theorem checkFields_encodeFields (p : Program) (hn : TypesNamesOk p) :
-    ∀ (fdecls : List Field) (b : Nat) (ds : List (String × Js.TyDesc)) (key : String)
-      (fs : List (String × Value)),
-      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk 0 ds = true →
+    ∀ (fdecls : List Field) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat)
+      (ds : List (String × Js.TyDesc)) (key : String) (fs : List (String × Value)),
+      tyDescFields p st b fdecls = .ok ds → StackAgrees p st env → Js.envOk env = true →
+      Js.namesOk key ds = true →
+      Js.fieldsOk env.length ds = true →
       Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true →
-      Js.checkFields [] (encodeFields fs) ds = true
-  | [], _, ds, _, fs, hds, _, _, hfs => by
+      Js.checkFields env (encodeFields fs) ds = true
+  | [], st, env, _, ds, _, fs, hds, hsa, henv, _, _, hfs => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
     have : ds = [] := (Except.ok.inj hds).symm
     subst this
     exact Js.checkFields_nil _
-  | fd :: fdecls, b, ds, key, fs, hds, hnames, hflds, hfs => by
+  | fd :: fdecls, st, env, b, ds, key, fs, hds, hsa, henv, hnames, hflds, hfs => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
-    cases hd : tyDesc p b fd.ty with
+    cases hd : tyDescIn p st b fd.ty with
     | error e => rw [hd] at hds; exact (errNeOk hds).elim
     | ok d =>
-      cases hrest : tyDescFields p b fdecls with
+      cases hrest : tyDescFields p st b fdecls with
       | error e => rw [hd, hrest] at hds; exact (errNeOk hds).elim
       | ok dsRest =>
         rw [hd, hrest] at hds
@@ -400,37 +559,40 @@ theorem checkFields_encodeFields (p : Program) (hn : TypesNamesOk p) :
                 = (fd.name, encodeValue v) :: encodeFields rest by rw [encodeFields.eq_def],
             Js.checkFields_found (v := encodeValue v) (Js.lookupField_head _ _ _),
             Js.checkFields_skip (fd.name, encodeValue v) _ dsRest hno,
-            checkTy_encodeValue p hn fd.ty b d v hd hflds.1 hv,
-            checkFields_encodeFields p hn fdecls b dsRest key rest hrest hnrest hflds.2 hrestv]
+            checkTy_encodeValue p hn fd.ty st env b d v hd hsa henv hflds.1 hv,
+            checkFields_encodeFields p hn fdecls st env b dsRest key rest hrest hsa henv hnrest hflds.2 hrestv]
           simp
-termination_by _ _ _ _ fs => sizeOf fs
+termination_by _ _ _ _ _ _ fs => sizeOf fs
 
 theorem checkList_encodeList (p : Program) (hn : TypesNamesOk p) :
-    ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (xs : List Value),
-      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasElemTy p xs elem = true →
-      Js.checkList [] (encodeList xs) d = true
-  | _, _, _, [], _, _, _ => by simp [encodeList, checkList_nil]
-  | elem, b, d, x :: rest, hd, hdo, hv => by
+    ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (xs : List Value),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true → Js.descOk env.length d = true →
+      Value.hasElemTy p xs elem = true →
+      Js.checkList env (encodeList xs) d = true
+  | _, st, env, _, _, [], _, hsa, henv, _, _ => by simp [encodeList, checkList_nil]
+  | elem, st, env, b, d, x :: rest, hd, hsa, henv, hdo, hv => by
     rw [hasElemTy_cons, Bool.and_eq_true] at hv
     rw [show encodeList (x :: rest) = encodeValue x :: encodeList rest by
         rw [encodeList.eq_def], checkList_cons,
-      checkTy_encodeValue p hn elem b d x hd hdo hv.1,
-      checkList_encodeList p hn elem b d rest hd hdo hv.2]
+      checkTy_encodeValue p hn elem st env b d x hd hsa henv hdo hv.1,
+      checkList_encodeList p hn elem st env b d rest hd hsa henv hdo hv.2]
     simp
-termination_by _ _ _ xs => sizeOf xs
+termination_by _ _ _ _ _ xs => sizeOf xs
 
 theorem checkEntries_encodeFields (p : Program) (hn : TypesNamesOk p) :
-    ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (es : List (String × Value)),
-      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasEntryTys p es elem = true →
-      Js.checkEntries [] (encodeFields es) d = true
-  | _, _, _, [], _, _, _ => by simp [encodeFields, checkEntries_nil]
-  | elem, b, d, (key, v) :: rest, hd, hdo, hv => by
+    ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc)
+      (es : List (String × Value)),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true → Js.descOk env.length d = true →
+      Value.hasEntryTys p es elem = true →
+      Js.checkEntries env (encodeFields es) d = true
+  | _, st, env, _, _, [], _, hsa, henv, _, _ => by simp [encodeFields, checkEntries_nil]
+  | elem, st, env, b, d, (key, v) :: rest, hd, hsa, henv, hdo, hv => by
     rw [hasEntryTys_cons, Bool.and_eq_true] at hv
     rw [show encodeFields ((key, v) :: rest) = (key, encodeValue v) :: encodeFields rest by
-        rw [encodeFields.eq_def], checkEntries_cons, checkTy_encodeValue p hn elem b d v hd hdo hv.1,
-      checkEntries_encodeFields p hn elem b d rest hd hdo hv.2]
+        rw [encodeFields.eq_def], checkEntries_cons, checkTy_encodeValue p hn elem st env b d v hd hsa henv hdo hv.1,
+      checkEntries_encodeFields p hn elem st env b d rest hd hsa henv hdo hv.2]
     simp
-termination_by _ _ _ es => sizeOf es
+termination_by _ _ _ _ _ es => sizeOf es
 
 end
 
@@ -442,32 +604,33 @@ entry check's normalisation has nothing to rebuild on what the reference semanti
 mutual
 
 theorem normTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
-    ∀ (ty : Ty) (b : Nat) (d : Js.TyDesc) (v : Value),
-      tyDesc p b ty = .ok d → Js.descOk 0 d = true → Value.hasTy p v ty = true →
-      Js.normTy [] (encodeValue v) d = encodeValue v
-  | .bool, _, _, v, hd, _, hv => by
+    ∀ (ty : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (v : Value),
+      tyDescIn p st b ty = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasTy p v ty = true →
+      Js.normTy env (encodeValue v) d = encodeValue v
+  | .bool, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
     rw [tyDesc_bool_inv hd, show encodeValue (Value.bool x) = .bool x from by
       rw [encodeValue.eq_def], Js.normTy_bool]
-  | .int53, _, _, v, hd, _, hv => by
+  | .int53, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨i, rfl⟩ := hasTy_int53_inv hv
     rw [tyDesc_int53_inv hd, show encodeValue (Value.int53 i) = .num i from by
       rw [encodeValue.eq_def], Js.normTy_int53]
-  | .uint32, _, _, v, hd, _, hv => by
+  | .uint32, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨n, rfl⟩ := hasTy_uint32_inv hv
     rw [tyDesc_uint32_inv hd, show encodeValue (Value.uint32 n) = .num n.toNat from by
       rw [encodeValue.eq_def], Js.normTy_uint32]
-  | .string, _, _, v, hd, _, hv => by
+  | .string, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨x, rfl⟩ := hasTy_string_inv hv
     rw [tyDesc_string_inv hd, show encodeValue (Value.str x) = .str x from by
       rw [encodeValue.eq_def], Js.normTy_string]
-  | .bigint, _, _, v, hd, _, hv => by
+  | .bigint, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨i, rfl⟩ := hasTy_bigint_inv hv
     rw [tyDesc_bigint_inv hd, show encodeValue (Value.bigint i) = .bigint i from by
       rw [encodeValue.eq_def], Js.normTy_bigint]
-  | .var _, _, _, _, hd, _, _ => (tyDesc_var_inv hd).elim
-  | .fn _ _, _, _, _, hd, _, _ => (tyDesc_fn_inv hd).elim
-  | .option elem, b, _, v, hd, hdo, hv => by
+  | .var _, st, env, _, _, _, hd, hsa, henv, _, _ => (tyDesc_var_inv hd).elim
+  | .fn _ _, st, env, _, _, _, hd, hsa, henv, _, _ => (tyDesc_fn_inv hd).elim
+  | .option elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_option_inv hv
     obtain ⟨de, hde, rfl⟩ := tyDesc_option_inv hd
     rw [Js.descOk] at hdo
@@ -480,8 +643,8 @@ theorem normTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
           simp [encodeValue, encodeFields],
         Js.normTy_some (Js.lookupField_head _ _ _),
         Js.normFields_cons (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
-        Js.normFields_nil, normTy_encodeValue p hn elem b de x hde hdo hx]
-  | .result ok err, b, _, v, hd, hdo, hv => by
+        Js.normFields_nil, normTy_encodeValue p hn elem st env b de x hde hsa henv hdo hx]
+  | .result ok err, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_result_inv hv
     obtain ⟨dok, derr, hdok, hderr, rfl⟩ := tyDesc_result_inv hd
     rw [Js.descOk, Bool.and_eq_true] at hdo
@@ -492,59 +655,61 @@ theorem normTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
           simp [encodeValue, encodeFields],
         Js.normTy_ok (Js.lookupField_head _ _ _),
         Js.normFields_cons (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
-        Js.normFields_nil, normTy_encodeValue p hn ok b dok x hdok hdo.1 hx]
+        Js.normFields_nil, normTy_encodeValue p hn ok st env b dok x hdok hsa henv hdo.1 hx]
     · obtain ⟨x, rfl, hx⟩ := hasFieldTys_singleton_inv hfs
       rw [show encodeValue (.obj "error" [("error", x)])
             = .obj (("tag", .str "error") :: [("error", encodeValue x)]) from by
           simp [encodeValue, encodeFields],
         Js.normTy_error (Js.lookupField_head _ _ _),
         Js.normFields_cons (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
-        Js.normFields_nil, normTy_encodeValue p hn err b derr x hderr hdo.2 hx]
-  | .array elem, b, _, v, hd, hdo, hv => by
+        Js.normFields_nil, normTy_encodeValue p hn err st env b derr x hderr hsa henv hdo.2 hx]
+  | .array elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hv
     obtain ⟨de, hde, rfl⟩ := tyDesc_array_inv hd
     rw [Js.descOk] at hdo
     rw [hasTy_array] at hv
     rw [show encodeValue (.arr xs) = .arr (encodeList xs) from by rw [encodeValue.eq_def],
-      Js.normTy_array, normList_encodeList p hn elem b de xs hde hdo hv]
-  | .dict elem, b, _, v, hd, hdo, hv => by
+      Js.normTy_array, normList_encodeList p hn elem st env b de xs hde hsa henv hdo hv]
+  | .dict elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨es, rfl⟩ := hasTy_dict_inv hv
     obtain ⟨de, hde, rfl⟩ := tyDesc_dict_inv hd
     rw [Js.descOk] at hdo
     rw [hasTy_dict, Bool.and_eq_true] at hv
     rw [show encodeValue (.dict es) = .dict (encodeFields es) from by rw [encodeValue.eq_def],
-      Js.normTy_dict, normEntries_encodeFields p hn elem b de es hde hdo hv.2]
-  | .named n args, b, _, v, hd, hdo, hv => by
+      Js.normTy_dict, normEntries_encodeFields p hn elem st env b de es hde hsa henv hdo hv.2]
+  | .named n args, st, env, b, d, v, hd, hsa, henv, hdo, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hv
-    obtain ⟨b', t, alts, rfl, ht, halts, rfl⟩ := tyDesc_named_inv hd
+    obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', -, hnm, -, hok⟩ := named_unfolds hd hsa
+    obtain ⟨henv', hdoC⟩ := hok henv hdo
+    rw [hnm]
     obtain ⟨t', c, ht', hc, hfs⟩ := hasTy_named_fields hv
     rw [ht] at ht'
-    have htt : t' = t := (Option.some.inj ht').symm
-    subst htt
-    obtain ⟨ds, hfind, hds⟩ := tyDescAlts_find p b' (t'.ctorsAt args) alts ctor c halts hc
+    obtain rfl : t = t' := Option.some.inj ht'
+    obtain ⟨ds, hfind, hds⟩ := tyDescAlts_find p stC b' (t.ctorsAt args) alts ctor c halts hc
     have hcname : c.name = ctor := by
       have := List.find?_some hc
       simpa using this
-    have hkey : keyFor ctor = t'.discriminator :=
-      hcname ▸ ((hn n args t' ht).2 c (List.mem_of_find?_eq_some hc)).1
-    rw [Js.descOk] at hdo
-    obtain ⟨hnames, hflds⟩ := Js.altsOk_find hdo (hcname ▸ hfind)
+    have hkey : keyFor ctor = t.discriminator :=
+      hcname ▸ ((hn n args t ht).2 c (List.mem_of_find?_eq_some hc)).1
+    obtain ⟨hnames, hflds⟩ := Js.altsOk_find hdoC (hcname ▸ hfind)
     rw [show encodeValue (.obj ctor fields)
           = .obj ((keyFor ctor, .str ctor) :: encodeFields fields) from by rw [encodeValue.eq_def],
       hkey, Js.normTy_ctors (Js.lookupField_head _ _ _) (hcname ▸ hfind)]
     simp only []
-    rw [Js.normFields_skip (t'.discriminator, Js.JsValue.str ctor) _ ds
+    rw [Js.normFields_skip (t.discriminator, Js.JsValue.str ctor) _ ds
         (fun m hm => Js.namesOk_not_key hnames m hm),
-      normFields_encodeFields p hn c.fields b' ds t'.discriminator fields hds hnames hflds hfs]
-termination_by _ _ _ v => sizeOf v
+      normFields_encodeFields p hn c.fields stC envC b' ds t.discriminator fields hds hsa' henv'
+        hnames hflds hfs]
+termination_by _ _ _ _ _ v => sizeOf v
 
 theorem normFields_encodeFields (p : Program) (hn : TypesNamesOk p) :
-    ∀ (fdecls : List Field) (b : Nat) (ds : List (String × Js.TyDesc)) (key : String)
-      (fs : List (String × Value)),
-      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk 0 ds = true →
+    ∀ (fdecls : List Field) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat)
+      (ds : List (String × Js.TyDesc)) (key : String) (fs : List (String × Value)),
+      tyDescFields p st b fdecls = .ok ds → StackAgrees p st env → Js.envOk env = true →
+      Js.namesOk key ds = true → Js.fieldsOk env.length ds = true →
       Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true →
-      Js.normFields [] (encodeFields fs) ds = encodeFields fs
-  | [], _, ds, _, fs, hds, _, _, hfs => by
+      Js.normFields env (encodeFields fs) ds = encodeFields fs
+  | [], st, env, _, ds, _, fs, hds, hsa, henv, _, _, hfs => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
     have : ds = [] := (Except.ok.inj hds).symm
@@ -553,13 +718,13 @@ theorem normFields_encodeFields (p : Program) (hn : TypesNamesOk p) :
     match fs with
     | [] => rw [encodeFields.eq_def]
     | _ :: _ => rw [Value.hasFieldTys.eq_def] at hfs; simp at hfs
-  | fd :: fdecls, b, ds, key, fs, hds, hnames, hflds, hfs => by
+  | fd :: fdecls, st, env, b, ds, key, fs, hds, hsa, henv, hnames, hflds, hfs => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
-    cases hd : tyDesc p b fd.ty with
+    cases hd : tyDescIn p st b fd.ty with
     | error e => rw [hd] at hds; exact (errNeOk hds).elim
     | ok d =>
-      cases hrest : tyDescFields p b fdecls with
+      cases hrest : tyDescFields p st b fdecls with
       | error e => rw [hd, hrest] at hds; exact (errNeOk hds).elim
       | ok dsRest =>
         rw [hd, hrest] at hds
@@ -578,38 +743,41 @@ theorem normFields_encodeFields (p : Program) (hn : TypesNamesOk p) :
                 = (fd.name, encodeValue v) :: encodeFields rest from by rw [encodeFields.eq_def],
             Js.normFields_cons (v := encodeValue v) (Js.lookupField_head _ _ _),
             Js.normFields_skip (fd.name, encodeValue v) _ dsRest hno,
-            normTy_encodeValue p hn fd.ty b d v hd hflds.1 hv,
-            normFields_encodeFields p hn fdecls b dsRest key rest hrest hnrest hflds.2 hrestv]
-termination_by _ _ _ _ fs => sizeOf fs
+            normTy_encodeValue p hn fd.ty st env b d v hd hsa henv hflds.1 hv,
+            normFields_encodeFields p hn fdecls st env b dsRest key rest hrest hsa henv hnrest hflds.2 hrestv]
+termination_by _ _ _ _ _ _ fs => sizeOf fs
 
 theorem normList_encodeList (p : Program) (hn : TypesNamesOk p) :
-    ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (xs : List Value),
-      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasElemTy p xs elem = true →
-      Js.normList [] (encodeList xs) d = encodeList xs
-  | _, _, d, [], _, _, _ => by
+    ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (xs : List Value),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasElemTy p xs elem = true →
+      Js.normList env (encodeList xs) d = encodeList xs
+  | _, st, env, _, d, [], _, hsa, henv, _, _ => by
     rw [show encodeList ([] : List Value) = [] from by rw [encodeList.eq_def], Js.normList_nil]
-  | elem, b, d, x :: rest, hd, hdo, hv => by
+  | elem, st, env, b, d, x :: rest, hd, hsa, henv, hdo, hv => by
     rw [hasElemTy_cons, Bool.and_eq_true] at hv
     rw [show encodeList (x :: rest) = encodeValue x :: encodeList rest from by
         rw [encodeList.eq_def], Js.normList_cons,
-      normTy_encodeValue p hn elem b d x hd hdo hv.1,
-      normList_encodeList p hn elem b d rest hd hdo hv.2]
-termination_by _ _ _ xs => sizeOf xs
+      normTy_encodeValue p hn elem st env b d x hd hsa henv hdo hv.1,
+      normList_encodeList p hn elem st env b d rest hd hsa henv hdo hv.2]
+termination_by _ _ _ _ _ xs => sizeOf xs
 
 theorem normEntries_encodeFields (p : Program) (hn : TypesNamesOk p) :
-    ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (es : List (String × Value)),
-      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasEntryTys p es elem = true →
-      Js.normEntries [] (encodeFields es) d = encodeFields es
-  | _, _, d, [], _, _, _ => by
+    ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc)
+      (es : List (String × Value)),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasEntryTys p es elem = true →
+      Js.normEntries env (encodeFields es) d = encodeFields es
+  | _, st, env, _, d, [], _, hsa, henv, _, _ => by
     rw [show encodeFields ([] : List (String × Value)) = [] from by rw [encodeFields.eq_def],
       Js.normEntries_nil]
-  | elem, b, d, (key, v) :: rest, hd, hdo, hv => by
+  | elem, st, env, b, d, (key, v) :: rest, hd, hsa, henv, hdo, hv => by
     rw [hasEntryTys_cons, Bool.and_eq_true] at hv
     rw [show encodeFields ((key, v) :: rest) = (key, encodeValue v) :: encodeFields rest from by
         rw [encodeFields.eq_def], Js.normEntries_cons,
-      normTy_encodeValue p hn elem b d v hd hdo hv.1,
-      normEntries_encodeFields p hn elem b d rest hd hdo hv.2]
-termination_by _ _ _ es => sizeOf es
+      normTy_encodeValue p hn elem st env b d v hd hsa henv hdo hv.1,
+      normEntries_encodeFields p hn elem st env b d rest hd hsa henv hdo hv.2]
+termination_by _ _ _ _ _ es => sizeOf es
 
 end
 
@@ -626,56 +794,56 @@ an `Int53` and a `UInt32` holding the same number both encode to `.num`, so noth
 side could tell them apart. Over `Value`s the direction is false; over what actually crosses the
 boundary it holds. -/
 
-theorem checkTy_bool_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .bool = true) :
+theorem checkTy_bool_inv {jv : Js.JsValue} (h : Js.checkTy env jv .bool = true) :
     ∃ b, jv = .bool b := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_int53_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .int53 = true) :
+theorem checkTy_int53_inv {jv : Js.JsValue} (h : Js.checkTy env jv .int53 = true) :
     ∃ i, jv = .num i ∧ Js.Runtime.safeMin ≤ i ∧ i ≤ Js.Runtime.safeMax := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_uint32_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .uint32 = true) :
+theorem checkTy_uint32_inv {jv : Js.JsValue} (h : Js.checkTy env jv .uint32 = true) :
     ∃ i, jv = .num i ∧ 0 ≤ i ∧ i < Js.Runtime.wrap32 := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_string_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .string = true) :
+theorem checkTy_string_inv {jv : Js.JsValue} (h : Js.checkTy env jv .string = true) :
     ∃ s, jv = .str s := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_bigint_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .bigint = true) :
+theorem checkTy_bigint_inv {jv : Js.JsValue} (h : Js.checkTy env jv .bigint = true) :
     ∃ i, jv = .bigint i := by
   cases jv <;> simp_all [Js.checkTy]
 
 theorem checkTy_array_inv {jv : Js.JsValue} {d : Js.TyDesc}
-    (h : Js.checkTy [] jv (.array d) = true) : ∃ xs, jv = .arr xs ∧ Js.checkList [] xs d = true := by
+    (h : Js.checkTy env jv (.array d) = true) : ∃ xs, jv = .arr xs ∧ Js.checkList env xs d = true := by
   cases jv <;> simp_all [Js.checkTy]
 
 theorem checkTy_dict_inv {jv : Js.JsValue} {d : Js.TyDesc}
-    (h : Js.checkTy [] jv (.dict d) = true) :
-    ∃ es, jv = .dict es ∧ Js.checkEntries [] es d = true := by
+    (h : Js.checkTy env jv (.dict d) = true) :
+    ∃ es, jv = .dict es ∧ Js.checkEntries env es d = true := by
   cases jv <;> simp_all [Js.checkTy]
 
 theorem checkTy_option_shape {jv : Js.JsValue} {d : Js.TyDesc}
-    (h : Js.checkTy [] jv (.option d) = true) : ∃ fields, jv = .obj fields := by
+    (h : Js.checkTy env jv (.option d) = true) : ∃ fields, jv = .obj fields := by
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
 
 theorem checkTy_result_shape {jv : Js.JsValue} {dok derr : Js.TyDesc}
-    (h : Js.checkTy [] jv (.result dok derr) = true) : ∃ fields, jv = .obj fields := by
+    (h : Js.checkTy env jv (.result dok derr) = true) : ∃ fields, jv = .obj fields := by
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
 
 theorem checkTy_ctors_shape {jv : Js.JsValue} {key : String}
     {alts : List (String × List (String × Js.TyDesc))}
-    (h : Js.checkTy [] jv (.ctors key alts) = true) : ∃ fields, jv = .obj fields := by
+    (h : Js.checkTy env jv (.ctors key alts) = true) : ∃ fields, jv = .obj fields := by
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
 
 theorem checkTy_option_fields {fields : List (String × Js.JsValue)} {d : Js.TyDesc}
-    (h : Js.checkTy [] (.obj fields) (.option d) = true) :
+    (h : Js.checkTy env (.obj fields) (.option d) = true) :
     Js.lookupField fields "tag" = some (.str "none") ∨
       (Js.lookupField fields "tag" = some (.str "some") ∧
-        Js.checkFields [] fields [("value", d)] = true) := by
+        Js.checkFields env fields [("value", d)] = true) := by
   rw [Js.checkTy.eq_def] at h
   simp only at h
   split at h
@@ -684,11 +852,11 @@ theorem checkTy_option_fields {fields : List (String × Js.JsValue)} {d : Js.TyD
   · simp at h
 
 theorem checkTy_result_fields {fields : List (String × Js.JsValue)} {dok derr : Js.TyDesc}
-    (h : Js.checkTy [] (.obj fields) (.result dok derr) = true) :
+    (h : Js.checkTy env (.obj fields) (.result dok derr) = true) :
     (Js.lookupField fields "tag" = some (.str "ok") ∧
-        Js.checkFields [] fields [("value", dok)] = true) ∨
+        Js.checkFields env fields [("value", dok)] = true) ∨
       (Js.lookupField fields "tag" = some (.str "error") ∧
-        Js.checkFields [] fields [("error", derr)] = true) := by
+        Js.checkFields env fields [("error", derr)] = true) := by
   rw [Js.checkTy.eq_def] at h
   simp only at h
   split at h
@@ -698,9 +866,9 @@ theorem checkTy_result_fields {fields : List (String × Js.JsValue)} {dok derr :
 
 theorem checkTy_ctors_fields {fields : List (String × Js.JsValue)} {key : String}
     {alts : List (String × List (String × Js.TyDesc))}
-    (h : Js.checkTy [] (.obj fields) (.ctors key alts) = true) :
+    (h : Js.checkTy env (.obj fields) (.ctors key alts) = true) :
     ∃ ctor ds, Js.lookupField fields key = some (.str ctor) ∧
-      alts.find? (·.1 == ctor) = some (ctor, ds) ∧ Js.checkFields [] fields ds = true := by
+      alts.find? (·.1 == ctor) = some (ctor, ds) ∧ Js.checkFields env fields ds = true := by
   rw [Js.checkTy.eq_def] at h
   simp only at h
   split at h
@@ -714,8 +882,8 @@ theorem checkTy_ctors_fields {fields : List (String × Js.JsValue)} {key : Strin
   · simp at h
 
 theorem checkFields_singleton_inv {jfs : List (String × Js.JsValue)} {name : String}
-    {d : Js.TyDesc} (h : Js.checkFields [] jfs [(name, d)] = true) :
-    ∃ jv, Js.lookupField jfs name = some jv ∧ Js.checkTy [] jv d = true := by
+    {d : Js.TyDesc} (h : Js.checkFields env jfs [(name, d)] = true) :
+    ∃ jv, Js.lookupField jfs name = some jv ∧ Js.checkTy env jv d = true := by
   obtain ⟨jv, hl, hv, -⟩ := Js.checkFields_cons h
   exact ⟨jv, hl, hv⟩
 
@@ -780,11 +948,11 @@ theorem encodeFields_keys [Discriminators] :
 
 /-- The mirror of `tyDescAlts_find`: a constructor the generated check found in the descriptor list is
 one the declaration has. -/
-theorem tyDescAlts_find_inv (p : Program) (b : Nat) :
+theorem tyDescAlts_find_inv (p : Program) (st : Compile.Stack) (b : Nat) :
     ∀ (cs : List CtorDef) (alts : List (String × List (String × Js.TyDesc)))
       (ctor : String) (ds : List (String × Js.TyDesc)),
-      tyDescAlts p b cs = .ok alts → alts.find? (·.1 == ctor) = some (ctor, ds) →
-      ∃ c, cs.find? (·.name == ctor) = some c ∧ tyDescFields p b c.fields = .ok ds
+      tyDescAlts p st b cs = .ok alts → alts.find? (·.1 == ctor) = some (ctor, ds) →
+      ∃ c, cs.find? (·.name == ctor) = some c ∧ tyDescFields p st b c.fields = .ok ds
   | [], alts, _, _, halts, hfind => by
     rw [tyDescAlts.eq_def] at halts
     simp only at halts
@@ -793,10 +961,10 @@ theorem tyDescAlts_find_inv (p : Program) (b : Nat) :
   | c₀ :: rest, alts, ctor, ds, halts, hfind => by
     rw [tyDescAlts.eq_def] at halts
     simp only at halts
-    cases hds : tyDescFields p b c₀.fields with
+    cases hds : tyDescFields p st b c₀.fields with
     | error e => rw [hds] at halts; exact (errNeOk halts).elim
     | ok ds₀ =>
-      cases hrest : tyDescAlts p b rest with
+      cases hrest : tyDescAlts p st b rest with
       | error e => rw [hds, hrest] at halts; exact (errNeOk halts).elim
       | ok altsRest =>
         rw [hds, hrest] at halts
@@ -811,7 +979,7 @@ theorem tyDescAlts_find_inv (p : Program) (b : Nat) :
         | false =>
           rw [hname] at hfind
           simp only at hfind
-          obtain ⟨c, hc, hdsc⟩ := tyDescAlts_find_inv p b rest altsRest ctor ds hrest hfind
+          obtain ⟨c, hc, hdsc⟩ := tyDescAlts_find_inv p st b rest altsRest ctor ds hrest hfind
           exact ⟨c, by simp [hname, hc], hdsc⟩
 
 section
@@ -824,22 +992,23 @@ mutual
 declared type. The recursion is on the JS value, not on the type: unfolding a `.named` substitutes its
 arguments into the field types, which can grow. -/
 theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
-    ∀ (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc),
-      tyDesc p b ty = .ok d → Js.descOk 0 d = true → Js.checkTy [] jv d = true →
+    ∀ (jv : Js.JsValue) (ty : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc),
+      tyDescIn p st b ty = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Js.checkTy env jv d = true →
       Js.dictKeysDistinct jv = true →
-      ∃ v, Js.normTy [] jv d = encodeValue v ∧ Value.hasTy p v ty = true
-  | jv, .bool, b, d, hd, _, hc, _ => by
+      ∃ v, Js.normTy env jv d = encodeValue v ∧ Value.hasTy p v ty = true
+  | jv, .bool, st, env, b, d, hd, hsa, henv, _, hc, _ => by
     rw [tyDesc_bool_inv hd] at hc ⊢
     obtain ⟨x, rfl⟩ := checkTy_bool_inv hc
     exact ⟨.bool x, by rw [Js.normTy_bool, encodeValue.eq_def], hasTy_bool p x⟩
-  | jv, .int53, b, d, hd, _, hc, _ => by
+  | jv, .int53, st, env, b, d, hd, hsa, henv, _, hc, _ => by
     rw [tyDesc_int53_inv hd] at hc ⊢
     obtain ⟨i, rfl, hlo, hhi⟩ := checkTy_int53_inv hc
     refine ⟨.int53 i, by rw [Js.normTy_int53, encodeValue.eq_def], ?_⟩
     rw [hasTy_int53]
     simp only [Js.Runtime.safeMin, Js.Runtime.safeMax] at hlo hhi
     simp [int53Min, int53Max, hlo, hhi]
-  | jv, .uint32, b, d, hd, _, hc, _ => by
+  | jv, .uint32, st, env, b, d, hd, hsa, henv, _, hc, _ => by
     rw [tyDesc_uint32_inv hd] at hc ⊢
     obtain ⟨i, rfl, hlo, hhi⟩ := checkTy_uint32_inv hc
     refine ⟨.uint32 (UInt32.ofNat i.toNat), ?_, hasTy_uint32 p _⟩
@@ -848,17 +1017,17 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
     simp only [Js.Runtime.wrap32] at hhi
     have h : (UInt32.ofNat i.toNat).toNat = i.toNat := by simp; omega
     rw [h, Int.toNat_of_nonneg hlo]
-  | jv, .string, b, d, hd, _, hc, _ => by
+  | jv, .string, st, env, b, d, hd, hsa, henv, _, hc, _ => by
     rw [tyDesc_string_inv hd] at hc ⊢
     obtain ⟨s, rfl⟩ := checkTy_string_inv hc
     exact ⟨.str s, by rw [Js.normTy_string, encodeValue.eq_def], hasTy_str p s⟩
-  | jv, .bigint, b, d, hd, _, hc, _ => by
+  | jv, .bigint, st, env, b, d, hd, hsa, henv, _, hc, _ => by
     rw [tyDesc_bigint_inv hd] at hc ⊢
     obtain ⟨i, rfl⟩ := checkTy_bigint_inv hc
     exact ⟨.bigint i, by rw [Js.normTy_bigint, encodeValue.eq_def], hasTy_bigint p i⟩
-  | _, .var _, _, _, hd, _, _, _ => (tyDesc_var_inv hd).elim
-  | _, .fn _ _, _, _, hd, _, _, _ => (tyDesc_fn_inv hd).elim
-  | jv, .option elem, b, d, hd, hdo, hc, hk => by
+  | _, .var _, st, env, _, _, hd, hsa, henv, _, _, _ => (tyDesc_var_inv hd).elim
+  | _, .fn _ _, st, env, _, _, hd, hsa, henv, _, _, _ => (tyDesc_fn_inv hd).elim
+  | jv, .option elem, st, env, b, d, hd, hsa, henv, hdo, hc, hk => by
     obtain ⟨de, hde, rfl⟩ := tyDesc_option_inv hd
     rw [Js.descOk] at hdo
     obtain ⟨fields, hjv⟩ := checkTy_option_shape hc
@@ -878,7 +1047,7 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
     · obtain ⟨jw, hlw, hw⟩ := checkFields_singleton_inv hf
       have hsz := hszf "value" jw hlw
       obtain ⟨w, hnw, hwt⟩ :=
-        checkTy_sound p hn jw elem b de hde hdo hw (dictKeysDistinct_lookupField hk hlw)
+        checkTy_sound p hn jw elem st env b de hde hsa henv hdo hw (dictKeysDistinct_lookupField hk hlw)
       refine ⟨.obj "some" [("value", w)], ?_, ?_⟩
       · rw [Js.normTy_some htag, Js.normFields_cons hlw, Js.normFields_nil, hnw,
           show encodeValue (Value.obj "some" [("value", w)])
@@ -886,7 +1055,7 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
           simp [encodeValue, encodeFields]]
       · rw [hasTy_some, hasFieldTys_cons, hasFieldTys_nil]
         simp [hwt]
-  | jv, .result ok err, b, d, hd, hdo, hc, hk => by
+  | jv, .result ok err, st, env, b, d, hd, hsa, henv, hdo, hc, hk => by
     obtain ⟨dok, derr, hdok, hderr, rfl⟩ := tyDesc_result_inv hd
     rw [Js.descOk, Bool.and_eq_true] at hdo
     obtain ⟨fields, hjv⟩ := checkTy_result_shape hc
@@ -903,7 +1072,7 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
     · obtain ⟨jw, hlw, hw⟩ := checkFields_singleton_inv hf
       have hsz := hszf "value" jw hlw
       obtain ⟨w, hnw, hwt⟩ :=
-        checkTy_sound p hn jw ok b dok hdok hdo.1 hw (dictKeysDistinct_lookupField hk hlw)
+        checkTy_sound p hn jw ok st env b dok hdok hsa henv hdo.1 hw (dictKeysDistinct_lookupField hk hlw)
       refine ⟨.obj "ok" [("value", w)], ?_, ?_⟩
       · rw [Js.normTy_ok htag, Js.normFields_cons hlw, Js.normFields_nil, hnw,
           show encodeValue (Value.obj "ok" [("value", w)])
@@ -914,7 +1083,7 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
     · obtain ⟨jw, hlw, hw⟩ := checkFields_singleton_inv hf
       have hsz := hszf "error" jw hlw
       obtain ⟨w, hnw, hwt⟩ :=
-        checkTy_sound p hn jw err b derr hderr hdo.2 hw (dictKeysDistinct_lookupField hk hlw)
+        checkTy_sound p hn jw err st env b derr hderr hsa henv hdo.2 hw (dictKeysDistinct_lookupField hk hlw)
       refine ⟨.obj "error" [("error", w)], ?_, ?_⟩
       · rw [Js.normTy_error htag, Js.normFields_cons hlw, Js.normFields_nil, hnw,
           show encodeValue (Value.obj "error" [("error", w)])
@@ -922,20 +1091,20 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
           simp [encodeValue, encodeFields]]
       · rw [hasTy_error, hasFieldTys_cons, hasFieldTys_nil]
         simp [hwt]
-  | jv, .array elem, b, d, hd, hdo, hc, hk => by
+  | jv, .array elem, st, env, b, d, hd, hsa, henv, hdo, hc, hk => by
     obtain ⟨de, hde, rfl⟩ := tyDesc_array_inv hd
     rw [Js.descOk] at hdo
     obtain ⟨xs, rfl, hxs⟩ := checkTy_array_inv hc
     rw [dictKeysDistinct_arr] at hk
-    obtain ⟨vs, hns, hvs⟩ := checkList_sound p hn xs elem b de hde hdo hxs hk
+    obtain ⟨vs, hns, hvs⟩ := checkList_sound p hn xs elem st env b de hde hsa henv hdo hxs hk
     refine ⟨.arr vs, ?_, by rw [hasTy_array]; exact hvs⟩
     rw [Js.normTy_array, hns, encodeValue.eq_def]
-  | jv, .dict elem, b, d, hd, hdo, hc, hk => by
+  | jv, .dict elem, st, env, b, d, hd, hsa, henv, hdo, hc, hk => by
     obtain ⟨de, hde, rfl⟩ := tyDesc_dict_inv hd
     rw [Js.descOk] at hdo
     obtain ⟨es, rfl, hes⟩ := checkTy_dict_inv hc
     rw [dictKeysDistinct_dict, Bool.and_eq_true] at hk
-    obtain ⟨vs, hns, hvs⟩ := checkEntries_sound p hn es elem b de hde hdo hes hk.2
+    obtain ⟨vs, hns, hvs⟩ := checkEntries_sound p hn es elem st env b de hde hsa henv hdo hes hk.2
     refine ⟨.dict vs, by rw [Js.normTy_dict, hns, encodeValue.eq_def], ?_⟩
     rw [hasTy_dict, Bool.and_eq_true]
     refine ⟨keysDistinct_of_js _ ?_, hvs⟩
@@ -943,8 +1112,11 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
       rw [← encodeFields_keys vs, ← hns, Js.normEntries_keys]
     rw [hkeys]
     exact hk.1
-  | jv, .named n args, b, d, hd, hdo, hc, hk => by
-    obtain ⟨b', t, alts, rfl, ht, halts, rfl⟩ := tyDesc_named_inv hd
+  | jv, .named n args, st, env, b, d, hd, hsa, henv, hdo, hc, hk => by
+    obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', hck, hnm, -, hok⟩ := named_unfolds hd hsa
+    obtain ⟨henv', hdoC⟩ := hok henv hdo
+    rw [hck] at hc
+    rw [hnm]
     obtain ⟨fields, hjv⟩ := checkTy_ctors_shape hc
     have hszo : sizeOf fields < sizeOf jv := by
       rw [hjv]
@@ -952,12 +1124,12 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
       omega
     rw [hjv] at hc hk ⊢
     obtain ⟨ctor, ds, htag, hfind, hf⟩ := checkTy_ctors_fields hc
-    obtain ⟨c, hc', hds⟩ := tyDescAlts_find_inv p b' (t.ctorsAt args) alts ctor ds halts hfind
-    rw [Js.descOk] at hdo
-    obtain ⟨hnames, hflds⟩ := Js.altsOk_find hdo hfind
+    obtain ⟨c, hc', hds⟩ := tyDescAlts_find_inv p stC b' (t.ctorsAt args) alts ctor ds halts hfind
+    obtain ⟨hnames, hflds⟩ := Js.altsOk_find hdoC hfind
     rw [dictKeysDistinct_obj] at hk
     obtain ⟨fs, hns, hfs⟩ :=
-      checkFields_sound p hn fields c.fields b' ds t.discriminator hds hnames hflds hf hk
+      checkFields_sound p hn fields c.fields stC envC b' ds t.discriminator hds hsa' henv' hnames
+        hflds hf hk
     have hcname : c.name = ctor := by simpa using List.find?_some hc'
     have hkey : keyFor ctor = t.discriminator :=
       hcname ▸ ((hn n args t ht).2 c (List.mem_of_find?_eq_some hc')).1
@@ -972,24 +1144,25 @@ theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
 termination_by jv => (sizeOf jv, 1, 0)
 
 theorem checkFields_sound (p : Program) (hn : TypesNamesOk p) :
-    ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (b : Nat)
-      (ds : List (String × Js.TyDesc)) (key : String),
-      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk 0 ds = true →
-      Js.checkFields [] jfs ds = true → Js.dictKeysDistinctFields jfs = true →
-      ∃ fs, Js.normFields [] jfs ds = encodeFields fs ∧
+    ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (st : Compile.Stack)
+      (env : Js.TyEnv) (b : Nat) (ds : List (String × Js.TyDesc)) (key : String),
+      tyDescFields p st b fdecls = .ok ds → StackAgrees p st env → Js.envOk env = true →
+      Js.namesOk key ds = true → Js.fieldsOk env.length ds = true →
+      Js.checkFields env jfs ds = true → Js.dictKeysDistinctFields jfs = true →
+      ∃ fs, Js.normFields env jfs ds = encodeFields fs ∧
         Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true
-  | jfs, [], _, ds, _, hds, _, _, _, _ => by
+  | jfs, [], st, env, _, ds, _, hds, hsa, henv, _, _, _, _ => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
     obtain rfl : ds = [] := (Except.ok.inj hds).symm
     exact ⟨[], by rw [Js.normFields_nil, encodeFields.eq_def], by simp [hasFieldTys_nil]⟩
-  | jfs, fd :: fdecls, b, ds, key, hds, hnames, hflds, hc, hk => by
+  | jfs, fd :: fdecls, st, env, b, ds, key, hds, hsa, henv, hnames, hflds, hc, hk => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
-    cases hdd : tyDesc p b fd.ty with
+    cases hdd : tyDescIn p st b fd.ty with
     | error e => rw [hdd] at hds; exact (errNeOk hds).elim
     | ok dd =>
-      cases hrest : tyDescFields p b fdecls with
+      cases hrest : tyDescFields p st b fdecls with
       | error e => rw [hdd, hrest] at hds; exact (errNeOk hds).elim
       | ok dsRest =>
         rw [hdd, hrest] at hds
@@ -999,9 +1172,9 @@ theorem checkFields_sound (p : Program) (hn : TypesNamesOk p) :
         obtain ⟨jw, hlw, hw, hrestc⟩ := Js.checkFields_cons hc
         have hsz := Js.sizeOf_lookupField jfs fd.name hlw
         obtain ⟨w, hnw, hwt⟩ :=
-          checkTy_sound p hn jw fd.ty b dd hdd hflds.1 hw (dictKeysDistinct_lookupField hk hlw)
+          checkTy_sound p hn jw fd.ty st env b dd hdd hsa henv hflds.1 hw (dictKeysDistinct_lookupField hk hlw)
         obtain ⟨fs, hnfs, hfs⟩ :=
-          checkFields_sound p hn jfs fdecls b dsRest key hrest hnrest hflds.2 hrestc hk
+          checkFields_sound p hn jfs fdecls st env b dsRest key hrest hsa henv hnrest hflds.2 hrestc hk
         refine ⟨(fd.name, w) :: fs, ?_, ?_⟩
         · rw [Js.normFields_cons hlw, hnw, hnfs,
             show encodeFields ((fd.name, w) :: fs)
@@ -1011,17 +1184,19 @@ theorem checkFields_sound (p : Program) (hn : TypesNamesOk p) :
 termination_by jfs fdecls => (sizeOf jfs, 0, sizeOf fdecls)
 
 theorem checkList_sound (p : Program) (hn : TypesNamesOk p) :
-    ∀ (jxs : List Js.JsValue) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Js.checkList [] jxs d = true →
+    ∀ (jxs : List Js.JsValue) (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat)
+      (d : Js.TyDesc),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Js.checkList env jxs d = true →
       Js.dictKeysDistinctList jxs = true →
-      ∃ vs, Js.normList [] jxs d = encodeList vs ∧ Value.hasElemTy p vs elem = true
-  | [], elem, _, d, _, _, _, _ =>
+      ∃ vs, Js.normList env jxs d = encodeList vs ∧ Value.hasElemTy p vs elem = true
+  | [], elem, st, env, _, d, _, hsa, henv, _, _, _ =>
     ⟨[], by rw [Js.normList_nil, encodeList.eq_def], hasElemTy_nil p elem⟩
-  | jx :: jrest, elem, b, d, hd, hdo, hc, hk => by
+  | jx :: jrest, elem, st, env, b, d, hd, hsa, henv, hdo, hc, hk => by
     rw [checkList_cons, Bool.and_eq_true] at hc
     rw [dictKeysDistinctList_cons, Bool.and_eq_true] at hk
-    obtain ⟨v, hnv, hv⟩ := checkTy_sound p hn jx elem b d hd hdo hc.1 hk.1
-    obtain ⟨vs, hnvs, hvs⟩ := checkList_sound p hn jrest elem b d hd hdo hc.2 hk.2
+    obtain ⟨v, hnv, hv⟩ := checkTy_sound p hn jx elem st env b d hd hsa henv hdo hc.1 hk.1
+    obtain ⟨vs, hnvs, hvs⟩ := checkList_sound p hn jrest elem st env b d hd hsa henv hdo hc.2 hk.2
     refine ⟨v :: vs, by rw [Js.normList_cons, hnv, hnvs,
       show encodeList (v :: vs) = encodeValue v :: encodeList vs from by
         rw [encodeList.eq_def]], ?_⟩
@@ -1030,17 +1205,19 @@ theorem checkList_sound (p : Program) (hn : TypesNamesOk p) :
 termination_by jxs => (sizeOf jxs, 1, 0)
 
 theorem checkEntries_sound (p : Program) (hn : TypesNamesOk p) :
-    ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Js.checkEntries [] jes d = true →
+    ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv)
+      (b : Nat) (d : Js.TyDesc),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Js.checkEntries env jes d = true →
       Js.dictKeysDistinctFields jes = true →
-      ∃ es, Js.normEntries [] jes d = encodeFields es ∧ Value.hasEntryTys p es elem = true
-  | [], elem, _, d, _, _, _, _ =>
+      ∃ es, Js.normEntries env jes d = encodeFields es ∧ Value.hasEntryTys p es elem = true
+  | [], elem, st, env, _, d, _, hsa, henv, _, _, _ =>
     ⟨[], by rw [Js.normEntries_nil, encodeFields.eq_def], hasEntryTys_nil p elem⟩
-  | (key, jv) :: jrest, elem, b, d, hd, hdo, hc, hk => by
+  | (key, jv) :: jrest, elem, st, env, b, d, hd, hsa, henv, hdo, hc, hk => by
     rw [checkEntries_cons, Bool.and_eq_true] at hc
     rw [dictKeysDistinctFields_cons, Bool.and_eq_true] at hk
-    obtain ⟨v, hnv, hv⟩ := checkTy_sound p hn jv elem b d hd hdo hc.1 hk.1
-    obtain ⟨es, hnes, hes⟩ := checkEntries_sound p hn jrest elem b d hd hdo hc.2 hk.2
+    obtain ⟨v, hnv, hv⟩ := checkTy_sound p hn jv elem st env b d hd hsa henv hdo hc.1 hk.1
+    obtain ⟨es, hnes, hes⟩ := checkEntries_sound p hn jrest elem st env b d hd hsa henv hdo hc.2 hk.2
     refine ⟨(key, v) :: es, by rw [Js.normEntries_cons, hnv, hnes,
       show encodeFields ((key, v) :: es)
         = (key, encodeValue v) :: encodeFields es from by rw [encodeFields.eq_def]], ?_⟩
@@ -1168,24 +1345,24 @@ theorem namesOk_of_nodup {key : String} : ∀ {flds : List (String × Js.TyDesc)
     · simp [hb]
 
 theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty) :
-    ∀ d, Compile.tyDesc p b ty = .ok d → Js.descOk 0 d = true := by
-  induction b, ty using Compile.tyDesc.induct (p := p)
-    (motive2 := fun b cs => ∀ key : String,
+    ∀ d, Compile.tyDescIn p st b ty = .ok d → Js.descOk st.length d = true := by
+  induction st, b, ty using Compile.tyDescIn.induct (p := p)
+    (motive2 := fun st b cs => ∀ key : String,
       (∀ c ∈ cs, (∀ f ∈ c.fields, f.name ≠ key) ∧ (c.fields.map (·.name)).Nodup) →
-        ∀ alts, Compile.tyDescAlts p b cs = .ok alts → Js.altsOk 0 key alts = true)
-    (motive3 := fun b fs => ∀ flds, Compile.tyDescFields p b fs = .ok flds →
-      flds.map (·.1) = fs.map (·.name) ∧ Js.fieldsOk 0 flds = true)
+        ∀ alts, Compile.tyDescAlts p st b cs = .ok alts → Js.altsOk st.length key alts = true)
+    (motive3 := fun st b fs => ∀ flds, Compile.tyDescFields p st b fs = .ok flds →
+      flds.map (·.1) = fs.map (·.name) ∧ Js.fieldsOk st.length flds = true)
     with
-  | case1 _ | case2 _ | case3 _ | case4 _ | case5 _ =>
+  | case1 _ _ | case2 _ _ | case3 _ _ | case4 _ _ | case5 _ _ =>
     intro d hd
-    rw [Compile.tyDesc.eq_def] at hd
+    rw [Compile.tyDescIn.eq_def] at hd
     simp only at hd
     cases hd
     rw [Js.descOk]
-  | case6 _ _ => intro d hd; rw [Compile.tyDesc.eq_def] at hd; simp at hd
-  | case7 budget t ih | case9 budget t ih | case10 budget t ih =>
+  | case6 _ _ _ => intro d hd; rw [Compile.tyDescIn.eq_def] at hd; simp at hd
+  | case7 st budget t ih | case9 st budget t ih | case10 st budget t ih =>
     intro d hd
-    rw [Compile.tyDesc.eq_def] at hd
+    rw [Compile.tyDescIn.eq_def] at hd
     simp only [bind, Except.bind] at hd
     split at hd
     · exact (errNeOk hd).elim
@@ -1193,9 +1370,9 @@ theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty
       cases hd
       rw [Js.descOk]
       exact ih inner hinner
-  | case8 budget a bb iha ihb =>
+  | case8 st budget a bb iha ihb =>
     intro d hd
-    rw [Compile.tyDesc.eq_def] at hd
+    rw [Compile.tyDescIn.eq_def] at hd
     simp only [bind, Except.bind] at hd
     split at hd
     · exact (errNeOk hd).elim
@@ -1206,28 +1383,52 @@ theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty
         cases hd
         rw [Js.descOk]
         simp [iha da hda, ihb db hdb]
-  | case11 _ _ _ => intro d hd; rw [Compile.tyDesc.eq_def] at hd; simp at hd
-  | case12 _ _ => intro d hd; rw [Compile.tyDesc.eq_def] at hd; simp at hd
-  | case13 budget n args hfind =>
+  | case11 _ _ _ _ => intro d hd; rw [Compile.tyDescIn.eq_def] at hd; simp at hd
+  | case12 st budget n args k hfind =>
     intro d hd
-    rw [Compile.tyDesc.eq_def] at hd
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [hfind] at hd
+    cases hd
+    obtain ⟨hk, -, -⟩ := List.findIdx?_eq_some_iff_getElem.mp hfind
+    rw [Js.descOk]
+    simp [hk]
+  | case13 _ n args hfind =>
+    intro d hd
+    rw [Compile.tyDescIn.eq_def] at hd
     simp [hfind] at hd
-  | case14 budget n args t hfind ih =>
+  | case14 _ n args hfind b' hft =>
     intro d hd
-    rw [Compile.tyDesc.eq_def] at hd
-    simp only [hfind, bind, Except.bind] at hd
-    split at hd
-    · exact (errNeOk hd).elim
-    · rename_i alts halts
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp [hfind, hft] at hd
+  | case15 st n args hfind b' t hft hrec ih =>
+    intro d hd
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [hfind, hft, hrec, if_true, bind, Except.bind] at hd
+    cases halts : Compile.tyDescAlts p ((n, args) :: st) b' (t.ctorsAt args) with
+    | error e => rw [halts] at hd; exact (errNeOk hd).elim
+    | ok alts =>
+      rw [halts] at hd
       cases hd
       rw [Js.descOk]
-      exact ih t.discriminator (fun c hc => ((hnames n args t hfind).2 c hc).2) alts halts
-  | case15 budget key hok alts halts =>
+      have := ih t.discriminator (fun c hc => ((hnames n args t hft).2 c hc).2) alts halts
+      simpa using this
+  | case16 st n args hfind b' t hft hrec ih =>
+    intro d hd
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [hfind, hft, hrec, bind, Except.bind] at hd
+    cases halts : Compile.tyDescAlts p st b' (t.ctorsAt args) with
+    | error e => rw [halts] at hd; exact (errNeOk hd).elim
+    | ok alts =>
+      rw [halts] at hd
+      cases hd
+      rw [Js.descOk]
+      exact ih t.discriminator (fun c hc => ((hnames n args t hft).2 c hc).2) alts halts
+  | case17 st budget key hok alts halts =>
     rw [Compile.tyDescAlts.eq_def] at halts
     simp only at halts
     cases halts
     rw [Js.altsOk]
-  | case16 budget c rest ihf ihr key hok alts halts =>
+  | case18 st budget c rest ihf ihr key hok alts halts =>
     rw [Compile.tyDescAlts.eq_def] at halts
     simp only [bind, Except.bind] at halts
     split at halts
@@ -1248,12 +1449,12 @@ theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty
             exact htag f hf
           · rw [hmap]; exact hnd
         simp [hn, hfok, ihr key (fun c' hc' => hok c' (by simp [hc'])) rs hrs]
-  | case17 budget flds hflds =>
+  | case19 st budget flds hflds =>
     rw [Compile.tyDescFields.eq_def] at hflds
     simp only at hflds
     cases hflds
     exact ⟨rfl, by rw [Js.fieldsOk]⟩
-  | case18 budget f rest iht ihr flds hflds =>
+  | case20 st budget f rest iht ihr flds hflds =>
     rw [Compile.tyDescFields.eq_def] at hflds
     simp only [bind, Except.bind] at hflds
     split at hflds
@@ -1339,9 +1540,9 @@ theorem ArgsDecode.length_jargs {p : Program} :
 /-- A type the entry check has a descriptor for is not a function type: that is the one case `tyDesc`
 refuses, and it is what tells the two `ArgsDecode` constructors apart. -/
 theorem tyDesc_isFn {p : Program} {b : Nat} {ty : Ty} {d : Js.TyDesc}
-    (h : tyDesc p b ty = .ok d) : ty.isFn = false := by
+    (h : tyDescIn p st b ty = .ok d) : ty.isFn = false := by
   cases ty
-  case fn a r => rw [tyDesc.eq_def] at h; simp at h
+  case fn a r => rw [tyDescIn.eq_def] at h; simp at h
   all_goals rfl
 
 theorem evalStmts_paramChecks (m : Js.Module) (p : Program) (g : Nat)
@@ -1436,9 +1637,10 @@ theorem argsDecode_encodeValue (p : Program) (hnames : TypesNamesOk p) :
         cases hrest : paramChecks p (i + 1) ps with
         | error e => rw [hdesc, hrest] at hchecks; exact (errNeOk hchecks).elim
         | ok cs =>
-          have hdo := descOk_tyDesc hnames _ _ desc hdesc
-          exact .cons hdesc (checkTy_encodeValue p hnames param.ty _ desc a hdesc hdo htyped.1)
-            (normTy_encodeValue p hnames param.ty _ desc a hdesc hdo htyped.1)
+          have hdo := descOk_tyDesc (st := []) hnames _ _ desc hdesc
+          exact .cons hdesc
+            (checkTy_encodeValue p hnames param.ty [] [] _ desc a hdesc .nil rfl hdo htyped.1)
+            (normTy_encodeValue p hnames param.ty [] [] _ desc a hdesc .nil rfl hdo htyped.1)
             (argsDecode_encodeValue p hnames ps as (i + 1) cs hrest htyped.2)
 termination_by params => params.length
 
@@ -1494,7 +1696,8 @@ theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (hnames : Type
               hlen (RawBound.cons_unreserved hres.1 hraw.2) hk.2 with hfail | ⟨args, hdec, htyped⟩
             · exact Or.inl hfail
             · refine Or.inr ?_
-              obtain ⟨v, hnv, hv⟩ := checkTy_sound p hnames ja param.ty _ desc hdesc hdo hcheck hk.1
+              obtain ⟨v, hnv, hv⟩ :=
+                checkTy_sound p hnames ja param.ty [] [] _ desc hdesc .nil rfl hdo hcheck hk.1
               exact ⟨v :: args, .cons hdesc hcheck hnv hdec, hv, htyped⟩
 termination_by params => params.length
 

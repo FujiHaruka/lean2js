@@ -31,6 +31,8 @@ open Lean2Js.Core
 set_option linter.unusedSectionVars false
 variable [Discriminators]
 
+variable {st : Compile.Stack} {env : Js.TyEnv}
+
 mutual
 
 inductive TsSat (p : Program) : Ty → Js.JsValue → Prop where
@@ -217,31 +219,32 @@ mutual
 /-- What the entry check lets through, the `.d.ts` admits. `tsSat_checkTy` is the other direction, which
 needs the number range the `.d.ts` cannot carry. -/
 theorem checkTy_tsSat (p : Program) :
-    ∀ (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b ty = .ok d → Js.checkTy [] jv d = true → TsSat p ty jv
-  | jv, .bool, b, d, hd, hc => by
+    ∀ (jv : Js.JsValue) (ty : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc),
+      Compile.tyDescIn p st b ty = .ok d → Decl.StackAgrees p st env →
+      Js.checkTy env jv d = true → TsSat p ty jv
+  | jv, .bool, st, env, b, d, hd, hsa, hc => by
     rw [Decl.tyDesc_bool_inv hd] at hc
     obtain ⟨x, rfl⟩ := Decl.checkTy_bool_inv hc
     exact .bool x
-  | jv, .int53, b, d, hd, hc => by
+  | jv, .int53, st, env, b, d, hd, hsa, hc => by
     rw [Decl.tyDesc_int53_inv hd] at hc
     obtain ⟨i, rfl, -, -⟩ := Decl.checkTy_int53_inv hc
     exact .int53 i
-  | jv, .uint32, b, d, hd, hc => by
+  | jv, .uint32, st, env, b, d, hd, hsa, hc => by
     rw [Decl.tyDesc_uint32_inv hd] at hc
     obtain ⟨i, rfl, -, -⟩ := Decl.checkTy_uint32_inv hc
     exact .uint32 i
-  | jv, .string, b, d, hd, hc => by
+  | jv, .string, st, env, b, d, hd, hsa, hc => by
     rw [Decl.tyDesc_string_inv hd] at hc
     obtain ⟨x, rfl⟩ := Decl.checkTy_string_inv hc
     exact .string x
-  | jv, .bigint, b, d, hd, hc => by
+  | jv, .bigint, st, env, b, d, hd, hsa, hc => by
     rw [Decl.tyDesc_bigint_inv hd] at hc
     obtain ⟨i, rfl⟩ := Decl.checkTy_bigint_inv hc
     exact .bigint i
-  | _, .var _, _, _, hd, _ => (Decl.tyDesc_var_inv hd).elim
-  | _, .fn _ _, _, _, hd, _ => (Decl.tyDesc_fn_inv hd).elim
-  | jv, .option elem, b, d, hd, hc => by
+  | _, .var _, st, env, _, _, hd, hsa, _ => (Decl.tyDesc_var_inv hd).elim
+  | _, .fn _ _, st, env, _, _, hd, hsa, _ => (Decl.tyDesc_fn_inv hd).elim
+  | jv, .option elem, st, env, b, d, hd, hsa, hc => by
     obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_option_inv hd
     obtain ⟨fields, hjv⟩ := Decl.checkTy_option_shape hc
     have hszf : ∀ (n : String) (jw : Js.JsValue), Js.lookupField fields n = some jw →
@@ -256,8 +259,8 @@ theorem checkTy_tsSat (p : Program) :
     · exact .none htag
     · obtain ⟨jw, hlw, hw⟩ := Decl.checkFields_singleton_inv hf
       have hsz := hszf "value" jw hlw
-      exact .some htag hlw (checkTy_tsSat p jw elem b de hde hw)
-  | jv, .result ok err, b, d, hd, hc => by
+      exact .some htag hlw (checkTy_tsSat p jw elem st env b de hde hsa hw)
+  | jv, .result ok err, st, env, b, d, hd, hsa, hc => by
     obtain ⟨dok, derr, hdok, hderr, rfl⟩ := Decl.tyDesc_result_inv hd
     obtain ⟨fields, hjv⟩ := Decl.checkTy_result_shape hc
     have hszf : ∀ (n : String) (jw : Js.JsValue), Js.lookupField fields n = some jw →
@@ -271,11 +274,11 @@ theorem checkTy_tsSat (p : Program) :
     rcases Decl.checkTy_result_fields hc with ⟨htag, hf⟩ | ⟨htag, hf⟩
     · obtain ⟨jw, hlw, hw⟩ := Decl.checkFields_singleton_inv hf
       have hsz := hszf "value" jw hlw
-      exact .ok htag hlw (checkTy_tsSat p jw ok b dok hdok hw)
+      exact .ok htag hlw (checkTy_tsSat p jw ok st env b dok hdok hsa hw)
     · obtain ⟨jw, hlw, hw⟩ := Decl.checkFields_singleton_inv hf
       have hsz := hszf "error" jw hlw
-      exact .error htag hlw (checkTy_tsSat p jw err b derr hderr hw)
-  | jv, .array elem, b, d, hd, hc => by
+      exact .error htag hlw (checkTy_tsSat p jw err st env b derr hderr hsa hw)
+  | jv, .array elem, st, env, b, d, hd, hsa, hc => by
     obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_array_inv hd
     obtain ⟨xs, hjv, hxs⟩ := Decl.checkTy_array_inv hc
     have hsz : sizeOf xs < sizeOf jv := by
@@ -283,8 +286,8 @@ theorem checkTy_tsSat (p : Program) :
       simp only [Js.JsValue.arr.sizeOf_spec]
       omega
     rw [hjv] at hc ⊢
-    exact .array (checkList_tsSat p xs elem b de hde hxs)
-  | jv, .dict elem, b, d, hd, hc => by
+    exact .array (checkList_tsSat p xs elem st env b de hde hsa hxs)
+  | jv, .dict elem, st, env, b, d, hd, hsa, hc => by
     obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_dict_inv hd
     obtain ⟨es, hjv, hes⟩ := Decl.checkTy_dict_inv hc
     have hsz : sizeOf es < sizeOf jv := by
@@ -292,9 +295,10 @@ theorem checkTy_tsSat (p : Program) :
       simp only [Js.JsValue.dict.sizeOf_spec]
       omega
     rw [hjv] at hc ⊢
-    exact .dict (checkEntries_tsSat p es elem b de hde hes)
-  | jv, .named n args, b, d, hd, hc => by
-    obtain ⟨b', t, alts, rfl, ht, halts, rfl⟩ := Decl.tyDesc_named_inv hd
+    exact .dict (checkEntries_tsSat p es elem st env b de hde hsa hes)
+  | jv, .named n args, st, env, b, d, hd, hsa, hc => by
+    obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', hck, -, -, -⟩ := Decl.named_unfolds hd hsa
+    rw [hck] at hc
     obtain ⟨fields, hjv⟩ := Decl.checkTy_ctors_shape hc
     have hszo : sizeOf fields < sizeOf jv := by
       rw [hjv]
@@ -302,60 +306,65 @@ theorem checkTy_tsSat (p : Program) :
       omega
     rw [hjv] at hc ⊢
     obtain ⟨ctor, ds, htag, hfind, hf⟩ := Decl.checkTy_ctors_fields hc
-    obtain ⟨c, hc', hds⟩ := Decl.tyDescAlts_find_inv p b' (t.ctorsAt args) alts ctor ds halts hfind
+    obtain ⟨c, hc', hds⟩ :=
+      Decl.tyDescAlts_find_inv p stC b' (t.ctorsAt args) alts ctor ds halts hfind
     have hname : c.name = ctor := by simpa using List.find?_some hc'
     exact .named ht (List.mem_of_find?_eq_some hc') (hname ▸ htag)
-      (checkFields_tsSat p fields c.fields b' ds hds hf)
+      (checkFields_tsSat p fields c.fields stC envC b' ds hds hsa' hf)
 termination_by jv => (sizeOf jv, 1, 0)
 
 theorem checkFields_tsSat (p : Program) :
-    ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (b : Nat)
-      (ds : List (String × Js.TyDesc)),
-      Compile.tyDescFields p b fdecls = .ok ds → Js.checkFields [] jfs ds = true →
-      TsSatFields p fdecls jfs
-  | jfs, [], _, ds, hds, _ => by
+    ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (st : Compile.Stack)
+      (env : Js.TyEnv) (b : Nat) (ds : List (String × Js.TyDesc)),
+      Compile.tyDescFields p st b fdecls = .ok ds → Decl.StackAgrees p st env →
+      Js.checkFields env jfs ds = true → TsSatFields p fdecls jfs
+  | jfs, [], st, env, _, ds, hds, hsa, _ => by
     rw [Compile.tyDescFields.eq_def] at hds
     simp only at hds
     obtain rfl : ds = [] := (Except.ok.inj hds).symm
     exact .nil
-  | jfs, fd :: fdecls, b, ds, hds, hf => by
+  | jfs, fd :: fdecls, st, env, b, ds, hds, hsa, hf => by
     rw [Compile.tyDescFields.eq_def] at hds
     simp only at hds
-    cases hdd : Compile.tyDesc p b fd.ty with
+    cases hdd : Compile.tyDescIn p st b fd.ty with
     | error e => rw [hdd] at hds; exact (Decl.errNeOk hds).elim
     | ok dd =>
-      cases hrest : Compile.tyDescFields p b fdecls with
+      cases hrest : Compile.tyDescFields p st b fdecls with
       | error e => rw [hdd, hrest] at hds; exact (Decl.errNeOk hds).elim
       | ok dsRest =>
         rw [hdd, hrest] at hds
         obtain rfl : ds = (fd.name, dd) :: dsRest := (Except.ok.inj hds).symm
         obtain ⟨jw, hlw, hw, hfrest⟩ := Js.checkFields_cons hf
         have hsz := Js.sizeOf_lookupField jfs fd.name hlw
-        exact .cons hlw (checkTy_tsSat p jw fd.ty b dd hdd hw)
-          (checkFields_tsSat p jfs fdecls b dsRest hrest hfrest)
+        exact .cons hlw (checkTy_tsSat p jw fd.ty st env b dd hdd hsa hw)
+          (checkFields_tsSat p jfs fdecls st env b dsRest hrest hsa hfrest)
 termination_by jfs fdecls => (sizeOf jfs, 0, sizeOf fdecls)
 
 theorem checkList_tsSat (p : Program) :
-    ∀ (jxs : List Js.JsValue) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b elem = .ok d → Js.checkList [] jxs d = true → ∀ x ∈ jxs, TsSat p elem x
-  | [], _, _, _, _, _, x, hx => by simp at hx
-  | jx :: jrest, elem, b, d, hd, hc, x, hx => by
+    ∀ (jxs : List Js.JsValue) (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat)
+      (d : Js.TyDesc),
+      Compile.tyDescIn p st b elem = .ok d → Decl.StackAgrees p st env →
+      Js.checkList env jxs d = true → ∀ x ∈ jxs, TsSat p elem x
+  | [], _, st, env, _, _, _, hsa, _, x, hx => by simp at hx
+  | jx :: jrest, elem, st, env, b, d, hd, hsa, hc, x, hx => by
     rw [Decl.checkList_cons, Bool.and_eq_true] at hc
     rcases List.mem_cons.mp hx with heq | hm
     · rw [heq]
-      exact checkTy_tsSat p jx elem b d hd hc.1
-    · exact checkList_tsSat p jrest elem b d hd hc.2 x hm
+      exact checkTy_tsSat p jx elem st env b d hd hsa hc.1
+    · exact checkList_tsSat p jrest elem st env b d hd hsa hc.2 x hm
 termination_by jxs => (sizeOf jxs, 1, 0)
 
 theorem checkEntries_tsSat (p : Program) :
-    ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b elem = .ok d → Js.checkEntries [] jes d = true → ∀ e ∈ jes, TsSat p elem e.2
-  | [], _, _, _, _, _, e, he => by simp at he
-  | (key, jv) :: jrest, elem, b, d, hd, hc, e, he => by
+    ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv)
+      (b : Nat) (d : Js.TyDesc),
+      Compile.tyDescIn p st b elem = .ok d → Decl.StackAgrees p st env →
+      Js.checkEntries env jes d = true → ∀ e ∈ jes, TsSat p elem e.2
+  | [], _, st, env, _, _, _, hsa, _, e, he => by simp at he
+  | (key, jv) :: jrest, elem, st, env, b, d, hd, hsa, hc, e, he => by
     rw [Decl.checkEntries_cons, Bool.and_eq_true] at hc
     rcases List.mem_cons.mp he with rfl | hm
-    · exact checkTy_tsSat p jv elem b d hd hc.1
-    · exact checkEntries_tsSat p jrest elem b d hd hc.2 e hm
+    · exact checkTy_tsSat p jv elem st env b d hd hsa hc.1
+    · exact checkEntries_tsSat p jrest elem st env b d hd hsa hc.2 e hm
 termination_by jes => (sizeOf jes, 1, 0)
 
 end
@@ -369,100 +378,106 @@ a number outside the range the descriptor names at that position. Nothing runs i
 
 mutual
 
-def inRange : Js.JsValue → Js.TyDesc → Bool
+def inRange (env : Js.TyEnv) : Js.JsValue → Js.TyDesc → Bool
   | .num i, .int53 => Js.Runtime.safeMin ≤ i && i ≤ Js.Runtime.safeMax
   | .num i, .uint32 => 0 ≤ i && i < Js.Runtime.wrap32
-  | .arr xs, .array t => inRangeList xs t
-  | .dict entries, .dict t => inRangeEntries entries t
+  | .arr xs, .array t => inRangeList env xs t
+  | .dict entries, .dict t => inRangeEntries env entries t
   | .obj fields, .option t =>
     match Js.lookupField fields "tag" with
-    | some (.str "some") => inRangeFields fields [("value", t)]
+    | some (.str "some") => inRangeFields env fields [("value", t)]
     | _ => true
   | .obj fields, .result ok err =>
     match Js.lookupField fields "tag" with
-    | some (.str "ok") => inRangeFields fields [("value", ok)]
-    | some (.str "error") => inRangeFields fields [("error", err)]
+    | some (.str "ok") => inRangeFields env fields [("value", ok)]
+    | some (.str "error") => inRangeFields env fields [("error", err)]
     | _ => true
   | .obj fields, .ctors key alts =>
     match Js.lookupField fields key with
     | some (.str ctor) =>
       match alts.find? (·.1 == ctor) with
-      | some alt => inRangeFields fields alt.2
+      | some alt => inRangeFields env fields alt.2
       | none => true
     | _ => true
+  | v, .mu key alts => inRange ((key, alts) :: env) v (.ctors key alts)
+  | v, .ref up =>
+    match env[up]? with
+    | some b => inRange (env.drop up) v (.ctors b.1 b.2)
+    | none => true
   | _, _ => true
-termination_by v => (sizeOf v, 1, 0)
+termination_by v d => (sizeOf v, Js.descRank d, 0)
 
-def inRangeFields (fields : List (String × Js.JsValue)) : List (String × Js.TyDesc) → Bool
+def inRangeFields (env : Js.TyEnv) (fields : List (String × Js.JsValue)) :
+    List (String × Js.TyDesc) → Bool
   | [] => true
   | (n, t) :: rest =>
     match h : Js.lookupField fields n with
     | some v =>
       have := Js.sizeOf_lookupField fields n h
-      inRange v t && inRangeFields fields rest
-    | none => inRangeFields fields rest
+      inRange env v t && inRangeFields env fields rest
+    | none => inRangeFields env fields rest
 termination_by fs => (sizeOf (Js.JsValue.obj fields), 0, sizeOf fs)
 
-def inRangeList : List Js.JsValue → Js.TyDesc → Bool
+def inRangeList (env : Js.TyEnv) : List Js.JsValue → Js.TyDesc → Bool
   | [], _ => true
-  | x :: rest, t => inRange x t && inRangeList rest t
-termination_by xs => (sizeOf xs, 1, 0)
+  | x :: rest, t => inRange env x t && inRangeList env rest t
+termination_by xs => (sizeOf xs, 3, 0)
 
-def inRangeEntries : List (String × Js.JsValue) → Js.TyDesc → Bool
+def inRangeEntries (env : Js.TyEnv) : List (String × Js.JsValue) → Js.TyDesc → Bool
   | [], _ => true
-  | (_, v) :: rest, t => inRange v t && inRangeEntries rest t
-termination_by entries => (sizeOf entries, 1, 0)
+  | (_, v) :: rest, t => inRange env v t && inRangeEntries env rest t
+termination_by entries => (sizeOf entries, 3, 0)
 
 end
 
 theorem inRange_int53 (i : Int) :
-    inRange (.num i) .int53
+    inRange env (.num i) .int53
       = (decide (Js.Runtime.safeMin ≤ i) && decide (i ≤ Js.Runtime.safeMax)) := by
   rw [inRange.eq_def]
 
 theorem inRange_uint32 (i : Int) :
-    inRange (.num i) .uint32 = (decide (0 ≤ i) && decide (i < Js.Runtime.wrap32)) := by
+    inRange env (.num i) .uint32 = (decide (0 ≤ i) && decide (i < Js.Runtime.wrap32)) := by
   rw [inRange.eq_def]
 
 theorem inRange_array (xs : List Js.JsValue) (d : Js.TyDesc) :
-    inRange (.arr xs) (.array d) = inRangeList xs d := by rw [inRange.eq_def]
+    inRange env (.arr xs) (.array d) = inRangeList env xs d := by rw [inRange.eq_def]
 
 theorem inRange_dict (es : List (String × Js.JsValue)) (d : Js.TyDesc) :
-    inRange (.dict es) (.dict d) = inRangeEntries es d := by rw [inRange.eq_def]
+    inRange env (.dict es) (.dict d) = inRangeEntries env es d := by rw [inRange.eq_def]
 
 theorem inRange_some {fields : List (String × Js.JsValue)} {d : Js.TyDesc}
     (h : Js.lookupField fields "tag" = some (.str "some")) :
-    inRange (.obj fields) (.option d) = inRangeFields fields [("value", d)] := by
+    inRange env (.obj fields) (.option d) = inRangeFields env fields [("value", d)] := by
   rw [inRange.eq_def]; simp [h]
 
 theorem inRange_ok {fields : List (String × Js.JsValue)} {dok derr : Js.TyDesc}
     (h : Js.lookupField fields "tag" = some (.str "ok")) :
-    inRange (.obj fields) (.result dok derr) = inRangeFields fields [("value", dok)] := by
+    inRange env (.obj fields) (.result dok derr) = inRangeFields env fields [("value", dok)] := by
   rw [inRange.eq_def]; simp [h]
 
 theorem inRange_error {fields : List (String × Js.JsValue)} {dok derr : Js.TyDesc}
     (h : Js.lookupField fields "tag" = some (.str "error")) :
-    inRange (.obj fields) (.result dok derr) = inRangeFields fields [("error", derr)] := by
+    inRange env (.obj fields) (.result dok derr) = inRangeFields env fields [("error", derr)] := by
   rw [inRange.eq_def]; simp [h]
 
 theorem inRange_ctors {fields : List (String × Js.JsValue)} {key ctor : String}
     {alts : List (String × List (String × Js.TyDesc))} {alt : String × List (String × Js.TyDesc)}
     (htag : Js.lookupField fields key = some (.str ctor))
     (hf : alts.find? (·.1 == ctor) = some alt) :
-    inRange (.obj fields) (.ctors key alts) = inRangeFields fields alt.2 := by
+    inRange env (.obj fields) (.ctors key alts) = inRangeFields env fields alt.2 := by
   rw [inRange.eq_def]; simp [htag, hf]
 
 theorem inRangeList_cons (x : Js.JsValue) (xs : List Js.JsValue) (d : Js.TyDesc) :
-    inRangeList (x :: xs) d = (inRange x d && inRangeList xs d) := by rw [inRangeList.eq_def]
+    inRangeList env (x :: xs) d = (inRange env x d && inRangeList env xs d) := by rw [inRangeList.eq_def]
 
 theorem inRangeEntries_cons (k : String) (v : Js.JsValue) (es : List (String × Js.JsValue))
     (d : Js.TyDesc) :
-    inRangeEntries ((k, v) :: es) d = (inRange v d && inRangeEntries es d) := by
+    inRangeEntries env ((k, v) :: es) d = (inRange env v d && inRangeEntries env es d) := by
   rw [inRangeEntries.eq_def]
 
 theorem inRangeFields_found {fields : List (String × Js.JsValue)} {n : String} {t : Js.TyDesc}
     {ts : List (String × Js.TyDesc)} {v : Js.JsValue} (h : Js.lookupField fields n = some v) :
-    inRangeFields fields ((n, t) :: ts) = (inRange v t && inRangeFields fields ts) := by
+    inRangeFields env fields ((n, t) :: ts) = (inRange env v t && inRangeFields env fields ts) := by
   rw [inRangeFields.eq_def]
   dsimp only
   split
@@ -515,34 +530,34 @@ mutual
 value is `inRange`: the order its keys arrive in is not read, and neither are keys the type does not
 declare. -/
 theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
-    ∀ (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b ty = .ok d → TsSat p ty jv → inRange jv d = true →
-      Js.checkTy [] jv d = true
-  | jv, .bool, b, d, hd, hts, _ => by
+    ∀ (jv : Js.JsValue) (ty : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc),
+      Compile.tyDescIn p st b ty = .ok d → Decl.StackAgrees p st env → TsSat p ty jv →
+      inRange env jv d = true → Js.checkTy env jv d = true
+  | jv, .bool, st, env, b, d, hd, hsa, hts, _ => by
     rw [Decl.tyDesc_bool_inv hd]
     cases hts
     exact Decl.checkTy_bool _
-  | jv, .int53, b, d, hd, hts, hr => by
+  | jv, .int53, st, env, b, d, hd, hsa, hts, hr => by
     rw [Decl.tyDesc_int53_inv hd] at hr ⊢
     cases hts
     rw [Decl.checkTy_int53]
     rwa [inRange_int53] at hr
-  | jv, .uint32, b, d, hd, hts, hr => by
+  | jv, .uint32, st, env, b, d, hd, hsa, hts, hr => by
     rw [Decl.tyDesc_uint32_inv hd] at hr ⊢
     cases hts
     rw [Decl.checkTy_uint32]
     rwa [inRange_uint32] at hr
-  | jv, .string, b, d, hd, hts, _ => by
+  | jv, .string, st, env, b, d, hd, hsa, hts, _ => by
     rw [Decl.tyDesc_string_inv hd]
     cases hts
     exact Decl.checkTy_string _
-  | jv, .bigint, b, d, hd, hts, _ => by
+  | jv, .bigint, st, env, b, d, hd, hsa, hts, _ => by
     rw [Decl.tyDesc_bigint_inv hd]
     cases hts
     exact Decl.checkTy_bigint _
-  | _, .var _, _, _, hd, _, _ => (Decl.tyDesc_var_inv hd).elim
-  | _, .fn _ _, _, _, hd, _, _ => (Decl.tyDesc_fn_inv hd).elim
-  | jv, .option elem, b, d, hd, hts, hr => by
+  | _, .var _, st, env, _, _, hd, hsa, _, _ => (Decl.tyDesc_var_inv hd).elim
+  | _, .fn _ _, st, env, _, _, hd, hsa, _, _ => (Decl.tyDesc_fn_inv hd).elim
+  | jv, .option elem, st, env, b, d, hd, hsa, hts, hr => by
     obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_option_inv hd
     obtain ⟨jfs, hjv⟩ := tsSat_option_shape hts
     have hszf : ∀ (n : String) (jw : Js.JsValue), Js.lookupField jfs n = some jw →
@@ -559,8 +574,8 @@ theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
       have hsz := hszf "value" _ hval
       rw [inRange_some htag, inRangeFields_found hval, Bool.and_eq_true] at hr
       rw [Decl.checkTy_some _ _ htag, Js.checkFields_found hval, Js.checkFields_nil, Bool.and_true]
-      exact tsSat_checkTy p hn _ elem b de hde hx hr.1
-  | jv, .result ok err, b, d, hd, hts, hr => by
+      exact tsSat_checkTy p hn _ elem st env b de hde hsa hx hr.1
+  | jv, .result ok err, st, env, b, d, hd, hsa, hts, hr => by
     obtain ⟨dok, derr, hdok, hderr, rfl⟩ := Decl.tyDesc_result_inv hd
     obtain ⟨jfs, hjv⟩ := tsSat_result_shape hts
     have hszf : ∀ (n : String) (jw : Js.JsValue), Js.lookupField jfs n = some jw →
@@ -576,14 +591,14 @@ theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
       have hsz := hszf "value" _ hval
       rw [inRange_ok htag, inRangeFields_found hval, Bool.and_eq_true] at hr
       rw [Decl.checkTy_ok _ _ _ htag, Js.checkFields_found hval, Js.checkFields_nil, Bool.and_true]
-      exact tsSat_checkTy p hn _ ok b dok hdok hx hr.1
+      exact tsSat_checkTy p hn _ ok st env b dok hdok hsa hx hr.1
     | error htag hval hx =>
       have hsz := hszf "error" _ hval
       rw [inRange_error htag, inRangeFields_found hval, Bool.and_eq_true] at hr
       rw [Decl.checkTy_error _ _ _ htag, Js.checkFields_found hval, Js.checkFields_nil,
         Bool.and_true]
-      exact tsSat_checkTy p hn _ err b derr hderr hx hr.1
-  | jv, .array elem, b, d, hd, hts, hr => by
+      exact tsSat_checkTy p hn _ err st env b derr hderr hsa hx hr.1
+  | jv, .array elem, st, env, b, d, hd, hsa, hts, hr => by
     obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_array_inv hd
     obtain ⟨xs, hjv⟩ := tsSat_array_shape hts
     have hsz : sizeOf xs < sizeOf jv := by
@@ -595,8 +610,8 @@ theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
     | array hxs =>
       rw [Decl.checkTy_array]
       rw [inRange_array] at hr
-      exact tsSatList_checkList p hn xs elem b de hde hxs hr
-  | jv, .dict elem, b, d, hd, hts, hr => by
+      exact tsSatList_checkList p hn xs elem st env b de hde hsa hxs hr
+  | jv, .dict elem, st, env, b, d, hd, hsa, hts, hr => by
     obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_dict_inv hd
     obtain ⟨es, hjv⟩ := tsSat_dict_shape hts
     have hsz : sizeOf es < sizeOf jv := by
@@ -608,9 +623,17 @@ theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
     | dict hes =>
       rw [Decl.checkTy_dict]
       rw [inRange_dict] at hr
-      exact tsSatEntries_checkEntries p hn es elem b de hde hes hr
-  | jv, .named nm targs, b, d, hd, hts, hr => by
-    obtain ⟨b', t, alts, rfl, ht, halts, rfl⟩ := Decl.tyDesc_named_inv hd
+      exact tsSatEntries_checkEntries p hn es elem st env b de hde hsa hes hr
+  | jv, .named nm targs, st, env, b, d, hd, hsa, hts, hr => by
+    obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', hck, -, hshape, -⟩ :=
+      Decl.named_unfolds hd hsa
+    have hrng : inRange env jv d = inRange envC jv (.ctors t.discriminator alts) := by
+      rcases hshape with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨k, rfl, hek, rfl⟩
+      · rfl
+      · rw [inRange]
+      · rw [inRange, hek]
+    rw [hck]
+    rw [hrng] at hr
     obtain ⟨jfs, hjv⟩ := tsSat_named_shape hts
     have hszo : sizeOf jfs < sizeOf jv := by
       rw [hjv]
@@ -621,30 +644,31 @@ theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
     | named ht' hc htag hfields =>
       obtain rfl := Option.some.inj (ht'.symm.trans ht)
       obtain ⟨hnodup, -⟩ := hn nm targs _ ht
-      obtain ⟨ds, hfindalts, hds⟩ := Decl.tyDescAlts_find p b' _ alts _ _
+      obtain ⟨ds, hfindalts, hds⟩ := Decl.tyDescAlts_find p stC b' _ alts _ _
         halts (find?_of_mem_nodup hc hnodup)
       rw [Decl.checkTy_ctors _ _ jfs alts ds htag hfindalts]
       simp only [inRange_ctors htag hfindalts] at hr
-      exact tsSatFields_checkFields p hn jfs _ b' ds hds hfields hr
+      exact tsSatFields_checkFields p hn jfs _ stC envC b' ds hds hsa' hfields hr
 termination_by jv => (sizeOf jv, 1, 0)
 
 theorem tsSatFields_checkFields (p : Program) (hn : Decl.TypesNamesOk p) :
-    ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (b : Nat)
-      (ds : List (String × Js.TyDesc)),
-      Compile.tyDescFields p b fdecls = .ok ds → TsSatFields p fdecls jfs →
-      inRangeFields jfs ds = true → Js.checkFields [] jfs ds = true
-  | jfs, [], _, ds, hds, _, _ => by
+    ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (st : Compile.Stack)
+      (env : Js.TyEnv) (b : Nat) (ds : List (String × Js.TyDesc)),
+      Compile.tyDescFields p st b fdecls = .ok ds → Decl.StackAgrees p st env →
+      TsSatFields p fdecls jfs → inRangeFields env jfs ds = true →
+      Js.checkFields env jfs ds = true
+  | jfs, [], st, env, _, ds, hds, hsa, _, _ => by
     rw [Compile.tyDescFields.eq_def] at hds
     simp only at hds
     obtain rfl : ds = [] := (Except.ok.inj hds).symm
     exact Js.checkFields_nil jfs
-  | jfs, fd :: fdecls, b, ds, hds, hts, hr => by
+  | jfs, fd :: fdecls, st, env, b, ds, hds, hsa, hts, hr => by
     rw [Compile.tyDescFields.eq_def] at hds
     simp only at hds
-    cases hdd : Compile.tyDesc p b fd.ty with
+    cases hdd : Compile.tyDescIn p st b fd.ty with
     | error e => rw [hdd] at hds; exact (Decl.errNeOk hds).elim
     | ok dd =>
-      cases hrest : Compile.tyDescFields p b fdecls with
+      cases hrest : Compile.tyDescFields p st b fdecls with
       | error e => rw [hdd, hrest] at hds; exact (Decl.errNeOk hds).elim
       | ok dsRest =>
         rw [hdd, hrest] at hds
@@ -654,32 +678,36 @@ theorem tsSatFields_checkFields (p : Program) (hn : Decl.TypesNamesOk p) :
           have hsz := Js.sizeOf_lookupField jfs fd.name hlw
           rw [inRangeFields_found hlw, Bool.and_eq_true] at hr
           rw [Js.checkFields_found hlw, Bool.and_eq_true]
-          exact ⟨tsSat_checkTy p hn _ fd.ty b dd hdd hx hr.1,
-            tsSatFields_checkFields p hn jfs fdecls b dsRest hrest hrestSat hr.2⟩
+          exact ⟨tsSat_checkTy p hn _ fd.ty st env b dd hdd hsa hx hr.1,
+            tsSatFields_checkFields p hn jfs fdecls st env b dsRest hrest hsa hrestSat hr.2⟩
 termination_by jfs fdecls => (sizeOf jfs, 0, sizeOf fdecls)
 
 theorem tsSatList_checkList (p : Program) (hn : Decl.TypesNamesOk p) :
-    ∀ (jxs : List Js.JsValue) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b elem = .ok d → (∀ x ∈ jxs, TsSat p elem x) →
-      inRangeList jxs d = true → Js.checkList [] jxs d = true
-  | [], _, _, _, _, _, _ => by rw [Js.checkList.eq_def]
-  | jx :: jrest, elem, b, d, hd, hts, hr => by
+    ∀ (jxs : List Js.JsValue) (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat)
+      (d : Js.TyDesc),
+      Compile.tyDescIn p st b elem = .ok d → Decl.StackAgrees p st env →
+      (∀ x ∈ jxs, TsSat p elem x) → inRangeList env jxs d = true →
+      Js.checkList env jxs d = true
+  | [], _, st, env, _, _, _, hsa, _, _ => by rw [Js.checkList.eq_def]
+  | jx :: jrest, elem, st, env, b, d, hd, hsa, hts, hr => by
     rw [inRangeList_cons, Bool.and_eq_true] at hr
     rw [Decl.checkList_cons, Bool.and_eq_true]
-    exact ⟨tsSat_checkTy p hn jx elem b d hd (hts jx (by simp)) hr.1,
-      tsSatList_checkList p hn jrest elem b d hd (fun x hx => hts x (by simp [hx])) hr.2⟩
+    exact ⟨tsSat_checkTy p hn jx elem st env b d hd hsa (hts jx (by simp)) hr.1,
+      tsSatList_checkList p hn jrest elem st env b d hd hsa (fun x hx => hts x (by simp [hx])) hr.2⟩
 termination_by jxs => (sizeOf jxs, 1, 0)
 
 theorem tsSatEntries_checkEntries (p : Program) (hn : Decl.TypesNamesOk p) :
-    ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b elem = .ok d → (∀ e ∈ jes, TsSat p elem e.2) →
-      inRangeEntries jes d = true → Js.checkEntries [] jes d = true
-  | [], _, _, _, _, _, _ => by rw [Js.checkEntries.eq_def]
-  | (key, jv) :: jrest, elem, b, d, hd, hts, hr => by
+    ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv)
+      (b : Nat) (d : Js.TyDesc),
+      Compile.tyDescIn p st b elem = .ok d → Decl.StackAgrees p st env →
+      (∀ e ∈ jes, TsSat p elem e.2) → inRangeEntries env jes d = true →
+      Js.checkEntries env jes d = true
+  | [], _, st, env, _, _, _, hsa, _, _ => by rw [Js.checkEntries.eq_def]
+  | (key, jv) :: jrest, elem, st, env, b, d, hd, hsa, hts, hr => by
     rw [inRangeEntries_cons, Bool.and_eq_true] at hr
     rw [Decl.checkEntries_cons, Bool.and_eq_true]
-    exact ⟨tsSat_checkTy p hn jv elem b d hd (hts (key, jv) (by simp)) hr.1,
-      tsSatEntries_checkEntries p hn jrest elem b d hd (fun e he => hts e (by simp [he])) hr.2⟩
+    exact ⟨tsSat_checkTy p hn jv elem st env b d hd hsa (hts (key, jv) (by simp)) hr.1,
+      tsSatEntries_checkEntries p hn jrest elem st env b d hd hsa (fun e he => hts e (by simp [he])) hr.2⟩
 termination_by jes => (sizeOf jes, 1, 0)
 
 end

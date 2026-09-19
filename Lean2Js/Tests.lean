@@ -540,8 +540,10 @@ private def typesOk (ts : List TypeDef) : Bool :=
 #guard !typesOk [struct "Loose" [("value", Ty.var "T")]]
 #guard !typesOk [struct "Reserved" [("value", Ty.var "class")] (params := ["class"])]
 #guard !typesOk [struct "Twice" [("value", Ty.var "T")] (params := ["T", "T"])]
-#guard !typesOk [struct "Tree" [("child", .named "Tree" [])]]
-#guard !typesOk [Box, struct "Wrap" [("inner", .named "Box" [.named "Wrap" []])]]
+-- A type that names itself is a type, not an error: the descriptor ties the knot where the name comes
+-- round again. Whether a value of one can be built is the author's `inductive` to answer, not this.
+#guard typesOk [struct "Tree" [("child", .named "Tree" [])]]
+#guard typesOk [Box, struct "Wrap" [("inner", .named "Box" [.named "Wrap" []])]]
 
 private def inOrder (ds : List Decl) : Bool :=
   (Compile.compileDeclared { decls := ds }).isOk

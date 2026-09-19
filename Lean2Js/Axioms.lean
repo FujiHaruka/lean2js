@@ -165,7 +165,7 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.entry_check_fits_dts
 
-/-- info: 'Lean2Js.Dts.checkTy_tsSat' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Lean2Js.Dts.checkTy_tsSat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Dts.checkTy_tsSat
 

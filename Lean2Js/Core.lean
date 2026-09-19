@@ -66,6 +66,68 @@ instance : BEq Ty := ⟨Ty.beq⟩
 
 mutual
 
+theorem Ty.beq_refl : ∀ t : Ty, Ty.beq t t = true
+  | .bool | .int53 | .uint32 | .string | .bigint => by rw [Ty.beq]
+  | .var _ => by rw [Ty.beq]; simp
+  | .named _ as => by rw [Ty.beq]; simp [Ty.beqList_refl as]
+  | .option t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .result a c => by rw [Ty.beq]; simp [Ty.beq_refl a, Ty.beq_refl c]
+  | .array t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .dict t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .fn as a => by rw [Ty.beq]; simp [Ty.beqList_refl as, Ty.beq_refl a]
+
+theorem Ty.beqList_refl : ∀ ts : List Ty, Ty.beqList ts ts = true
+  | [] => by rw [Ty.beqList]
+  | t :: rest => by rw [Ty.beqList]; simp [Ty.beq_refl t, Ty.beqList_refl rest]
+
+end
+
+mutual
+
+/-- Written out for the reason `Ty.beq` is: a type comparison is what ties the knot in a recursive
+descriptor, and the knot has to be tied on equality rather than on a `Bool` nothing reads back. -/
+theorem Ty.eq_of_beq : ∀ {a b : Ty}, Ty.beq a b = true → a = b
+  | .bool, b, h => by cases b <;> simp_all [Ty.beq]
+  | .int53, b, h => by cases b <;> simp_all [Ty.beq]
+  | .uint32, b, h => by cases b <;> simp_all [Ty.beq]
+  | .string, b, h => by cases b <;> simp_all [Ty.beq]
+  | .bigint, b, h => by cases b <;> simp_all [Ty.beq]
+  | .var _, b, h => by cases b <;> simp_all [Ty.beq]
+  | .named n as, b, h => by
+    cases b <;> simp only [Ty.beq, Bool.and_eq_true] at h <;> try exact Bool.noConfusion h
+    rename_i m bs
+    rw [show n = m from by simpa using h.1, Ty.eq_of_beqList h.2]
+  | .option t, b, h => by
+    cases b <;> simp only [Ty.beq] at h <;> try exact Bool.noConfusion h
+    rw [Ty.eq_of_beq h]
+  | .result a c, b, h => by
+    cases b <;> simp only [Ty.beq, Bool.and_eq_true] at h <;> try exact Bool.noConfusion h
+    rw [Ty.eq_of_beq h.1, Ty.eq_of_beq h.2]
+  | .array t, b, h => by
+    cases b <;> simp only [Ty.beq] at h <;> try exact Bool.noConfusion h
+    rw [Ty.eq_of_beq h]
+  | .dict t, b, h => by
+    cases b <;> simp only [Ty.beq] at h <;> try exact Bool.noConfusion h
+    rw [Ty.eq_of_beq h]
+  | .fn as a, b, h => by
+    cases b <;> simp only [Ty.beq, Bool.and_eq_true] at h <;> try exact Bool.noConfusion h
+    rw [Ty.eq_of_beqList h.1, Ty.eq_of_beq h.2]
+
+theorem Ty.eq_of_beqList : ∀ {as bs : List Ty}, Ty.beqList as bs = true → as = bs
+  | [], bs, h => by cases bs <;> simp_all [Ty.beqList]
+  | _ :: _, [], h => by simp [Ty.beqList] at h
+  | a :: as, b :: bs, h => by
+    rw [Ty.beqList, Bool.and_eq_true] at h
+    rw [Ty.eq_of_beq h.1, Ty.eq_of_beqList h.2]
+
+end
+
+instance : LawfulBEq Ty where
+  eq_of_beq := Ty.eq_of_beq
+  rfl := Ty.beq_refl _
+
+mutual
+
 /-- A node count, used to bound how far a type can be expanded. `sizeOf` would say the same thing, but its
 derived instance is noncomputable and this number is computed while compiling. -/
 def Ty.size : Ty → Nat
