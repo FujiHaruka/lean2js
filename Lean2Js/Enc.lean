@@ -215,6 +215,16 @@ private theorem hasElemTy_toValue [Enc α] {p : Program} :
       hasElemTy_toValue (fun b hb => h b (by simp [hb]))]
     rfl
 
+/-- One field of an object, checked against one field of the declared type. The value and its type are
+taken as they are rather than through `Enc`, which is what a field whose type is the one being declared
+needs: that type has no instance yet where its own encoding is being written. -/
+theorem hasFieldTys_cons_of (p : Program) (key : String) (v : Value) (ty : Ty)
+    (rest : List (String × Value)) (tys : List (String × Ty))
+    (hv : Value.hasTy p v ty = true) (hrest : Value.hasFieldTys p rest tys = true) :
+    Value.hasFieldTys p ((key, v) :: rest) ((key, ty) :: tys) = true := by
+  rw [hasFieldTys_cons, hv, hrest]
+  simp
+
 /-- One field of a constructor, for the instance a `deriving Enc` writes: the entry check on an object
 is the checks on its fields, and each field's is its own `Enc`'s. -/
 theorem hasFieldTys_toValue (p : Program) (key : String) {α : Type} [Enc α] (x : α)
