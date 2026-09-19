@@ -788,6 +788,18 @@ def elabReifyDecl : TermElab := fun stx _ => do
 
 @[term_elab reifyProofStx]
 def elabReifyProof : TermElab := fun stx expectedType? => do
-  elabTerm (← reifyTarget true stx[1]).proof expectedType?
+  let d ← reifyTarget true stx[1]
+  -- the proof is syntax this walk built, so it carries no positions of its own and every error in it
+  -- would otherwise be reported against `ship_package`, which names no declaration at all
+  let run := do
+    try withSynthesize (postpone := .no) (withoutErrToSorry (elabTerm d.proof expectedType?))
+    catch ex =>
+      throwError "reify: the certificate for {d.name} does not typecheck, so the declaration this \
+        walk read out of the `def` cannot be said to denote it. The `def` is inside the subset — this \
+        is a defect in the walk rather than in the `def`. What follows is the term the walk \
+        built.\n{ex.toMessageData}"
+  match ← declRange? d.name with
+  | some at? => withRef at? run
+  | none => run
 
 end Lean2Js.Reify
