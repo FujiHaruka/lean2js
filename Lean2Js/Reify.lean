@@ -660,7 +660,8 @@ where
     let gStx ← matchedFn app scrut
     let motive ← `(fun y => Lean2Js.Denote.Denotes _ _ $se y →
       Lean2Js.Denote.Denotes _ _ $ast ($gStx y))
-    return (ast, ← `($(mkCIdent eqns.splitterName) (motive := $motive) _ $armProofs* $sp))
+    return (ast, ← `(Lean2Js.Denote.denotes_matchE_split _ _ $se [$altStx,*] $(← closedOver scrut) $gStx
+      (fun y => $(mkCIdent eqns.splitterName) (motive := $motive) y $armProofs*) $sp))
   /-- One arm, as the alternative the AST carries and the proof that the subset's `firstMatch` reaches
   the same body. The splitter's binders are the pattern's own followed by the conditions; the matcher's
   arm takes the pattern's in the same order, so the body is walked under the names the author wrote. -/

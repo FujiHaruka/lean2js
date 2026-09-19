@@ -293,6 +293,18 @@ theorem denotes_matchE_of (p : Program) (env : Env) (scrut : Expr) (alts : List 
     rw [hfm] at h
     exact hb (by simp [defaultFuel]) v h
 
+/-- The case analysis a `match` is read by, with the program and the environment named. The splitter
+states its motive over the value split on, so a reifier that wrote the motive out would have to leave the
+program and the environment as holes standing under that binder — and two `match`es in one term then
+solve each other's scrutinee. Naming them here puts those holes above the binder, and the motive follows
+from the shape of `h`. -/
+theorem denotes_matchE_split (p : Program) (env : Env) {β : Type} [Enc β] {α : Type} [Enc α]
+    (scrut : Expr) (alts : List Alt) (x : β) (g : β → α)
+    (h : ∀ y, Denotes p env scrut y → Denotes p env (.matchE scrut alts) (g y))
+    (hs : Denotes p env scrut x) :
+    Denotes p env (.matchE scrut alts) (g x) :=
+  h x hs
+
 /-- What the matcher's splitter hands an arm about the arms before it, turned around. `matchPat` compares
 the pattern's literal against the value, so a proof that an earlier arm missed needs the literal on the
 left and the splitter states it on the right. -/
