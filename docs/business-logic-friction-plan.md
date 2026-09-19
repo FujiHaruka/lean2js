@@ -202,6 +202,15 @@ PROVING.md は書き直した。追加でこちらの追試で出たものが 2 
   ソートすれば複合キーになる」ことは書いていない。業務ロジックでは常時出る形（3 番が自力で到達）。
 - **定理の中では `/` が書ける**こと（`@[ship] def` の中では `Int53.div` 必須）。この非対称は説明がない。
 
+**入った直し:** 7 件すべて SYNTAX.md に入れた。書く前にサンドボックスで全部当てている ——
+予約語は宣言・パラメータ・フィールド・構成子の 4 か所で断られ、文言は
+`compile failed: constructor name is reserved in JavaScript: delete` / `... parameter name ... new`。
+`match s, e with` は `matches on more than one value, which this walk does not read`。0 引数の
+`@[expand] def refundWindowMs : Int := 1209600000` は通る。定理の中の `/` も通る。語彙表には
+`Arr` / `Str` / `Dict` / `Int53` / `BigInt` / `Opt` / `Exc` の全項目の型を別表として足した。
+複合キー（`Arr.sortByKey` を副キー → 主キーの順に 2 回）と `powTen` は emit して Node で確かめた
+（`0 → 1`、`15 → 1000000000000000`、`-3 → 1`、`["east1","east9","west2"]`）。
+
 ## フェーズ 4 — 生成物（P1）
 
 - **`@throws` を到達可能な trap だけにする。** いま全 export に一字一句同じ行が付く ——

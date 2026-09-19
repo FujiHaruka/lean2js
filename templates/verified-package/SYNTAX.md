@@ -100,6 +100,14 @@ ship_package
   consumer reads in the generated TypeScript, and Lean's default name, `mk`, says nothing to them. A
   structure without the line is refused.
 - Parameters need names. `def f : Role → Int | .guest => 0` has none, so it is refused.
+- **A name JavaScript has taken is refused.** Declaration names, parameter names, field names and
+  constructor names all become identifiers in `index.js`, so the keywords and the globals a rebinding
+  would trample are unavailable — `delete` `default` `new` `case` `class` `enum` `in` `for` `import`
+  `export` `package` `private` `public` `static` `interface` `this` `throw` `try` `catch` `String`
+  `Number` `Object` `Error` `Math` `Symbol` `eval`, and the rest of both lists. So is any name starting
+  `__`, which is the generated runtime's own prefix. The refusal names the word and where it stood:
+  `compile failed: constructor name is reserved in JavaScript: delete`. Rename on the Lean side —
+  `Action.remove`, not `Action.delete`.
 - **Write a declaration before you call it**, as anywhere else in Lean. `ship_package` decides the order
   the declarations are *emitted* in — every call reaching backwards — but Lean still resolves names in
   the order the file is written.
@@ -128,6 +136,9 @@ def labelOrBlank (labels : List String) : String := firstOr labels ""
   happens where the call is, and `α` is already `String` there.
 - **It cannot be recursive.** Marking a recursive `def` is refused at the mark. Repetition is what the
   array traversals are for.
+- **It may take no arguments at all.** `@[expand] def refundWindowMs : Int := 1209600000` is how a
+  constant gets a name: your theorems read the name, `index.js` holds the number, and nothing called
+  `refundWindowMs` reaches the package.
 - **It needs no certificate**, and writes no theorem of its own into the manifest. The theorems you prove
   about the shipped `def`s that call it are about the same terms either way, so `simp [labelOrBlank,
   firstOr]` unfolds through it as it would through any `def`.
@@ -212,6 +223,9 @@ match state with
   that name in the generated JavaScript.
 - Arms have to be exhaustive, which is Lean's own rule. Where they are, the last arm is taken without a
   test.
+- **`match` reads one value.** `match state, event with`, which is the first thing a state machine
+  reaches for, comes back `matches on more than one value, which this walk does not read`. Nest instead:
+  match the state, and match the event inside each arm.
 - `match` on `Option` and `Except` reads the same way, as does `if let`.
 - What is matched need not be a variable — the answer of a call will do — and an arm may read that value
   again.
@@ -254,9 +268,70 @@ constructors and the operators.
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's repeat by recursion, which the walk does not read. These say the same thing with `slice` / `any` / `foldl` |
 | `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API is not read at all: these are written so that one answer holds on both sides, and *Where the same name answers differently*, below, is what that decided. `Str.length` answers in `Int` as well, and `Str.substring` traps rather than clamping |
 | `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | Lean's `/` floors where the subset truncates, as JavaScript does, and `toString` is a class method rather than an operation the subset could name |
-| `Dict V` | `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` `Dict.ofPairs` | a `Dict` is a type of its own, because `List (String × V)` already encodes as an array |
+| `Dict V` | `Dict.ofList` `Dict.ofPairs` `.get` (an `Option V`) `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` | a `Dict` is a type of its own, because `List (String × V)` already encodes as an array. `ofList` takes the pairs, `ofPairs` takes the values and a function reading a key off each — they are two constructions, not two names for one |
 | `Option T` | `Opt.getD` `Opt.map` | the name is taken: Lean's `Option.getD` is imported before this library is read, so `o.getD fallback` reaches Lean's, which the walk does not read |
 | `Except E A` | `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | the same, for `Except.map` |
+
+### The vocabulary, with its types
+
+The table above says which name to write; this one says what it takes. `α` and `β` stand for any subset
+type, and a class constraint is what `deriving` has to have given the element type.
+
+| `List T` | |
+| --- | --- |
+| `Arr.length` | `List α → Int` |
+| `Arr.get` | `[Inhabited α] → List α → Int → α` — the index is the second argument |
+| `Arr.slice` | `List α → Int → Int → List α` — `lo` then `hi`, `hi` excluded |
+| `Arr.take` / `Arr.drop` | `List α → Int → List α` |
+| `Arr.isEmpty` | `List α → Bool` |
+| `Arr.contains` | `[BEq α] → List α → α → Bool` — the array first, the wanted element second |
+| `Arr.sum` | `List Int → Int` |
+| `Arr.count` | `List α → (α → Bool) → Int` |
+| `Arr.head?` / `Arr.last?` | `[Inhabited α] → List α → Option α` |
+| `Arr.flatten` | `List (List α) → List α` |
+| `Arr.flatMap` | `List α → (α → List β) → List β` |
+| `Arr.sortByKey` | `List α → (α → κ) → List α`, `κ` being `Int` or `String` |
+
+| `String` | |
+| --- | --- |
+| `Str.length` | `String → Int` |
+| `Str.isEmpty` | `String → Bool` |
+| `Str.trim` / `Str.upper` / `Str.lower` | `String → String` |
+| `Str.substring` | `String → Int → Int → String` — `lo` then `hi`, `hi` excluded |
+| `Str.startsWith` / `Str.endsWith` / `Str.includes` | `String → String → Bool` — the haystack first |
+| `Str.indexOf?` | `String → String → Option Int` — the haystack first |
+| `Str.split` | `String → String → List String` — the string, then the separator |
+| `Str.join` | `List String → String → String` — the strings, then the separator |
+| `Str.replace` | `String → String → String → String` — the string, the pattern, the replacement |
+| `Str.repeat` | `String → Int → String` |
+| `Str.padStart` | `String → Int → String → String` — the string, the width, the pad |
+| `Str.toInt?` | `String → Option Int` |
+
+| `Dict V` | |
+| --- | --- |
+| `Dict.ofList` | `List (String × α) → Dict α` |
+| `Dict.ofPairs` | `List α → (α → String) → Dict α` — the values, and how to read a key off one |
+| `Dict.get` | `Dict α → String → Option α` |
+| `Dict.getD` | `Dict α → String → α → α` — the dictionary, the key, the fallback |
+| `Dict.set` | `Dict α → String → α → Dict α` |
+| `Dict.has` | `Dict α → String → Bool` |
+| `Dict.erase` | `Dict α → String → Dict α` |
+| `Dict.keys` / `Dict.values` | `Dict α → List String` / `Dict α → List α` |
+| `Dict.size` | `Dict α → Int` |
+
+| `Int` / `BigInt` / `Option` / `Except` | |
+| --- | --- |
+| `Int53.div` / `Int53.mod` | `Int → Int → Int` |
+| `Int53.abs` | `Int → Int` |
+| `Int53.toString` | `Int → String` |
+| `BigInt.div` / `BigInt.mod` | `BigInt → BigInt → BigInt` |
+| `BigInt.abs` | `BigInt → BigInt` |
+| `Opt.getD` | `Option α → α → α` |
+| `Opt.map` | `Option α → (α → β) → Option β` |
+| `Exc.getD` | `Except ε α → α → α` |
+| `Exc.map` | `Except ε α → (α → β) → Except ε β` |
+| `Exc.mapError` | `Except ε α → (ε → ε') → Except ε' α` |
+| `Exc.toOption` | `Except ε α → Option α` |
 
 **`Str.replace`, `Str.isEmpty`, `Str.padStart` and everything from `Arr.take` down is `@[expand]`**, so
 each call writes the body out where it stands. Nothing of them reaches `index.js`, and the fuel the
@@ -294,6 +369,12 @@ program carries the name, and a lambda has none. `priced tenPercentOff amount` i
   the AST exists.
 - **There is a fuel ceiling.** The fuel a program needs follows from the depth of its expressions and
   the number of its declarations; past 10000 it cannot be written out. `ship_package` checks this.
+- **A composite key is two sorts.** `Arr.sortByKey` takes one key, of type `Int` or `String`, and is
+  stable. So an order on two fields is written as two calls: sort by the secondary key first, then by
+  the primary one, and the secondary order survives inside each group.
+- **The subset is the body of a marked `def`, and nothing else you write.** Your theorems are ordinary
+  Lean: `/` on `Int`, `Nat`, a lambda bound to a name, `List.foldr` — all fine in a proof, none of them
+  readable inside a `@[ship] def`. The walk reads what the package computes, not what you prove about it.
 
 ## Where the same name answers differently
 
@@ -345,6 +426,7 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out. |
 | `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure. |
+| `**` / `Math.pow` / `10 ^ n` | For a power of ten, `Opt.getD (Str.toInt? ("1" ++ Str.repeat "0" (min (max n 0) 15))) 0`. Otherwise repeated multiplication over a fixed range. The clamp is not optional — a `Str.repeat` count the program does not bound is refused by name. |
 
 An array or string operation that is missing from the tables above but needs no new concept is usually
 writable as a `@[expand] def` of your own. `foldl` is the loop and `Arr.slice` is the window, which is
