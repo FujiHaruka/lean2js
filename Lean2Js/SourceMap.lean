@@ -16,7 +16,7 @@ private def base64 : String :=
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 private def base64Char (n : Nat) : String :=
-  (base64.get? ⟨n⟩).map String.singleton |>.getD "A"
+  String.singleton (base64.toList.getD n 'A')
 
 /-- The source map's variable-length number. The sign goes in the lowest bit, then five bits at a time
 from the bottom. -/
