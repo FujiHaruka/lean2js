@@ -64,6 +64,27 @@ private def statementOf (ns n : Name) : MetaM String := do
   let sig := sig.raw.setArg 0 (mkIdent (n.replacePrefix ns .anonymous))
   return toString (← PrettyPrinter.ppTerm ⟨sig⟩)
 
+/-- A constant the statement of a shipped theorem names. Only a `@[expand]` `def` of the package's own
+namespace can be one: those are exactly the names the generated module holds as a value rather than as a
+definition, so the claim would otherwise publish a symbol the package cannot answer for. A name whose
+value has no place in the manifest is refused rather than published unexplained. -/
+private unsafe def namedConstant (ns n : Name) : MetaM (Option Constant) := do
+  let env ← getEnv
+  unless Lean2Js.expandAttr.hasTag env n do return none
+  let some (.defnInfo di) := env.find? n | return none
+  if di.type.isForall then return none
+  let short := toString (n.replacePrefix ns .anonymous)
+  if di.type.isConstOf ``Int then
+    return some { name := short, type := "Int", value := .num (← evalConstCheck Int ``Int n) }
+  if di.type.isConstOf ``String then
+    return some { name := short, type := "String", value := .str (← evalConstCheck String ``String n) }
+  if di.type.isConstOf ``Bool then
+    return some { name := short, type := "Bool", value := .bool (← evalConstCheck Bool ``Bool n) }
+  throwError "refusing to write: a theorem names {n}, whose value the manifest has no way to carry\n\
+    `@[expand]` writes a `def` out where it is called, so the package holds no definition for {n} — and \
+    a claim that reads it by name publishes a symbol nothing in the package answers for. A constant a \
+    shipped theorem names has to be an `Int`, a `String` or a `Bool`"
+
 /-- Every public theorem in the manifest's namespace is a claim, so each one's axioms are read here:
 `lake build` is no help, since a proof plugged with `sorry` is still a term and the build passes with a
 warning.
@@ -133,8 +154,15 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
   let claims : List Claim ← (theorems.filter (!certificates.contains ·)).toList.mapM fun n => do
     return { name := toString (n.replacePrefix ns .anonymous), statement := ← statementOf ns n,
              doc := (← findDocString? (← getEnv) n).map (·.trimAscii.copy) }
+  let mut constants : Array Constant := #[]
+  for n in theorems.filter (!certificates.contains ·) do
+    for c in (← getConstInfo n).type.getUsedConstants do
+      unless c.getPrefix == ns do continue
+      if constants.any (·.name == toString (c.replacePrefix ns .anonymous)) then continue
+      if let some k ← namedConstant ns c then constants := constants.push k
   let axioms := ((used.map toString).qsort (fun a b => decide (a < b))).toList.eraseDups
-  return { manifest, program, claims, source := toString inv.module, axioms, docs := docs.toList }
+  return { manifest, program, claims, constants := constants.toList,
+           source := toString inv.module, axioms, docs := docs.toList }
 
 private unsafe def run (inv : Invocation) : IO UInt32 := do
   unless (← rebuild inv.module) do return 1

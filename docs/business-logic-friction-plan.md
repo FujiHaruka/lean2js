@@ -237,6 +237,24 @@ PROVING.md は書き直した。追加でこちらの追試で出たものが 2 
   `lake build` と `lake exe lean2js` の両方が毎回印字する。初回利用者は毎回「自分のコードの警告か」を
   読み分ける。
 
+**入った直し:**
+
+- `@[throws]` の行は `Lean2Js/Traps.lean` が本体から読む。各演算が `eval` の自分のケースが返しうる
+  コードを、呼び出しは呼び先のものを、関数として渡された宣言は渡す側の呼び出しで自分のものを出す
+  （関数型パラメータ経由の呼び出しが何も足さないのはこの不変条件による）。`noMatchingAlternative` は
+  `Exhaustive` が届かないことを証明しているので入らない。**証明ではないので emit が全ベクタで
+  照合する** —— 行が名指さないコードで trap するベクタが 1 件でもあればビルドが落ちる。
+  例では 107 本中 62 本が `typeError` だけになった（内訳: 62 / 23 が `+int53Overflow` /
+  11 が `+divByZero` / 9 が `+indexOutOfBounds` / 2 が `typeError`+`indexOutOfBounds`）。
+- `.d.ts` は公開署名から辿れる型だけを印字する。辿るのは引数と戻り値の型、およびそこから届いた型の
+  フィールドの型。`Example.lean` には届かない型が無いので生成物に差分は出ず、`Tests.lean` の
+  `#guard` 4 本が証拠になっている。
+- 定理が名指す 0 引数の `@[expand]` 定数は manifest と README に値ごと載る
+  （`Example.lean` の `maxLineQuantity : Int = 999`、`lineTotal` が使う上限）。`Int` / `String` /
+  `Bool` 以外は断る —— これが「載せられないなら断る」の側。
+- `String.get?` の警告は `base64.toList.getD` にして消した。`lake build` と `lake exe lean2js` の
+  両方から出なくなっている。
+
 ## 表現力の天井は、無かった
 
 5 番は「サブセットに冪乗が無いので通貨の桁数から `10^n` が作れない」と報告し、上限の検査を

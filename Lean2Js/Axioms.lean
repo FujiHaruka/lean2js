@@ -41,6 +41,10 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.failed_settlement_has_no_order_id
 
+/-- info: 'Lean2Js.Example.line_total_caps_the_quantity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.line_total_caps_the_quantity
+
 /-- info: 'Lean2Js.Example.reference_from_three_parts' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.reference_from_three_parts

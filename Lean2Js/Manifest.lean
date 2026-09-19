@@ -23,6 +23,15 @@ structure Claim where
   statement : String
   doc : Option String
 
+/-- A constant a shipped theorem's statement names. `@[expand]` writes a `def` out where it is called, so
+the package holds the number and not the name — and a reader of the claim would have no way to learn what
+`refundWindowMs` is. The value is carried here so that the signature the manifest publishes has no symbol
+in it the package cannot answer for. -/
+structure Constant where
+  name : String
+  type : String
+  value : Json
+
 structure Manifest where
   package : String
   version : String
@@ -40,6 +49,7 @@ structure Artifact where
   manifest : Manifest
   program : Core.Program
   claims : List Claim
+  constants : List Constant := []
   source : String
   axioms : List String
   docs : List (String × String) := []
@@ -87,6 +97,8 @@ def Artifact.toJson (a : Artifact) : Json :=
     ("source", .str a.source),
     ("exports", .arr exports),
     ("theorems", .arr claims),
+    ("constants", .arr (a.constants.map fun c =>
+      Json.obj [("name", .str c.name), ("type", .str c.type), ("value", c.value)])),
     ("axioms", .arr (a.axioms.map .str))
   ]
 
@@ -117,6 +129,14 @@ def Artifact.toReadme (a : Artifact) : String :=
   let axioms :=
     if a.axioms.isEmpty then "The proofs above reach no axioms."
     else s!"The proofs above reach no axioms beyond {String.intercalate ", " a.axioms}."
+  let constants :=
+    if a.constants.isEmpty then []
+    else
+      [ "## Constants the theorems name",
+        "",
+        "A statement below reads one of these by name. The package holds the value, written out where it \
+          was used, so it is given here rather than left as a symbol nothing in the package defines.",
+        "" ] ++ a.constants.map (fun c => s!"- `{c.name} : {c.type}` = `{c.value.render}`") ++ [ "" ]
   let proofs :=
     if a.claims.isEmpty then
       [ "## Theorems",
@@ -131,6 +151,7 @@ def Artifact.toReadme (a : Artifact) : String :=
         "Proved in Lean about the reference semantics the generated JavaScript is checked against. Each \
           statement is the one Lean prints for the theorem, and `proof-manifest.json` lists the same ones.",
         "" ] ++ claims ++
+      constants ++
       [ "## Axioms",
         "",
         axioms,

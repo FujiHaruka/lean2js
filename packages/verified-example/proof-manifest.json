@@ -627,6 +627,11 @@
       "doc": "A settlement that failed carries no order id, whatever it failed with."
     },
     {
+      "name": "line_total_caps_the_quantity",
+      "statement": "line_total_caps_the_quantity (unitPrice quantity : Int) (hq : maxLineQuantity < quantity) :\n  lineTotal unitPrice quantity = unitPrice * maxLineQuantity",
+      "doc": "A line ordered past the cap is billed at the cap, whatever the unit price."
+    },
+    {
       "name": "reference_from_three_parts",
       "statement": "reference_from_three_parts (a b c : String) : referenceFrom [a, b, c] = a ++ \"-\" ++ b ++ \"-\" ++ c",
       "doc": "Three parts come out of `referenceFrom` in the order they went in, with a hyphen written between each\nneighbouring pair. Hyphens the parts themselves carry are not counted, so this says nothing about how many\nthe answer holds."
@@ -750,6 +755,13 @@
       "name": "steps_agree",
       "statement": "steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :\n  ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args",
       "doc": "The small-step machine, given enough steps, answers every call to a public function exactly as `eval`\ndoes."
+    }
+  ],
+  "constants": [
+    {
+      "name": "maxLineQuantity",
+      "type": "Int",
+      "value": 999
     }
   ],
   "axioms": [

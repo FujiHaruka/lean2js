@@ -223,6 +223,15 @@ A settlement that failed carries no order id, whatever it failed with.
 theorem failed_settlement_has_no_order_id (message : String) : settledOrderId (Except.error message) = 0
 ```
 
+### line_total_caps_the_quantity
+
+A line ordered past the cap is billed at the cap, whatever the unit price.
+
+```lean
+theorem line_total_caps_the_quantity (unitPrice quantity : Int) (hq : maxLineQuantity < quantity) :
+  lineTotal unitPrice quantity = unitPrice * maxLineQuantity
+```
+
 ### reference_from_three_parts
 
 Three parts come out of `referenceFrom` in the order they went in, with a hyphen written between each
@@ -511,6 +520,12 @@ does.
 theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :
   ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args
 ```
+
+## Constants the theorems name
+
+A statement below reads one of these by name. The package holds the value, written out where it was used, so it is given here rather than left as a symbol nothing in the package defines.
+
+- `maxLineQuantity : Int` = `999`
 
 ## Axioms
 

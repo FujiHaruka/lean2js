@@ -28,10 +28,13 @@ def add (a b : Int) : Int := a + b
 def clampQuantity (quantity upper : Int) : Int :=
   if quantity < 1 then 1 else if quantity > upper then upper else quantity
 
+/-- The most of one line a single order is billed for. -/
+@[expand] def maxLineQuantity : Int := 999
+
 /-- The amount of a line item. The quantity is clamped before multiplying, so a negative quantity never
 makes the amount negative. -/
 @[ship]
-def lineTotal (unitPrice quantity : Int) : Int := unitPrice * clampQuantity quantity 999
+def lineTotal (unitPrice quantity : Int) : Int := unitPrice * clampQuantity quantity maxLineQuantity
 
 inductive Role where
   | guest
@@ -577,6 +580,14 @@ theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role :=
 /-- A settlement that failed carries no order id, whatever it failed with. -/
 theorem failed_settlement_has_no_order_id (message : String) :
     settledOrderId (.error message) = 0 := rfl
+
+/-- A line ordered past the cap is billed at the cap, whatever the unit price. -/
+theorem line_total_caps_the_quantity (unitPrice quantity : Int) (hq : maxLineQuantity < quantity) :
+    lineTotal unitPrice quantity = unitPrice * maxLineQuantity := by
+  have h : clampQuantity quantity maxLineQuantity = maxLineQuantity := by
+    simp only [clampQuantity, maxLineQuantity] at hq ⊢
+    omega
+  rw [lineTotal, h]
 
 /-- Three parts come out of `referenceFrom` in the order they went in, with a hyphen written between each
 neighbouring pair. Hyphens the parts themselves carry are not counted, so this says nothing about how many
