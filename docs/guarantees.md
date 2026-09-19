@@ -9,7 +9,7 @@ your Lean def  ──certificate (one per declaration, all 106 shipped)──  r
       │
       └──your theorems are ordinary Lean equations about this def
 
-reference semantics  ──proof (every expression form, all 105 public functions)──  generated JS
+reference semantics  ──proof (every expression form, all 107 public functions)──  generated JS
       │                                        │
       │                       └──run-time check (every vector of the artifact)──┘
       │
@@ -26,7 +26,7 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   `lean2js` **will not ship a declaration without a certificate**, so there is no way round it by handing
   over an AST. That is why your theorems can be equations about your own functions, like
   `seatCharge .free seats = 0`, and still be claims about what ships.
-- **What the proofs reach** — **all 35 forms** of `Core.Expr` and **all 105 public functions**. Where
+- **What the proofs reach** — **all 36 forms** of `Core.Expr` and **all 107 public functions**. Where
   `eval` returns a value the generated function of the same name returns the same value
   ([`decl_correct`]); where `eval` traps the generated code throws **the same code** ([`decl_traps`]);
   an argument `eval` would not take becomes a `typeError` before the body runs ([`decl_refuses`]). The
@@ -39,17 +39,17 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   dictionary as an association list; a `Map` arriving at run time cannot be built that way. Running out
   of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on the fuel
   needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against the
-  ceiling of 10000 the artifact runs at, this example needs 962).
+  ceiling of 10000 the artifact runs at, this example needs 980).
 - **What that rests on** — the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
   exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
   semantics, which makes evaluation order and short-circuiting explicit as continuations, reaches the
   same answer as `eval` for every call to a public function ([`stepCall_agrees`]).
 - **The artifact itself** — the `index.js` that is written **reads back as the same AST**
-  ([`parseModule_render_of_compileProgram`], no caveat). The 56 run-time helpers the generated code
+  ([`parseModule_render_of_compileProgram`], no caveat). The 60 run-time helpers the generated code
   calls under the `__` prefix are hand-written, but **everything the model assumes of them** agrees with
   what the printer writes out: every one of the 40 rows of the table ([`helpers_ship_as_modelled`]), and
-  `__ck` and the six traversal helpers, which the model holds as evaluation rules rather than as table
+  `__ck` and the seven traversal helpers, which the model holds as evaluation rules rather than as table
   rows ([`calls_ck_checkTy`], [`calls_map`] and the rest). The others are only called by helpers, and
   are unfolded inside those proofs.
 - **The `.d.ts`** — an argument the entry check accepts satisfies the `.d.ts` type
@@ -59,7 +59,7 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   directions are in the manifest**. What those three call the `.d.ts` side is `Dts.TsSat` — the declared
   type read as a predicate in Lean. How TypeScript reads the printed `.d.ts` text is the one thing
   trusted here.
-- **Outside the proofs** — every vector generated for the artifact (37865 of them for this example) is
+- **Outside the proofs** — every vector generated for the artifact (38298 of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
   real JavaScript. One disagreement and nothing is written to the output directory.

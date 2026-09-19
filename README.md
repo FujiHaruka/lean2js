@@ -275,7 +275,7 @@ wrote.
 
 ## What is guaranteed
 
-- **Proved about the compiler, once.** For every one of the 35 expression forms in the subset, the
+- **Proved about the compiler, once.** For every one of the 36 expression forms in the subset, the
   generated JavaScript agrees with the reference semantics: it returns the same value, throws the
   same code where the semantics traps, and refuses at the boundary what the semantics would not
   accept. The text of `index.js` reads back as the module the compiler built, and the `.d.ts` admits

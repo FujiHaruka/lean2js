@@ -27,9 +27,9 @@ So there is one question to ask rather than a table to consult:
 > method?**
 
 A no there is a no here as well. A yes is almost always read, and the exceptions are short: the subset is
-narrower than JavaScript in a few more places: no fractional number (`1.5`, `Math.*`), no `sort`, no
-regular expressions, no `Set` and no `Date`, no `null` or `undefined` (`Option` is the tagged object), and
-no side effects. *Operations that are not there*, below, is what to write instead.
+narrower than JavaScript in a few more places: no fractional number (`1.5`, `Math.*`), no comparison
+function handed to a sort, no regular expressions, no `Set` and no `Date`, no `null` or `undefined`
+(`Option` is the tagged object), and no side effects. *Operations that are not there*, below, is what to write instead.
 
 What a Lean author reaches for first, and which line decides it:
 
@@ -41,7 +41,7 @@ What a Lean author reaches for first, and which line decides it:
 | `do` and `←` over `Except` | no | 2 — `bind` takes a function built where it stands |
 | a tuple | no | 1 — there is no tuple among the seven; declare a `structure` instead |
 | `/` on `Int` | no | 1 — `Int53.div`, because Lean's `/` floors where JavaScript truncates |
-| `sort` | no | 1 and 2 — the comparison is a function built where it stands, and would have to be proved a total order |
+| `xs.sort compare` | no | 1 and 2 — the comparison is a function built where it stands, and would have to be proved a total order. `Arr.sortByKey xs key` takes the key instead, and the order comes from its type |
 | `xs.filter (fun x => x.active)` | yes | 2 — the lambda is the traversal's own syntax |
 | `xs.map (fun s => match s with ...)` | yes | 2 — a `match` inside that lambda reads like any other |
 | `if seats < 0 then` | yes | the `Decidable` instance is gone before anything runs |
@@ -248,6 +248,7 @@ constructors and the operators.
 | On | What you write | Why not Lean's own |
 | --- | --- | --- |
 | `List T` | `Arr.length` `Arr.get` `Arr.slice` | Lean's `List.length` counts in `Nat`, which is not a subset type, and a read past the end has to trap rather than answer a default |
+| | `Arr.sortByKey` | Lean's `List.mergeSort` takes the comparison, and a comparison built where it stands would have to be proved a total order. The key's type carries the order instead: `Int` or `String`, and nothing else |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's repeat by recursion, which the walk does not read. These say the same thing with `slice` / `any` / `foldl` |
 | `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API is not read at all: these are written so that one answer holds on both sides, and *Where the same name answers differently*, below, is what that decided. `Str.length` answers in `Int` as well, and `Str.substring` traps rather than clamping |
 | `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | Lean's `/` floors where the subset truncates, as JavaScript does, and `toString` is a class method rather than an operation the subset could name |
@@ -260,7 +261,7 @@ each call writes the body out where it stands. Nothing of them reaches `index.js
 program needs grows with how deeply they nest. `Arr.contains` needs `BEq T`, which `deriving DecidableEq`
 gives; `Arr.head?` and `Arr.last?` need `Inhabited T`, which is `deriving Inhabited`.
 
-**A lambda is written wherever the function it stands for is written out**: the six traversals, and the
+**A lambda is written wherever the function it stands for is written out**: the seven traversals, and the
 entries above that take one — `Arr.count`, `Arr.flatMap`, `Dict.ofPairs`, `Opt.map`, `Exc.map` and
 `Exc.mapError`. Its body may read the enclosing parameters and may branch:
 
@@ -318,6 +319,11 @@ sides to it.
   one. It and `Str.padStart`, which is written from it, are the two operations that take a length as a
   number, so they are the two that can ask for a string past the `Int53` bound on a length; that traps,
   and an engine will run out of memory below it.
+- `Arr.sortByKey xs key` is **stable**, and the order is the key type's: `Int` compares as `≤`, `String`
+  by code point — the order `<` on two strings already has here, not the UTF-16 one JavaScript's `<`
+  uses. The generated code runs a merge sort written out in the runtime rather than
+  `Array.prototype.sort`, so the answer does not depend on the engine. What `List.mergeSort` proves is
+  what ships: the answer is a permutation of the input, and equal keys keep the order they came in.
 - `Str.padStart s n pad` cuts the pad where the width falls, so a multi-character pad does not overshoot.
   A width `s` already reaches, and an empty `pad`, leave `s` as it is. JavaScript's own counts UTF-16
   units, so it pads astral text short.
@@ -329,7 +335,6 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 
 | What you reach for | What to write instead |
 | --- | --- |
-| `sort` / `sortBy` | Order the array in TypeScript on the other side of the call, or take it already ordered. A comparison function would have to be proved a total order before the generated `sort` could be held to Lean's. |
 | `padEnd` | `if Str.isEmpty pad || n ≤ Str.length s then s else s ++ Str.substring (Str.repeat pad k) 0 k`, with `k` the width less `Str.length s`. The guard is the one `Str.padStart` carries; without it the call traps where JavaScript's own returns `s`. |
 | regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split`, or match in TypeScript. A regular-expression engine would have to enter the reference semantics. |
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |

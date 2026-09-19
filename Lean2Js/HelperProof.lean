@@ -2077,13 +2077,17 @@ theorem find_sortBy : Helper.defs.find? (·.name == "__sortBy") = some Helper.so
 /-- The order `__keyle` puts two keys in. -/
 def valLe : Val → Val → Bool
   | .num a, .num b => decide (a ≤ b)
-  | .str a, .str b => decide (strcmp a b ≤ 0)
+  | .str a, .str b => compare a.toList b.toList != Ordering.gt
   | _, _ => false
 
 theorem compare_ne_gt (a b : Int) : (compare a b != Ordering.gt) = decide (a ≤ b) := by
   by_cases h : a ≤ b
   · simp [Int.compare_ne_gt.mpr h, h]
   · simp [Int.compare_eq_gt.mpr (by omega : b < a), h]
+
+theorem compare_strcmp (x y : String) : compare (strcmp x y) 0 = compare x.toList y.toList := by
+  rw [strcmp]
+  split <;> rename_i h <;> rw [h] <;> rfl
 
 theorem calls_keyle_num (ext : Ext) (a b : Int) (f : Nat) :
     callDef ext (f + 5) "__keyle" [.num a, .num b] = .ok (.bool (valLe (.num a) (.num b))) := by
@@ -2101,7 +2105,7 @@ theorem calls_keyle_str (ext : Ext) (x y : String) (f : Nat) :
   walk
   rw [show f + x.toList.length + 18 = (f + 1) + x.toList.length + 17 from by omega, calls_strcmp]
   walk
-  rw [valLe, compare_ne_gt]
+  rw [valLe, compare_strcmp]
 
 /-- The key a pair carries. `__sortBy` builds every pair, so the shape is always `[key, element]`. -/
 def keyOf : Val → Val
@@ -2366,6 +2370,184 @@ theorem calls_msort (ext : Ext) (kcost : Nat) :
         (fun a ha b hb => hcmp a (hmem a ha) b (hmem b hb))]
     walk
     rw [mergeSort_split h2, hS1, hS2]
+
+def elemOf : Val → Val
+  | .arr [_, e] => e
+  | _ => .undef
+
+/-- The pairs `__sortBy` builds: each key in front of the element it was worked out from. -/
+def pairsOf : List Val → List Val → List Val
+  | k :: ks, x :: xs => .arr [k, x] :: pairsOf ks xs
+  | _, _ => []
+
+theorem mem_pairsOf : ∀ {ks xs : List Val} {v : Val}, v ∈ pairsOf ks xs →
+    ∃ k ∈ ks, ∃ x, v = .arr [k, x]
+  | [], _, _, h => by simp [pairsOf] at h
+  | _ :: _, [], _, h => by simp [pairsOf] at h
+  | k :: ks, x :: xs, v, h => by
+    rcases List.mem_cons.mp h with rfl | h
+    · exact ⟨k, List.mem_cons_self .., x, rfl⟩
+    · obtain ⟨k', hk', x', rfl⟩ := mem_pairsOf h
+      exact ⟨k', List.mem_cons_of_mem _ hk', x', rfl⟩
+
+theorem isPair_pairsOf {ks xs : List Val} {v : Val} (h : v ∈ pairsOf ks xs) : IsPair v := by
+  obtain ⟨k, -, x, rfl⟩ := mem_pairsOf h
+  exact ⟨k, x, rfl⟩
+
+theorem elemOf_pairsOf : ∀ (ks xs : List Val), ks.length = xs.length →
+    (pairsOf ks xs).map elemOf = xs
+  | [], [], _ => rfl
+  | k :: ks, x :: xs, h => by
+    simp only [pairsOf, List.map_cons, elemOf]
+    rw [elemOf_pairsOf ks xs (by simpa using h)]
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
+
+theorem pairs_loop (ext : Ext) (i : Nat) (xs acc : List Val) (X : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 6) [("pairs", .arr acc), ("xs", X), ("f", .ext i)] "v" xs
+        [.push "pairs" (.arrayLit [.apply (.var "f") [.var "v"], .var "v"])]
+      = (extMap ext i xs).bind (fun ks =>
+          .ok (.next [("pairs", .arr (acc ++ pairsOf ks xs)), ("xs", X), ("f", .ext i)])) := by
+  induction xs generalizing acc with
+  | nil =>
+    walk
+    simp [extMap, pairsOf]
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 6 = (f + rest.length + 6) + 1 from by simp; omega]
+    walk
+    cases hx : ext i [x] with
+    | stuck => simp [extMap, hx]
+    | thrown c => simp [extMap, hx]
+    | ok v =>
+      simp only [hx, bind_ok]
+      walk
+      simp only [Option.getD]
+      rw [ih]
+      simp only [extMap, hx, bindEq, bind_ok]
+      cases extMap ext i rest with
+      | stuck => rfl
+      | thrown c => rfl
+      | ok ks => simp [pairsOf]
+
+theorem elems_loop (ext : Ext) (S P X F : Val) :
+    ∀ (ps acc : List Val) (f : Nat), (∀ v ∈ ps, IsPair v) →
+    evalFor ext (f + ps.length + 4)
+        [("out", .arr acc), ("sorted", S), ("pairs", P), ("xs", X), ("f", F)] "pr" ps
+        [.push "out" (.index (.var "pr") (.num 1))]
+      = .ok (.next [("out", .arr (acc ++ ps.map elemOf)), ("sorted", S), ("pairs", P),
+          ("xs", X), ("f", F)]) := by
+  intro ps
+  induction ps with
+  | nil => intro acc f _; walk; simp
+  | cons p rest ih =>
+    intro acc f hp
+    obtain ⟨k, e, rfl⟩ := hp p (List.mem_cons_self ..)
+    rw [show f + (Val.arr [k, e] :: rest).length + 4 = (f + rest.length + 4) + 1 from by simp; omega]
+    walk
+    simp only [Option.getD]
+    rw [ih _ _ (fun v hv => hp v (List.mem_cons_of_mem _ hv))]
+    simp [elemOf]
+
+def isNumV : Val → Bool
+  | .num _ => true
+  | _ => false
+
+def isStrV : Val → Bool
+  | .str _ => true
+  | _ => false
+
+/-- One cost for every comparison of one call, taken over all the keys at once: `__strcmp` walks the
+left string, and a bound that holds of each key separately is what the loop needs. -/
+def strLens : List Val → Nat
+  | [] => 0
+  | v :: rest => (match v with | .str s => s.toList.length | _ => 0) + strLens rest
+
+theorem strLens_mem {keys : List Val} {s : String} (h : Val.str s ∈ keys) :
+    s.toList.length ≤ strLens keys := by
+  induction keys with
+  | nil => cases h
+  | cons v rest ih =>
+    rcases List.mem_cons.mp h with rfl | h
+    · simp [strLens]
+    · have := ih h
+      simp only [strLens]
+      omega
+
+theorem compares_num (ext : Ext) {ks xs : List Val} (h : ∀ k ∈ ks, isNumV k = true) :
+    Compares ext 5 (pairsOf ks xs) := by
+  intro a ha b hb f
+  obtain ⟨ka, hka, xa, rfl⟩ := mem_pairsOf ha
+  obtain ⟨kb, hkb, xb, rfl⟩ := mem_pairsOf hb
+  obtain ⟨p, rfl⟩ : ∃ p, ka = .num p := by
+    have := h ka hka; cases ka <;> simp_all [isNumV]
+  obtain ⟨q, rfl⟩ : ∃ q, kb = .num q := by
+    have := h kb hkb; cases kb <;> simp_all [isNumV]
+  exact calls_keyle_num ext p q f
+
+theorem compares_str (ext : Ext) {ks xs : List Val} (h : ∀ k ∈ ks, isStrV k = true) :
+    Compares ext (strLens ks + 22) (pairsOf ks xs) := by
+  intro a ha b hb f
+  obtain ⟨ka, hka, xa, rfl⟩ := mem_pairsOf ha
+  obtain ⟨kb, hkb, xb, rfl⟩ := mem_pairsOf hb
+  obtain ⟨sa, rfl⟩ : ∃ s, ka = .str s := by
+    have := h ka hka; cases ka <;> simp_all [isStrV]
+  obtain ⟨sb, rfl⟩ : ∃ s, kb = .str s := by
+    have := h kb hkb; cases kb <;> simp_all [isStrV]
+  have hle : sa.toList.length ≤ strLens ks := strLens_mem hka
+  rw [show f + (strLens ks + 22) = (f + (strLens ks - sa.toList.length)) + sa.toList.length + 22
+    from by omega]
+  exact calls_keyle_str ext sa sb _
+
+theorem calls_sortBy (ext : Ext) (i : Nat) (xs ks : List Val) (hks : extMap ext i xs = .ok ks)
+    (hhomo : (∀ k ∈ ks, isNumV k = true) ∨ (∀ k ∈ ks, isStrV k = true)) :
+    Helper.Calls ext "__sortBy" [.arr xs, .ext i]
+      (.ok (.arr (((pairsOf ks xs).mergeSort pairLe).map elemOf))) := by
+  obtain ⟨kcost, hcmp⟩ : ∃ kc, Compares ext kc (pairsOf ks xs) :=
+    hhomo.elim (fun h => ⟨5, compares_num ext h⟩) (fun h => ⟨_, compares_str ext h⟩)
+  obtain ⟨c, hc⟩ := calls_msort ext kcost (pairsOf ks xs).length (pairsOf ks xs) (Nat.le_refl _)
+    (fun v hv => isPair_pairsOf hv) hcmp
+  refine eventually_of_offset (c + xs.length + (pairsOf ks xs).length + 30) (fun f => ?_)
+  rw [show f + (c + xs.length + (pairsOf ks xs).length + 30)
+    = (f + c + xs.length + (pairsOf ks xs).length + 29) + 1 from by omega,
+    callDef_block find_sortBy rfl rfl]
+  simp only [Helper.sortBy]
+  walk
+  rw [show f + c + xs.length + (pairsOf ks xs).length + 27
+    = (f + c + (pairsOf ks xs).length + 21) + xs.length + 6 from by omega,
+    pairs_loop, hks]
+  simp only [bind_ok, List.nil_append]
+  walk
+  rw [show f + c + xs.length + (pairsOf ks xs).length + 25
+    = (f + xs.length + (pairsOf ks xs).length + 25) + c from by omega, hc]
+  walk
+  rw [show f + c + xs.length + (pairsOf ks xs).length + 24
+    = (f + c + xs.length + 20) + ((pairsOf ks xs).mergeSort pairLe).length + 4
+    from by rw [List.length_mergeSort]; omega,
+    elems_loop ext _ _ _ _ _ [] _ (fun v hv => isPair_pairsOf (List.mem_mergeSort.mp hv))]
+  walk
+  simp
+
+theorem pairsOf_eq_zip : ∀ (ks xs : List Val),
+    pairsOf ks xs = (ks.zip xs).map (fun p => Val.arr [p.1, p.2])
+  | [], _ => by cases ‹List Val› <;> rfl
+  | _ :: _, [] => rfl
+  | k :: ks, x :: xs => by
+    simp only [pairsOf, List.zip_cons_cons, List.map_cons, pairsOf_eq_zip ks xs]
+
+/-- What `__sortBy` answers, read in the shape the model of the generated code assumes: the pairs of key
+and element, ordered by key, with the elements read back out. -/
+theorem sortBy_answer (ks xs : List Val) :
+    ((pairsOf ks xs).mergeSort pairLe).map elemOf
+      = ((ks.zip xs).mergeSort (fun a b => valLe a.1 b.1)).map (·.2) := by
+  rw [pairsOf_eq_zip,
+    ← List.map_mergeSort (f := fun p : Val × Val => Val.arr [p.1, p.2]) (fun _ _ _ _ => rfl),
+    List.map_map]
+  rfl
+
+/-- The order the helpers put two keys in is the order `JsSem` assumes. Stated for every pair of values
+rather than for the keys of one call: neither side orders anything but two numbers or two strings. -/
+theorem valLe_ofJs (a b : Js.JsValue) : valLe (ofJs a) (ofJs b) = Js.keyLe a b := by
+  cases a <;> cases b <;> simp only [ofJs, valLe, Js.keyLe] <;> rfl
 
 /-! ## Structural equality
 
