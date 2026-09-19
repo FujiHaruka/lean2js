@@ -41,7 +41,8 @@ TypeScript.
 
 | Left out | Why |
 | --- | --- |
-| Non-regular recursion (`Nest a` holding a `Nest (a × a)`) | the type expansion has no finite fixed point; the budget in `tyDesc` refuses it with an error rather than looping |
+| Non-regular recursion (`Nest a` holding a `Nest (a × a)`) | the type expansion has no finite fixed point; the budget in `tyDescIn` refuses it with an error rather than looping |
+| A type that names itself and takes type parameters | the declaration a program carries substitutes its parameters away where the type is used, so a name coming round at other arguments has no expansion to come round to |
 | General recursion / `partial` | Lean's own `def` has to be total; the subset carries the termination argument, it does not invent one |
 | A built-in `Json` value form in `Value` | a declared type is what this repository already has a boundary, a `.d.ts` and an encoding for; adding a value kind would double the semantics |
 | Tail-call flattening of the generated JS | a deep tree can overflow V8's stack; that is a separate bound, named in the documents rather than fixed here |
@@ -65,10 +66,12 @@ Three ways out, and the third is the one taken.
   with the `mu` node before descending. Keeps `__has` binary, but costs a full descriptor rebuild per
   node of the value, and the substituting walk is itself a run-time helper that has to be proved to
   agree with a `TyDesc.substSelf` in the model — a walk over arrays of arrays of arrays.
-- **Bind at the `ctors` node and refer to it by de Bruijn index.** `TyDesc` gains one form, `.ref up`.
-  Every `.ctors` node is a binder; `.ref k` names the `k`-th enclosing one, nearest first. The
+- **Bind where the type names itself and refer to it by de Bruijn index.** `TyDesc` gains two forms,
+  `.mu` and `.ref up`. A `mu` binds; `.ref k` names the `k`-th enclosing one, nearest first. The
   descriptor stays a finite tree written inline at the call, so tree-shaking is untouched, and the
-  run-time helpers gain one parameter — the environment — rather than a new helper.
+  run-time helpers gain one parameter — the environment — rather than a new helper. A type that does
+  not name itself binds nothing, so it is checked under no environment at all and every statement
+  about it holds exactly where it did.
 
 **The third.** One new `Core.Expr` form is not in question here (there is none); what is paid is one new
 `TyDesc` form and a parameter on four helpers.
@@ -84,21 +87,22 @@ another `.ref`, and the measure would have nothing to say.
 So the environment holds what a `.ctors` node *binds*: the key and the alternatives.
 
 ```
-abbrev TyEnv := List (String × List (String × TyDesc))
+abbrev TyEnv := List (String × TyAlts)
 ```
 
-`checkTy v (.ref k) env` continues at `.ctors key alts` — a constructor application the termination
-checker can see — with `env.drop (k + 1)`, the environment that node was bound under. Pushing it back
-gives `env.drop k`, which is what the walk would have had if it had arrived there by expansion. The
-measure is `(sizeOf v, 3)` at a `.ref`, `(sizeOf v, 2)` at any other `checkTy`, `(sizeOf v, 0)` at
-`checkFields`, so the `.ref` step decreases and everything else stays as it is.
+`checkTy env v (.ref k)` continues at `.ctors key alts` — a constructor application the termination
+checker can see — under `env.drop k`, which is what the walk would have had if it had arrived there by
+expansion. The measure is `(sizeOf v, 2)` at a `mu` or a `ref`, `(sizeOf v, 1)` at any other `checkTy`
+and `(sizeOf v, 0)` at `checkFields`, so both of those steps decrease and everything else stays as it
+is.
 
 The generated JavaScript mirrors that step for step:
 
 ```js
 const __has = (x, t, e) => { ...
-  if (k === "ref") { const b = e[t[1]]; return __has(x, ["ctors", b[0], b[1]], e.slice(t[1] + 1)); }
-  ... // ctors: __hasFields(x, alt[1], __aconcat([[t[1], t[2]]], e))
+  if (k === "mu") { return __has(x, ["ctors", t[1], t[2]], __aconcat([[t[1], t[2]]], e)); }
+  if (k === "ref") { const b = e[t[1]]; return __has(x, ["ctors", b[0], b[1]], e.slice(t[1], e.length)); }
+  ...
 }
 ```
 
@@ -126,11 +130,11 @@ generator moves: `randomValue` already routes compound types through `edgeCases`
 ### The Enc instance
 
 `deriving Enc` writes `toValue`, `ofValue`, `accepts`, `ofValue_toValue` and `toValue_hasTy` as flat
-matches over the constructors. For a recursive type each becomes a recursion, and the fields that name
-the type being defined cannot go through `Enc.toValue` — the instance is not there yet while it is being
-written. So the handler emits, for a field whose type mentions the type being defined, a call to the
-function it is writing (through `List.map` for an `Array` field, `Option.map` for an `Option`), and the
-two proofs become structural inductions rather than flat matches.
+matches over the constructors. For a type that names itself each becomes a recursion, and a field whose
+type is the one being declared cannot go through `Enc` — the instance is not there yet while it is being
+written. So the handler writes that field's half itself, and the halves that walk a `List` of the type
+(`ofValues`, `acceptsVs`, `ofValues_map`, `toValues_hasTy`) come in a `mutual` block with the ones that
+walk the type.
 
 ### Recursion in a shipped `def`
 
@@ -151,11 +155,11 @@ That is phase 2, and it is where the guarantee boundary actually moves.
 
 Each phase leaves every gate green and the artifact regenerated.
 
-1. **The environment, carrying nothing.** `TyDesc.ref`, `TyEnv`, the parameter on `checkTy`, `normTy`,
-   `descOk` and on `__has` / `__hasFields` / `__norm` / `__normFields`, the render and the parse of the
-   new form, and the agreement proofs carried through. `Compile.tyDesc` still emits no `.ref`, so every
-   existing statement holds at the empty environment and the change to `index.js` is the helpers' extra
-   parameter.
+1. **The environment, carrying nothing.** `TyDesc.mu` and `TyDesc.ref`, `TyEnv`, the parameter on
+   `checkTy`, `normTy`, `descOk` and on `__has` / `__hasFields` / `__norm` / `__normFields`, the render
+   and the parse of the new forms, and the agreement proofs carried through. `Compile.tyDesc` still
+   emits neither form, so every existing statement holds at the empty environment and the change to
+   `index.js` is the helpers' extra parameter.
 2. **Tying the knot.** `tyDesc` carries the stack and emits `.ref`; `validateType` accepts a
    self-reference; `Decl` and `Dts` generalise their statements from the empty environment to one that
    agrees with the stack.
@@ -178,7 +182,8 @@ Each phase leaves every gate green and the artifact regenerated.
 | `Lean2Js/Helper.lean` | 1 | `__has` / `__hasFields` / `__norm` / `__normFields` take `e`; `__ck` passes `[]` |
 | `Lean2Js/HelperProof.lean` | 1 | `hasV` / `normV` / `hasFuel` / `normFuel` and the agreement proofs |
 | `Lean2Js/Parse.lean`, `Lean2Js/Roundtrip.lean` | 1 | read `["ref", n]` back |
-| `Lean2Js/Compile.lean` | 2 | `tyDesc` carries the stack; `validateType` accepts recursion |
+| `Lean2Js/Compile.lean` | 2 | `tyDescIn` carries the stack; `validateType` accepts recursion |
+| `Lean2Js/Core.lean` | 2 | `Ty` gets a `LawfulBEq`, so the knot is tied on equality |
 | `Lean2Js/Decl.lean` | 1, 2 | the entry-check statements at an environment agreeing with the stack |
 | `Lean2Js/Dts.lean` | 1, 2 | the same for the two `.d.ts` directions |
 | `Lean2Js/Vectors.lean` | 3 | the depth in `edgeCases` |
@@ -188,9 +193,9 @@ Each phase leaves every gate green and the artifact regenerated.
 
 ## Risks
 
-- **`HelperProof` is 5000 lines and `calls_has_aux` alone is 370.** The parameter is mechanical; the two
-  new branches are not. If the environment turns out to cost more than the substituting walk, the second
-  option above is the fallback, and the model changes rather than the claim.
+- **`HelperProof` is 5000 lines and `calls_has_aux` alone is 370.** The parameter was mechanical; the two
+  new branches were not, and `calls_has_aux` had to gain an induction on the descriptor's rank beside the
+  one on the value.
 - **Stack depth in the generated JS.** `__has` recurses as deep as the value, and so does a recursive
   shipped function. V8 gives up around a few tens of thousands of frames. This is a real bound on what a
   package can carry and belongs in the documents, measured, not estimated.
@@ -199,14 +204,35 @@ Each phase leaves every gate green and the artifact regenerated.
 
 ## Result
 
-**Phase 1 is in.** `Js.TyDesc` has `mu` and `ref`, `TyEnv` is the environment the four helpers now carry,
-and the printer, the parser and the round trip read the two new forms back. The agreement proofs go
-through at every environment: `calls_has` and `calls_norm` take the two new steps as `has_mu_step`,
-`has_ref_step`, `norm_mu_step` and `norm_ref_step`, each of which lands on the `ctors` node the binder
-holds, so the walk that was there before is untouched below them.
+**Phases 1 to 4 are in, and a type that names itself is in the shipped artifact.**
+`packages/verified-example` carries `Category`, whose `group` holds a `List Category`, as a recursive
+TypeScript type and a recursive entry check, agreeing with the reference semantics on every one of its
+vectors in Lean and on Node.
 
-`Compile.tyDesc` emits neither form yet, so every statement downstream holds at the empty environment and
-the artifact changed only by the helpers' extra parameter. Nothing about what a package may declare has
-moved.
+- **The environment.** `Js.TyDesc` has `mu` and `ref`, `Js.TyEnv` is what the walk carries its binders
+  in, and `__has` / `__hasFields` / `__norm` / `__normFields` take it as an argument. The agreement
+  proofs hold at every environment: `calls_has` and `calls_norm` take the two new steps as
+  `has_mu_step`, `has_ref_step`, `norm_mu_step` and `norm_ref_step`, each landing on the `ctors` node
+  the binder holds, so the walk that was there before is untouched below them. `Ty` gained a
+  `LawfulBEq`, which is what lets the knot be tied on equality rather than on a `Bool`.
+- **The knot.** `Compile.tyDescIn` carries the stack of declared types it is inside and emits a `ref`
+  where a name comes round again at the same arguments; `validateType` no longer refuses a type that
+  names itself. `Decl.named_unfolds` is where the three ways a declared type's descriptor can be
+  reached — written out, bound, or named — become one `ctors` node and the environment it stands in,
+  and it is what carries `checkTy_encodeValue`, `normTy_encodeValue`, `checkTy_sound`, `descOk_tyDesc`
+  and both `.d.ts` directions through.
+- **Values.** `Vectors.edgeCases` stops expanding a declared type at `namedDepth`, so a recursive one
+  still gets its base cases and the tuples stay finite.
+- **The instance.** `deriving Enc` writes the encoding, its inverse, `accepts` and the entry-check proof
+  for a type that names itself, directly or through a `List` of itself. The halves that walk a list sit
+  in a `mutual` block with the ones that walk the type. A type that reaches itself any other way, and
+  one that names itself while taking type parameters, are refused at the `deriving`.
 
-Phase 2 next.
+Measured on the way: the generated `__has` accepts a value 500 levels deep on Node, drops keys the type
+does not declare at every level, and refuses a bad constructor or an out-of-range number arbitrarily far
+inside.
+
+**Phase 5 is not started.** A shipped `def` still reads the constructor it was handed and the fields
+directly under it. What that phase has to move is named in "Recursion in a shipped `def`" above, and the
+guarantee sentence it moves is the one in `docs/guarantees.md` that says running out of fuel is in none
+of the directions *because* `cost` reads the bound off the syntax.
