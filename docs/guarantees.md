@@ -90,6 +90,11 @@ budget `tyDescBudget` gives it and is refused by name rather than compiled. **Wh
 do with such a value is unchanged**: it reads the constructor it was handed and the fields directly
 under it, because walking further is a recursion and the subset has none.
 
+**The depth is carried by the proof and not by a vector.** The generator stops building a value a fixed
+number of declared types down, so what the differential run compares on a type that names itself is
+shallow. That every deeper value is accepted, refused and normalised the same way is what the three
+directions say, at every environment a `mu` puts the walk in — it is not something the vectors measure.
+
 **A statement in the manifest names no symbol the package cannot answer for.** `@[expand]` writes a `def`
 out where it is called, so a constant a theorem reads by name is a number in `index.js` and nothing else.
 `proof-manifest.json` carries those constants and their values under `constants`, and the package README
