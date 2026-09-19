@@ -48,6 +48,36 @@ def length (xs : List α) : Int := Int.ofNat xs.length
 written here is what the total function has to say in a case the certificate never reaches. -/
 def get [Inhabited α] (xs : List α) (i : Int) : α := xs.getD i.toNat default
 
+/-- The key types the subset orders an array by. `le` is the order the author reasons with, and
+`agrees` is what ties it to the order the generated code puts the elements in; `scalar` is what says the
+key is one the comparison is defined on, which is what keeps the two sides from parting company on a
+value neither order was written for. -/
+class KeyOrd (κ : Type) [Enc κ] where
+  le : κ → κ → Bool
+  agrees : ∀ a b : κ, le a b = keyLe (Enc.toValue a) (Enc.toValue b)
+  scalar : (∀ k : κ, isNumKey (Enc.toValue k) = true) ∨ (∀ k : κ, isStrKey (Enc.toValue k) = true)
+
+instance : KeyOrd Int where
+  le a b := decide (a ≤ b)
+  agrees _ _ := rfl
+  scalar := Or.inl (fun _ => rfl)
+
+instance : KeyOrd String where
+  le a b := compare a b != .gt
+  agrees _ _ := rfl
+  scalar := Or.inr (fun _ => rfl)
+
+/-- The elements ordered by their key. `List.mergeSort` is what the generated code computes too, so what
+it proves is what ships: the answer is a permutation of the input, and elements whose keys compare equal
+keep the order they came in. -/
+def sortByKey {α κ : Type} [Enc κ] [KeyOrd κ] (xs : List α) (key : α → κ) : List α :=
+  ((xs.map (fun x => (key x, x))).mergeSort (fun a b => KeyOrd.le a.1 b.1)).map (·.2)
+
+theorem sortByKey_perm {α κ : Type} [Enc κ] [KeyOrd κ] (xs : List α) (key : α → κ) :
+    List.Perm (sortByKey xs key) xs := by
+  rw [sortByKey]
+  exact ((List.mergeSort_perm _ _).map _).trans (List.Perm.of_eq (by simp [Function.comp_def]))
+
 /-- The elements from `lo` up to but not including `hi`. Bounds that do not fit trap. -/
 def slice (xs : List α) (lo hi : Int) : List α := (xs.drop lo.toNat).take (hi - lo).toNat
 

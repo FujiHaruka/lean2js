@@ -617,6 +617,31 @@ def calleeName (env : JsEnv) (name : String) : String :=
   | some (JsValue.fn callee) => callee
   | _ => name
 
+/-- The order `__sortBy` puts its keys in. A number is compared with `<=` and a string through
+`__strcmp`, which is the code-point order the rest of the model already uses for `<` on two strings. -/
+def keyLe : JsValue → JsValue → Bool
+  | .num a, .num b => decide (a ≤ b)
+  | .str a, .str b => compare a.toList b.toList != .gt
+  | _, _ => false
+
+def isNumKey : JsValue → Bool
+  | .num _ => true
+  | _ => false
+
+def isStrKey : JsValue → Bool
+  | .str _ => true
+  | _ => false
+
+def keysOk (ps : List (JsValue × JsValue)) : Bool :=
+  ps.all (fun p => isNumKey p.1) || ps.all (fun p => isStrKey p.1)
+
+/-- The keys are asked to be all numbers or all strings, which is more than the helper asks and exactly
+what the key type gives. Mixing them would put `__strcmp` on a number, which the model has no answer
+for. -/
+def sortPairs (ps : List (JsValue × JsValue)) : Except String (List JsValue) :=
+  if keysOk ps then .ok ((ps.mergeSort (fun a b => keyLe a.1 b.1)).map (·.2))
+  else .error "typeError"
+
 mutual
 
 /-- Evaluation of the generated code. `&&` and `||` short-circuit as they do in JS. -/
@@ -700,6 +725,12 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
     | .mapJs arr binder body => do
       match ← eval m f env arr with
       | .arr xs => do .ok (.arr (← evalMapJs m f env binder body xs))
+      | _ => .error "typeError"
+    | .sortByJs arr binder body => do
+      match ← eval m f env arr with
+      | .arr xs => do
+        let keys ← evalMapJs m f env binder body xs
+        do .ok (.arr (← sortPairs (keys.zip xs)))
       | _ => .error "typeError"
     | .filterJs arr binder body => do
       match ← eval m f env arr with

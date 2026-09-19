@@ -423,6 +423,20 @@ export declare function currenciesOf(items: readonly Money[]): readonly string[]
 export declare function cartTotal(items: readonly Money[]): number;
 
 /**
+ * The lines of a cart, cheapest first. Lines that cost the same keep the order they came in.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function cheapestFirst(items: readonly Money[]): readonly Money[];
+
+/**
+ * Labels in the order the subset compares strings, which counts code points.
+ *
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ */
+export declare function inLabelOrder(labels: readonly string[]): readonly string[];
+
+/**
  * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
  */
 export declare function total(xs: readonly number[]): number;

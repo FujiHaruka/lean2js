@@ -77,6 +77,8 @@ inductive TypeChecked : Expr → Prop where
   | dictDelete {d key : Expr} : TypeChecked d → TypeChecked key → TypeChecked (.dictDelete d key)
   | mapE {arr body : Expr} {binder : String} :
       TypeChecked arr → TypeChecked body → TypeChecked (.mapE arr binder body)
+  | sortByKeyE {arr body : Expr} {binder : String} :
+      TypeChecked arr → TypeChecked body → TypeChecked (.sortByKeyE arr binder body)
   | filterE {arr body : Expr} {binder : String} :
       TypeChecked arr → TypeChecked body → TypeChecked (.filterE arr binder body)
   | findE {arr body : Expr} {binder : String} :
@@ -120,6 +122,7 @@ theorem TypeChecked.all : ∀ e : Expr, TypeChecked e
     .arraySlice (TypeChecked.all arr) (TypeChecked.all lo) (TypeChecked.all hi)
   | .arrayReverse arr => .arrayReverse (TypeChecked.all arr)
   | .mapE arr _ body => .mapE (TypeChecked.all arr) (TypeChecked.all body)
+  | .sortByKeyE arr _ body => .sortByKeyE (TypeChecked.all arr) (TypeChecked.all body)
   | .filterE arr _ body => .filterE (TypeChecked.all arr) (TypeChecked.all body)
   | .findE arr _ body => .findE (TypeChecked.all arr) (TypeChecked.all body)
   | .quantE _ arr _ body => .quantE (TypeChecked.all arr) (TypeChecked.all body)
@@ -486,6 +489,15 @@ theorem sliceArr_hasTy {p : Program} {a lo hi v : Value} {elem : Ty}
            rw [hasTy_array]
            exact hasElemTy_of_subset ha fun y hy =>
              List.mem_of_mem_drop (List.mem_of_mem_take hy))
+
+theorem sortPairs_hasTy {p : Program} {xs keys vs : List Value} {elem : Ty}
+    (h : Value.hasTy p (.arr xs) (.array elem) = true)
+    (hs : sortPairs (keys.zip xs) = .ok vs) :
+    Value.hasTy p (.arr vs) (.array elem) = true := by
+  rw [hasTy_array] at h ⊢
+  refine hasElemTy_of_subset h (fun y hy => ?_)
+  obtain ⟨pr, hpr, hy2⟩ := sortPairs_mem hs hy
+  exact hy2 ▸ (List.of_mem_zip (by simpa using hpr)).2
 
 theorem reverse_hasTy {p : Program} {xs : List Value} {elem : Ty}
     (h : Value.hasTy p (.arr xs) (.array elem) = true) :
@@ -1026,6 +1038,40 @@ theorem compileExpr_mapE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
     exact ⟨jarr, jbody, elem, tbody, hta ▸ hca, hcb, hc.2.symm, hc.1.symm,
       unreserved_of_validateIdent hvi⟩
+  · simp at hc
+
+theorem compileExpr_sortByKeyE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
+    {binder : String} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.sortByKeyE arr binder body) = .ok (je, ty)) :
+    ∃ jarr jbody elem tbody, Compile.compileExpr p ctx arr = .ok (jarr, .array elem)
+      ∧ Compile.compileExpr p ((binder, elem) :: ctx) body = .ok (jbody, tbody)
+      ∧ (tbody = .int53 ∨ tbody = .string)
+      ∧ ty = .array elem ∧ je = .sortByJs jarr binder jbody
+      ∧ isReserved binder = false := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i arrPair hca
+  obtain ⟨jarr, tarr⟩ := arrPair
+  split at hc
+  · rename_i elem hta
+    split at hc
+    · simp at hc
+    rename_i _u hvi
+    split at hc
+    · simp at hc
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    split at hc
+    · simp at hc
+    rename_i hkey
+    simp only [Bool.and_eq_true] at hkey
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    refine ⟨jarr, jbody, elem, tbody, hta ▸ hca, hcb, ?_, hc.2.symm, hc.1.symm,
+      unreserved_of_validateIdent hvi⟩
+    by_cases h1 : (tbody != Ty.int53) = true
+    · exact Or.inr (Ty.eq_of_not_bne (fun h2 => hkey ⟨h1, h2⟩))
+    · exact Or.inl (Ty.eq_of_not_bne h1)
   · simp at hc
 
 theorem compileExpr_filterE_inv {p : Program} {ctx : Compile.Ctx} {arr body : Expr}
@@ -1900,7 +1946,7 @@ the induction hypothesis of `typeSound` over every environment rather than the o
 `filter`, `find` and `all` / `any` need no hypothesis at all: what they return is an element they were
 given, or a `Bool` they decided. -/
 
-private theorem hasElemTy_of_mapItems {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
+theorem hasElemTy_of_mapItems {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : Env}
     {binder : String} {bodyE : Expr} {jbody : Js.Expr} {elem tbody : Ty}
     (ih : ∀ (ctx : Compile.Ctx) (env : Env) (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value),
       TypeChecked e → EnvTyped p env ctx → Compile.compileExpr p ctx e = .ok (je, ty) →
@@ -2692,6 +2738,31 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
         simp only [Except.ok.injEq] at he
         rw [← he, hasTy_array]
         exact hasElemTy_of_mapItems ih hbody henv hcb xs vs hat hvs
+      · rename_i hne
+        exact (hne xs rfl).elim
+    | sortByKeyE harr hbody =>
+      rename_i arrE bodyE binder
+      obtain ⟨jarr, jbody, elem, tbody, hca, hcb, -, hty, -⟩ := compileExpr_sortByKeyE_inv hc
+      subst hty
+      rw [evalExpr_sortByKeyE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i av hav
+      have hat := ih ctx env arrE jarr (.array elem) av harr henv hca hav
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+      split at he
+      · rename_i xs' hxs
+        injection hxs with hxs
+        subst hxs
+        split at he
+        · simp at he
+        rename_i keys hkeys
+        split at he
+        · simp at he
+        rename_i vs hvs
+        simp only [Except.ok.injEq] at he
+        exact he ▸ sortPairs_hasTy hat hvs
       · rename_i hne
         exact (hne xs rfl).elim
     | filterE harr hbody =>

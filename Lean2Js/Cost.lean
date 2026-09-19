@@ -33,7 +33,8 @@ def exprDepth : Expr → Nat
   | .un _ x | .strUn _ x | .someE x | .okE _ x | .errorE _ x | .proj x _ | .length x
   | .arrayReverse x | .dictKeys x | .dictValues x => 1 + exprDepth x
   | .bin _ a b | .strBin _ a b | .index a b | .dictGet a b | .dictHas a b | .dictDelete a b
-  | .letE _ _ a b | .mapE a _ b | .filterE a _ b | .findE a _ b | .quantE _ a _ b =>
+  | .letE _ _ a b | .mapE a _ b | .filterE a _ b | .findE a _ b | .quantE _ a _ b
+  | .sortByKeyE a _ b =>
     1 + max (exprDepth a) (exprDepth b)
   | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c | .reduceE a b _ _ c =>
     1 + max (exprDepth a) (max (exprDepth b) (exprDepth c))
@@ -121,7 +122,8 @@ def bodyOk (p : Program) (i : Nat) (fns : List String) : Expr → Bool
   | .un _ x | .strUn _ x | .someE x | .okE _ x | .errorE _ x | .proj x _ | .length x
   | .arrayReverse x | .dictKeys x | .dictValues x => bodyOk p i fns x
   | .bin _ a b | .strBin _ a b | .index a b | .dictGet a b | .dictHas a b | .dictDelete a b
-  | .letE _ _ a b | .mapE a _ b | .filterE a _ b | .findE a _ b | .quantE _ a _ b =>
+  | .letE _ _ a b | .mapE a _ b | .filterE a _ b | .findE a _ b | .quantE _ a _ b
+  | .sortByKeyE a _ b =>
     bodyOk p i fns a && bodyOk p i fns b
   | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c | .reduceE a b _ _ c =>
     bodyOk p i fns a && bodyOk p i fns b && bodyOk p i fns c
@@ -1342,6 +1344,19 @@ theorem eval_safe (p : Program) (hp : declsOk p 0 p.decls = true) :
       case arr xs =>
         exact Safe.bind' (hmapI env binder body henv hb.2 (by omega) xs (arr_noFn hv))
           (fun vs hvs => Safe.ok' (noFn_arr hvs))
+    | sortByKeyE arr binder body =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_sortByKeyE]
+      refine Safe.bind' (ih i fns env arr hb.1 henv (by omega)) (fun v hv => ?_)
+      cases v <;> try exact safe_typeError _
+      case arr xs =>
+        refine Safe.bind' (hmapI env binder body henv hb.2 (by omega) xs (arr_noFn hv))
+          (fun keys _ => ?_)
+        refine Safe.bind' (α := List Value) ⟨sortPairs_ne_outOfFuel _, fun vs hvs => ?_⟩
+          (fun vs hvs => Safe.ok' (noFn_arr hvs))
+        intro w hw
+        obtain ⟨pr, hpr, hw2⟩ := sortPairs_mem hvs hw
+        exact hw2 ▸ arr_noFn hv _ (List.of_mem_zip (by simpa using hpr)).2
     | filterE arr binder body =>
       rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
       rw [evalExpr_filterE]

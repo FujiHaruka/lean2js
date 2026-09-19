@@ -322,6 +322,8 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     let (de, dp) ← walk citing ns names xs d
     return (← `(Lean2Js.Core.Expr.length $de),
             ← `(Lean2Js.Denote.denotes_lengthDict _ _ _ _ $dp))
+  | (``Lean2Js.Arr.sortByKey, #[_, _, _, _, l, f]) =>
+    traverse `sortByKeyE ``Lean2Js.Denote.denotes_sortByKeyE f l
   | (``List.map, #[_, _, f, l]) => traverse `mapE ``Lean2Js.Denote.denotes_mapE f l
   | (``List.filter, #[_, f, l]) => traverse `filterE ``Lean2Js.Denote.denotes_filterE f l
   | (``List.find?, #[_, f, l]) => traverse `findE ``Lean2Js.Denote.denotes_findE f l

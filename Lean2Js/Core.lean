@@ -251,6 +251,7 @@ inductive Expr where
   | findE (arr : Expr) (binder : String) (body : Expr)
   | quantE (op : QuantOp) (arr : Expr) (binder : String) (body : Expr)
   | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)
+  | sortByKeyE (arr : Expr) (binder : String) (body : Expr)
   | dictLit (value : Ty) (entries : List (String × Expr))
   | dictGet (d key : Expr)
   | dictHas (d key : Expr)

@@ -92,6 +92,7 @@ inductive Expr where
   | findJs (arr : Expr) (binder : String) (body : Expr)
   | quantJs (op : Core.QuantOp) (arr : Expr) (binder : String) (body : Expr)
   | reduceJs (arr init : Expr) (accName elemName : String) (body : Expr)
+  | sortByJs (arr : Expr) (binder : String) (body : Expr)
   deriving Inhabited, BEq
 
 inductive Stmt where
@@ -144,6 +145,8 @@ def Expr.render : Expr → String
   | .reduceJs arr init accName elemName body =>
     "__reduce(" ++ arr.render ++ ", " ++ init.render ++ ", (" ++ accName ++ ", " ++ elemName
       ++ ") => (" ++ body.render ++ "))"
+  | .sortByJs arr binder body =>
+    "__sortBy(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
 termination_by e => sizeOf e
 
 def Expr.renderList : List Expr → String

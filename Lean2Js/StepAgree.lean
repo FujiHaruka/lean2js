@@ -126,6 +126,39 @@ theorem mapItems {p : Program} {f : Nat} (ih : Sim p f) (env : Env) (binder : St
     have h := hok (v :: vs) (by rw [hvs] <;> rfl)
     rwa [List.append_assoc, List.singleton_append]
 
+theorem sortDone_reaches (p : Program) (ps : List (Value × Value)) (k : List Frame) :
+    Reaches p (sortDone ps k)
+      (outcome (sortPairs ps >>= fun vs => .ok (Value.arr vs)) k) := by
+  rw [sortDone]
+  cases sortPairs ps <;> exact Reaches.refl
+
+theorem sortItems {p : Program} {f : Nat} (ih : Sim p f) (env : Env) (binder : String) (body : Expr)
+    (k : List Frame) :
+    ∀ (xs : List Value) (done : List (Value × Value)) (t : State),
+      evalMapItems p f env binder body xs ≠ .error .outOfFuel →
+      (∀ keys, evalMapItems p f env binder body xs = .ok keys →
+        Reaches p (sortDone (done ++ keys.zip xs) k) t) →
+      (∀ err, evalMapItems p f env binder body xs = .error err → t = .done (.error err)) →
+      Reaches p (continueSort binder body env done xs k) t := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro done t _ hok _
+    have h := hok [] (evalMapItems_nil p f env binder body)
+    rw [List.zip_nil_left, List.append_nil] at h
+    exact h
+  | cons x rest ihr =>
+    intro done t hne hok herr
+    rw [evalMapItems_cons] at hne hok herr
+    refine sub ih (fun h => hne (by rw [h] <;> rfl)) (fun v hv => ?_)
+      (fun err he => herr err (by rw [he] <;> rfl))
+    rw [hv] at hne hok herr
+    refine ihr (done ++ [(v, x)]) t (fun h => hne (by rw [h] <;> rfl)) (fun keys hkeys => ?_)
+      (fun err he => herr err (by rw [he] <;> rfl))
+    have h := hok (v :: keys) (by rw [hkeys] <;> rfl)
+    rw [List.zip_cons_cons] at h
+    rwa [List.append_assoc, List.singleton_append]
+
 theorem filterItems {p : Program} {f : Nat} (ih : Sim p f) (env : Env) (binder : String) (body : Expr)
     (k : List Frame) :
     ∀ (xs done : List Value) (t : State), evalFilterItems p f env binder body xs ≠ .error .outOfFuel →
@@ -435,6 +468,19 @@ theorem sim (p : Program) : ∀ f, Sim p f
           (fun vs hvs => ?_) (fun err he => by rw [he] <;> rfl)
         rw [hvs]
         exact Reaches.refl
+      | _ => exact Reaches.refl
+    | sortByKeyE arr binder body =>
+      rw [evalExpr_sortByKeyE] at hne ⊢
+      refine Reaches.head (sub ih (fun h => hne (by rw [h] <;> rfl)) (fun v hv => ?_)
+        (fun err he => by rw [he] <;> rfl))
+      rw [hv] at hne ⊢
+      cases v with
+      | arr xs =>
+        simp only [bind, Except.bind] at hne ⊢
+        refine sortItems ih env binder body k xs [] _ (fun h => hne (by rw [h] <;> rfl))
+          (fun keys hkeys => ?_) (fun err he => by rw [he] <;> rfl)
+        rw [hkeys, List.nil_append]
+        exact sortDone_reaches p _ k
       | _ => exact Reaches.refl
     | filterE arr binder body =>
       rw [evalExpr_filterE] at hne ⊢

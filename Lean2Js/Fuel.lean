@@ -193,6 +193,11 @@ theorem evalExpr_succ (p : Program) : ∀ (f : Nat) (env : Env) (e : Expr),
       refine Refines.bind (ih env arr) (fun v => ?_)
       cases v <;> try exact Refines.rfl' _
       exact Refines.bind (hmap env binder body _) (fun _ => Refines.rfl' _)
+    | sortByKeyE arr binder body =>
+      simp only [evalExpr_sortByKeyE]
+      refine Refines.bind (ih env arr) (fun v => ?_)
+      cases v <;> try exact Refines.rfl' _
+      exact Refines.bind (hmap env binder body _) (fun _ => Refines.rfl' _)
     | filterE arr binder body =>
       simp only [evalExpr_filterE]
       refine Refines.bind (ih env arr) (fun v => ?_)

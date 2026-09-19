@@ -85,7 +85,8 @@ private def subterms : Core.Expr → List Core.Expr
   | .un _ x | .strUn _ x | .someE x | .okE _ x | .errorE _ x | .proj x _ | .length x
   | .arrayReverse x | .dictKeys x | .dictValues x => [x]
   | .bin _ a b | .strBin _ a b | .index a b | .dictGet a b | .dictHas a b | .dictDelete a b
-  | .letE _ _ a b | .mapE a _ b | .filterE a _ b | .findE a _ b | .quantE _ a _ b => [a, b]
+  | .letE _ _ a b | .mapE a _ b | .filterE a _ b | .findE a _ b | .quantE _ a _ b
+  | .sortByKeyE a _ b => [a, b]
   | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c | .reduceE a b _ _ c =>
     [a, b, c]
   | .call _ args | .ctor _ _ _ args | .arrayLit _ args => args

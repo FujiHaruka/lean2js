@@ -69,6 +69,8 @@ partial def Expr.source : Expr → String
   | .arrayReverse arr => arr.source ++ ".reverse()"
   | .mapE arr binder body =>
     arr.source ++ ".map(" ++ binder ++ " => " ++ body.source ++ ")"
+  | .sortByKeyE arr binder body =>
+    arr.source ++ ".sortByKey(" ++ binder ++ " => " ++ body.source ++ ")"
   | .filterE arr binder body =>
     arr.source ++ ".filter(" ++ binder ++ " => " ++ body.source ++ ")"
   | .findE arr binder body =>

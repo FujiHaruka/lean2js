@@ -106,6 +106,10 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `currenciesOf(items: readonly Money[]): readonly string[]`
 - `cartTotal(items: readonly Money[]): number`
   Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix them.
+- `cheapestFirst(items: readonly Money[]): readonly Money[]`
+  The lines of a cart, cheapest first. Lines that cost the same keep the order they came in.
+- `inLabelOrder(labels: readonly string[]): readonly string[]`
+  Labels in the order the subset compares strings, which counts code points.
 - `total(xs: readonly number[]): number`
 - `trackingOf(state: OrderState): Option<string>`
 - `canRefund(role: Role, state: OrderState): boolean`
@@ -192,6 +196,15 @@ sum.
 
 ```lean
 theorem add_comm (a b : Int) : add a b = add b a
+```
+
+### cheapest_first_keeps_every_line
+
+Ordering a cart by price loses no line and invents none: the answer holds the same lines as the
+cart it was given, in some order.
+
+```lean
+theorem cheapest_first_keeps_every_line (items : List Money) : (cheapestFirst items).Perm items
 ```
 
 ### monthly_limit_is_not_negative

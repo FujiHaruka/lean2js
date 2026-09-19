@@ -312,6 +312,16 @@ them. -/
 def cartTotal (items : List Money) : Int :=
   items.foldl (fun subtotal item => subtotal + item.amount) 0
 
+/-- The lines of a cart, cheapest first. Lines that cost the same keep the order they came in. -/
+@[ship]
+def cheapestFirst (items : List Money) : List Money :=
+  Arr.sortByKey items (fun item => item.amount)
+
+/-- Labels in the order the subset compares strings, which counts code points. -/
+@[ship]
+def inLabelOrder (labels : List String) : List String :=
+  Arr.sortByKey labels (fun label => label)
+
 @[ship]
 def total (xs : List Int) : Int := xs.foldl (fun sum x => sum + x) 0
 
@@ -554,6 +564,11 @@ private theorem find_add : program.find? "add" = some addDecl := rfl
 /-- Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same
 sum. -/
 theorem add_comm (a b : Int) : add a b = add b a := Int.add_comm a b
+
+/-- Ordering a cart by price loses no line and invents none: the answer holds the same lines as the
+cart it was given, in some order. -/
+theorem cheapest_first_keeps_every_line (items : List Money) :
+    List.Perm (cheapestFirst items) items := Arr.sortByKey_perm items _
 
 /-- No role's monthly limit is negative, including a role whose book records none. -/
 theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role := by

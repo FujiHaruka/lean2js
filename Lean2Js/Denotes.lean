@@ -355,6 +355,57 @@ theorem denotes_mapE (p : Program) (env : Env) (arr : Expr) (binder : String) (b
       rw [← h, evalMapItems_denotes p env binder body g (by simp [defaultFuel]) hb xs vs hm]
       rfl
 
+private theorem zip_map_map {β κ : Type} [Enc β] [Enc κ] (xs : List β) (g : β → κ) :
+    ((xs.map g).map toValue).zip (xs.map toValue)
+      = xs.map (fun x => (toValue (g x), toValue x)) := by
+  induction xs with
+  | nil => rfl
+  | cons x rest ih => simp only [List.map_cons, List.zip_cons_cons, ih]
+
+/-- The order the walk settles on is the one `Arr.sortByKey` names. `KeyOrd.agrees` is what lets the
+comparison move from the author's key type to the encoded values, and `KeyOrd.scalar` is what says the
+sort accepts the keys at all. -/
+theorem sortPairs_toValue {β κ : Type} [Enc β] [Enc κ] [Arr.KeyOrd κ] (xs : List β) (g : β → κ) :
+    sortPairs (xs.map (fun x => (toValue (g x), toValue x)))
+      = .ok ((Arr.sortByKey xs g).map toValue) := by
+  have hok : keysOk (xs.map (fun x => (toValue (g x), toValue x))) = true := by
+    rw [keysOk, Bool.or_eq_true, List.all_eq_true, List.all_eq_true]
+    refine (Arr.KeyOrd.scalar (κ := κ)).imp (fun hn pr hp => ?_) (fun hs pr hp => ?_) <;>
+      · obtain ⟨x, -, rfl⟩ := List.mem_map.mp hp
+        first
+          | exact hn (g x)
+          | exact hs (g x)
+  have hmap : (xs.map (fun x => (toValue (g x), toValue x)))
+      = (xs.map (fun x => (g x, x))).map (Prod.map toValue toValue) := by
+    simp [List.map_map, Function.comp_def, Prod.map]
+  rw [sortPairs, if_pos hok, Arr.sortByKey, hmap,
+    ← List.map_mergeSort (f := Prod.map toValue toValue)
+      (fun a _ b _ => Arr.KeyOrd.agrees a.1 b.1)]
+  simp [List.map_map, Function.comp_def]
+
+theorem denotes_sortByKeyE (p : Program) (env : Env) (arr : Expr) (binder : String) (body : Expr)
+    {β : Type} [Enc β] (xs : List β) {κ : Type} [Enc κ] [Arr.KeyOrd κ] (g : β → κ)
+    (ha : Denotes p env arr xs)
+    (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (g x)) :
+    Denotes p env (.sortByKeyE arr binder body) (Arr.sortByKey xs g) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_sortByKeyE] at h
+  cases hx : evalExpr p 9999 env arr with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, ha (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_list, bind, Except.bind] at h
+    cases hm : evalMapItems p 9999 env binder body (xs.map toValue) with
+    | error err => rw [hm] at h; simp at h
+    | ok vs =>
+      rw [hm, evalMapItems_denotes p env binder body g (by simp [defaultFuel]) hb xs vs hm] at h
+      dsimp only at h
+      rw [zip_map_map, sortPairs_toValue] at h
+      simp only [Except.ok.injEq] at h
+      rw [← h]
+      rfl
+
 private theorem evalFilterItems_denotes (p : Program) (env : Env) (binder : String) (body : Expr)
     {β : Type} [Enc β] (q : β → Bool) {f : Nat} (hf : f ≤ defaultFuel)
     (hb : ∀ x : β, Denotes p ((binder, toValue x) :: env) body (q x)) :

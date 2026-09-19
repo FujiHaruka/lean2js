@@ -359,6 +359,53 @@ const __reduce = (xs, init, f) => {
   return acc;
 };
 
+// A string goes through __strcmp rather than <=: JS orders strings by UTF-16 unit and the
+// subset orders them by code point, which part company on a surrogate pair.
+const __keyle = (a, b) => (((typeof a) === "string") ? (__strcmp(a, b) <= 0) : (a <= b));
+
+// One pass with two indices rather than a recursive walk down the tails: the recursion
+// would be as deep as the array is long, and a few thousand elements is where a JS engine
+// runs out of stack.
+// Which side goes first is settled in an expression because the fragment has no else.
+const __merge = (xs, ys) => {
+  const out = [];
+  let i = 0;
+  let j = 0;
+  for (const _pair of __aconcat(xs, ys)) {
+    const left = ((j >= (ys).length) || ((i < (xs).length) && __keyle(((xs)[i])[0], ((ys)[j])[0])));
+    out.push((left ? (xs)[i] : (ys)[j]));
+    i = (left ? (i + 1) : i);
+    j = (left ? j : (j + 1));
+  }
+  return out;
+};
+
+// Splitting into two contiguous halves, the longer one first, is what makes the sort
+// stable: equal keys keep the order they came in.
+const __msort = (xs) => {
+  if (((xs).length <= 1)) {
+    return xs;
+  }
+  const h = Math.trunc((((xs).length + 1) / 2));
+  return __merge(__msort((xs).slice(0, h)), __msort((xs).slice(h, (xs).length)));
+};
+
+// The key of each element is worked out once, on the way in, rather than at every
+// comparison: a key that traps would otherwise do so a number of times the caller cannot
+// see.
+const __sortBy = (xs, f) => {
+  const pairs = [];
+  for (const v of xs) {
+    pairs.push([(f)(v), v]);
+  }
+  const sorted = __msort(pairs);
+  const out = [];
+  for (const pr of sorted) {
+    out.push((pr)[1]);
+  }
+  return out;
+};
+
 const __isObj = (x) => (((typeof x) === "object") && ((x !== null) && (!Array.isArray(x))));
 
 // A key the declared type does not name is ignored rather than refused: TypeScript lets a
@@ -913,6 +960,18 @@ export function currenciesOf(__p0) {
 export function cartTotal(__p0) {
   const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
   return __reduce(items, 0, (subtotal, item) => (__i53((subtotal + (item).amount))));
+}
+
+/** cheapestFirst : (items : Array Money) → Array Money */
+export function cheapestFirst(__p0) {
+  const items = __ck(__p0, ["array", ["ctors", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __sortBy(items, (item) => ((item).amount));
+}
+
+/** inLabelOrder : (labels : Array String) → Array String */
+export function inLabelOrder(__p0) {
+  const labels = __ck(__p0, ["array", ["string"]]);
+  return __sortBy(labels, (label) => (label));
 }
 
 /** total : (xs : Array Int53) → Int53 */

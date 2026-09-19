@@ -64,6 +64,9 @@ inductive Frame where
   | reduceArrK (init : Expr) (accName elemName : String) (body : Expr) (env : Env)
   | reduceInitK (items : List Value) (accName elemName : String) (body : Expr) (env : Env)
   | reduceK (accName elemName : String) (body : Expr) (env : Env) (rest : List Value)
+  | sortArrK (binder : String) (body : Expr) (env : Env)
+  | sortK (binder : String) (body : Expr) (env : Env) (done : List (Value × Value)) (elem : Value)
+      (rest : List Value)
   deriving Inhabited
 
 inductive State where
@@ -93,6 +96,19 @@ def continueMap (binder : String) (body : Expr) (env : Env)
   match rest with
   | [] => .finish (.arr done) k
   | x :: more => .eval ((binder, x) :: env) body (.mapK binder body env done more :: k)
+
+def sortDone (ps : List (Value × Value)) (k : List Frame) : State :=
+  match sortPairs ps with
+  | .ok vs => .finish (.arr vs) k
+  | .error e => .fail e
+
+/-- The key of each element is worked out on the way past, and the order is settled once, at the end, on
+the pairs the walk collected. -/
+def continueSort (binder : String) (body : Expr) (env : Env)
+    (done : List (Value × Value)) (rest : List Value) (k : List Frame) : State :=
+  match rest with
+  | [] => sortDone done k
+  | x :: more => .eval ((binder, x) :: env) body (.sortK binder body env done x more :: k)
 
 def continueFilter (binder : String) (body : Expr) (env : Env)
     (done rest : List Value) (k : List Frame) : State :=
@@ -155,6 +171,7 @@ def step (p : Program) : State → State
     | .index arr idx => .eval env arr (.indexL idx env :: k)
     | .length arr => .eval env arr (.lengthK :: k)
     | .mapE arr binder body => .eval env arr (.mapArrK binder body env :: k)
+    | .sortByKeyE arr binder body => .eval env arr (.sortArrK binder body env :: k)
     | .filterE arr binder body => .eval env arr (.filterArrK binder body env :: k)
     | .findE arr binder body => .eval env arr (.findArrK binder body env :: k)
     | .quantE op arr binder body => .eval env arr (.quantArrK op binder body env :: k)
@@ -313,6 +330,12 @@ def step (p : Program) : State → State
       | .arr xs => continueMap binder body env [] xs k
       | _ => .fail (.typeError "map expects an Array")
     | .mapK binder body env done rest => continueMap binder body env (done ++ [v]) rest k
+    | .sortArrK binder body env =>
+      match v with
+      | .arr xs => continueSort binder body env [] xs k
+      | _ => .fail (.typeError "sortByKey expects an Array")
+    | .sortK binder body env done elem rest =>
+      continueSort binder body env (done ++ [(v, elem)]) rest k
     | .filterArrK binder body env =>
       match v with
       | .arr xs => continueFilter binder body env [] xs k

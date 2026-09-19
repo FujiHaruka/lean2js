@@ -633,6 +633,70 @@ def reduce : Def :=
       .forOf "v" (.var "xs") [.setVar "acc" (.apply (.var "f") [.var "acc", .var "v"])],
       .ret (.var "acc")] }
 
+def keyle : Def :=
+
+  { name := "__keyle", params := ["a", "b"]
+    doc := ["A string goes through __strcmp rather than <=: JS orders strings by UTF-16 unit and the",
+            "subset orders them by code point, which part company on a surrogate pair."]
+    body := .expr (.cond (.bin "===" (.typeOf (.var "a")) (.str "string"))
+      (.bin "<=" (.call "__strcmp" [(.var "a"), (.var "b")]) (.num 0))
+      (.bin "<=" (.var "a") (.var "b"))) }
+
+/-- Named rather than written into `merge` so that a proof about the loop can be stated about the same
+tree the printer writes. -/
+def mergeBody : List Stmt := [
+  .const "left" (or2 [
+    .bin ">=" (.var "j") (lengthOf (.var "ys")),
+    and2 [.bin "<" (.var "i") (lengthOf (.var "xs")),
+      .call "__keyle" [.index (.index (.var "xs") (.var "i")) (.num 0),
+        .index (.index (.var "ys") (.var "j")) (.num 0)]]]),
+  .push "out" (.cond (.var "left")
+    (.index (.var "xs") (.var "i")) (.index (.var "ys") (.var "j"))),
+  .setVar "i" (.cond (.var "left") (.bin "+" (.var "i") (.num 1)) (.var "i")),
+  .setVar "j" (.cond (.var "left") (.var "j") (.bin "+" (.var "j") (.num 1)))]
+
+def merge : Def :=
+
+  { name := "__merge", params := ["xs", "ys"]
+    doc := ["One pass with two indices rather than a recursive walk down the tails: the recursion",
+            "would be as deep as the array is long, and a few thousand elements is where a JS engine",
+            "runs out of stack.",
+            "Which side goes first is settled in an expression because the fragment has no else."]
+    body := .block [
+      .const "out" (.arrayLit []),
+      .letMut "i" (.num 0),
+      .letMut "j" (.num 0),
+      .forOf "_pair" (.call "__aconcat" [(.var "xs"), (.var "ys")]) mergeBody,
+      .ret (.var "out")] }
+
+def msort : Def :=
+
+  { name := "__msort", params := ["xs"]
+    doc := ["Splitting into two contiguous halves, the longer one first, is what makes the sort",
+            "stable: equal keys keep the order they came in."]
+    body := .block [
+      .ifThen (.bin "<=" (lengthOf (.var "xs")) (.num 1)) [.ret (.var "xs")],
+      .const "h" (.prim "Math.trunc"
+        [.bin "/" (.bin "+" (lengthOf (.var "xs")) (.num 1)) (.num 2)]),
+      .ret (.call "__merge" [
+        .call "__msort" [.method (.var "xs") "slice" [.num 0, .var "h"]],
+        .call "__msort" [.method (.var "xs") "slice" [.var "h", lengthOf (.var "xs")]]])] }
+
+def sortBy : Def :=
+
+  { name := "__sortBy", params := ["xs", "f"]
+    doc := ["The key of each element is worked out once, on the way in, rather than at every",
+            "comparison: a key that traps would otherwise do so a number of times the caller cannot",
+            "see."]
+    body := .block [
+      .const "pairs" (.arrayLit []),
+      .forOf "v" (.var "xs") [
+        .push "pairs" (.arrayLit [.apply (.var "f") [(.var "v")], (.var "v")])],
+      .const "sorted" (.call "__msort" [(.var "pairs")]),
+      .const "out" (.arrayLit []),
+      .forOf "pr" (.var "sorted") [.push "out" (.index (.var "pr") (.num 1))],
+      .ret (.var "out")] }
+
 def isObj : Def :=
 
   { name := "__isObj", params := ["x"]
@@ -794,7 +858,8 @@ def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
   str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
   startsAt, indexOf, join, «repeat», rep, substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues,
-  ddelete, eq, map, filter, find, all, any, reduce, isObj, hasFields, has, normFields, norm, ck
+  ddelete, eq, map, filter, find, all, any, reduce, keyle, merge, msort, sortBy, isObj, hasFields,
+  has, normFields, norm, ck
 ]
 
 def runtime : String := renderAll defs

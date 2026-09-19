@@ -276,7 +276,7 @@ theorem okCallee_of_validateIdent {kind name : String} {u : Unit}
   have hd : name ∉ dispatchNames := by
     intro hmem
     simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
-    rcases hmem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    rcases hmem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
     · exact absurd hjs (by decide)
     · exact absurd hjs (by decide)
     · exact absurd hjs (by decide)
@@ -636,6 +636,10 @@ theorem renderable_mapJs {arr : Js.Expr} {b : String} {body : Js.Expr}
 theorem renderable_filterJs {arr : Js.Expr} {b : String} {body : Js.Expr}
     (ha : RenderableExpr arr = true) (hb : okName b = true) (hy : RenderableExpr body = true) :
     RenderableExpr (.filterJs arr b body) = true := by rw [RenderableExpr]; simp [ha, hb, hy]
+
+theorem renderable_sortByJs {arr : Js.Expr} {b : String} {body : Js.Expr}
+    (ha : RenderableExpr arr = true) (hb : okName b = true) (hy : RenderableExpr body = true) :
+    RenderableExpr (.sortByJs arr b body) = true := by rw [RenderableExpr]; simp [ha, hb, hy]
 
 theorem renderable_findJs {arr : Js.Expr} {b : String} {body : Js.Expr}
     (ha : RenderableExpr arr = true) (hb : okName b = true) (hy : RenderableExpr body = true) :
@@ -1256,7 +1260,25 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
               (okName_of_validateIdent hva) (okName_of_validateIdent hve)
               (ihbody _ _ (ctxOk_cons (okCallee_of_validateIdent hve)
               (ctxOk_cons (okCallee_of_validateIdent hva) hctx)) jbody tbody hbody))))
-  -- 42: a dictionary literal
+  -- 42: a sort by key
+  · intro ctx arr binder body iharr ihbody hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jarr, tarr⟩, harr, h⟩ := bind_ok h
+       try simp only at h
+       have h1 := iharr hctx jarr tarr harr
+       split at h <;> peel h
+       all_goals
+         (obtain ⟨_, hvi, h⟩ := bind_ok h
+          try simp only at h
+          obtain ⟨⟨jbody, tbody⟩, hbody, h⟩ := bind_ok h
+          try simp only at h
+          split at h <;> peel h
+          all_goals
+            exact renderable_of_ok h (renderable_sortByJs h1 (okName_of_validateIdent hvi)
+              (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
+  -- 43: a dictionary literal
   · intro ctx value entries ihv hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1271,7 +1293,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          exact renderable_of_ok h
            (renderable_dictLit (renderablePairs_zip _ _ (ihv hctx js hjs))))
-  -- 43, 44, 48: reading and deleting from a dictionary
+  -- 44, 45, 49: reading and deleting from a dictionary
   · intro ctx d key ihd ihk hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1302,7 +1324,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          (split at h <;> peel h
           all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
-  -- 45: writing to a dictionary
+  -- 46: writing to a dictionary
   · intro ctx d key val ihd ihk ihv hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1323,7 +1345,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
           all_goals
             (split at h <;> peel h
              all_goals exact renderable_of_ok h (renderable_call (by decide) htriple))))
-  -- 46, 47: the keys and the values
+  -- 47, 48: the keys and the values
   · intro ctx d ihd hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1361,7 +1383,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          (split at h <;> peel h
           all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
-  -- 49, 50: the string helpers
+  -- 50, 51: the string helpers
   · intro ctx op e ihe hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1387,7 +1409,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
             exact renderable_of_ok h (renderable_call (okCallee_strBinHelper op)
               (renderableList_cons (ihl hctx jl tl hl)
               (renderableList_cons (ihr hctx jr tr hr) renderableList_nil)))))
-  -- 51: a substring
+  -- 52: a substring
   · intro ctx str lo hi ihs ihlo ihhi hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1406,7 +1428,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
               (renderableList_cons (ihs hctx jstr tstr hs)
               (renderableList_cons (ihlo hctx jlo tlo hlo)
                 (renderableList_cons (ihhi hctx jhi thi hhi) renderableList_nil))))))
-  -- 52, 53: the values of a dictionary literal
+  -- 53, 54: the values of a dictionary literal
   · intro ctx _ js h
     rw [compileValues] at h
     simp only [Except.ok.injEq] at h
@@ -1423,7 +1445,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     subst h
     simp only [List.map_cons]
     exact renderableList_cons (ihe hctx je te he) (ihr hctx tail htail)
-  -- 54, 55: the alternatives of a match
+  -- 55, 56: the alternatives of a match
   · intro ctx ty _ arms h
     rw [compileAlts] at h
     simp only [Except.ok.injEq] at h
@@ -1459,7 +1481,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     refine ⟨?_, ihrest hctx tail htail⟩
     simp only [ArmOk, Bool.and_eq_true]
     exact ⟨⟨⟨htests, hnames⟩, hpaths⟩, ihbody binds (ctxOk_append hbinds hctx) jbody tbody hb⟩
-  -- 56, 57: the arguments of a call
+  -- 57, 58: the arguments of a call
   · intro ctx _ js h
     rw [compileArgs] at h
     simp only [Except.ok.injEq] at h
@@ -1522,7 +1544,7 @@ theorem okCallee_rawParam (i : Nat) : okCallee (rawParam i) = true := by
   have hnd : rawParam i ∉ dispatchNames := by
     intro hmem
     simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
-    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
+    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
       (have hc := congrArg String.toList hq; rw [hlist] at hc; simp at hc)
   simp [okCallee, hok, hnd]
 

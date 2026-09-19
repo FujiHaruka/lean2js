@@ -29,6 +29,10 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.add_comm
 
+/-- info: 'Lean2Js.Example.cheapest_first_keeps_every_line' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.cheapest_first_keeps_every_line
+
 /-- info: 'Lean2Js.Example.monthly_limit_is_not_negative' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.monthly_limit_is_not_negative

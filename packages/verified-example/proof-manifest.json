@@ -360,6 +360,18 @@
       "doc": "Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix\nthem."
     },
     {
+      "name": "cheapestFirst",
+      "signature": "(items : Array Money) → Array Money",
+      "declaration": "cheapestFirst(items: readonly Money[]): readonly Money[]",
+      "doc": "The lines of a cart, cheapest first. Lines that cost the same keep the order they came in."
+    },
+    {
+      "name": "inLabelOrder",
+      "signature": "(labels : Array String) → Array String",
+      "declaration": "inLabelOrder(labels: readonly string[]): readonly string[]",
+      "doc": "Labels in the order the subset compares strings, which counts code points."
+    },
+    {
       "name": "total",
       "signature": "(xs : Array Int53) → Int53",
       "declaration": "total(xs: readonly number[]): number"
@@ -598,6 +610,11 @@
       "name": "add_comm",
       "statement": "add_comm (a b : Int) : add a b = add b a",
       "doc": "Swapping the arguments of `add` changes nothing: whatever the two integers, both orders give the same\nsum."
+    },
+    {
+      "name": "cheapest_first_keeps_every_line",
+      "statement": "cheapest_first_keeps_every_line (items : List Money) : (cheapestFirst items).Perm items",
+      "doc": "Ordering a cart by price loses no line and invents none: the answer holds the same lines as the\ncart it was given, in some order."
     },
     {
       "name": "monthly_limit_is_not_negative",

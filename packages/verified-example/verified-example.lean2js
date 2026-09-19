@@ -202,6 +202,12 @@ def currenciesOf(items : Array Money) : Array String =
 def cartTotal(items : Array Money) : Int53 =
   items.reduce(0, (subtotal, item) => (subtotal + item.amount))
 
+def cheapestFirst(items : Array Money) : Array Money =
+  items.sortByKey(item => item.amount)
+
+def inLabelOrder(labels : Array String) : Array String =
+  labels.sortByKey(label => label)
+
 def total(xs : Array Int53) : Int53 =
   xs.reduce(0, (sum, x) => (sum + x))
 

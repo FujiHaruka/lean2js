@@ -2058,6 +2058,315 @@ theorem calls_reduce (ext : Ext) (i : Nat) (xs : List Val) (a : Val) (f : Nat) :
   | thrown c => rfl
   | ok r => walk
 
+/-! ## The sort
+
+`__sortBy` pairs every element with its key, orders the pairs and reads the elements back out, so the
+three helpers under it are proved in that order: the comparison of two keys, the merge of two ordered
+runs, and the split that feeds it.
+
+`Compares` is what keeps a call away from the one case `__keyle` has no answer for. A number and a
+string compared together would reach `__strcmp` on a number; the key type the compiler insists on is
+what says the keys of one call are all numbers or all strings, and this is where that arrives.
+-/
+
+theorem find_keyle : Helper.defs.find? (·.name == "__keyle") = some Helper.keyle := rfl
+theorem find_merge : Helper.defs.find? (·.name == "__merge") = some Helper.merge := rfl
+theorem find_msort : Helper.defs.find? (·.name == "__msort") = some Helper.msort := rfl
+theorem find_sortBy : Helper.defs.find? (·.name == "__sortBy") = some Helper.sortBy := rfl
+
+/-- The order `__keyle` puts two keys in. -/
+def valLe : Val → Val → Bool
+  | .num a, .num b => decide (a ≤ b)
+  | .str a, .str b => decide (strcmp a b ≤ 0)
+  | _, _ => false
+
+theorem compare_ne_gt (a b : Int) : (compare a b != Ordering.gt) = decide (a ≤ b) := by
+  by_cases h : a ≤ b
+  · simp [Int.compare_ne_gt.mpr h, h]
+  · simp [Int.compare_eq_gt.mpr (by omega : b < a), h]
+
+theorem calls_keyle_num (ext : Ext) (a b : Int) (f : Nat) :
+    callDef ext (f + 5) "__keyle" [.num a, .num b] = .ok (.bool (valLe (.num a) (.num b))) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_expr find_keyle rfl rfl]
+  simp only [Helper.keyle]
+  walk
+  rw [valLe, compare_ne_gt]
+
+theorem calls_keyle_str (ext : Ext) (x y : String) (f : Nat) :
+    callDef ext (f + x.toList.length + 22) "__keyle" [.str x, .str y]
+      = .ok (.bool (valLe (.str x) (.str y))) := by
+  rw [show f + x.toList.length + 22 = (f + x.toList.length + 21) + 1 from by omega,
+    callDef_expr find_keyle rfl rfl]
+  simp only [Helper.keyle]
+  walk
+  rw [show f + x.toList.length + 18 = (f + 1) + x.toList.length + 17 from by omega, calls_strcmp]
+  walk
+  rw [valLe, compare_ne_gt]
+
+/-- The key a pair carries. `__sortBy` builds every pair, so the shape is always `[key, element]`. -/
+def keyOf : Val → Val
+  | .arr (k :: _) => k
+  | _ => .undef
+
+def pairLe (a b : Val) : Bool := valLe (keyOf a) (keyOf b)
+
+/-- What `__merge` and `__msort` need of the pairs they are handed: past a cost of its own, `__keyle`
+answers `valLe` on any two of their keys. -/
+def Compares (ext : Ext) (kcost : Nat) (vs : List Val) : Prop :=
+  ∀ a ∈ vs, ∀ b ∈ vs, ∀ f, callDef ext (f + kcost) "__keyle" [keyOf a, keyOf b]
+    = .ok (.bool (pairLe a b))
+
+def mergeCost (kcost : Nat) : List Val → Nat
+  | [] => 3
+  | _ :: rest => mergeCost kcost rest + kcost + 12
+
+/-- Every value the sort moves is a pair `__sortBy` built. -/
+def IsPair (v : Val) : Prop := ∃ k e, v = .arr [k, e]
+
+theorem index_pair {v : Val} (h : IsPair v) : index v (.num 0) = .ok (keyOf v) := by
+  obtain ⟨k, e, rfl⟩ := h
+  rfl
+
+theorem index_get {vs : List Val} {i : Nat} (h : i < vs.length) :
+    index (.arr vs) (.num (i : Int)) = .ok vs[i] := by
+  simp [index, List.getElem?_eq_getElem h]
+
+theorem compare_nat_lt {a b : Nat} (h : a < b) : compare (a : Int) (b : Int) = Ordering.lt :=
+  Int.compare_eq_lt.mpr (by exact_mod_cast h)
+
+theorem compare_nat_self (a : Nat) : compare (a : Int) (a : Int) = Ordering.eq :=
+  Int.compare_eq_eq.mpr rfl
+
+theorem at_nat {vs : List Val} {i : Nat} (h : i < vs.length) :
+    (if (0 : Int) ≤ (i : Int) then vs[((i : Int)).toNat]?.getD Val.undef else Val.undef) = vs[i] := by
+  simp [List.getElem?_eq_getElem h]
+
+theorem merge_loop (ext : Ext) (kcost : Nat) (xs ys : List Val)
+    (hpair : ∀ v ∈ xs ++ ys, IsPair v) (hcmp : Compares ext kcost (xs ++ ys)) :
+    ∀ (loop : List Val) (i j : Nat) (acc : List Val) (f : Nat),
+      loop.length = (xs.length - i) + (ys.length - j) → i ≤ xs.length → j ≤ ys.length →
+      evalFor ext (f + mergeCost kcost loop)
+        [("j", .num j), ("i", .num i), ("out", .arr acc), ("xs", .arr xs), ("ys", .arr ys)]
+        "_pair" loop Helper.mergeBody
+      = .ok (.next [("j", .num ys.length), ("i", .num xs.length),
+          ("out", .arr (acc ++ List.merge (xs.drop i) (ys.drop j) pairLe)),
+          ("xs", .arr xs), ("ys", .arr ys)]) := by
+  intro loop
+  induction loop with
+  | nil =>
+    intro i j acc f hlen hi hj
+    obtain rfl : i = xs.length := by simp at hlen; omega
+    obtain rfl : j = ys.length := by simp at hlen; omega
+    simp only [mergeCost]
+    walk
+    simp
+  | cons v rest ih =>
+    intro i j acc f hlen hi hj
+    simp only [List.length_cons] at hlen
+    simp only [mergeCost, Helper.mergeBody]
+    rw [show f + (mergeCost kcost rest + kcost + 12)
+      = (f + mergeCost kcost rest + kcost + 11) + 1 from by omega]
+    walk
+    by_cases hjlt : j < ys.length
+    case neg =>
+      obtain rfl : j = ys.length := by omega
+      have hilt : i < xs.length := by omega
+      simp only [compare_nat_self, bne_self_eq_false, Bool.false_eq_true, reduceIte,
+        show (Ordering.eq != Ordering.lt) = true from rfl]
+      walk
+      rw [at_nat hilt]
+      simp only [Option.getD_some]
+      have hih := ih (i + 1) ys.length (acc ++ [xs[i]]) (f + kcost + 11)
+        (by omega) (by omega) (by omega)
+      rw [show f + mergeCost kcost rest + kcost + 11 = (f + kcost + 11) + mergeCost kcost rest
+        from by omega]
+      rw [show ((i : Int) + 1) = (((i + 1 : Nat)) : Int) from by omega]
+      rw [List.drop_length, List.merge_right, List.drop_eq_getElem_cons hilt,
+        show acc ++ (xs[i] :: List.drop (i + 1) xs) = (acc ++ [xs[i]]) ++ List.drop (i + 1) xs
+          from by simp]
+      rw [List.drop_length, List.merge_right] at hih
+      exact hih
+    case pos =>
+      simp only [compare_nat_lt hjlt, bne_self_eq_false, Bool.false_eq_true, reduceIte,
+        show (Ordering.lt != Ordering.lt) = false from rfl]
+      by_cases hilt : i < xs.length
+      case neg =>
+        obtain rfl : i = xs.length := by omega
+        simp only [compare_nat_self, show (Ordering.eq == Ordering.lt) = false from rfl]
+        walk
+        rw [at_nat hjlt]
+        simp only [Option.getD_some]
+        have hih := ih xs.length (j + 1) (acc ++ [ys[j]]) (f + kcost + 11)
+          (by omega) (by omega) (by omega)
+        rw [show f + mergeCost kcost rest + kcost + 11 = (f + kcost + 11) + mergeCost kcost rest
+          from by omega]
+        rw [show ((j : Int) + 1) = (((j + 1 : Nat)) : Int) from by omega]
+        rw [List.drop_length, List.nil_merge, List.drop_eq_getElem_cons hjlt,
+          show acc ++ (ys[j] :: List.drop (j + 1) ys) = (acc ++ [ys[j]]) ++ List.drop (j + 1) ys
+            from by simp]
+        rw [List.drop_length, List.nil_merge] at hih
+        exact hih
+      case pos =>
+        obtain ⟨k1, e1, hx⟩ := hpair xs[i] (by simp [List.getElem_mem])
+        obtain ⟨k2, e2, hy⟩ := hpair ys[j] (by simp [List.getElem_mem])
+        have hc := hcmp xs[i] (by simp [List.getElem_mem]) ys[j] (by simp [List.getElem_mem])
+        rw [hx, hy] at hc
+        simp only [keyOf] at hc
+        simp only [compare_nat_lt hilt, show (Ordering.lt == Ordering.lt) = true from rfl]
+        rw [at_nat hilt, at_nat hjlt, hx, hy]
+        walk
+        rw [show ([k1, e1][Int.toNat 0]?.getD Val.undef) = k1 from rfl,
+          show ([k2, e2][Int.toNat 0]?.getD Val.undef) = k2 from rfl,
+          show f + mergeCost kcost rest + kcost + 7 = (f + mergeCost kcost rest + 7) + kcost
+          from by omega, hc]
+        cases hle : pairLe (Val.arr [k1, e1]) (Val.arr [k2, e2]) with
+        | true =>
+          walk
+          have hih := ih (i + 1) j (acc ++ [Val.arr [k1, e1]]) (f + kcost + 11)
+            (by omega) (by omega) (by omega)
+          rw [show f + mergeCost kcost rest + kcost + 11 = (f + kcost + 11) + mergeCost kcost rest
+            from by omega]
+          rw [show ((i : Int) + 1) = (((i + 1 : Nat)) : Int) from by omega]
+          rw [List.drop_eq_getElem_cons hilt, List.drop_eq_getElem_cons hjlt, hx, hy,
+            List.cons_merge_cons_pos _ _ _ hle, ← hy, ← List.drop_eq_getElem_cons hjlt,
+            show acc ++ (Val.arr [k1, e1] :: (List.drop (i + 1) xs).merge (List.drop j ys) pairLe)
+              = (acc ++ [Val.arr [k1, e1]]) ++ (List.drop (i + 1) xs).merge (List.drop j ys) pairLe
+              from by simp]
+          exact hih
+        | false =>
+          walk
+          have hih := ih i (j + 1) (acc ++ [Val.arr [k2, e2]]) (f + kcost + 11)
+            (by omega) (by omega) (by omega)
+          rw [show f + mergeCost kcost rest + kcost + 11 = (f + kcost + 11) + mergeCost kcost rest
+            from by omega]
+          rw [show ((j : Int) + 1) = (((j + 1 : Nat)) : Int) from by omega]
+          rw [List.drop_eq_getElem_cons hilt, List.drop_eq_getElem_cons hjlt, hx, hy,
+            List.cons_merge_cons_neg _ _ _ (by simp [hle]), ← hx, ← List.drop_eq_getElem_cons hilt,
+            show acc ++ (Val.arr [k2, e2] :: (List.drop i xs).merge (List.drop (j + 1) ys) pairLe)
+              = (acc ++ [Val.arr [k2, e2]]) ++ (List.drop i xs).merge (List.drop (j + 1) ys) pairLe
+              from by simp]
+          exact hih
+
+theorem calls_merge (ext : Ext) (kcost : Nat) (xs ys : List Val)
+    (hpair : ∀ v ∈ xs ++ ys, IsPair v) (hcmp : Compares ext kcost (xs ++ ys)) (f : Nat) :
+    callDef ext (f + xs.length + ys.length + mergeCost kcost (xs ++ ys) + 20) "__merge"
+      [.arr xs, .arr ys] = .ok (.arr (List.merge xs ys pairLe)) := by
+  rw [show f + xs.length + ys.length + mergeCost kcost (xs ++ ys) + 20
+    = (f + xs.length + ys.length + mergeCost kcost (xs ++ ys) + 19) + 1 from by omega,
+    callDef_block find_merge rfl rfl]
+  simp only [Helper.merge]
+  walk
+  rw [show f + xs.length + ys.length + mergeCost kcost (xs ++ ys) + 14
+    = (f + mergeCost kcost (xs ++ ys) + 6) + xs.length + ys.length + 8 from by omega,
+    calls_aconcat]
+  walk
+  rw [show f + xs.length + ys.length + mergeCost kcost (xs ++ ys) + 15
+    = (f + xs.length + ys.length + 15) + mergeCost kcost (xs ++ ys) from by omega]
+  rw [show (Val.num 0) = (Val.num ((0 : Nat) : Int)) from rfl,
+    merge_loop ext kcost xs ys hpair hcmp (xs ++ ys) 0 0 [] (f + xs.length + ys.length + 15)
+      (by simp) (by simp) (by simp)]
+  walk
+  simp
+
+theorem compare_gt_one {n : Nat} (h : 2 ≤ n) : compare ((n : Nat) : Int) 1 = Ordering.gt :=
+  Int.compare_eq_gt.mpr (by exact_mod_cast (by omega : 1 < n))
+
+theorem half_cast (n : Nat) : ((n : Int) + 1).tdiv 2 = (((n + 1) / 2 : Nat) : Int) := by
+  rw [show ((n : Int) + 1) = (((n + 1 : Nat)) : Int) from by omega]
+  exact (Int.ofNat_tdiv (n + 1) 2).symm
+
+theorem mergeSort_split {α : Type} {le : α → α → Bool} {l : List α} (h : 2 ≤ l.length) :
+    l.mergeSort le = List.merge ((l.take ((l.length + 1) / 2)).mergeSort le)
+      ((l.drop ((l.length + 1) / 2)).mergeSort le) le := by
+  match l, h with
+  | a :: b :: rest, _ =>
+    simp only [List.mergeSort, List.MergeSort.Internal.splitInTwo_fst,
+      List.MergeSort.Internal.splitInTwo_snd, List.length_cons]
+
+theorem calls_msort_small (ext : Ext) (xs : List Val) (h : xs.length ≤ 1) (f : Nat) :
+    callDef ext (f + 5) "__msort" [.arr xs] = .ok (.arr (xs.mergeSort pairLe)) := by
+  rw [show f + 5 = (f + 4) + 1 from rfl, callDef_block find_msort rfl rfl]
+  simp only [Helper.msort]
+  match xs, h with
+  | [], _ =>
+    walk
+    rw [show (compare ((([] : List Val).length : Nat) : Int) 1 != Ordering.gt) = true from by decide]
+    walk
+    simp
+  | [a], _ =>
+    walk
+    rw [show (compare (((([a] : List Val)).length : Nat) : Int) 1 != Ordering.gt) = true
+      from rfl]
+    walk
+    simp
+
+theorem calls_msort (ext : Ext) (kcost : Nat) :
+    ∀ (n : Nat) (xs : List Val), xs.length ≤ n → (∀ v ∈ xs, IsPair v) → Compares ext kcost xs →
+      ∃ c, ∀ f, callDef ext (f + c) "__msort" [.arr xs]
+        = .ok (.arr (xs.mergeSort pairLe)) := by
+  intro n
+  induction n with
+  | zero =>
+    intro xs hlen _ _
+    exact ⟨5, fun f => calls_msort_small ext xs (by omega) f⟩
+  | succ m ihm =>
+    intro xs hlen hpair hcmp
+    by_cases hsmall : xs.length ≤ 1
+    · exact ⟨5, fun f => calls_msort_small ext xs hsmall f⟩
+    have h2 : 2 ≤ xs.length := by omega
+    obtain ⟨c1, hc1⟩ := ihm (xs.take ((xs.length + 1) / 2))
+      (by rw [List.length_take]; omega)
+      (fun v hv => hpair v (List.mem_of_mem_take hv))
+      (fun a ha b hb => hcmp a (List.mem_of_mem_take ha) b (List.mem_of_mem_take hb))
+    obtain ⟨c2, hc2⟩ := ihm (xs.drop ((xs.length + 1) / 2))
+      (by rw [List.length_drop]; omega)
+      (fun v hv => hpair v (List.mem_of_mem_drop hv))
+      (fun a ha b hb => hcmp a (List.mem_of_mem_drop ha) b (List.mem_of_mem_drop hb))
+    obtain ⟨S1, hS1⟩ : ∃ S1, (xs.take ((xs.length + 1) / 2)).mergeSort pairLe = S1 := ⟨_, rfl⟩
+    obtain ⟨S2, hS2⟩ : ∃ S2, (xs.drop ((xs.length + 1) / 2)).mergeSort pairLe = S2 := ⟨_, rfl⟩
+    rw [hS1] at hc1
+    rw [hS2] at hc2
+    have hmem : ∀ v ∈ S1 ++ S2, v ∈ xs := by
+      intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · exact List.mem_of_mem_take (List.mem_mergeSort.mp (hS1 ▸ hv))
+      · exact List.mem_of_mem_drop (List.mem_mergeSort.mp (hS2 ▸ hv))
+    refine ⟨c1 + c2 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 60, fun f => ?_⟩
+    rw [show f + (c1 + c2 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 60)
+      = (f + c1 + c2 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 59) + 1 from by omega,
+      callDef_block find_msort rfl rfl]
+    simp only [Helper.msort]
+    walk
+    rw [show (compare ((xs.length : Nat) : Int) 1 != Ordering.gt) = false from by
+      rw [compare_gt_one h2]; rfl]
+    walk
+    rw [half_cast]
+    simp only [Int.sub_zero, Int.toNat_natCast, show (Int.toNat 0) = 0 from rfl, List.drop_zero,
+      decide_false, Bool.false_or,
+      show (decide ((((xs.length + 1) / 2 : Nat) : Int) < 0)) = false from by
+        simp only [decide_eq_false_iff_not, Int.not_lt]; exact Int.natCast_nonneg _,
+      Bool.false_eq_true, if_false]
+    walk
+    rw [show f + c1 + c2 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 53
+      = (f + c2 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 53) + c1 from by omega, hc1]
+    walk
+    rw [show (decide (((xs.length : Nat) : Int) < 0)) = false from by
+        simp only [decide_eq_false_iff_not, Int.not_lt]; exact Int.natCast_nonneg _,
+      show ((xs.length : Int) - (((xs.length + 1) / 2 : Nat) : Int)).toNat
+        = xs.length - (xs.length + 1) / 2 from by omega,
+      List.take_of_length_le (by rw [List.length_drop]; omega)]
+    simp only [Bool.false_eq_true, if_false]
+    walk
+    rw [show f + c1 + c2 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 52
+      = (f + c1 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 52) + c2 from by omega, hc2]
+    walk
+    rw [show f + c1 + c2 + mergeCost kcost (S1 ++ S2) + S1.length + S2.length + 55
+      = (f + c1 + c2 + 35) + S1.length + S2.length + mergeCost kcost (S1 ++ S2) + 20 from by omega,
+      calls_merge ext kcost S1 S2 (fun v hv => hpair v (hmem v hv))
+        (fun a ha b hb => hcmp a (hmem a ha) b (hmem b hb))]
+    walk
+    rw [mergeSort_split h2, hS1, hS2]
+
 /-! ## Structural equality
 
 `__eq` decides a notion of its own, stated below as `eqVal`, not `JsValue.beq`. Two divergences, both

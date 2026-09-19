@@ -680,6 +680,9 @@ def parseNamed : Nat → String → List Char → Option (Js.Expr × List Char)
     else if name == "__map" then do
       let (arr, binder, body, cs) ← parseLambdaCall f cs
       pure (.mapJs arr binder body, cs)
+    else if name == "__sortBy" then do
+      let (arr, binder, body, cs) ← parseLambdaCall f cs
+      pure (.sortByJs arr binder body, cs)
     else if name == "__filter" then do
       let (arr, binder, body, cs) ← parseLambdaCall f cs
       pure (.filterJs arr binder body, cs)

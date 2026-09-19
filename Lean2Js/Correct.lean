@@ -61,6 +61,8 @@ inductive InFragment : Expr → Prop where
       (∀ e ∈ entries, InFragment e.2) → InFragment (.dictLit value entries)
   | mapE {arr body : Expr} {binder : String} :
       InFragment arr → InFragment body → InFragment (.mapE arr binder body)
+  | sortByKeyE {arr body : Expr} {binder : String} :
+      InFragment arr → InFragment body → InFragment (.sortByKeyE arr binder body)
   | filterE {arr body : Expr} {binder : String} :
       InFragment arr → InFragment body → InFragment (.filterE arr binder body)
   | findE {arr body : Expr} {binder : String} :
@@ -104,6 +106,7 @@ theorem InFragment.all : ∀ e : Expr, InFragment e
     .arraySlice (InFragment.all arr) (InFragment.all lo) (InFragment.all hi)
   | .arrayReverse arr => .arrayReverse (InFragment.all arr)
   | .mapE arr _ body => .mapE (InFragment.all arr) (InFragment.all body)
+  | .sortByKeyE arr _ body => .sortByKeyE (InFragment.all arr) (InFragment.all body)
   | .filterE arr _ body => .filterE (InFragment.all arr) (InFragment.all body)
   | .findE arr _ body => .findE (InFragment.all arr) (InFragment.all body)
   | .quantE _ arr _ body => .quantE (InFragment.all arr) (InFragment.all body)
@@ -184,6 +187,7 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .arrayLit elem hitems => .arrayLit elem fun e he => (hitems e he).typeChecked
   | .dictLit value hentries => .dictLit value fun e he => (hentries e he).typeChecked
   | .mapE harr hbody => .mapE harr.typeChecked hbody.typeChecked
+  | .sortByKeyE harr hbody => .sortByKeyE harr.typeChecked hbody.typeChecked
   | .filterE harr hbody => .filterE harr.typeChecked hbody.typeChecked
   | .findE harr hbody => .findE harr.typeChecked hbody.typeChecked
   | .quantE harr hbody => .quantE harr.typeChecked hbody.typeChecked
@@ -2516,6 +2520,80 @@ theorem jsEnvAgrees_encodeEnv (env : Env)
 The reference semantics and the model walk an array with one auxiliary function each, written to the
 same shape, so a traversal needs a lemma that walks the two together. The body's induction hypothesis is
 taken over every environment, which is what lets it apply one element at a time. -/
+
+theorem isNumKey_encode {v : Value} (h : isNumKey v = true) :
+    Js.isNumKey (encodeValue v) = true := by
+  cases v <;> simp_all [isNumKey, Js.isNumKey, encodeValue]
+
+theorem isStrKey_encode {v : Value} (h : isStrKey v = true) :
+    Js.isStrKey (encodeValue v) = true := by
+  cases v <;> simp_all [isStrKey, Js.isStrKey, encodeValue]
+
+theorem key_of_keysOk {ps : List (Value × Value)} (h : keysOk ps = true) {pr : Value × Value}
+    (hp : pr ∈ ps) : isNumKey pr.1 = true ∨ isStrKey pr.1 = true := by
+  rw [keysOk, Bool.or_eq_true, List.all_eq_true, List.all_eq_true] at h
+  exact h.imp (fun hn => hn pr hp) (fun hs => hs pr hp)
+
+/-- The two sides order the keys the same way. `uint32` is why this asks for the key to be one of the two
+key shapes rather than holding for every value: it encodes to a number the model would compare, and the
+reference semantics refuses it. -/
+theorem keyLe_encode {a b : Value} (ha : isNumKey a = true ∨ isStrKey a = true)
+    (hb : isNumKey b = true ∨ isStrKey b = true) :
+    keyLe a b = Js.keyLe (encodeValue a) (encodeValue b) := by
+  cases a <;> cases b <;>
+    simp_all [isNumKey, isStrKey, keyLe, Js.keyLe, encodeValue, string_compare_toList]
+
+theorem sortPairs_encode {ps : List (Value × Value)} {vs : List Value}
+    (h : sortPairs ps = .ok vs) :
+    Js.sortPairs (ps.map (Prod.map encodeValue encodeValue)) = .ok (vs.map encodeValue) := by
+  rw [sortPairs] at h
+  split at h
+  · rename_i hok
+    injection h with h
+    subst h
+    have hjok : Js.keysOk (ps.map (Prod.map encodeValue encodeValue)) = true := by
+      rw [keysOk, Bool.or_eq_true, List.all_eq_true, List.all_eq_true] at hok
+      rw [Js.keysOk, Bool.or_eq_true, List.all_eq_true, List.all_eq_true]
+      refine hok.imp (fun hn pr hp => ?_) (fun hs pr hp => ?_) <;>
+        · obtain ⟨pr', hp', rfl⟩ := List.mem_map.mp hp
+          first
+            | exact isNumKey_encode (hn pr' hp')
+            | exact isStrKey_encode (hs pr' hp')
+    rw [Js.sortPairs, if_pos hjok,
+      ← List.map_mergeSort (f := Prod.map encodeValue encodeValue)
+        (fun a hamem b hbmem => keyLe_encode (key_of_keysOk hok hamem) (key_of_keysOk hok hbmem))]
+    simp [List.map_map, Function.comp_def]
+  · exact absurd h (by simp)
+
+/-- The key type the compiler insists on is what says the sort never refuses the keys it was handed. -/
+theorem keysOk_of_hasElemTy {p : Program} {keys xs : List Value} {tbody : Ty}
+    (hkey : tbody = .int53 ∨ tbody = .string) (h : Value.hasElemTy p keys tbody = true) :
+    keysOk (keys.zip xs) = true := by
+  rw [keysOk, Bool.or_eq_true, List.all_eq_true, List.all_eq_true]
+  rcases hkey with rfl | rfl
+  · refine Or.inl (fun pr hp => ?_)
+    obtain ⟨i, hi⟩ := hasTy_int53_inv ((hasElemTy_iff p keys .int53).mp h pr.1
+      (List.of_mem_zip (by simpa using hp)).1)
+    simp [hi, isNumKey]
+  · refine Or.inr (fun pr hp => ?_)
+    obtain ⟨t, ht⟩ := hasTy_string_inv ((hasElemTy_iff p keys .string).mp h pr.1
+      (List.of_mem_zip (by simpa using hp)).1)
+    simp [ht, isStrKey]
+
+theorem eventually_sortByJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs keys vs : List Js.JsValue}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalMapJs m g' jenv binder jbody xs = .ok keys)
+    (hs : Js.sortPairs (keys.zip xs) = .ok vs) :
+    Eventually m jenv (.sortByJs jarr binder jbody) (.arr vs) := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega), hs]
 
 theorem eventually_mapJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
     {binder : String} {xs vs : List Js.JsValue}
@@ -5731,6 +5809,39 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · rename_i hne
       exact (hne xs rfl).elim
 
+  | sortByKeyE harr hbody =>
+    rename_i arrE bodyE binder
+    have iharr := ih harr
+    have ihbody := ih hbody
+    intro ctx env jenv je ty v henv hjenv hc he
+    obtain ⟨jarr, jbody, elem, tbody, hca, hcb, -, -, rfl, hbinder⟩ := compileExpr_sortByKeyE_inv hc
+    rw [evalExpr_sortByKeyE] at he
+    simp only [bind, Except.bind] at he
+    split at he
+    · simp at he
+    rename_i av hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+    rw [hasTy_array] at hat
+    split at he
+    · rename_i xs' hxs
+      injection hxs with hxs
+      subst hxs
+      split at he
+      · simp at he
+      rename_i keys hkeys
+      split at he
+      · simp at he
+      rename_i vs hvs
+      simp only [Except.ok.injEq] at he
+      subst he
+      rw [encodeValue]
+      exact eventually_sortByJs (by simpa [encodeValue] using iharr henv hjenv hca hav)
+        (eventuallyMap_of_items p m ihbody henv hjenv hcb hbinder xs keys hat hkeys)
+        (by simpa [encodeList_eq, List.zip_map] using sortPairs_encode hvs)
+    · rename_i hne
+      exact (hne xs rfl).elim
+
   | filterE harr hbody =>
     rename_i arrE bodyE binder
     have iharr := ih harr
@@ -6250,6 +6361,31 @@ theorem eventuallyErr_mapJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.E
   | succ g =>
     rw [Js.eval.eq_def]
     simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_sortByJs {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {code : String} (ha : EventuallyErr m jenv jarr code) :
+    EventuallyErr m jenv (.sortByJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+theorem eventuallyErr_sortByJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
+    {binder : String} {xs : List Js.JsValue} {code : String}
+    (ha : Eventually m jenv jarr (.arr xs))
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalMapJs m g' jenv binder jbody xs = .error code) :
+    EventuallyErr m jenv (.sortByJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
 
 theorem eventuallyErr_mapJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody : Js.Expr}
     {binder : String} {xs : List Js.JsValue} {code : String}
@@ -7874,6 +8010,46 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         obtain rfl : err = e0 := (Except.error.inj he).symm
         exact eventuallyErr_mapJs_items harrv
           (eventuallyMapErr_of_items p m hprog hsig hbody ihbody iha henv hcov hjenv hcb hbinder hne xs hat hie)
+      · simp at he
+    · rename_i hne'
+      exact (hne' xs rfl).elim
+
+  | sortByKeyE harr hbody =>
+    rename_i arrE bodyE binder
+    have iharr := ih harr
+    have ihbody := ih hbody
+    intro ctx env jenv je ty err henv hcov hjenv hc he hne
+    obtain ⟨jarr, jbody, elem, tbody, hca, hcb, hkey, -, rfl, hbinder⟩ :=
+      compileExpr_sortByKeyE_inv hc
+    rw [evalExpr_sortByKeyE] at he
+    simp only [bind, Except.bind] at he
+    split at he
+    · rename_i e0 hae
+      obtain rfl : err = e0 := (Except.error.inj he).symm
+      exact eventuallyErr_sortByJs (iharr henv hcov hjenv hca hae hne)
+    rename_i av hav
+    have hat := typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav
+    obtain ⟨xs, rfl⟩ := hasTy_array_inv hat
+    rw [hasTy_array] at hat
+    have harrv : Eventually m jenv jarr (.arr (encodeList xs)) := by
+      simpa [encodeValue] using iha harr henv hjenv hca hav
+    split at he
+    · rename_i xs' hxs
+      injection hxs with hxs
+      subst hxs
+      split at he
+      · rename_i e0 hie
+        obtain rfl : err = e0 := (Except.error.inj he).symm
+        exact eventuallyErr_sortByJs_items harrv
+          (eventuallyMapErr_of_items p m hprog hsig hbody ihbody iha henv hcov hjenv hcb hbinder hne xs hat hie)
+      rename_i keys hkeys
+      split at he
+      · rename_i e0 hse
+        refine absurd hse ?_
+        rw [sortPairs, if_pos (keysOk_of_hasElemTy hkey (hasElemTy_of_mapItems
+          (fun ctx env e je ty v => typeSound p hprog f ctx env e je ty v)
+          hbody.typeChecked henv hcb xs keys hat hkeys))]
+        simp
       · simp at he
     · rename_i hne'
       exact (hne' xs rfl).elim

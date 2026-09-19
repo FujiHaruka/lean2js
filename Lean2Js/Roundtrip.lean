@@ -21,7 +21,8 @@ namespace Lean2Js.Parse
 /-- The names `parseNamed` gives a meaning of their own. An identifier or a callee spelled one of these
 reads back as the form the reader has a constructor for. -/
 def dispatchNames : List String :=
-  ["true", "false", "new", "__ck", "__map", "__filter", "__find", "__all", "__any", "__reduce"]
+  ["true", "false", "new", "__ck", "__map", "__filter", "__find", "__all", "__any", "__reduce",
+   "__sortBy"]
 
 def okCallee (s : String) : Bool := okName s && !dispatchNames.contains s
 
@@ -51,6 +52,7 @@ def RenderableExpr : Js.Expr → Bool
   | .check _ e => RenderableExpr e
   | .mapJs arr binder body => RenderableExpr arr && okName binder && RenderableExpr body
   | .filterJs arr binder body => RenderableExpr arr && okName binder && RenderableExpr body
+  | .sortByJs arr binder body => RenderableExpr arr && okName binder && RenderableExpr body
   | .findJs arr binder body => RenderableExpr arr && okName binder && RenderableExpr body
   | .quantJs _ arr binder body => RenderableExpr arr && okName binder && RenderableExpr body
   | .reduceJs arr init accName elemName body =>
@@ -115,6 +117,10 @@ theorem render_mapJs (arr : Js.Expr) (b : String) (body : Js.Expr) :
 theorem render_filterJs (arr : Js.Expr) (b : String) (body : Js.Expr) :
     Js.Expr.render (.filterJs arr b body) =
       "__filter(" ++ arr.render ++ ", (" ++ b ++ ") => (" ++ body.render ++ "))" := by
+  rw [Js.Expr.render]
+theorem render_sortByJs (arr : Js.Expr) (b : String) (body : Js.Expr) :
+    Js.Expr.render (.sortByJs arr b body) =
+      "__sortBy(" ++ arr.render ++ ", (" ++ b ++ ") => (" ++ body.render ++ "))" := by
   rw [Js.Expr.render]
 theorem render_findJs (arr : Js.Expr) (b : String) (body : Js.Expr) :
     Js.Expr.render (.findJs arr b body) =
@@ -377,6 +383,13 @@ theorem render_mapJs_toList (arr : Js.Expr) (b : String) (body : Js.Expr) :
   simp only [String.toList_append, List.append_assoc]
   rfl
 
+theorem render_sortByJs_toList (arr : Js.Expr) (b : String) (body : Js.Expr) :
+    (Js.Expr.render (.sortByJs arr b body)).toList =
+      '_' :: '_' :: 's' :: 'o' :: 'r' :: 't' :: 'B' :: 'y' :: '(' :: lambdaTail arr b body := by
+  rw [render_sortByJs, lambdaTail]
+  simp only [String.toList_append, List.append_assoc]
+  rfl
+
 theorem render_filterJs_toList (arr : Js.Expr) (b : String) (body : Js.Expr) :
     (Js.Expr.render (.filterJs arr b body)).toList =
       '_' :: '_' :: 'f' :: 'i' :: 'l' :: 't' :: 'e' :: 'r' :: '(' :: lambdaTail arr b body := by
@@ -563,6 +576,10 @@ theorem parseIdentList_render (e : Js.Expr) (he : RenderableExpr e = true) (f : 
     rw [render_filterJs_toList] at h
     exact identList_name_head f ['_', '_', 'f', 'i', 'l', 't', 'e', 'r'] (by simp) (by decide)
       (by decide) (by decide) (by decide) _ h
+  | .sortByJs arr b body =>
+    rw [render_sortByJs_toList] at h
+    exact identList_name_head f ['_', '_', 's', 'o', 'r', 't', 'B', 'y'] (by simp) (by decide)
+      (by decide) (by decide) (by decide) _ h
   | .findJs arr b body =>
     rw [render_findJs_toList] at h
     exact identList_name_head f ['_', '_', 'f', 'i', 'n', 'd'] (by simp) (by decide)
@@ -673,6 +690,7 @@ theorem parseArrowHead_render (e : Js.Expr) (he : RenderableExpr e = true) (f : 
   | .check d e => rw [render_check_toList]; exact arrowHead_ne _ (by decide) _
   | .mapJs arr b body => rw [render_mapJs_toList]; exact arrowHead_ne _ (by decide) _
   | .filterJs arr b body => rw [render_filterJs_toList]; exact arrowHead_ne _ (by decide) _
+  | .sortByJs arr b body => rw [render_sortByJs_toList]; exact arrowHead_ne _ (by decide) _
   | .findJs arr b body => rw [render_findJs_toList]; exact arrowHead_ne _ (by decide) _
   | .quantJs op arr b body =>
     match op with
@@ -793,6 +811,7 @@ theorem render_head (e : Js.Expr) (he : RenderableExpr e = true) :
   | .check d e => exact ⟨'_', _, render_check_toList d e, by decide⟩
   | .mapJs arr b body => exact ⟨'_', _, render_mapJs_toList arr b body, by decide⟩
   | .filterJs arr b body => exact ⟨'_', _, render_filterJs_toList arr b body, by decide⟩
+  | .sortByJs arr b body => exact ⟨'_', _, render_sortByJs_toList arr b body, by decide⟩
   | .findJs arr b body => exact ⟨'_', _, render_findJs_toList arr b body, by decide⟩
   | .quantJs op arr b body =>
     match op with
@@ -942,6 +961,8 @@ theorem render_head_num (e : Js.Expr) (he : RenderableExpr e = true) {c : Char} 
     exact absurd (hstart '_' _ (render_mapJs_toList arr b body) (by decide)) (by simp)
   | .filterJs arr b body =>
     exact absurd (hstart '_' _ (render_filterJs_toList arr b body) (by decide)) (by simp)
+  | .sortByJs arr b body =>
+    exact absurd (hstart '_' _ (render_sortByJs_toList arr b body) (by decide)) (by simp)
   | .findJs arr b body =>
     exact absurd (hstart '_' _ (render_findJs_toList arr b body) (by decide)) (by simp)
   | .quantJs op arr b body =>
@@ -1542,6 +1563,25 @@ theorem parseExpr_append (e : Js.Expr) (he : RenderableExpr e = true) (f : Nat)
           (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
             (body.render.toList ++ (')' :: ')' :: rest)))))))
         pure (Js.Expr.filterJs x bn bd, cs)) = some (Js.Expr.filterJs arr b body, rest)
+      rw [parseLambdaCall_append arr b body he.1.1 he.1.2 he.2 k (by omega) (by omega) rest hrest]
+      rfl
+  | .sortByJs arr b body =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    rw [render_sortByJs_toList, lambdaTail] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append, List.singleton_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    obtain ⟨k, rfl⟩ : ∃ k, f = k + 2 := ⟨f - 2, by omega⟩
+    · show parseExpr (k + 1 + 1 + 1) ("__sortBy".toList ++ ('(' :: (arr.render.toList ++
+        (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+          (body.render.toList ++ (')' :: ')' :: rest)))))))) = _
+      rw [parseExpr_name (k + 1 + 1) "__sortBy" (by decide) _
+        (by intro c r hc; cases hc; decide), parseNamed]
+      show (do
+        let (x, bn, bd, cs) ← parseLambdaCall (k + 1) ('(' :: (arr.render.toList ++
+          (',' :: ' ' :: '(' :: (b.toList ++ (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest)))))))
+        pure (Js.Expr.sortByJs x bn bd, cs)) = some (Js.Expr.sortByJs arr b body, rest)
       rw [parseLambdaCall_append arr b body he.1.1 he.1.2 he.2 k (by omega) (by omega) rest hrest]
       rfl
   | .findJs arr b body =>

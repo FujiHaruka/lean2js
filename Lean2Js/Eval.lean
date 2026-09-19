@@ -313,6 +313,50 @@ def firstMatch : List Alt → Value → Option (Env × Expr)
     | some binds => some (binds, Alt.body alt)
     | none => firstMatch rest v
 
+/-- The order the keys of a `sortByKey` are compared by. `Int53` and `String` are the only key types the
+compiler lets through, and both orders are the ones the subset already has: `≤` on `Int53`, and the
+code-point order `compare` gives, which is what `<` on two strings already means here. -/
+def keyLe : Value → Value → Bool
+  | .int53 a, .int53 b => decide (a ≤ b)
+  | .str a, .str b => compare a b != .gt
+  | _, _ => false
+
+def isNumKey : Value → Bool
+  | .int53 _ => true
+  | _ => false
+
+def isStrKey : Value → Bool
+  | .str _ => true
+  | _ => false
+
+/-- The keys are all `Int53` or all `String`. A well-typed program cannot reach the other case: the
+key type is settled by the compiler before the walk runs. -/
+def keysOk (ps : List (Value × Value)) : Bool :=
+  ps.all (fun p => isNumKey p.1) || ps.all (fun p => isStrKey p.1)
+
+/-- `List.mergeSort` is the model rather than a sort of our own so that what it already proves — the
+answer is a permutation of the input, and equal keys keep the order they came in — is what an author
+reasons with. -/
+def sortPairs (ps : List (Value × Value)) : Except Err (List Value) :=
+  if keysOk ps then .ok ((ps.mergeSort (fun a b => keyLe a.1 b.1)).map (·.2))
+  else .error (.typeError "sortByKey expects Int53 or String keys")
+
+theorem sortPairs_ne_outOfFuel (ps : List (Value × Value)) :
+    sortPairs ps ≠ .error .outOfFuel := by
+  rw [sortPairs]; split <;> simp
+
+/-- Every value the sort answers with came in, which is what carries a property of the elements across
+it. `List.mergeSort` gives the permutation; the pairing gives the element back. -/
+theorem sortPairs_mem {ps : List (Value × Value)} {vs : List Value} (h : sortPairs ps = .ok vs)
+    {w : Value} (hw : w ∈ vs) : ∃ pr ∈ ps, pr.2 = w := by
+  rw [sortPairs] at h
+  split at h
+  · injection h with h
+    subst h
+    obtain ⟨pr, hpr, hw2⟩ := List.mem_map.mp hw
+    exact ⟨pr, List.mem_mergeSort.mp hpr, hw2⟩
+  · exact absurd h (by simp)
+
 mutual
 
 /-- `and` / `or` are handled first because JS's `&&` / `||` short-circuit. Evaluating both sides would
@@ -428,6 +472,12 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       match ← evalExpr p f env arr with
       | .arr xs => evalQuantItems p f env op binder body xs
       | _ => .error (.typeError s!"{op.name} expects an Array")
+    | .sortByKeyE arr binder body => do
+      match ← evalExpr p f env arr with
+      | .arr xs => do
+        let keys ← evalMapItems p f env binder body xs
+        do .ok (.arr (← sortPairs (keys.zip xs)))
+      | _ => .error (.typeError "sortByKey expects an Array")
     | .reduceE arr init accName elemName body => do
       match ← evalExpr p f env arr with
       | .arr xs => do
@@ -772,6 +822,16 @@ theorem evalExpr_reduceE (p : Program) (f : Nat) (env : Env) (arr init : Expr)
             let acc ← evalExpr p f env init
             evalReduceItems p f env accName elemName body acc xs
           | _ => .error (.typeError "reduce expects an Array")) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_sortByKeyE (p : Program) (f : Nat) (env : Env) (arr : Expr) (binder : String)
+    (body : Expr) :
+    evalExpr p (f + 1) env (.sortByKeyE arr binder body) =
+      (do match ← evalExpr p f env arr with
+          | .arr xs => do
+            let keys ← evalMapItems p f env binder body xs
+            do .ok (.arr (← sortPairs (keys.zip xs)))
+          | _ => .error (.typeError "sortByKey expects an Array")) := by
   rw [evalExpr.eq_def]
 
 theorem evalExpr_dictLit (p : Program) (f : Nat) (env : Env) (value : Ty)

@@ -1786,6 +1786,7 @@ theorem compileBody_type (p : Program) :
   | .arraySlice _ _ _, ctx, acc, stmts, ty, hc
   | .arrayReverse _, ctx, acc, stmts, ty, hc
   | .mapE _ _ _, ctx, acc, stmts, ty, hc
+  | .sortByKeyE _ _ _, ctx, acc, stmts, ty, hc
   | .filterE _ _ _, ctx, acc, stmts, ty, hc
   | .findE _ _ _, ctx, acc, stmts, ty, hc
   | .quantE _ _ _ _, ctx, acc, stmts, ty, hc

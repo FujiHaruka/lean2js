@@ -594,6 +594,16 @@ def compileExpr (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr ×
         .error s!"reduce folds into {tinit.render} but its body is {tbody.render}"
       else .ok (.reduceJs jarr jinit accName elemName jbody, tinit)
     | ty => .error s!"reduce expects an Array, not {ty.render}"
+  | .sortByKeyE arr binder body => do
+    let (jarr, tarr) ← compileExpr p ctx arr
+    match tarr with
+    | .array elem => do
+      validateIdent "lambda" binder
+      let (jbody, tbody) ← compileExpr p ((binder, elem) :: ctx) body
+      if tbody != .int53 && tbody != .string then
+        .error s!"a sortByKey key must be an Int53 or a String, not {tbody.render}"
+      else .ok (.sortByJs jarr binder jbody, .array elem)
+    | ty => .error s!"sortByKey expects an Array, not {ty.render}"
   | .dictLit value entries => do
     wfTy p [] value
     validateDistinct "key" (entries.map (·.1))
@@ -906,7 +916,8 @@ private def callsPrecede (p : Program) (limit : Nat) : Expr → Except String Un
   | .letE _ _ val body => do
     callsPrecede p limit val
     callsPrecede p limit body
-  | .mapE arr _ body | .filterE arr _ body | .findE arr _ body | .quantE _ arr _ body => do
+  | .mapE arr _ body | .filterE arr _ body | .findE arr _ body | .quantE _ arr _ body
+  | .sortByKeyE arr _ body => do
     callsPrecede p limit arr
     callsPrecede p limit body
   | .reduceE arr init _ _ body => do
