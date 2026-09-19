@@ -6,6 +6,13 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- A declared type may name itself, directly or through a `List` of itself, and the type a consumer reads
+  in the `.d.ts` names itself the same way. The entry check follows a value of one as deep as it goes:
+  the descriptor ties a knot where the name comes round again rather than expanding forever. `deriving
+  Enc` writes the encoding, its inverse and the entry-check proof for such a type. A type that reaches
+  itself through anything but a `List` of itself, and one that names itself while taking type
+  parameters, are refused at the `deriving`. A shipped `def` still reads only the constructor it was
+  handed and the fields directly under it — walking further is a recursion, and the subset has none.
 - A declared type chooses the key its constructors are told apart by: `@[discriminator "kind"]` above
   the type carries them under `kind` rather than under `tag`, in the `.d.ts`, in the generated code and
   in the entry check. It is per type, and `Option` / `Except` keep `tag`. Refused: a key that is not a

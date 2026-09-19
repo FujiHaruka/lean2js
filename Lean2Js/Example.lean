@@ -563,6 +563,27 @@ def directionLabel (sign : Int) : String :=
   | 1 => "debit"
   | _ => "none"
 
+/-- Where a product sits in the catalogue. A group holds categories, so the type names itself and the
+generated `.d.ts` type does too. -/
+inductive Category where
+  | leaf (name : String)
+  | group (name : String) (children : List Category)
+  deriving Enc
+
+@[ship]
+def categoryName (category : Category) : String :=
+  match category with
+  | .leaf name => name
+  | .group name _ => name
+
+/-- How many categories sit directly under this one. What sits under *those* is a walk, and the subset
+has no recursion to walk with. -/
+@[ship]
+def directChildren (category : Category) : Int :=
+  match category with
+  | .leaf _ => 0
+  | .group _ children => Arr.length children
+
 ship_package
 
 
@@ -580,6 +601,13 @@ theorem cheapest_first_keeps_every_line (items : List Money) :
 /-- No role's monthly limit is negative, including a role whose book records none. -/
 theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role := by
   cases role <;> decide
+
+/-- A category with nothing under it counts nothing under it, whatever it is called. -/
+theorem a_leaf_has_no_children (name : String) : directChildren (.leaf name) = 0 := rfl
+
+/-- A group counts what sits directly under it, however deep those categories go themselves. -/
+theorem a_group_counts_what_is_directly_under_it (name : String) (children : List Category) :
+    directChildren (.group name children) = Arr.length children := rfl
 
 /-- A settlement that failed carries no order id, whatever it failed with. -/
 theorem failed_settlement_has_no_order_id (message : String) :

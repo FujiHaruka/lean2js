@@ -603,6 +603,17 @@
       "signature": "(sign : Int53) → String",
       "declaration": "directionLabel(sign: number): string",
       "doc": "What the sign on a statement line means."
+    },
+    {
+      "name": "categoryName",
+      "signature": "(category : Category) → String",
+      "declaration": "categoryName(category: Category): string"
+    },
+    {
+      "name": "directChildren",
+      "signature": "(category : Category) → Int53",
+      "declaration": "directChildren(category: Category): number",
+      "doc": "How many categories sit directly under this one. What sits under *those* is a walk, and the subset\nhas no recursion to walk with."
     }
   ],
   "theorems": [
@@ -620,6 +631,16 @@
       "name": "monthly_limit_is_not_negative",
       "statement": "monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role",
       "doc": "No role's monthly limit is negative, including a role whose book records none."
+    },
+    {
+      "name": "a_leaf_has_no_children",
+      "statement": "a_leaf_has_no_children (name : String) : directChildren (Category.leaf name) = 0",
+      "doc": "A category with nothing under it counts nothing under it, whatever it is called."
+    },
+    {
+      "name": "a_group_counts_what_is_directly_under_it",
+      "statement": "a_group_counts_what_is_directly_under_it (name : String) (children : List Category) :\n  directChildren (Category.group name children) = Arr.length children",
+      "doc": "A group counts what sits directly under it, however deep those categories go themselves."
     },
     {
       "name": "failed_settlement_has_no_order_id",

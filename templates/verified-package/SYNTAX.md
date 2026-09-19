@@ -97,6 +97,12 @@ ship_package
   `@[ship]` or `@[expand]`.
 - **A type needs `deriving Enc`.** `Enc` says where the type sits in `Value` and puts a `TypeDef` into
   the program. Add `DecidableEq` as well if you compare values of it with `==`.
+- **A type may name itself**, directly or through a `List` of itself, and the TypeScript type a consumer
+  reads names itself the same way. The entry check follows a value of one as deep as it goes; nothing
+  bounds the depth but the engine's own stack. Two things are refused: a type that reaches itself through
+  anything but a `List` of itself (an `Option` of itself, say), and a type that names itself *and* takes
+  type parameters. **A shipped `def` still cannot walk one**: the subset has no recursion, so a `def`
+  reads the constructor it was handed and the fields directly under it.
 - **A `structure` has to name its constructor** (`Money ::`). The constructor's name is what a consumer
   reads in the generated TypeScript, and Lean's default name, `mk`, says nothing to them. A structure
   without the line is refused.
@@ -171,6 +177,7 @@ def labelOrBlank (labels : List String) : String := firstOr labels ""
 | `List T` | `readonly T[]` |
 | `Dict V` | `ReadonlyMap<string, V>` |
 | your own type with `deriving Enc` | `{ tag: "Money", ... }`, under the key the type declares |
+| your own type that names itself | the same, and the TypeScript type names itself too |
 | `Int → Int` | cannot be published; a declaration taking a function is internal |
 
 `Int` maps to `Int53`. Lean's `Int` is unbounded and `Int53` is not, so the certificate states one
@@ -446,6 +453,7 @@ term the walk stopped at, not the alternative, so the alternatives are here.
 | `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts. `Date` is mutable, holds a double, and answers `getMonth` out of the host's time zone — none of which has one answer to hold the generated code to. |
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out. |
 | `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure. |
+| walking a type that names itself | Nothing here yet. A `def` reads the constructor it was handed and the fields directly under it; the walk down is a recursion, and the subset has none. Take the answer for each child as a parameter, or do the walk in TypeScript and call in per node. |
 | `**` / `Math.pow` / `10 ^ n` | For a power of ten, `Opt.getD (Str.toInt? ("1" ++ Str.repeat "0" (min (max n 0) 15))) 0`. Otherwise repeated multiplication over a fixed range. The clamp is not optional — a `Str.repeat` count the program does not bound is refused by name. |
 
 An array or string operation that is missing from the tables above but needs no new concept is usually
@@ -466,6 +474,8 @@ all `Arr.take` and the rest of the subset's vocabulary are made of.
 | `Nat` | `reify: Nat is not a subset type; the subset's integer is Int, ...` |
 | `Float` | `reify: Float is not a subset type; the subset has no floating point, ...` |
 | any other type without `deriving Enc` | `reify: T has no Enc instance, so there is no subset type to give it` |
+| a type that reaches itself through anything but a `List` of itself | `deriving Enc: T reaches itself through a field of type Option T, and the encoding is written for the type itself and for a List of it, not for that` |
+| a type that names itself and takes type parameters | `deriving Enc: T names itself and takes type parameters. ...` |
 | a `structure` whose constructor is not named | `deriving Enc: T.mk would ship as "mk", ...` |
 | anything else | `reify: <term> is outside the subset this walk reads`, and the rule of the three it broke |
 

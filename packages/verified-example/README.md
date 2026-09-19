@@ -175,6 +175,9 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   A charge as it appears on a credit note, where money leaving is written negative.
 - `directionLabel(sign: number): string`
   What the sign on a statement line means.
+- `categoryName(category: Category): string`
+- `directChildren(category: Category): number`
+  How many categories sit directly under this one. What sits under *those* is a walk, and the subset has no recursion to walk with.
 
 ## Errors
 
@@ -213,6 +216,23 @@ No role's monthly limit is negative, including a role whose book records none.
 
 ```lean
 theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role
+```
+
+### a_leaf_has_no_children
+
+A category with nothing under it counts nothing under it, whatever it is called.
+
+```lean
+theorem a_leaf_has_no_children (name : String) : directChildren (Category.leaf name) = 0
+```
+
+### a_group_counts_what_is_directly_under_it
+
+A group counts what sits directly under it, however deep those categories go themselves.
+
+```lean
+theorem a_group_counts_what_is_directly_under_it (name : String) (children : List Category) :
+  directChildren (Category.group name children) = Arr.length children
 ```
 
 ### failed_settlement_has_no_order_id

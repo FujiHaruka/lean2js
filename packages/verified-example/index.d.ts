@@ -27,6 +27,10 @@ export type Validated<E, A> =
   | { readonly tag: "valid"; readonly value: A }
   | { readonly tag: "invalid"; readonly errors: readonly E[] };
 
+export type Category =
+  | { readonly tag: "leaf"; readonly name: string }
+  | { readonly tag: "group"; readonly name: string; readonly children: readonly Category[] };
+
 /**
  * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
@@ -698,3 +702,16 @@ export declare function creditNoteAmount(amount: number): number;
  * @throws {Error} whose `code` is `typeError`.
  */
 export declare function directionLabel(sign: number): string;
+
+/**
+ * @throws {Error} whose `code` is `typeError`.
+ */
+export declare function categoryName(category: Category): string;
+
+/**
+ * How many categories sit directly under this one. What sits under *those* is a walk, and the subset
+ * has no recursion to walk with.
+ *
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
+ */
+export declare function directChildren(category: Category): number;

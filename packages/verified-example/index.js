@@ -1258,4 +1258,16 @@ export function directionLabel(__p0) {
   return ((__s) => (((__s === -1) ? "credit" : ((__s === 1) ? "debit" : "none"))))(sign);
 }
 
+/** categoryName : (category : Category) → String */
+export function categoryName(__p0) {
+  const category = __ck(__p0, ["mu", "tag", [["leaf", [["name", ["string"]]]], ["group", [["name", ["string"]], ["children", ["array", ["ref", 0]]]]]]]);
+  return ((__s) => ((((__s).tag === "leaf") ? ((name) => (name))((__s).name) : ((name) => (name))((__s).name))))(category);
+}
+
+/** directChildren : (category : Category) → Int53 */
+export function directChildren(__p0) {
+  const category = __ck(__p0, ["mu", "tag", [["leaf", [["name", ["string"]]]], ["group", [["name", ["string"]], ["children", ["array", ["ref", 0]]]]]]]);
+  return ((__s) => ((((__s).tag === "leaf") ? 0 : ((children) => (__i53((children).length)))((__s).children))))(category);
+}
+
 //# sourceMappingURL=index.js.map

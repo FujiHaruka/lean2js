@@ -10,6 +10,8 @@ type Paginated T = Paginated(items : Array T, total : Int53)
 
 type Validated E A = valid(value : A) | invalid(errors : Array E)
 
+type Category = leaf(name : String) | group(name : String, children : Array Category)
+
 def add(a : Int53, b : Int53) : Int53 =
   (a + b)
 
@@ -333,4 +335,10 @@ def creditNoteAmount(amount : Int53) : Int53 =
 
 def directionLabel(sign : Int53) : String =
   match sign { -1 => "credit" | 1 => "debit" | _ => "none" }
+
+def categoryName(category : Category) : String =
+  match category { leaf(name) => name | group(name, _) => name }
+
+def directChildren(category : Category) : Int53 =
+  match category { leaf(_) => 0 | group(_, children) => children.length }
 

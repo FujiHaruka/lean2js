@@ -45,7 +45,7 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on the fuel
   needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against the
   ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
-  <!--n:fuelNeeded-->980<!--/n-->).
+  <!--n:fuelNeeded-->998<!--/n-->).
 - **What that rests on** — the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
   exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
@@ -66,7 +66,7 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   type read as a predicate in Lean. How TypeScript reads the printed `.d.ts` text is the one thing
   trusted here, and it is checked rather than proved: tsc is run over the generated file on its own
   terms, and over calls into it that the entry check accepts and refuses.
-- **Outside the proofs** — every vector generated for the artifact (<!--n:vectors-->38298<!--/n--> of
+- **Outside the proofs** — every vector generated for the artifact (<!--n:vectors-->38746<!--/n--> of
   them for this example) is checked two ways before anything is written: `eval` against the model of the
   generated JavaScript ([`checkAgreement`]), and the assembled package, loaded into Node from a
   temporary directory, against real JavaScript. One disagreement and nothing is written to the output
@@ -78,6 +78,17 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   are all there rather than one restatement per declaration. That no theorem rests on an axiom beyond
   `propext` / `Classical.choice` / `Quot.sound` is also checked before anything is written — a proof
   plugged with `sorry` gets through `lake build` with only a warning, so this is where it is stopped.
+
+**A declared type may name itself, and the entry check follows one as deep as the value goes.** The
+descriptor the generated code checks an argument against expands a declared type away, and a type that
+names itself has no finite expansion — so where the name comes round again at the same arguments the
+descriptor ties a knot instead: the node is written once as a `mu` and the occurrence inside it as a
+`ref` back to it. `__has` and `__norm` carry the binders they are inside as an argument, and the three
+directions hold at every such environment, not only at the empty one a call starts from. A type whose
+expansion has no such fixed point — one applied to a bigger argument each time round — runs out of the
+budget `tyDescBudget` gives it and is refused by name rather than compiled. **What a shipped `def` may
+do with such a value is unchanged**: it reads the constructor it was handed and the fields directly
+under it, because walking further is a recursion and the subset has none.
 
 **A statement in the manifest names no symbol the package cannot answer for.** `@[expand]` writes a `def`
 out where it is called, so a constant a theorem reads by name is a number in `index.js` and nothing else.

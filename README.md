@@ -241,10 +241,10 @@ a small trusted base and a correctness proof affordable:
 | In | Out |
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
-| `inductive` and `structure` with `deriving Enc`, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
+| `inductive` and `structure` with `deriving Enc`, including one that names itself, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
 | List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`) and `match` (nested, wildcard, literal) | Metaprogramming |
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
-| Pure `def`s marked `@[ship]` | Recursion / non-termination / DOM access |
+| Pure `def`s marked `@[ship]` | Recursion in a `def` / non-termination / DOM access |
 | A lambda where a traversal takes one, and a declaration's name passed to a call | Functions as values: a function in a variable, a closure, a function type on the public boundary |
 | Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.join` / `Str.replace` / `Str.repeat` / `Str.padStart` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
 | `Dict V` (string keys, emitted as a `Map`: `get` / `set` / `has` / `erase` / `keys` / `values`) | Plain objects used as dictionaries |
