@@ -109,53 +109,53 @@ theorem tyDesc_named_inv {p : Program} {b : Nat} {n : String} {args : List Ty} {
 
 `Js.checkTy` is well-founded too, so it needs the same one-lemma-per-shape treatment `Value.hasTy` got. -/
 
-theorem checkTy_bool (b : Bool) : Js.checkTy (.bool b) .bool = true := by
+theorem checkTy_bool (b : Bool) : Js.checkTy [] (.bool b) .bool = true := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_int53 (i : Int) :
-    Js.checkTy (.num i) .int53
+    Js.checkTy [] (.num i) .int53
       = (decide (Js.Runtime.safeMin ≤ i) && decide (i ≤ Js.Runtime.safeMax)) := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_uint32 (i : Int) :
-    Js.checkTy (.num i) .uint32 = (decide (0 ≤ i) && decide (i < Js.Runtime.wrap32)) := by
+    Js.checkTy [] (.num i) .uint32 = (decide (0 ≤ i) && decide (i < Js.Runtime.wrap32)) := by
   rw [Js.checkTy.eq_def]
 
-theorem checkTy_string (s : String) : Js.checkTy (.str s) .string = true := by
+theorem checkTy_string (s : String) : Js.checkTy [] (.str s) .string = true := by
   rw [Js.checkTy.eq_def]
 
-theorem checkTy_bigint (i : Int) : Js.checkTy (.bigint i) .bigint = true := by
+theorem checkTy_bigint (i : Int) : Js.checkTy [] (.bigint i) .bigint = true := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_array (xs : List Js.JsValue) (d : Js.TyDesc) :
-    Js.checkTy (.arr xs) (.array d) = Js.checkList xs d := by
+    Js.checkTy [] (.arr xs) (.array d) = Js.checkList [] xs d := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_dict (es : List (String × Js.JsValue)) (d : Js.TyDesc) :
-    Js.checkTy (.dict es) (.dict d) = Js.checkEntries es d := by
+    Js.checkTy [] (.dict es) (.dict d) = Js.checkEntries [] es d := by
   rw [Js.checkTy.eq_def]
 
 theorem checkTy_none (fields : List (String × Js.JsValue)) (d : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "none")) :
-    Js.checkTy (.obj fields) (.option d) = true := by
+    Js.checkTy [] (.obj fields) (.option d) = true := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
 theorem checkTy_some (fields : List (String × Js.JsValue)) (d : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "some")) :
-    Js.checkTy (.obj fields) (.option d) = Js.checkFields fields [("value", d)] := by
+    Js.checkTy [] (.obj fields) (.option d) = Js.checkFields [] fields [("value", d)] := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
 theorem checkTy_ok (fields : List (String × Js.JsValue)) (dok derr : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "ok")) :
-    Js.checkTy (.obj fields) (.result dok derr) = Js.checkFields fields [("value", dok)] := by
+    Js.checkTy [] (.obj fields) (.result dok derr) = Js.checkFields [] fields [("value", dok)] := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
 theorem checkTy_error (fields : List (String × Js.JsValue)) (dok derr : Js.TyDesc)
     (h : Js.lookupField fields "tag" = some (.str "error")) :
-    Js.checkTy (.obj fields) (.result dok derr) = Js.checkFields fields [("error", derr)] := by
+    Js.checkTy [] (.obj fields) (.result dok derr) = Js.checkFields [] fields [("error", derr)] := by
   rw [Js.checkTy.eq_def]
   simp [h]
 
@@ -164,22 +164,22 @@ theorem checkTy_ctors (key ctor : String) (fields : List (String × Js.JsValue))
     (flds : List (String × Js.TyDesc))
     (htag : Js.lookupField fields key = some (.str ctor))
     (hf : alts.find? (·.1 == ctor) = some (ctor, flds)) :
-    Js.checkTy (.obj fields) (.ctors key alts) = Js.checkFields fields flds := by
+    Js.checkTy [] (.obj fields) (.ctors key alts) = Js.checkFields [] fields flds := by
   rw [Js.checkTy.eq_def]
   simp [htag, hf]
 
-theorem checkList_nil (d : Js.TyDesc) : Js.checkList [] d = true := by rw [Js.checkList.eq_def]
+theorem checkList_nil (d : Js.TyDesc) : Js.checkList [] [] d = true := by rw [Js.checkList.eq_def]
 
 theorem checkList_cons (x : Js.JsValue) (rest : List Js.JsValue) (d : Js.TyDesc) :
-    Js.checkList (x :: rest) d = (Js.checkTy x d && Js.checkList rest d) := by
+    Js.checkList [] (x :: rest) d = (Js.checkTy [] x d && Js.checkList [] rest d) := by
   rw [Js.checkList.eq_def]
 
-theorem checkEntries_nil (d : Js.TyDesc) : Js.checkEntries [] d = true := by
+theorem checkEntries_nil (d : Js.TyDesc) : Js.checkEntries [] [] d = true := by
   rw [Js.checkEntries.eq_def]
 
 theorem checkEntries_cons (key : String) (v : Js.JsValue) (rest : List (String × Js.JsValue))
     (d : Js.TyDesc) :
-    Js.checkEntries ((key, v) :: rest) d = (Js.checkTy v d && Js.checkEntries rest d) := by
+    Js.checkEntries [] ((key, v) :: rest) d = (Js.checkTy [] v d && Js.checkEntries [] rest d) := by
   rw [Js.checkEntries.eq_def]
 
 /-! ### Finding a constructor's descriptor
@@ -258,8 +258,8 @@ mutual
 
 theorem checkTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
     ∀ (ty : Ty) (b : Nat) (d : Js.TyDesc) (v : Value),
-      tyDesc p b ty = .ok d → Js.descOk d = true → Value.hasTy p v ty = true →
-      Js.checkTy (encodeValue v) d = true
+      tyDesc p b ty = .ok d → Js.descOk 0 d = true → Value.hasTy p v ty = true →
+      Js.checkTy [] (encodeValue v) d = true
   | .bool, _, _, v, hd, _, hv => by
     obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
     rw [tyDesc_bool_inv hd]
@@ -366,9 +366,9 @@ termination_by _ _ _ v => sizeOf v
 theorem checkFields_encodeFields (p : Program) (hn : TypesNamesOk p) :
     ∀ (fdecls : List Field) (b : Nat) (ds : List (String × Js.TyDesc)) (key : String)
       (fs : List (String × Value)),
-      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk ds = true →
+      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk 0 ds = true →
       Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true →
-      Js.checkFields (encodeFields fs) ds = true
+      Js.checkFields [] (encodeFields fs) ds = true
   | [], _, ds, _, fs, hds, _, _, hfs => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
@@ -407,8 +407,8 @@ termination_by _ _ _ _ fs => sizeOf fs
 
 theorem checkList_encodeList (p : Program) (hn : TypesNamesOk p) :
     ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (xs : List Value),
-      tyDesc p b elem = .ok d → Js.descOk d = true → Value.hasElemTy p xs elem = true →
-      Js.checkList (encodeList xs) d = true
+      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasElemTy p xs elem = true →
+      Js.checkList [] (encodeList xs) d = true
   | _, _, _, [], _, _, _ => by simp [encodeList, checkList_nil]
   | elem, b, d, x :: rest, hd, hdo, hv => by
     rw [hasElemTy_cons, Bool.and_eq_true] at hv
@@ -421,8 +421,8 @@ termination_by _ _ _ xs => sizeOf xs
 
 theorem checkEntries_encodeFields (p : Program) (hn : TypesNamesOk p) :
     ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (es : List (String × Value)),
-      tyDesc p b elem = .ok d → Js.descOk d = true → Value.hasEntryTys p es elem = true →
-      Js.checkEntries (encodeFields es) d = true
+      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasEntryTys p es elem = true →
+      Js.checkEntries [] (encodeFields es) d = true
   | _, _, _, [], _, _, _ => by simp [encodeFields, checkEntries_nil]
   | elem, b, d, (key, v) :: rest, hd, hdo, hv => by
     rw [hasEntryTys_cons, Bool.and_eq_true] at hv
@@ -443,8 +443,8 @@ mutual
 
 theorem normTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
     ∀ (ty : Ty) (b : Nat) (d : Js.TyDesc) (v : Value),
-      tyDesc p b ty = .ok d → Js.descOk d = true → Value.hasTy p v ty = true →
-      Js.normTy (encodeValue v) d = encodeValue v
+      tyDesc p b ty = .ok d → Js.descOk 0 d = true → Value.hasTy p v ty = true →
+      Js.normTy [] (encodeValue v) d = encodeValue v
   | .bool, _, _, v, hd, _, hv => by
     obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
     rw [tyDesc_bool_inv hd, show encodeValue (Value.bool x) = .bool x from by
@@ -541,9 +541,9 @@ termination_by _ _ _ v => sizeOf v
 theorem normFields_encodeFields (p : Program) (hn : TypesNamesOk p) :
     ∀ (fdecls : List Field) (b : Nat) (ds : List (String × Js.TyDesc)) (key : String)
       (fs : List (String × Value)),
-      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk ds = true →
+      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk 0 ds = true →
       Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true →
-      Js.normFields (encodeFields fs) ds = encodeFields fs
+      Js.normFields [] (encodeFields fs) ds = encodeFields fs
   | [], _, ds, _, fs, hds, _, _, hfs => by
     rw [tyDescFields.eq_def] at hds
     simp only at hds
@@ -584,8 +584,8 @@ termination_by _ _ _ _ fs => sizeOf fs
 
 theorem normList_encodeList (p : Program) (hn : TypesNamesOk p) :
     ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (xs : List Value),
-      tyDesc p b elem = .ok d → Js.descOk d = true → Value.hasElemTy p xs elem = true →
-      Js.normList (encodeList xs) d = encodeList xs
+      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasElemTy p xs elem = true →
+      Js.normList [] (encodeList xs) d = encodeList xs
   | _, _, d, [], _, _, _ => by
     rw [show encodeList ([] : List Value) = [] from by rw [encodeList.eq_def], Js.normList_nil]
   | elem, b, d, x :: rest, hd, hdo, hv => by
@@ -598,8 +598,8 @@ termination_by _ _ _ xs => sizeOf xs
 
 theorem normEntries_encodeFields (p : Program) (hn : TypesNamesOk p) :
     ∀ (elem : Ty) (b : Nat) (d : Js.TyDesc) (es : List (String × Value)),
-      tyDesc p b elem = .ok d → Js.descOk d = true → Value.hasEntryTys p es elem = true →
-      Js.normEntries (encodeFields es) d = encodeFields es
+      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Value.hasEntryTys p es elem = true →
+      Js.normEntries [] (encodeFields es) d = encodeFields es
   | _, _, d, [], _, _, _ => by
     rw [show encodeFields ([] : List (String × Value)) = [] from by rw [encodeFields.eq_def],
       Js.normEntries_nil]
@@ -626,56 +626,56 @@ an `Int53` and a `UInt32` holding the same number both encode to `.num`, so noth
 side could tell them apart. Over `Value`s the direction is false; over what actually crosses the
 boundary it holds. -/
 
-theorem checkTy_bool_inv {jv : Js.JsValue} (h : Js.checkTy jv .bool = true) :
+theorem checkTy_bool_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .bool = true) :
     ∃ b, jv = .bool b := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_int53_inv {jv : Js.JsValue} (h : Js.checkTy jv .int53 = true) :
+theorem checkTy_int53_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .int53 = true) :
     ∃ i, jv = .num i ∧ Js.Runtime.safeMin ≤ i ∧ i ≤ Js.Runtime.safeMax := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_uint32_inv {jv : Js.JsValue} (h : Js.checkTy jv .uint32 = true) :
+theorem checkTy_uint32_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .uint32 = true) :
     ∃ i, jv = .num i ∧ 0 ≤ i ∧ i < Js.Runtime.wrap32 := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_string_inv {jv : Js.JsValue} (h : Js.checkTy jv .string = true) :
+theorem checkTy_string_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .string = true) :
     ∃ s, jv = .str s := by
   cases jv <;> simp_all [Js.checkTy]
 
-theorem checkTy_bigint_inv {jv : Js.JsValue} (h : Js.checkTy jv .bigint = true) :
+theorem checkTy_bigint_inv {jv : Js.JsValue} (h : Js.checkTy [] jv .bigint = true) :
     ∃ i, jv = .bigint i := by
   cases jv <;> simp_all [Js.checkTy]
 
 theorem checkTy_array_inv {jv : Js.JsValue} {d : Js.TyDesc}
-    (h : Js.checkTy jv (.array d) = true) : ∃ xs, jv = .arr xs ∧ Js.checkList xs d = true := by
+    (h : Js.checkTy [] jv (.array d) = true) : ∃ xs, jv = .arr xs ∧ Js.checkList [] xs d = true := by
   cases jv <;> simp_all [Js.checkTy]
 
 theorem checkTy_dict_inv {jv : Js.JsValue} {d : Js.TyDesc}
-    (h : Js.checkTy jv (.dict d) = true) :
-    ∃ es, jv = .dict es ∧ Js.checkEntries es d = true := by
+    (h : Js.checkTy [] jv (.dict d) = true) :
+    ∃ es, jv = .dict es ∧ Js.checkEntries [] es d = true := by
   cases jv <;> simp_all [Js.checkTy]
 
 theorem checkTy_option_shape {jv : Js.JsValue} {d : Js.TyDesc}
-    (h : Js.checkTy jv (.option d) = true) : ∃ fields, jv = .obj fields := by
+    (h : Js.checkTy [] jv (.option d) = true) : ∃ fields, jv = .obj fields := by
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
 
 theorem checkTy_result_shape {jv : Js.JsValue} {dok derr : Js.TyDesc}
-    (h : Js.checkTy jv (.result dok derr) = true) : ∃ fields, jv = .obj fields := by
+    (h : Js.checkTy [] jv (.result dok derr) = true) : ∃ fields, jv = .obj fields := by
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
 
 theorem checkTy_ctors_shape {jv : Js.JsValue} {key : String}
     {alts : List (String × List (String × Js.TyDesc))}
-    (h : Js.checkTy jv (.ctors key alts) = true) : ∃ fields, jv = .obj fields := by
+    (h : Js.checkTy [] jv (.ctors key alts) = true) : ∃ fields, jv = .obj fields := by
   rw [Js.checkTy.eq_def] at h
   split at h <;> simp_all
 
 theorem checkTy_option_fields {fields : List (String × Js.JsValue)} {d : Js.TyDesc}
-    (h : Js.checkTy (.obj fields) (.option d) = true) :
+    (h : Js.checkTy [] (.obj fields) (.option d) = true) :
     Js.lookupField fields "tag" = some (.str "none") ∨
       (Js.lookupField fields "tag" = some (.str "some") ∧
-        Js.checkFields fields [("value", d)] = true) := by
+        Js.checkFields [] fields [("value", d)] = true) := by
   rw [Js.checkTy.eq_def] at h
   simp only at h
   split at h
@@ -684,11 +684,11 @@ theorem checkTy_option_fields {fields : List (String × Js.JsValue)} {d : Js.TyD
   · simp at h
 
 theorem checkTy_result_fields {fields : List (String × Js.JsValue)} {dok derr : Js.TyDesc}
-    (h : Js.checkTy (.obj fields) (.result dok derr) = true) :
+    (h : Js.checkTy [] (.obj fields) (.result dok derr) = true) :
     (Js.lookupField fields "tag" = some (.str "ok") ∧
-        Js.checkFields fields [("value", dok)] = true) ∨
+        Js.checkFields [] fields [("value", dok)] = true) ∨
       (Js.lookupField fields "tag" = some (.str "error") ∧
-        Js.checkFields fields [("error", derr)] = true) := by
+        Js.checkFields [] fields [("error", derr)] = true) := by
   rw [Js.checkTy.eq_def] at h
   simp only at h
   split at h
@@ -698,9 +698,9 @@ theorem checkTy_result_fields {fields : List (String × Js.JsValue)} {dok derr :
 
 theorem checkTy_ctors_fields {fields : List (String × Js.JsValue)} {key : String}
     {alts : List (String × List (String × Js.TyDesc))}
-    (h : Js.checkTy (.obj fields) (.ctors key alts) = true) :
+    (h : Js.checkTy [] (.obj fields) (.ctors key alts) = true) :
     ∃ ctor ds, Js.lookupField fields key = some (.str ctor) ∧
-      alts.find? (·.1 == ctor) = some (ctor, ds) ∧ Js.checkFields fields ds = true := by
+      alts.find? (·.1 == ctor) = some (ctor, ds) ∧ Js.checkFields [] fields ds = true := by
   rw [Js.checkTy.eq_def] at h
   simp only at h
   split at h
@@ -714,8 +714,8 @@ theorem checkTy_ctors_fields {fields : List (String × Js.JsValue)} {key : Strin
   · simp at h
 
 theorem checkFields_singleton_inv {jfs : List (String × Js.JsValue)} {name : String}
-    {d : Js.TyDesc} (h : Js.checkFields jfs [(name, d)] = true) :
-    ∃ jv, Js.lookupField jfs name = some jv ∧ Js.checkTy jv d = true := by
+    {d : Js.TyDesc} (h : Js.checkFields [] jfs [(name, d)] = true) :
+    ∃ jv, Js.lookupField jfs name = some jv ∧ Js.checkTy [] jv d = true := by
   obtain ⟨jv, hl, hv, -⟩ := Js.checkFields_cons h
   exact ⟨jv, hl, hv⟩
 
@@ -825,9 +825,9 @@ declared type. The recursion is on the JS value, not on the type: unfolding a `.
 arguments into the field types, which can grow. -/
 theorem checkTy_sound (p : Program) (hn : TypesNamesOk p) :
     ∀ (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc),
-      tyDesc p b ty = .ok d → Js.descOk d = true → Js.checkTy jv d = true →
+      tyDesc p b ty = .ok d → Js.descOk 0 d = true → Js.checkTy [] jv d = true →
       Js.dictKeysDistinct jv = true →
-      ∃ v, Js.normTy jv d = encodeValue v ∧ Value.hasTy p v ty = true
+      ∃ v, Js.normTy [] jv d = encodeValue v ∧ Value.hasTy p v ty = true
   | jv, .bool, b, d, hd, _, hc, _ => by
     rw [tyDesc_bool_inv hd] at hc ⊢
     obtain ⟨x, rfl⟩ := checkTy_bool_inv hc
@@ -974,9 +974,9 @@ termination_by jv => (sizeOf jv, 1, 0)
 theorem checkFields_sound (p : Program) (hn : TypesNamesOk p) :
     ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (b : Nat)
       (ds : List (String × Js.TyDesc)) (key : String),
-      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk ds = true →
-      Js.checkFields jfs ds = true → Js.dictKeysDistinctFields jfs = true →
-      ∃ fs, Js.normFields jfs ds = encodeFields fs ∧
+      tyDescFields p b fdecls = .ok ds → Js.namesOk key ds = true → Js.fieldsOk 0 ds = true →
+      Js.checkFields [] jfs ds = true → Js.dictKeysDistinctFields jfs = true →
+      ∃ fs, Js.normFields [] jfs ds = encodeFields fs ∧
         Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true
   | jfs, [], _, ds, _, hds, _, _, _, _ => by
     rw [tyDescFields.eq_def] at hds
@@ -1012,9 +1012,9 @@ termination_by jfs fdecls => (sizeOf jfs, 0, sizeOf fdecls)
 
 theorem checkList_sound (p : Program) (hn : TypesNamesOk p) :
     ∀ (jxs : List Js.JsValue) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      tyDesc p b elem = .ok d → Js.descOk d = true → Js.checkList jxs d = true →
+      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Js.checkList [] jxs d = true →
       Js.dictKeysDistinctList jxs = true →
-      ∃ vs, Js.normList jxs d = encodeList vs ∧ Value.hasElemTy p vs elem = true
+      ∃ vs, Js.normList [] jxs d = encodeList vs ∧ Value.hasElemTy p vs elem = true
   | [], elem, _, d, _, _, _, _ =>
     ⟨[], by rw [Js.normList_nil, encodeList.eq_def], hasElemTy_nil p elem⟩
   | jx :: jrest, elem, b, d, hd, hdo, hc, hk => by
@@ -1031,9 +1031,9 @@ termination_by jxs => (sizeOf jxs, 1, 0)
 
 theorem checkEntries_sound (p : Program) (hn : TypesNamesOk p) :
     ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      tyDesc p b elem = .ok d → Js.descOk d = true → Js.checkEntries jes d = true →
+      tyDesc p b elem = .ok d → Js.descOk 0 d = true → Js.checkEntries [] jes d = true →
       Js.dictKeysDistinctFields jes = true →
-      ∃ es, Js.normEntries jes d = encodeFields es ∧ Value.hasEntryTys p es elem = true
+      ∃ es, Js.normEntries [] jes d = encodeFields es ∧ Value.hasEntryTys p es elem = true
   | [], elem, _, d, _, _, _, _ =>
     ⟨[], by rw [Js.normEntries_nil, encodeFields.eq_def], hasEntryTys_nil p elem⟩
   | (key, jv) :: jrest, elem, b, d, hd, hdo, hc, hk => by
@@ -1168,13 +1168,13 @@ theorem namesOk_of_nodup {key : String} : ∀ {flds : List (String × Js.TyDesc)
     · simp [hb]
 
 theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty) :
-    ∀ d, Compile.tyDesc p b ty = .ok d → Js.descOk d = true := by
+    ∀ d, Compile.tyDesc p b ty = .ok d → Js.descOk 0 d = true := by
   induction b, ty using Compile.tyDesc.induct (p := p)
     (motive2 := fun b cs => ∀ key : String,
       (∀ c ∈ cs, (∀ f ∈ c.fields, f.name ≠ key) ∧ (c.fields.map (·.name)).Nodup) →
-        ∀ alts, Compile.tyDescAlts p b cs = .ok alts → Js.altsOk key alts = true)
+        ∀ alts, Compile.tyDescAlts p b cs = .ok alts → Js.altsOk 0 key alts = true)
     (motive3 := fun b fs => ∀ flds, Compile.tyDescFields p b fs = .ok flds →
-      flds.map (·.1) = fs.map (·.name) ∧ Js.fieldsOk flds = true)
+      flds.map (·.1) = fs.map (·.name) ∧ Js.fieldsOk 0 flds = true)
     with
   | case1 _ | case2 _ | case3 _ | case4 _ | case5 _ =>
     intro d hd
@@ -1269,20 +1269,20 @@ theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty
         simp [iht dt hdt, hfok]
 
 theorem eval_check (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
-    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy v d = true) :
-    Js.eval m (f + 1) jenv (.check d x) = .ok (Js.normTy v d) := by
+    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy [] v d = true) :
+    Js.eval m (f + 1) jenv (.check d x) = .ok (Js.normTy [] v d) := by
   rw [Js.eval.eq_def]
   simp only [hx]
-  show (if Js.checkTy v d = true then Except.ok (Js.normTy v d) else Except.error "typeError")
-    = .ok (Js.normTy v d)
+  show (if Js.checkTy [] v d = true then Except.ok (Js.normTy [] v d) else Except.error "typeError")
+    = .ok (Js.normTy [] v d)
   rw [if_pos hc]
 
 theorem eval_check_fail (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
-    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy v d = false) :
+    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy [] v d = false) :
     Js.eval m (f + 1) jenv (.check d x) = .error "typeError" := by
   rw [Js.eval.eq_def]
   simp only [hx]
-  show (if Js.checkTy v d = true then Except.ok (Js.normTy v d) else Except.error "typeError")
+  show (if Js.checkTy [] v d = true then Except.ok (Js.normTy [] v d) else Except.error "typeError")
     = .error "typeError"
   rw [if_neg (by simp [hc])]
 
@@ -1313,8 +1313,8 @@ inductive ArgsDecode (p : Program) : List Param → List Js.JsValue → List Val
   | cons {param : Param} {ps : List Param} {ja : Js.JsValue} {jas : List Js.JsValue}
       {a : Value} {as : List Value} {d : Js.TyDesc} :
       tyDesc p (tyDescBudget p param.ty) param.ty = .ok d →
-      Js.checkTy ja d = true →
-      Js.normTy ja d = encodeValue a →
+      Js.checkTy [] ja d = true →
+      Js.normTy [] ja d = encodeValue a →
       ArgsDecode p ps jas as → ArgsDecode p (param :: ps) (ja :: jas) (a :: as)
   | fn {param : Param} {ps : List Param} {ja : Js.JsValue} {jas : List Js.JsValue}
       {a : Value} {as : List Value} :
@@ -1478,7 +1478,7 @@ theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (hnames : Type
           simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
           have hident : Js.eval m (g + 1) jenv (.ident (rawParam i)) = .ok ja :=
             eval_ident m g jenv _ _ hraw.1
-          cases hcheck : Js.checkTy ja desc with
+          cases hcheck : Js.checkTy [] ja desc with
           | false =>
             refine Or.inl ?_
             rw [List.cons_append]
@@ -1487,7 +1487,7 @@ theorem evalStmts_paramChecks_sound (m : Js.Module) (p : Program) (hnames : Type
           | true =>
             have hdo := descOk_tyDesc hnames _ _ desc hdesc
             rw [List.cons_append,
-              evalStmts_const m (g + 2) jenv param.name _ (Js.normTy ja desc) (cs ++ rest)
+              evalStmts_const m (g + 2) jenv param.name _ (Js.normTy [] ja desc) (cs ++ rest)
                 (eval_check m (g + 1) jenv desc _ ja hident hcheck)]
             rcases evalStmts_paramChecks_sound m p hnames g ps jas (i + 1) cs rest _ hrest hfn.2
               hres.2

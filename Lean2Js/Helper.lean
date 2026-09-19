@@ -705,7 +705,7 @@ def isObj : Def :=
 
 def hasFields : Def :=
 
-  { name := "__hasFields", params := ["x", "fields"]
+  { name := "__hasFields", params := ["x", "fields", "e"]
     doc := ["A key the declared type does not name is ignored rather than refused: TypeScript lets a",
             "value reach a call carrying extra properties, and __ck drops them before the body runs."]
     body := .block [
@@ -713,7 +713,7 @@ def hasFields : Def :=
         .ifThen (.not (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)]))
           [.ret (.bool false)],
         .ifThen (.not (.call "__has" [.index (.var "x") (.index (.var "f") (.num 0)),
-          .index (.var "f") (.num 1)])) [.ret (.bool false)]],
+          .index (.var "f") (.num 1), (.var "e")])) [.ret (.bool false)]],
       .ret (.bool true)] }
 
 /-! `__has` dispatches on the head of the descriptor, and every branch below is named so that a proof
@@ -734,26 +734,30 @@ def hasBigint : List Stmt := [.ret (.bin "===" (.typeOf (.var "x")) (.str "bigin
 
 def hasArray : List Stmt := [.ret (and2 [
   .prim "Array.isArray" [(.var "x")],
-  .call "__all" [(.var "x"), .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])]])]
+  .call "__all" [(.var "x"),
+    .lam ["y"] (.call "__has" [.var "y", .index (.var "t") (.num 1), (.var "e")])]])]
 
 def hasDict : List Stmt := [
   .ifThen (.not (.isMap (.var "x"))) [.ret (.bool false)],
   .ifThen (.not (.call "__all" [.call "__dkeys" [(.var "x")],
     .lam ["key"] (.bin "===" (.typeOf (.var "key")) (.str "string"))])) [.ret (.bool false)],
   .ret (.call "__all" [.call "__dvalues" [(.var "x")],
-    .lam ["e"] (.call "__has" [.var "e", .index (.var "t") (.num 1)])])]
+    .lam ["y"] (.call "__has" [.var "y", .index (.var "t") (.num 1), (.var "e")])])]
 
 def hasOption : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
-    [.ret (.call "__hasFields" [(.var "x"), .arrayLit []])],
+    [.ret (.call "__hasFields" [(.var "x"), .arrayLit [], (.var "e")])],
   .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "some"),
-    .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]]])]
+    .call "__hasFields" [(.var "x"),
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]], (.var "e")]])]
 
 def hasResult : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
-    [.ret (.call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
+    [.ret (.call "__hasFields" [(.var "x"),
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]], (.var "e")])],
   .ret (and2 [.bin "===" (.field (.var "x") "tag") (.str "error"),
-    .call "__hasFields" [(.var "x"), .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]]])]
+    .call "__hasFields" [(.var "x"),
+      .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]], (.var "e")]])]
 
 /-! The key a declared type tells its constructors apart by is read off the descriptor rather than
 spelled in: an author chooses it per type, and the helpers are one copy for the whole package. The
@@ -764,7 +768,38 @@ def hasCtors : List Stmt := [
     .lam ["c"] (.bin "===" (.index (.var "c") (.num 0))
       (.index (.var "x") (.index (.var "t") (.num 1))))]),
   .ret (and2 [.bin "===" (.field (.var "alt") "tag") (.str "some"),
-    .call "__hasFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1)]])]
+    .call "__hasFields" [(.var "x"), .index (.field (.var "alt") "value") (.num 1), (.var "e")]])]
+
+/-! A declared type that names itself is expanded once and bound: `mu` carries the same key and
+alternatives a `ctors` does, and binds them; a `ref` names the binder that many levels out. Both hand the
+walk the `ctors` node the binder holds, under the environment that node was bound in, so everything below
+them is the walk that was already there. -/
+
+def pushed : Expr :=
+  .call "__aconcat" [.arrayLit [.arrayLit [.index (.var "t") (.num 1),
+    .index (.var "t") (.num 2)]], (.var "e")]
+
+/-- The binder the `ref` names, read out of the environment. -/
+def bound : Stmt := .const "b" (.index (.var "e") (.index (.var "t") (.num 1)))
+
+def asBoundCtors : Expr :=
+  .arrayLit [.str "ctors", .index (.var "b") (.num 0), .index (.var "b") (.num 1)]
+
+/-- The environment from the binder named outwards. Dropping what is nearer than it is what makes the
+answer the same as if the type had been expanded here rather than bound above. -/
+def outer : Expr :=
+  .method (.var "e") "slice" [.index (.var "t") (.num 1), lengthOf (.var "e")]
+
+def hasMu : List Stmt :=
+  [.ret (.call "__has" [(.var "x"),
+    .arrayLit [.str "ctors", .index (.var "t") (.num 1), .index (.var "t") (.num 2)], pushed])]
+
+/-- An index no binder answers is refused rather than read: the descriptor the compiler writes never
+holds one, and reading past the end would throw where the model says false. -/
+def hasRef : List Stmt := [
+  .ifThen (.bin ">=" (.index (.var "t") (.num 1)) (lengthOf (.var "e"))) [.ret (.bool false)],
+  bound,
+  .ret (.call "__has" [(.var "x"), asBoundCtors, outer])]
 
 /-- The tail after the object guard, named for the same reason the branches are: a proof that takes an
 earlier branch never expands it. -/
@@ -772,10 +807,17 @@ def hasObjKinds : List Stmt :=
   .ifThen (.bin "===" (.var "k") (.str "option")) hasOption ::
   .ifThen (.bin "===" (.var "k") (.str "result")) hasResult :: hasCtors
 
+/-- The two that hand the walk a `ctors` node and carry on. They come first because they answer for a
+value of any shape: what a `mu` or a `ref` accepts is whatever the node it stands for accepts, and that
+includes refusing a value that is not an object at all. -/
+def hasBinders : List Stmt → List Stmt := fun rest =>
+  .ifThen (.bin "===" (.var "k") (.str "mu")) hasMu ::
+  .ifThen (.bin "===" (.var "k") (.str "ref")) hasRef :: rest
+
 def has : Def :=
 
-  { name := "__has", params := ["x", "t"], body := .block (
-      .const "k" (.index (.var "t") (.num 0)) ::
+  { name := "__has", params := ["x", "t", "e"], body := .block (
+      .const "k" (.index (.var "t") (.num 0)) :: hasBinders (
       .ifThen (.bin "===" (.var "k") (.str "bool")) hasBool ::
       .ifThen (.bin "===" (.var "k") (.str "int53")) hasInt53 ::
       .ifThen (.bin "===" (.var "k") (.str "uint32")) hasUint32 ::
@@ -784,7 +826,7 @@ def has : Def :=
       .ifThen (.bin "===" (.var "k") (.str "array")) hasArray ::
       .ifThen (.bin "===" (.var "k") (.str "dict")) hasDict ::
       .ifThen (.not (.call "__isObj" [(.var "x")])) [.ret (.bool false)] ::
-      hasObjKinds) }
+      hasObjKinds)) }
 
 /-! `__norm` rebuilds a value the entry check accepted in the shape `encodeValue` writes: the key the
 constructor's name is carried under first, then the constructor's fields in the order the descriptor
@@ -793,44 +835,45 @@ are. -/
 
 def normFields : Def :=
 
-  { name := "__normFields", params := ["x", "key", "fields"]
+  { name := "__normFields", params := ["x", "key", "fields", "e"]
     body := .block [
       .const "out" (.arrayLit [.arrayLit [.var "key", .index (.var "x") (.var "key")]]),
       .forOf "f" (.var "fields") [
         .ifThen (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)]) [
           .push "out" (.arrayLit [.index (.var "f") (.num 0),
             .call "__norm" [.index (.var "x") (.index (.var "f") (.num 0)),
-              .index (.var "f") (.num 1)]])]],
+              .index (.var "f") (.num 1), (.var "e")]])]],
       .ret (.prim "Object.fromEntries" [(.var "out")]) ] }
 
 def normArray : List Stmt := [
   .const "out" (.arrayLit []),
-  .forOf "e" (.var "x") [
-    .push "out" (.call "__norm" [.var "e", .index (.var "t") (.num 1)])],
+  .forOf "y" (.var "x") [
+    .push "out" (.call "__norm" [.var "y", .index (.var "t") (.num 1), (.var "e")])],
   .ret (.var "out")]
 
 def normDict : List Stmt := [
   .const "out" (.new_ "Map" []),
   .forOf "key" (.call "__dkeys" [(.var "x")]) [
     .setKey "out" (.var "key")
-      (.call "__norm" [.method (.var "x") "get" [.var "key"], .index (.var "t") (.num 1)])],
+      (.call "__norm" [.method (.var "x") "get" [.var "key"], .index (.var "t") (.num 1),
+        (.var "e")])],
   .ret (.var "out")]
 
 def normOption : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
-    [.ret (.call "__normFields" [(.var "x"), .str "tag", .arrayLit []])],
+    [.ret (.call "__normFields" [(.var "x"), .str "tag", .arrayLit [], (.var "e")])],
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "some"))
     [.ret (.call "__normFields" [(.var "x"), .str "tag",
-      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]], (.var "e")])],
   .ret (.var "x")]
 
 def normResult : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
     [.ret (.call "__normFields" [(.var "x"), .str "tag",
-      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]]])],
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]], (.var "e")])],
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "error"))
     [.ret (.call "__normFields" [(.var "x"), .str "tag",
-      .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]]])],
+      .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]], (.var "e")])],
   .ret (.var "x")]
 
 def normCtors : List Stmt := [
@@ -839,28 +882,44 @@ def normCtors : List Stmt := [
       (.index (.var "x") (.index (.var "t") (.num 1))))]),
   .ifThen (.bin "===" (.field (.var "alt") "tag") (.str "some"))
     [.ret (.call "__normFields" [(.var "x"), .index (.var "t") (.num 1),
-      .index (.field (.var "alt") "value") (.num 1)])],
+      .index (.field (.var "alt") "value") (.num 1), (.var "e")])],
   .ret (.var "x")]
+
+def normMu : List Stmt :=
+  [.ret (.call "__norm" [(.var "x"),
+    .arrayLit [.str "ctors", .index (.var "t") (.num 1), .index (.var "t") (.num 2)], pushed])]
+
+def normRef : List Stmt := [
+  .ifThen (.bin ">=" (.index (.var "t") (.num 1)) (lengthOf (.var "e"))) [.ret (.var "x")],
+  bound,
+  .ret (.call "__norm" [(.var "x"), asBoundCtors, outer])]
+
+def normBinders : List Stmt → List Stmt := fun rest =>
+  .ifThen (.bin "===" (.var "k") (.str "mu")) normMu ::
+  .ifThen (.bin "===" (.var "k") (.str "ref")) normRef :: rest
 
 def norm : Def :=
 
-  { name := "__norm", params := ["x", "t"], body := .block (
-      .const "k" (.index (.var "t") (.num 0)) ::
+  { name := "__norm", params := ["x", "t", "e"], body := .block (
+      .const "k" (.index (.var "t") (.num 0)) :: normBinders (
       .ifThen (.bin "===" (.var "k") (.str "array")) normArray ::
       .ifThen (.bin "===" (.var "k") (.str "dict")) normDict ::
       .ifThen (.bin "===" (.var "k") (.str "option")) normOption ::
       .ifThen (.bin "===" (.var "k") (.str "result")) normResult ::
       .ifThen (.bin "===" (.var "k") (.str "ctors")) normCtors ::
-      [.ret (.var "x")]) }
+      [.ret (.var "x")])) }
 
 def ck : Def :=
 
   { name := "__ck", params := ["x", "t"]
     doc := ["Numbers are handed back as they came, unlike __i53: a -0 argument is a safe integer, and",
             "every answer built from it passes through __i53 or a comparison that already treats -0",
-            "and 0 alike, so normalising one here would change nothing a caller can observe."]
-    body := .expr (.cond (.call "__has" [(.var "x"), (.var "t")])
-      (.call "__norm" [(.var "x"), (.var "t")]) (.call "__fail" [.str "typeError"])) }
+            "and 0 alike, so normalising one here would change nothing a caller can observe.",
+            "The empty environment is where a walk starts: a type that names itself binds where it is",
+            "expanded, so nothing is in scope before the descriptor is entered."]
+    body := .expr (.cond (.call "__has" [(.var "x"), (.var "t"), .arrayLit []])
+      (.call "__norm" [(.var "x"), (.var "t"), .arrayLit []])
+      (.call "__fail" [.str "typeError"])) }
 
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,

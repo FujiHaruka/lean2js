@@ -425,6 +425,13 @@ theorem sizeOf_lookupField (fields : List (String × JsValue)) (k : String) {v :
       simp only [List.cons.sizeOf_spec]
       omega
 
+/-- What a step that does not descend into the value shrinks instead. Entering a `mu` lands on the
+`ctors` node it binds, and resolving a `ref` lands on the one its binder holds, so both reach rank one
+and every step after that is measured by the value. -/
+@[reducible] def descRank : TyDesc → Nat
+  | .mu _ _ | .ref _ => 2
+  | _ => 1
+
 mutual
 
 /-- Whether a value matches the type its declaration promised. This mirrors `Value.hasTy` on every
@@ -437,52 +444,58 @@ coincide.
 A constructor's fields are read by name, so the order they arrive in does not matter and a key the
 descriptor does not name is ignored. `normTy` below is what puts such a value back into the shape
 `encodeValue` writes. -/
-def checkTy : JsValue → TyDesc → Bool
+def checkTy (env : TyEnv) : JsValue → TyDesc → Bool
   | .bool _, .bool => true
   | .num i, .int53 => safeMin ≤ i && i ≤ safeMax
   | .num i, .uint32 => 0 ≤ i && i < wrap32
   | .str _, .string => true
   | .bigint _, .bigint => true
-  | .arr xs, .array t => checkList xs t
-  | .dict entries, .dict t => checkEntries entries t
+  | .arr xs, .array t => checkList env xs t
+  | .dict entries, .dict t => checkEntries env entries t
   | .obj fields, .option t =>
     match lookupField fields "tag" with
     | some (.str "none") => true
-    | some (.str "some") => checkFields fields [("value", t)]
+    | some (.str "some") => checkFields env fields [("value", t)]
     | _ => false
   | .obj fields, .result ok err =>
     match lookupField fields "tag" with
-    | some (.str "ok") => checkFields fields [("value", ok)]
-    | some (.str "error") => checkFields fields [("error", err)]
+    | some (.str "ok") => checkFields env fields [("value", ok)]
+    | some (.str "error") => checkFields env fields [("error", err)]
     | _ => false
   | .obj fields, .ctors key alts =>
     match lookupField fields key with
     | some (.str ctor) =>
       match alts.find? (·.1 == ctor) with
-      | some alt => checkFields fields alt.2
+      | some alt => checkFields env fields alt.2
       | none => false
     | _ => false
+  | v, .mu key alts => checkTy ((key, alts) :: env) v (.ctors key alts)
+  | v, .ref up =>
+    match env[up]? with
+    | some b => checkTy (env.drop up) v (.ctors b.1 b.2)
+    | none => false
   | _, _ => false
-termination_by v => (sizeOf v, 1, 0)
+termination_by v d => (sizeOf v, descRank d, 0)
 
-def checkFields (fields : List (String × JsValue)) : List (String × TyDesc) → Bool
+def checkFields (env : TyEnv) (fields : List (String × JsValue)) :
+    List (String × TyDesc) → Bool
   | [] => true
   | (n, t) :: rest =>
     match h : lookupField fields n with
     | some v =>
       have := sizeOf_lookupField fields n h
-      checkTy v t && checkFields fields rest
+      checkTy env v t && checkFields env fields rest
     | none => false
 termination_by fs => (sizeOf (JsValue.obj fields), 0, sizeOf fs)
 
-def checkList : List JsValue → TyDesc → Bool
+def checkList (env : TyEnv) : List JsValue → TyDesc → Bool
   | [], _ => true
-  | x :: rest, t => checkTy x t && checkList rest t
+  | x :: rest, t => checkTy env x t && checkList env rest t
 termination_by xs => (sizeOf xs, 1, 0)
 
-def checkEntries : List (String × JsValue) → TyDesc → Bool
+def checkEntries (env : TyEnv) : List (String × JsValue) → TyDesc → Bool
   | [], _ => true
-  | (_, v) :: rest, t => checkTy v t && checkEntries rest t
+  | (_, v) :: rest, t => checkTy env v t && checkEntries env rest t
 termination_by entries => (sizeOf entries, 1, 0)
 
 end
@@ -500,24 +513,56 @@ def namesOk (key : String) : List (String × TyDesc) → Bool
 
 mutual
 
-def descOk : TyDesc → Bool
+def descOk (depth : Nat) : TyDesc → Bool
   | .bool | .int53 | .uint32 | .string | .bigint => true
-  | .option t | .array t | .dict t => descOk t
-  | .result ok err => descOk ok && descOk err
-  | .ctors key alts => altsOk key alts
+  | .option t | .array t | .dict t => descOk depth t
+  | .result ok err => descOk depth ok && descOk depth err
+  | .ctors key alts => altsOk depth key alts
+  | .mu key alts => altsOk (depth + 1) key alts
+  | .ref up => decide (up < depth)
 termination_by d => sizeOf d
 
-def fieldsOk : List (String × TyDesc) → Bool
+def fieldsOk (depth : Nat) : List (String × TyDesc) → Bool
   | [] => true
-  | (_, d) :: rest => descOk d && fieldsOk rest
+  | (_, d) :: rest => descOk depth d && fieldsOk depth rest
 termination_by fs => sizeOf fs
 
-def altsOk (key : String) : List (String × List (String × TyDesc)) → Bool
+def altsOk (depth : Nat) (key : String) : List (String × List (String × TyDesc)) → Bool
   | [] => true
-  | (_, fields) :: rest => namesOk key fields && fieldsOk fields && altsOk key rest
+  | (_, fields) :: rest =>
+    namesOk key fields && fieldsOk depth fields && altsOk depth key rest
 termination_by alts => sizeOf alts
 
 end
+
+/-- What an environment a `ref` may be resolved in has to be: each binder's alternatives well formed at
+the depth that binder sits at, which is its own plus everything outside it. -/
+def envOk : TyEnv → Bool
+  | [] => true
+  | (key, alts) :: rest => altsOk (rest.length + 1) key alts && envOk rest
+
+/-- The environment from a binder outwards is an environment: a `ref` resolved in it is resolved in one
+whose entries are still well formed at the depth they sit at. -/
+theorem envOk_drop : ∀ {env : TyEnv} (k : Nat), envOk env = true → envOk (env.drop k) = true
+  | _, 0, h => h
+  | [], _ + 1, h => h
+  | (_, _) :: rest, k + 1, h => by
+    rw [envOk, Bool.and_eq_true] at h
+    exact envOk_drop k h.2
+
+/-- What a binder holds is well formed at the depth of the environment it opens. -/
+theorem envOk_getElem : ∀ {env : TyEnv} {k : Nat} {b : String × TyAlts}, envOk env = true →
+    env[k]? = some b → altsOk (env.drop k).length b.1 b.2 = true
+  | [], k, b, _, hb => by simp at hb
+  | (key, alts) :: rest, 0, b, h, hb => by
+    rw [envOk, Bool.and_eq_true] at h
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hb
+    subst hb
+    simpa using h.1
+  | (_, _) :: rest, k + 1, b, h, hb => by
+    rw [envOk, Bool.and_eq_true] at h
+    simp only [List.getElem?_cons_succ] at hb
+    simpa using envOk_getElem h.2 hb
 
 /-! ### The canonical shape
 
@@ -528,48 +573,54 @@ not name, so what reaches the body is the value `encodeValue` writes. -/
 
 mutual
 
-def normTy : JsValue → TyDesc → JsValue
-  | .arr xs, .array t => .arr (normList xs t)
-  | .dict entries, .dict t => .dict (normEntries entries t)
+def normTy (env : TyEnv) : JsValue → TyDesc → JsValue
+  | .arr xs, .array t => .arr (normList env xs t)
+  | .dict entries, .dict t => .dict (normEntries env entries t)
   | .obj fields, .option t =>
     match lookupField fields "tag" with
     | some (.str "none") => .obj [("tag", .str "none")]
-    | some (.str "some") => .obj (("tag", .str "some") :: normFields fields [("value", t)])
+    | some (.str "some") => .obj (("tag", .str "some") :: normFields env fields [("value", t)])
     | _ => .obj fields
   | .obj fields, .result ok err =>
     match lookupField fields "tag" with
-    | some (.str "ok") => .obj (("tag", .str "ok") :: normFields fields [("value", ok)])
-    | some (.str "error") => .obj (("tag", .str "error") :: normFields fields [("error", err)])
+    | some (.str "ok") => .obj (("tag", .str "ok") :: normFields env fields [("value", ok)])
+    | some (.str "error") =>
+      .obj (("tag", .str "error") :: normFields env fields [("error", err)])
     | _ => .obj fields
   | .obj fields, .ctors key alts =>
     match lookupField fields key with
     | some (.str ctor) =>
       match alts.find? (·.1 == ctor) with
-      | some alt => .obj ((key, .str ctor) :: normFields fields alt.2)
+      | some alt => .obj ((key, .str ctor) :: normFields env fields alt.2)
       | none => .obj fields
     | _ => .obj fields
+  | v, .mu key alts => normTy ((key, alts) :: env) v (.ctors key alts)
+  | v, .ref up =>
+    match env[up]? with
+    | some b => normTy (env.drop up) v (.ctors b.1 b.2)
+    | none => v
   | v, _ => v
-termination_by v => (sizeOf v, 1, 0)
+termination_by v d => (sizeOf v, descRank d, 0)
 
-def normList : List JsValue → TyDesc → List JsValue
+def normList (env : TyEnv) : List JsValue → TyDesc → List JsValue
   | [], _ => []
-  | x :: rest, t => normTy x t :: normList rest t
+  | x :: rest, t => normTy env x t :: normList env rest t
 termination_by xs => (sizeOf xs, 1, 0)
 
-def normEntries : List (String × JsValue) → TyDesc → List (String × JsValue)
+def normEntries (env : TyEnv) : List (String × JsValue) → TyDesc → List (String × JsValue)
   | [], _ => []
-  | (k, v) :: rest, t => (k, normTy v t) :: normEntries rest t
+  | (k, v) :: rest, t => (k, normTy env v t) :: normEntries env rest t
 termination_by es => (sizeOf es, 1, 0)
 
-def normFields (fields : List (String × JsValue)) :
+def normFields (env : TyEnv) (fields : List (String × JsValue)) :
     List (String × TyDesc) → List (String × JsValue)
   | [] => []
   | (n, t) :: rest =>
     match h : lookupField fields n with
     | some v =>
       have := sizeOf_lookupField fields n h
-      (n, normTy v t) :: normFields fields rest
-    | none => normFields fields rest
+      (n, normTy env v t) :: normFields env fields rest
+    | none => normFields env fields rest
 termination_by fs => (sizeOf (JsValue.obj fields), 0, sizeOf fs)
 
 end
@@ -722,7 +773,7 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
       .ok (.dict ((entries.map (·.1)).zip vs))
     | .check d x => do
       let v ← eval m f env x
-      if checkTy v d then .ok (normTy v d) else .error "typeError"
+      if checkTy [] v d then .ok (normTy [] v d) else .error "typeError"
     | .mapJs arr binder body => do
       match ← eval m f env arr with
       | .arr xs => do .ok (.arr (← evalMapJs m f env binder body xs))

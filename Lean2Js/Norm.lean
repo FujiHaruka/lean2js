@@ -12,6 +12,8 @@ check and its normalisation walk on.
 
 namespace Lean2Js.Js
 
+variable {env : TyEnv} {depth : Nat}
+
 theorem lookupField_skip (pre suf : List (String × JsValue)) (k : String)
     (h : ∀ e ∈ pre, e.1 ≠ k) : lookupField (pre ++ suf) k = lookupField suf k := by
   induction pre with
@@ -32,23 +34,23 @@ theorem lookupField_cons_ne {e : String × JsValue} {rest : List (String × JsVa
 /-! `normTy` and its companions are well-founded recursions, so each shape is unfolded once here rather
 than by `simp` at every use. -/
 
-theorem normList_nil (t : TyDesc) : normList [] t = [] := by rw [normList.eq_def]
+theorem normList_nil (t : TyDesc) : normList env [] t = [] := by rw [normList.eq_def]
 
 theorem normList_cons (x : JsValue) (xs : List JsValue) (t : TyDesc) :
-    normList (x :: xs) t = normTy x t :: normList xs t := by rw [normList.eq_def]
+    normList env (x :: xs) t = normTy env x t :: normList env xs t := by rw [normList.eq_def]
 
-theorem normEntries_nil (t : TyDesc) : normEntries [] t = [] := by rw [normEntries.eq_def]
+theorem normEntries_nil (t : TyDesc) : normEntries env [] t = [] := by rw [normEntries.eq_def]
 
 theorem normEntries_cons (k : String) (v : JsValue) (es : List (String × JsValue)) (t : TyDesc) :
-    normEntries ((k, v) :: es) t = (k, normTy v t) :: normEntries es t := by
+    normEntries env ((k, v) :: es) t = (k, normTy env v t) :: normEntries env es t := by
   rw [normEntries.eq_def]
 
-theorem normFields_nil (fields : List (String × JsValue)) : normFields fields [] = [] := by
+theorem normFields_nil (fields : List (String × JsValue)) : normFields env fields [] = [] := by
   rw [normFields.eq_def]
 
 theorem normFields_cons {fields : List (String × JsValue)} {n : String} {t : TyDesc}
     {fs : List (String × TyDesc)} {v : JsValue} (h : lookupField fields n = some v) :
-    normFields fields ((n, t) :: fs) = (n, normTy v t) :: normFields fields fs := by
+    normFields env fields ((n, t) :: fs) = (n, normTy env v t) :: normFields env fields fs := by
   rw [normFields.eq_def]
   dsimp only
   split
@@ -57,71 +59,71 @@ theorem normFields_cons {fields : List (String × JsValue)} {n : String} {t : Ty
 
 theorem normFields_none {fields : List (String × JsValue)} {n : String} {t : TyDesc}
     {fs : List (String × TyDesc)} (h : lookupField fields n = none) :
-    normFields fields ((n, t) :: fs) = normFields fields fs := by
+    normFields env fields ((n, t) :: fs) = normFields env fields fs := by
   rw [normFields.eq_def]
   dsimp only
   split
   · next w hw => rw [h] at hw; exact absurd hw (by simp)
   · rfl
 
-theorem normTy_bool (b : Bool) : normTy (.bool b) .bool = .bool b := by rw [normTy.eq_def]
+theorem normTy_bool (b : Bool) : normTy env (.bool b) .bool = .bool b := by rw [normTy.eq_def]
 
-theorem normTy_int53 (i : Int) : normTy (.num i) .int53 = .num i := by rw [normTy.eq_def]
+theorem normTy_int53 (i : Int) : normTy env (.num i) .int53 = .num i := by rw [normTy.eq_def]
 
-theorem normTy_uint32 (i : Int) : normTy (.num i) .uint32 = .num i := by rw [normTy.eq_def]
+theorem normTy_uint32 (i : Int) : normTy env (.num i) .uint32 = .num i := by rw [normTy.eq_def]
 
-theorem normTy_string (s : String) : normTy (.str s) .string = .str s := by rw [normTy.eq_def]
+theorem normTy_string (s : String) : normTy env (.str s) .string = .str s := by rw [normTy.eq_def]
 
-theorem normTy_bigint (i : Int) : normTy (.bigint i) .bigint = .bigint i := by rw [normTy.eq_def]
+theorem normTy_bigint (i : Int) : normTy env (.bigint i) .bigint = .bigint i := by rw [normTy.eq_def]
 
 theorem normTy_array (xs : List JsValue) (t : TyDesc) :
-    normTy (.arr xs) (.array t) = .arr (normList xs t) := by rw [normTy.eq_def]
+    normTy env (.arr xs) (.array t) = .arr (normList env xs t) := by rw [normTy.eq_def]
 
 theorem normTy_dict (es : List (String × JsValue)) (t : TyDesc) :
-    normTy (.dict es) (.dict t) = .dict (normEntries es t) := by rw [normTy.eq_def]
+    normTy env (.dict es) (.dict t) = .dict (normEntries env es t) := by rw [normTy.eq_def]
 
 theorem normTy_none {fields : List (String × JsValue)} {t : TyDesc}
     (h : lookupField fields "tag" = some (.str "none")) :
-    normTy (.obj fields) (.option t) = .obj [("tag", .str "none")] := by
+    normTy env (.obj fields) (.option t) = .obj [("tag", .str "none")] := by
   rw [normTy.eq_def]; simp [h]
 
 theorem normTy_some {fields : List (String × JsValue)} {t : TyDesc}
     (h : lookupField fields "tag" = some (.str "some")) :
-    normTy (.obj fields) (.option t)
-      = .obj (("tag", .str "some") :: normFields fields [("value", t)]) := by
+    normTy env (.obj fields) (.option t)
+      = .obj (("tag", .str "some") :: normFields env fields [("value", t)]) := by
   rw [normTy.eq_def]; simp [h]
 
 theorem normTy_ok {fields : List (String × JsValue)} {ok err : TyDesc}
     (h : lookupField fields "tag" = some (.str "ok")) :
-    normTy (.obj fields) (.result ok err)
-      = .obj (("tag", .str "ok") :: normFields fields [("value", ok)]) := by
+    normTy env (.obj fields) (.result ok err)
+      = .obj (("tag", .str "ok") :: normFields env fields [("value", ok)]) := by
   rw [normTy.eq_def]; simp [h]
 
 theorem normTy_error {fields : List (String × JsValue)} {ok err : TyDesc}
     (h : lookupField fields "tag" = some (.str "error")) :
-    normTy (.obj fields) (.result ok err)
-      = .obj (("tag", .str "error") :: normFields fields [("error", err)]) := by
+    normTy env (.obj fields) (.result ok err)
+      = .obj (("tag", .str "error") :: normFields env fields [("error", err)]) := by
   rw [normTy.eq_def]; simp [h]
 
 theorem normTy_ctors {fields : List (String × JsValue)} {key ctor : String}
     {alts : List (String × List (String × TyDesc))} {alt : String × List (String × TyDesc)}
     (htag : lookupField fields key = some (.str ctor))
     (hf : alts.find? (·.1 == ctor) = some alt) :
-    normTy (.obj fields) (.ctors key alts)
-      = .obj ((key, .str ctor) :: normFields fields alt.2) := by
+    normTy env (.obj fields) (.ctors key alts)
+      = .obj ((key, .str ctor) :: normFields env fields alt.2) := by
   rw [normTy.eq_def]; simp [htag, hf]
 
 theorem normEntries_keys : ∀ (es : List (String × JsValue)) (t : TyDesc),
-    (normEntries es t).map (·.1) = es.map (·.1)
+    (normEntries env es t).map (·.1) = es.map (·.1)
   | [], t => by rw [normEntries_nil]
   | (k, v) :: rest, t => by rw [normEntries_cons, List.map_cons, List.map_cons, normEntries_keys]
 
-theorem checkFields_nil (fields : List (String × JsValue)) : checkFields fields [] = true := by
+theorem checkFields_nil (fields : List (String × JsValue)) : checkFields env fields [] = true := by
   rw [checkFields.eq_def]
 
 theorem checkFields_found {fields : List (String × JsValue)} {n : String} {t : TyDesc}
     {ts : List (String × TyDesc)} {v : JsValue} (h : lookupField fields n = some v) :
-    checkFields fields ((n, t) :: ts) = (checkTy v t && checkFields fields ts) := by
+    checkFields env fields ((n, t) :: ts) = (checkTy env v t && checkFields env fields ts) := by
   rw [checkFields.eq_def]
   dsimp only
   split
@@ -130,7 +132,7 @@ theorem checkFields_found {fields : List (String × JsValue)} {n : String} {t : 
 
 theorem checkFields_missing {fields : List (String × JsValue)} {n : String} {t : TyDesc}
     {ts : List (String × TyDesc)} (h : lookupField fields n = none) :
-    checkFields fields ((n, t) :: ts) = false := by
+    checkFields env fields ((n, t) :: ts) = false := by
   rw [checkFields.eq_def]
   dsimp only
   split
@@ -160,8 +162,8 @@ theorem lookupField_cases (fields : List (String × JsValue)) (n : String) :
   | some v => exact Or.inl ⟨v, rfl⟩
 
 theorem checkFields_cons {fields : List (String × JsValue)} {n : String} {t : TyDesc}
-    {ts : List (String × TyDesc)} (h : checkFields fields ((n, t) :: ts) = true) :
-    ∃ v, lookupField fields n = some v ∧ checkTy v t = true ∧ checkFields fields ts = true := by
+    {ts : List (String × TyDesc)} (h : checkFields env fields ((n, t) :: ts) = true) :
+    ∃ v, lookupField fields n = some v ∧ checkTy env v t = true ∧ checkFields env fields ts = true := by
   rcases lookupField_cases fields n with ⟨v, hv⟩ | hv
   · rw [checkFields_found hv, Bool.and_eq_true] at h
     exact ⟨v, hv, h.1, h.2⟩
@@ -172,7 +174,7 @@ theorem checkFields_cons {fields : List (String × JsValue)} {n : String} {t : T
 way answer the check the same way. -/
 theorem checkFields_congr : ∀ (ds : List (String × TyDesc)) (jfs jfs' : List (String × JsValue)),
     (∀ n ∈ ds.map (·.1), lookupField jfs n = lookupField jfs' n) →
-    checkFields jfs ds = checkFields jfs' ds
+    checkFields env jfs ds = checkFields env jfs' ds
   | [], jfs, jfs', _ => by rw [checkFields_nil jfs, checkFields_nil jfs']
   | (n, t) :: rest, jfs, jfs', h => by
     have hn := h n (by simp)
@@ -185,7 +187,7 @@ theorem checkFields_congr : ∀ (ds : List (String × TyDesc)) (jfs jfs' : List 
 way normalise the same way. -/
 theorem normFields_congr : ∀ (ds : List (String × TyDesc)) (jfs jfs' : List (String × JsValue)),
     (∀ n ∈ ds.map (·.1), lookupField jfs n = lookupField jfs' n) →
-    normFields jfs ds = normFields jfs' ds
+    normFields env jfs ds = normFields env jfs' ds
   | [], jfs, jfs', _ => by rw [normFields_nil jfs, normFields_nil jfs']
   | (n, t) :: rest, jfs, jfs', h => by
     have hn := h n (by simp)
@@ -196,14 +198,14 @@ theorem normFields_congr : ∀ (ds : List (String × TyDesc)) (jfs jfs' : List (
 
 theorem normFields_skip (e : String × JsValue) (rest : List (String × JsValue))
     (ds : List (String × TyDesc)) (h : ∀ n ∈ ds.map (·.1), n ≠ e.1) :
-    normFields (e :: rest) ds = normFields rest ds :=
+    normFields env (e :: rest) ds = normFields env rest ds :=
   normFields_congr ds _ _ (fun n hn => by
     have : (e.1 == n) = false := by simp [Ne.symm (h n hn)]
     simp only [lookupField, List.find?, this])
 
 theorem checkFields_skip (e : String × JsValue) (rest : List (String × JsValue))
     (ds : List (String × TyDesc)) (h : ∀ n ∈ ds.map (·.1), n ≠ e.1) :
-    checkFields (e :: rest) ds = checkFields rest ds :=
+    checkFields env (e :: rest) ds = checkFields env rest ds :=
   checkFields_congr ds _ _ (fun n hn => by
     have : (e.1 == n) = false := by simp [Ne.symm (h n hn)]
     simp only [lookupField, List.find?, this])
@@ -235,8 +237,8 @@ theorem namesOk_not_key {key : String} : ∀ {fs : List (String × TyDesc)}, nam
 
 theorem altsOk_find {alts : List (String × List (String × TyDesc))} {key ctor : String}
     {alt : String × List (String × TyDesc)}
-    (h : altsOk key alts = true) (hf : alts.find? (·.1 == ctor) = some alt) :
-    namesOk key alt.2 = true ∧ fieldsOk alt.2 = true := by
+    (h : altsOk depth key alts = true) (hf : alts.find? (·.1 == ctor) = some alt) :
+    namesOk key alt.2 = true ∧ fieldsOk depth alt.2 = true := by
   induction alts with
   | nil => simp [List.find?] at hf
   | cons a rest ih =>

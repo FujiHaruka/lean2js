@@ -30,7 +30,28 @@ inductive TyDesc where
   /-- `key` is what the value carries its constructor's name under; the built-in `option` and `result`
   above have no room for one because their shapes are the subset's own, and those are `tag`. -/
   | ctors (key : String) (alts : List (String × List (String × TyDesc)))
+  /-- A declared type that names itself, expanded once and bound. Its own shape is a `ctors`, and the
+  occurrences of the type inside it are `ref`s back to here.
+
+  The binder is its own form rather than every `ctors` binding, so that a type that does not name itself
+  is checked under no environment at all, exactly as it was before recursion existed. -/
+  | mu (key : String) (alts : List (String × List (String × TyDesc)))
+  /-- The `up`-th enclosing `mu`, nearest first. A type with no finite expansion is still a finite
+  descriptor, written where it is used rather than looked up in a table. -/
+  | ref (up : Nat)
   deriving Inhabited, BEq
+
+/-- A declared type's constructors as the descriptor carries them: the constructor's name, and its
+fields in declared order. -/
+abbrev TyAlts := List (String × List (String × TyDesc))
+
+/-- What the `mu` nodes a walk is inside have bound, nearest first: the key a constructor's name is
+carried under, and the alternatives.
+
+A `ref` continues at an *entry* of this rather than at a descriptor read out of it, which is what keeps
+the walk measured by the value: the entry is fed back as a `ctors` node, which descends into fields, so
+no step can land on another `ref`. -/
+abbrev TyEnv := List (String × TyAlts)
 
 mutual
 
@@ -48,6 +69,9 @@ def TyDesc.render : TyDesc → String
   | .dict v => "[\"dict\", " ++ v.render ++ "]"
   | .ctors key alts =>
     "[\"ctors\", \"" ++ escapeString key ++ "\", [" ++ TyDesc.renderAlts alts ++ "]]"
+  | .mu key alts =>
+    "[\"mu\", \"" ++ escapeString key ++ "\", [" ++ TyDesc.renderAlts alts ++ "]]"
+  | .ref up => "[\"ref\", " ++ renderNat up ++ "]"
 termination_by d => sizeOf d
 
 def TyDesc.renderFields : List (String × TyDesc) → String

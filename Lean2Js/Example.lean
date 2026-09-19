@@ -900,7 +900,7 @@ omit [Discriminators] in
 not the same set: the check reads a number's range, which a TypeScript type cannot say, so a call the
 `.d.ts` accepts can still be refused at the boundary. -/
 theorem entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
-    (hd : Compile.tyDesc program b ty = .ok d) (hc : Js.checkTy jv d = true) :
+    (hd : Compile.tyDesc program b ty = .ok d) (hc : Js.checkTy [] jv d = true) :
     Dts.TsSat program ty jv :=
   Dts.checkTy_tsSat program jv ty b d hd hc
 
@@ -911,7 +911,7 @@ not read, and neither are keys the type does not declare. -/
 theorem dts_fits_entry_check (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
     (hd : Compile.tyDesc program b ty = .ok d) (hts : Dts.TsSat program ty jv)
-    (hr : Dts.inRange jv d = true) : Js.checkTy jv d = true :=
+    (hr : Dts.inRange jv d = true) : Js.checkTy [] jv d = true :=
   Dts.tsSat_checkTy program (Decl.typesNamesOk_of_compileProgram hm) jv ty b d hd hts hr
 
 /-- What comes back, rather than what goes in: a value the reference semantics gives a declared type to

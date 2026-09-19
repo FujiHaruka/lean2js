@@ -410,20 +410,30 @@ const __isObj = (x) => (((typeof x) === "object") && ((x !== null) && (!Array.is
 
 // A key the declared type does not name is ignored rather than refused: TypeScript lets a
 // value reach a call carrying extra properties, and __ck drops them before the body runs.
-const __hasFields = (x, fields) => {
+const __hasFields = (x, fields, e) => {
   for (const f of fields) {
     if ((!Object.hasOwn(x, (f)[0]))) {
       return false;
     }
-    if ((!__has((x)[(f)[0]], (f)[1]))) {
+    if ((!__has((x)[(f)[0]], (f)[1], e))) {
       return false;
     }
   }
   return true;
 };
 
-const __has = (x, t) => {
+const __has = (x, t, e) => {
   const k = (t)[0];
+  if ((k === "mu")) {
+    return __has(x, ["ctors", (t)[1], (t)[2]], __aconcat([[(t)[1], (t)[2]]], e));
+  }
+  if ((k === "ref")) {
+    if (((t)[1] >= (e).length)) {
+      return false;
+    }
+    const b = (e)[(t)[1]];
+    return __has(x, ["ctors", (b)[0], (b)[1]], (e).slice((t)[1], (e).length));
+  }
   if ((k === "bool")) {
     return ((typeof x) === "boolean");
   }
@@ -440,7 +450,7 @@ const __has = (x, t) => {
     return ((typeof x) === "bigint");
   }
   if ((k === "array")) {
-    return (Array.isArray(x) && __all(x, ((e) => __has(e, (t)[1]))));
+    return (Array.isArray(x) && __all(x, ((y) => __has(y, (t)[1], e))));
   }
   if ((k === "dict")) {
     if ((!(x instanceof Map))) {
@@ -449,75 +459,85 @@ const __has = (x, t) => {
     if ((!__all(__dkeys(x), ((key) => ((typeof key) === "string"))))) {
       return false;
     }
-    return __all(__dvalues(x), ((e) => __has(e, (t)[1])));
+    return __all(__dvalues(x), ((y) => __has(y, (t)[1], e)));
   }
   if ((!__isObj(x))) {
     return false;
   }
   if ((k === "option")) {
     if (((x).tag === "none")) {
-      return __hasFields(x, []);
+      return __hasFields(x, [], e);
     }
-    return (((x).tag === "some") && __hasFields(x, [["value", (t)[1]]]));
+    return (((x).tag === "some") && __hasFields(x, [["value", (t)[1]]], e));
   }
   if ((k === "result")) {
     if (((x).tag === "ok")) {
-      return __hasFields(x, [["value", (t)[1]]]);
+      return __hasFields(x, [["value", (t)[1]]], e);
     }
-    return (((x).tag === "error") && __hasFields(x, [["error", (t)[2]]]));
+    return (((x).tag === "error") && __hasFields(x, [["error", (t)[2]]], e));
   }
   const alt = __find((t)[2], ((c) => ((c)[0] === (x)[(t)[1]])));
-  return (((alt).tag === "some") && __hasFields(x, ((alt).value)[1]));
+  return (((alt).tag === "some") && __hasFields(x, ((alt).value)[1], e));
 };
 
-const __normFields = (x, key, fields) => {
+const __normFields = (x, key, fields, e) => {
   const out = [[key, (x)[key]]];
   for (const f of fields) {
     if (Object.hasOwn(x, (f)[0])) {
-      out.push([(f)[0], __norm((x)[(f)[0]], (f)[1])]);
+      out.push([(f)[0], __norm((x)[(f)[0]], (f)[1], e)]);
     }
   }
   return Object.fromEntries(out);
 };
 
-const __norm = (x, t) => {
+const __norm = (x, t, e) => {
   const k = (t)[0];
+  if ((k === "mu")) {
+    return __norm(x, ["ctors", (t)[1], (t)[2]], __aconcat([[(t)[1], (t)[2]]], e));
+  }
+  if ((k === "ref")) {
+    if (((t)[1] >= (e).length)) {
+      return x;
+    }
+    const b = (e)[(t)[1]];
+    return __norm(x, ["ctors", (b)[0], (b)[1]], (e).slice((t)[1], (e).length));
+  }
   if ((k === "array")) {
     const out = [];
-    for (const e of x) {
-      out.push(__norm(e, (t)[1]));
+    for (const y of x) {
+      out.push(__norm(y, (t)[1], e));
     }
     return out;
   }
   if ((k === "dict")) {
     const out = new Map();
     for (const key of __dkeys(x)) {
-      out.set(key, __norm((x).get(key), (t)[1]));
+      out.set(key, __norm((x).get(key), (t)[1], e));
     }
     return out;
   }
   if ((k === "option")) {
     if (((x).tag === "none")) {
-      return __normFields(x, "tag", []);
+      return __normFields(x, "tag", [], e);
     }
     if (((x).tag === "some")) {
-      return __normFields(x, "tag", [["value", (t)[1]]]);
+      return __normFields(x, "tag", [["value", (t)[1]]], e);
     }
     return x;
   }
   if ((k === "result")) {
     if (((x).tag === "ok")) {
-      return __normFields(x, "tag", [["value", (t)[1]]]);
+      return __normFields(x, "tag", [["value", (t)[1]]], e);
     }
     if (((x).tag === "error")) {
-      return __normFields(x, "tag", [["error", (t)[2]]]);
+      return __normFields(x, "tag", [["error", (t)[2]]], e);
     }
     return x;
   }
   if ((k === "ctors")) {
     const alt = __find((t)[2], ((c) => ((c)[0] === (x)[(t)[1]])));
     if (((alt).tag === "some")) {
-      return __normFields(x, (t)[1], ((alt).value)[1]);
+      return __normFields(x, (t)[1], ((alt).value)[1], e);
     }
     return x;
   }
@@ -527,7 +547,9 @@ const __norm = (x, t) => {
 // Numbers are handed back as they came, unlike __i53: a -0 argument is a safe integer, and
 // every answer built from it passes through __i53 or a comparison that already treats -0
 // and 0 alike, so normalising one here would change nothing a caller can observe.
-const __ck = (x, t) => (__has(x, t) ? __norm(x, t) : __fail("typeError"));
+// The empty environment is where a walk starts: a type that names itself binds where it is
+// expanded, so nothing is in scope before the descriptor is entered.
+const __ck = (x, t) => (__has(x, t, []) ? __norm(x, t, []) : __fail("typeError"));
 
 /** add : (a : Int53, b : Int53) → Int53 */
 export function add(__p0, __p1) {

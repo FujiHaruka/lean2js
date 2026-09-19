@@ -268,6 +268,14 @@ theorem parseStr_ctors (tail : List Char) :
     parseStr ('"' :: 'c' :: 't' :: 'o' :: 'r' :: 's' :: '"' :: tail) = some ("ctors", tail) := by
   simp [parseStr, unescape]
 
+theorem parseStr_mu (tail : List Char) :
+    parseStr ('"' :: 'm' :: 'u' :: '"' :: tail) = some ("mu", tail) := by
+  simp [parseStr, unescape]
+
+theorem parseStr_ref (tail : List Char) :
+    parseStr ('"' :: 'r' :: 'e' :: 'f' :: '"' :: tail) = some ("ref", tail) := by
+  simp [parseStr, unescape]
+
 /-! ## Identifiers -/
 
 def parseIdentChars : List Char → List Char × List Char
@@ -330,7 +338,8 @@ def descSize : Js.TyDesc → Nat
   | .bool | .int53 | .uint32 | .string | .bigint => 1
   | .option t | .array t | .dict t => descSize t + 1
   | .result ok err => descSize ok + descSize err + 1
-  | .ctors _ alts => altsSize alts + 1
+  | .ctors _ alts | .mu _ alts => altsSize alts + 1
+  | .ref _ => 1
 termination_by d => sizeOf d
 
 def altsSize : List (String × List (String × Js.TyDesc)) → Nat
@@ -387,6 +396,18 @@ def parseDesc : Nat → List Char → Option (Js.TyDesc × List Char)
       let (alts, cs) ← parseAlts f cs
       let cs ← expect [']', ']'] cs
       pure (.ctors key alts, cs)
+    | "mu" => do
+      let cs ← expect [',', ' '] cs
+      let (key, cs) ← parseStr cs
+      let cs ← expect [',', ' ', '['] cs
+      let (alts, cs) ← parseAlts f cs
+      let cs ← expect [']', ']'] cs
+      pure (.mu key alts, cs)
+    | "ref" => do
+      let cs ← expect [',', ' '] cs
+      let (up, cs) ← parseNat cs
+      let cs ← expect [']'] cs
+      pure (.ref up, cs)
     | _ => none
 
 def parseAlts : Nat → List Char →
@@ -509,6 +530,20 @@ theorem parseDesc_append (d : Js.TyDesc) (f : Nat) (hf : descSize d ≤ f) (rest
         '"' :: ((escapeString key).toList ++ ('"' :: ',' :: ' ' :: '[' ::
           ((Js.TyDesc.renderAlts alts).toList ++ (']' :: ']' :: rest))))) = _
       simp [parseDesc, expect, parseStr_ctors, parseStr_cons, ih]
+    | .mu key alts =>
+      have ih := parseAlts_append alts f (by rw [descSize] at hf; omega) (']' :: ']' :: rest) ⟨_, rfl⟩
+      rw [Js.TyDesc.render]
+      simp only [String.toList_append, List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'm' :: 'u' :: '"' :: ',' :: ' ' ::
+        '"' :: ((escapeString key).toList ++ ('"' :: ',' :: ' ' :: '[' ::
+          ((Js.TyDesc.renderAlts alts).toList ++ (']' :: ']' :: rest))))) = _
+      simp [parseDesc, expect, parseStr_mu, parseStr_cons, ih]
+    | .ref up =>
+      rw [Js.TyDesc.render, String.toList_append, String.toList_append, List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'r' :: 'e' :: 'f' :: '"' :: ',' :: ' ' ::
+        ((renderNat up).toList ++ (']' :: rest))) = _
+      simp [parseDesc, expect, parseStr_ref,
+        parseNat_append up (']' :: rest) (by intro c r h; cases h; rfl)]
 termination_by f
 
 theorem parseAlts_append (alts : List (String × List (String × Js.TyDesc))) (f : Nat)

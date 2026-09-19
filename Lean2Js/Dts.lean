@@ -218,7 +218,7 @@ mutual
 needs the number range the `.d.ts` cannot carry. -/
 theorem checkTy_tsSat (p : Program) :
     ∀ (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b ty = .ok d → Js.checkTy jv d = true → TsSat p ty jv
+      Compile.tyDesc p b ty = .ok d → Js.checkTy [] jv d = true → TsSat p ty jv
   | jv, .bool, b, d, hd, hc => by
     rw [Decl.tyDesc_bool_inv hd] at hc
     obtain ⟨x, rfl⟩ := Decl.checkTy_bool_inv hc
@@ -311,7 +311,7 @@ termination_by jv => (sizeOf jv, 1, 0)
 theorem checkFields_tsSat (p : Program) :
     ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (b : Nat)
       (ds : List (String × Js.TyDesc)),
-      Compile.tyDescFields p b fdecls = .ok ds → Js.checkFields jfs ds = true →
+      Compile.tyDescFields p b fdecls = .ok ds → Js.checkFields [] jfs ds = true →
       TsSatFields p fdecls jfs
   | jfs, [], _, ds, hds, _ => by
     rw [Compile.tyDescFields.eq_def] at hds
@@ -337,7 +337,7 @@ termination_by jfs fdecls => (sizeOf jfs, 0, sizeOf fdecls)
 
 theorem checkList_tsSat (p : Program) :
     ∀ (jxs : List Js.JsValue) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b elem = .ok d → Js.checkList jxs d = true → ∀ x ∈ jxs, TsSat p elem x
+      Compile.tyDesc p b elem = .ok d → Js.checkList [] jxs d = true → ∀ x ∈ jxs, TsSat p elem x
   | [], _, _, _, _, _, x, hx => by simp at hx
   | jx :: jrest, elem, b, d, hd, hc, x, hx => by
     rw [Decl.checkList_cons, Bool.and_eq_true] at hc
@@ -349,7 +349,7 @@ termination_by jxs => (sizeOf jxs, 1, 0)
 
 theorem checkEntries_tsSat (p : Program) :
     ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (b : Nat) (d : Js.TyDesc),
-      Compile.tyDesc p b elem = .ok d → Js.checkEntries jes d = true → ∀ e ∈ jes, TsSat p elem e.2
+      Compile.tyDesc p b elem = .ok d → Js.checkEntries [] jes d = true → ∀ e ∈ jes, TsSat p elem e.2
   | [], _, _, _, _, _, e, he => by simp at he
   | (key, jv) :: jrest, elem, b, d, hd, hc, e, he => by
     rw [Decl.checkEntries_cons, Bool.and_eq_true] at hc
@@ -517,7 +517,7 @@ declare. -/
 theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
     ∀ (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc),
       Compile.tyDesc p b ty = .ok d → TsSat p ty jv → inRange jv d = true →
-      Js.checkTy jv d = true
+      Js.checkTy [] jv d = true
   | jv, .bool, b, d, hd, hts, _ => by
     rw [Decl.tyDesc_bool_inv hd]
     cases hts
@@ -632,7 +632,7 @@ theorem tsSatFields_checkFields (p : Program) (hn : Decl.TypesNamesOk p) :
     ∀ (jfs : List (String × Js.JsValue)) (fdecls : List Field) (b : Nat)
       (ds : List (String × Js.TyDesc)),
       Compile.tyDescFields p b fdecls = .ok ds → TsSatFields p fdecls jfs →
-      inRangeFields jfs ds = true → Js.checkFields jfs ds = true
+      inRangeFields jfs ds = true → Js.checkFields [] jfs ds = true
   | jfs, [], _, ds, hds, _, _ => by
     rw [Compile.tyDescFields.eq_def] at hds
     simp only at hds
@@ -661,7 +661,7 @@ termination_by jfs fdecls => (sizeOf jfs, 0, sizeOf fdecls)
 theorem tsSatList_checkList (p : Program) (hn : Decl.TypesNamesOk p) :
     ∀ (jxs : List Js.JsValue) (elem : Ty) (b : Nat) (d : Js.TyDesc),
       Compile.tyDesc p b elem = .ok d → (∀ x ∈ jxs, TsSat p elem x) →
-      inRangeList jxs d = true → Js.checkList jxs d = true
+      inRangeList jxs d = true → Js.checkList [] jxs d = true
   | [], _, _, _, _, _, _ => by rw [Js.checkList.eq_def]
   | jx :: jrest, elem, b, d, hd, hts, hr => by
     rw [inRangeList_cons, Bool.and_eq_true] at hr
@@ -673,7 +673,7 @@ termination_by jxs => (sizeOf jxs, 1, 0)
 theorem tsSatEntries_checkEntries (p : Program) (hn : Decl.TypesNamesOk p) :
     ∀ (jes : List (String × Js.JsValue)) (elem : Ty) (b : Nat) (d : Js.TyDesc),
       Compile.tyDesc p b elem = .ok d → (∀ e ∈ jes, TsSat p elem e.2) →
-      inRangeEntries jes d = true → Js.checkEntries jes d = true
+      inRangeEntries jes d = true → Js.checkEntries [] jes d = true
   | [], _, _, _, _, _, _ => by rw [Js.checkEntries.eq_def]
   | (key, jv) :: jrest, elem, b, d, hd, hts, hr => by
     rw [inRangeEntries_cons, Bool.and_eq_true] at hr

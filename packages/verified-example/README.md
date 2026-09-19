@@ -489,7 +489,7 @@ not the same set: the check reads a number's range, which a TypeScript type cann
 
 ```lean
 theorem entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
-  (hd : Compile.tyDesc program b ty = Except.ok d) (hc : Js.checkTy jv d = true) : Dts.TsSat program ty jv
+  (hd : Compile.tyDesc program b ty = Except.ok d) (hc : Js.checkTy [] jv d = true) : Dts.TsSat program ty jv
 ```
 
 ### dts_fits_entry_check
@@ -502,7 +502,7 @@ not read, and neither are keys the type does not declare.
 ```lean
 theorem dts_fits_entry_check [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
   (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d)
-  (hts : Dts.TsSat program ty jv) (hr : Dts.inRange jv d = true) : Js.checkTy jv d = true
+  (hts : Dts.TsSat program ty jv) (hr : Dts.inRange jv d = true) : Js.checkTy [] jv d = true
 ```
 
 ### encoded_values_fit_dts
