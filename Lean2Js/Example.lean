@@ -602,8 +602,10 @@ theorem cheapest_first_keeps_every_line (items : List Money) :
 theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role := by
   cases role <;> decide
 
-/-- A category with nothing under it counts nothing under it, whatever it is called. -/
-theorem a_leaf_has_no_children (name : String) : directChildren (.leaf name) = 0 := rfl
+/-- A category with nothing under it counts nothing under it, whatever it is called. Two shapes have
+nothing under them — a leaf, and a group holding no categories — and both are here. -/
+theorem nothing_under_it_counts_none (name : String) :
+    directChildren (.leaf name) = 0 ∧ directChildren (.group name []) = 0 := ⟨rfl, rfl⟩
 
 /-- A group counts what sits directly under it, however deep those categories go themselves. -/
 theorem a_group_counts_what_is_directly_under_it (name : String) (children : List Category) :
@@ -964,27 +966,3 @@ def manifest : Manifest := {
 }
 
 end Lean2Js.Example
-
-section AuditProbe
-open Lean2Js Lean2Js.Example Lean2Js.Core Lean2Js.Enc
-
--- theorem 1: the two structurally different leaves
-#guard directChildren (.leaf "") == 0
-#guard directChildren (.leaf "日本語") == 0
-
--- the fact docstring 1 also reads on, but that theorem 1 does not state
-#guard directChildren (.group "empty" []) == 0
-
--- theorem 2 at two structurally different depths
-#guard directChildren (.group "flat" [.leaf "a", .leaf "b"]) == 2
-#guard directChildren (.group "root" [.leaf "a", .group "b" [.leaf "c", .group "d" [.leaf "e"]]]) == 2
-
--- is a deep Category reachable through the shipping path at all?
-#eval evalCall program "directChildren"
-  [toValue (Category.group "root" [.leaf "a", .group "b" [.leaf "c", .leaf "d"]])]
-#eval evalCall program "directChildren" [toValue (Category.leaf "x")]
-#eval evalCall program "directChildren" [toValue (Category.group "empty" [])]
-#eval (toValue (Category.group "root" [Category.leaf "a"]) : Value)
-#eval program.findType? "Category" |>.isSome
-
-end AuditProbe

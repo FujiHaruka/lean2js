@@ -633,9 +633,9 @@
       "doc": "No role's monthly limit is negative, including a role whose book records none."
     },
     {
-      "name": "a_leaf_has_no_children",
-      "statement": "a_leaf_has_no_children (name : String) : directChildren (Category.leaf name) = 0",
-      "doc": "A category with nothing under it counts nothing under it, whatever it is called."
+      "name": "nothing_under_it_counts_none",
+      "statement": "nothing_under_it_counts_none (name : String) :\n  directChildren (Category.leaf name) = 0 ∧ directChildren (Category.group name []) = 0",
+      "doc": "A category with nothing under it counts nothing under it, whatever it is called. Two shapes have\nnothing under them — a leaf, and a group holding no categories — and both are here."
     },
     {
       "name": "a_group_counts_what_is_directly_under_it",

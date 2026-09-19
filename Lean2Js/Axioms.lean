@@ -37,9 +37,9 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.monthly_limit_is_not_negative
 
-/-- info: 'Lean2Js.Example.a_leaf_has_no_children' does not depend on any axioms -/
+/-- info: 'Lean2Js.Example.nothing_under_it_counts_none' does not depend on any axioms -/
 #guard_msgs in
-#print axioms Lean2Js.Example.a_leaf_has_no_children
+#print axioms Lean2Js.Example.nothing_under_it_counts_none
 
 /-- info: 'Lean2Js.Example.a_group_counts_what_is_directly_under_it' does not depend on any axioms -/
 #guard_msgs in

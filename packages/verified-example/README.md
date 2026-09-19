@@ -218,12 +218,14 @@ No role's monthly limit is negative, including a role whose book records none.
 theorem monthly_limit_is_not_negative (role : Role) : 0 ≤ monthlyLimit role
 ```
 
-### a_leaf_has_no_children
+### nothing_under_it_counts_none
 
-A category with nothing under it counts nothing under it, whatever it is called.
+A category with nothing under it counts nothing under it, whatever it is called. Two shapes have
+nothing under them — a leaf, and a group holding no categories — and both are here.
 
 ```lean
-theorem a_leaf_has_no_children (name : String) : directChildren (Category.leaf name) = 0
+theorem nothing_under_it_counts_none (name : String) :
+  directChildren (Category.leaf name) = 0 ∧ directChildren (Category.group name []) = 0
 ```
 
 ### a_group_counts_what_is_directly_under_it
