@@ -58,29 +58,38 @@ the deeper it goes the narrower the width. -/
 private def tuplesOf (rows : List (List Value)) (per : List Value) : List (List Value) :=
   per.flatMap fun v => rows.map fun row => v :: row
 
+/-- How many declared types deep a generated value goes. A type that names itself has no finite set of
+values, so the generator stops expanding one this far down and the constructors that reach it drop out —
+which for a well-founded `inductive` leaves the ones that do not, and those are its base cases.
+
+Deep enough that no type which does not name itself is cut short: `tyDescBudget` bounds the expansion of
+such a type by the number of declared types, and nothing here goes further than the descriptor does. -/
+def namedDepth (p : Program) : Nat := p.types.length + 1
+
 /-- Always steps just inside and just outside the boundary. Overflow and rounding break nowhere else. -/
-partial def edgeCases (p : Program) (width : Nat) : Ty → List Value
+partial def edgeCases (p : Program) (depth width : Nat) : Ty → List Value
   | .named n args =>
-    match p.findType? n with
-    | none => []
-    | some t =>
+    match depth, p.findType? n with
+    | 0, _ => []
+    | _, none => []
+    | d + 1, some t =>
       (t.ctorsAt args).flatMap fun c =>
         let rows := c.fields.foldr (init := [[]]) fun f rows =>
-          tuplesOf rows ((edgeCases p (width / 2 + 1) f.ty).take (width / 2 + 1))
+          tuplesOf rows ((edgeCases p d (width / 2 + 1) f.ty).take (width / 2 + 1))
         (rows.map fun args => Value.obj c.name ((c.fields.map (·.name)).zip args)).take width
   | .option t =>
     Value.obj "none" [] ::
-      ((edgeCases p (width / 2 + 1) t).take width).map fun x => .obj "some" [("value", x)]
+      ((edgeCases p depth (width / 2 + 1) t).take width).map fun x => .obj "some" [("value", x)]
   | .result ok err =>
-    ((edgeCases p (width / 2 + 1) ok).take width).map (fun x => Value.obj "ok" [("value", x)])
-      ++ ((edgeCases p (width / 2 + 1) err).take width).map fun x =>
+    ((edgeCases p depth (width / 2 + 1) ok).take width).map (fun x => Value.obj "ok" [("value", x)])
+      ++ ((edgeCases p depth (width / 2 + 1) err).take width).map fun x =>
         Value.obj "error" [("error", x)]
   | .array t =>
-    let items := (edgeCases p (width / 2 + 1) t).take width
+    let items := (edgeCases p depth (width / 2 + 1) t).take width
     Value.arr [] :: (items.map fun x => Value.arr [x])
       ++ [Value.arr (items.take 3), Value.arr (items.take 5)]
   | .dict v =>
-    let items := (edgeCases p (width / 2 + 1) v).take 3
+    let items := (edgeCases p depth (width / 2 + 1) v).take 3
     let keyed := (dictKeyPool.zip items).map fun (k, x) => Value.dict [(k, x)]
     Value.dict [] :: keyed ++ [Value.dict (dictKeyPool.zip (items.take 2))]
   | ty => scalarEdges ty
@@ -107,12 +116,12 @@ private partial def randomValue (p : Program) (s : UInt64) : Ty → Value
     let magnitude := Int.ofNat (bits s) * Int.ofNat (bits (nextSeed s) % 4294967296 + 1)
     .bigint (if bits (nextSeed (nextSeed s)) % 2 == 0 then magnitude else -magnitude)
   | ty =>
-    let candidates := edgeCases p 6 ty
+    let candidates := edgeCases p (namedDepth p) 6 ty
     candidates.getD (pick s candidates.length) (.obj "none" [])
 
 private def edgeTuples (p : Program) : List Ty → List (List Value)
   | [] => [[]]
-  | ty :: rest => tuplesOf (edgeTuples p rest) (edgeCases p 12 ty)
+  | ty :: rest => tuplesOf (edgeTuples p rest) (edgeCases p (namedDepth p) 12 ty)
 
 private def randomTuples (p : Program) (s : UInt64) (tys : List Ty) : Nat → List (List Value)
   | 0 => []
