@@ -22,6 +22,7 @@ import Lean2Js.Step
 import Lean2Js.Fuel
 import Lean2Js.Cost
 import Lean2Js.Bound
+import Lean2Js.Traps
 import Lean2Js.Prelude
 
 /-!

@@ -71,6 +71,14 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   `propext` / `Classical.choice` / `Quot.sound` is also checked before anything is written — a proof
   plugged with `sorry` gets through `lake build` with only a warning, so this is where it is stopped.
 
+**What the `@throws` line names is read off the syntax, not proved.** `decl_traps` proves the generated
+code throws the code `eval` traps with; *which* codes a given function can trap with is a separate
+question, and the line in `index.d.ts` answers it by reading the body — each operation contributes the
+codes its case in `eval` can return, a call contributes its callee's, and a declaration handed over as a
+function contributes its own at the call that hands it over. `emit` checks that reading against every
+generated vector: one that traps with a code the line does not name fails the build. It is still an
+over-approximation — an `Int53.div` on a path no argument can reach is listed all the same.
+
 **A string the model can name may be longer than an engine will build.** Strings in the model are
 mathematical, and the only bound on a length is the Int53 one that `Str.length` traps past; a JavaScript
 engine gives up long before. The two operations that take a length as a number, `Str.repeat` and

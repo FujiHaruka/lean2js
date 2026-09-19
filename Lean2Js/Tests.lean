@@ -518,6 +518,37 @@ order they ship in: a callee moves ahead of its caller, and a declaration handed
 ahead of the callee it is handed to. A cycle cannot be written at all — Lean turns the `def`s away first
 — so what the compiler does with one is pinned above, on declarations built by hand. -/
 
+/-! ## What the `@throws` line names
+
+The codes are read off the body: each operation contributes what its case in `eval` can return, a call
+contributes its callee's, and a declaration handed over as a function contributes its own at the call that
+hands it over. That last one is why a call through a function-typed parameter adds nothing — the caller
+already counted it by naming the declaration. `typeError` is the entry check, so a declaration that takes
+no arguments does not carry it. -/
+
+private def trapProgram : Program :=
+  { decls := [
+      decl "tenPercentOff" [("amount", .int53)] .int53
+        (v "amount" -' call "divTen" [v "amount"]),
+      decl "priced" [("rule", .fn [.int53] .int53), ("amount", .int53)] .int53
+        (call "rule" [v "amount"]),
+      decl "memberPrice" [("amount", .int53)] .int53
+        (call "priced" [fnRef "tenPercentOff", v "amount"]),
+      decl "subtotal" [("a", .int53), ("b", .int53)] .int53 (v "a" +' v "b" *' int53 2),
+      decl "houseRate" [] .int53 (int53 7)] }
+
+private def trapProgram' : Program :=
+  { decls := decl "divTen" [("amount", .int53)] .int53 (v "amount" /' int53 10) :: trapProgram.decls }
+
+private def trapsOf (fn : String) : List String :=
+  Traps.forName trapProgram' (Traps.table trapProgram') fn
+
+#guard trapsOf "subtotal" == ["typeError", "int53Overflow"]
+#guard trapsOf "houseRate" == []
+#guard trapsOf "divTen" == ["typeError", "int53Overflow", "divByZero"]
+#guard trapsOf "priced" == ["typeError"]
+#guard trapsOf "memberPrice" == ["typeError", "int53Overflow", "divByZero"]
+
 /-! ## What reaches the `.d.ts`
 
 A declared type is printed only where a consumer can name it: from the signature of a public function, or

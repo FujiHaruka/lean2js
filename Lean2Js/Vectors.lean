@@ -1,5 +1,6 @@
 import Lean2Js.Eval
 import Lean2Js.Json
+import Lean2Js.Traps
 
 /-!
 # The inputs of the differential test and the values `eval` must return
@@ -267,12 +268,27 @@ private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
     | .error .outOfFuel => true
     | _ => false
 
+/-- A vector that traps with a code the declaration's `@throws` does not name. The list in the `.d.ts` is
+read off the syntax rather than proved, so this is what stands behind it: a consumer who catches the codes
+it names has caught every one a generated vector reached. -/
+private def undeclaredTrap (p : Program) (vectors : List TestVector) : Option (String × String) :=
+  let traps := Traps.table p
+  vectors.findSome? fun v =>
+    match v.expected with
+    | .error e =>
+      if (Traps.forName p traps v.fn).contains e.code then none else some (v.fn, e.code)
+    | .ok _ => none
+
 def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String :=
   let vectors := allTestVectors p edgeLimit randomCount
   match outOfFuelIn vectors with
   | some v => .error s!"{v.fn} ran out of fuel; the subset excludes nontermination"
   | none =>
-    let rows := vectors.map fun v => "  " ++ v.toJson.render
-    .ok ("[\n" ++ String.intercalate ",\n" rows ++ "\n]\n")
+    match undeclaredTrap p vectors with
+    | some (fn, code) =>
+      .error s!"{fn} traps with {code}, which the traps read off its body do not name"
+    | none =>
+      let rows := vectors.map fun v => "  " ++ v.toJson.render
+      .ok ("[\n" ++ String.intercalate ",\n" rows ++ "\n]\n")
 
 end Lean2Js

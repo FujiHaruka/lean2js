@@ -363,7 +363,11 @@ program carries the name, and a lambda has none. `priced tenPercentOff amount` i
   take at most one argument.
 - **A declaration that takes a function is not published.** No function type crosses the public
   boundary, so it appears in neither `index.d.ts` nor the exports of `index.js`, and only other
-  declarations call it.
+  declarations call it. A `structure` that never appears in a published signature is not printed either.
+- **The `@throws` line names the traps that function can reach**, read off its body and the bodies it
+  calls — not every trap the subset has. A function that only adds carries `typeError` and
+  `int53Overflow`; one that never divides does not carry `divByZero`; one that takes no arguments carries
+  nothing, because `typeError` is the entry check refusing an argument.
 - **A type parameter is a `Type`.** `Paginated (T : Type)` is fine; `Type 1` and class constraints are
   not. A class constraint is read on a `@[expand] def` and nowhere else, because there it is gone before
   the AST exists.

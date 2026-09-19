@@ -28,14 +28,14 @@ export type Validated<E, A> =
   | { readonly tag: "invalid"; readonly errors: readonly E[] };
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function add(a: number, b: number): number;
 
 /**
  * Clamps a quantity to at least 1 and at most upper.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function clampQuantity(quantity: number, upper: number): number;
 
@@ -43,77 +43,77 @@ export declare function clampQuantity(quantity: number, upper: number): number;
  * The amount of a line item. The quantity is clamped before multiplying, so a negative quantity never
  * makes the amount negative.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function lineTotal(unitPrice: number, quantity: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function roleRank(role: Role): number;
 
 /**
  * The amount of every line of an order at one unit price.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function lineTotals(unitPrice: number, quantities: readonly number[]): readonly number[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function anyOverLimit(amounts: readonly number[], limit: number): boolean;
 
 /**
  * The first line that breaks the limit. Lines after it are never looked at.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function firstOverLimit(amounts: readonly number[], limit: number): Option<number>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function everyLineWithinLimit(amounts: readonly number[], limit: number): boolean;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function someLineIsFree(amounts: readonly number[]): boolean;
 
 /**
  * One window of a list. A window reaching past the end is refused rather than shortened.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `indexOutOfBounds`.
  */
 export declare function pageOf(xs: readonly number[], lo: number, hi: number): readonly number[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function mostRecentFirst(events: readonly string[]): readonly string[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function combinedCart(saved: readonly number[], added: readonly number[]): readonly number[];
 
 /**
  * An out-of-range read traps rather than yielding `undefined`.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function headOr(xs: readonly number[], fallback: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function slugOf(prefix: string, name: string): string;
 
 /**
  * The reference an order is filed under: the prefix and the order number in decimal.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function orderReference(prefix: string, orderNo: number): string;
 
@@ -121,14 +121,14 @@ export declare function orderReference(prefix: string, orderNo: number): string;
  * The amount a line carries, read back from the string the caller was handed. `none` unless the
  * string is exactly the decimal spelling of an Int53, so `"007"`, `" 5"` and `"+5"` are refused.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function amountOf(field: string): Option<number>;
 
 /**
  * The same amount, with a fallback for a field that does not spell one.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function amountOr(field: string, fallback: number): number;
 
@@ -136,14 +136,14 @@ export declare function amountOr(field: string, fallback: number): number;
  * Where the separator first sits in a reference, counted in code points. `none` when the reference
  * carries none. JS's own `indexOf` counts UTF-16 units and answers `-1`.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function separatorAt(reference: string, sep: string): Option<number>;
 
 /**
  * The part of a reference before its first separator, or the whole reference when it carries none.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function referencePrefix(reference: string): string;
 
@@ -151,7 +151,7 @@ export declare function referencePrefix(reference: string): string;
  * A row of an uploaded file written back out: the fields in order with the separator between them.
  * An empty list of fields writes an empty row.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function joinFields(fields: readonly string[], separator: string): string;
 
@@ -159,7 +159,7 @@ export declare function joinFields(fields: readonly string[], separator: string)
  * The reference an order is filed under, built from parts that are already in hand, under the same
  * separator `referencePrefix` reads back.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function referenceFrom(parts: readonly string[]): string;
 
@@ -167,7 +167,7 @@ export declare function referenceFrom(parts: readonly string[]): string;
  * A reference filed under one separator, rewritten under another. Every occurrence moves, and a
  * reference carrying none comes back unchanged.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function refiled(reference: string, oldSep: string, newSep: string): string;
 
@@ -175,7 +175,7 @@ export declare function refiled(reference: string, oldSep: string, newSep: strin
  * The rule a printed receipt puts between its sections: `mark` written out 32 times, which is one
  * column each where `mark` is a single character.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function receiptRule(mark: string): string;
 
@@ -183,21 +183,21 @@ export declare function receiptRule(mark: string): string;
  * An amount in minor units, right-aligned in the column a printed receipt gives it. Too wide an
  * amount keeps its digits and overruns the column.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function amountColumn(amount: number): string;
 
 /**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function sortsBefore(a: string, b: string): boolean;
 
 /**
  * Whether a free-text note mentions a search term, ignoring case.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function mentionsTerm(text: string, term: string): boolean;
 
@@ -205,14 +205,14 @@ export declare function mentionsTerm(text: string, term: string): boolean;
  * A coupon code as it is stored: the campaign prefix and what the customer typed, upper-cased and with
  * the surrounding whitespace gone.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function storedCoupon(campaign: string, entered: string): string;
 
 /**
  * Whether a coupon belongs to a campaign, comparing the way the codes are stored.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function couponApplies(code: string, campaign: string): boolean;
 
@@ -220,7 +220,7 @@ export declare function couponApplies(code: string, campaign: string): boolean;
  * How many columns a line of an uploaded file carries. An empty separator leaves the line whole rather
  * than cutting it into characters.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function fieldCount(row: string, separator: string): number;
 
@@ -228,94 +228,94 @@ export declare function fieldCount(row: string, separator: string): number;
  * A label cut to fit, counted in code points so a surrogate pair is never split in half. A negative
  * limit has no string to return and fails the way an out-of-range index does.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function truncateLabel(label: string, limit: number): string;
 
 /**
  * Whether an uploaded file is a spreadsheet, compared the way the names are stored.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function isSpreadsheet(fileName: string): boolean;
 
 /**
  * What a role may do in a day and in a month.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function limitsFor(role: Role): ReadonlyMap<string, number>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function priceOf(prices: ReadonlyMap<string, number>, sku: string): Option<number>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function isListed(prices: ReadonlyMap<string, number>, sku: string): boolean;
 
 /**
  * The price book after one price change. A sku already in the book keeps its place.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function repriced(prices: ReadonlyMap<string, number>, sku: string, amount: number): ReadonlyMap<string, number>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function listedSkus(prices: ReadonlyMap<string, number>): readonly string[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function listedPrices(prices: ReadonlyMap<string, number>): readonly number[];
 
 /**
  * The price book after a sku is withdrawn. A sku that was never listed leaves the book unchanged.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function withdrawn(prices: ReadonlyMap<string, number>, sku: string): ReadonlyMap<string, number>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function catalogueSize(prices: ReadonlyMap<string, number>): number;
 
 /**
  * Truncating division. Division by zero traps on the JS side too.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function divide(a: number, b: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function remainder(a: number, b: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function negate(a: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function priceGap(a: number, b: number): number;
 
 /**
  * The amount after a percent% discount. The remainder is truncated.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function discounted(amount: number, percent: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function tenPercentOff(amount: number): number;
 
@@ -323,76 +323,76 @@ export declare function tenPercentOff(amount: number): number;
  * Binds the same name twice. ESM runs in strict mode, so emitting `const` twice would fail at import
  * time.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function rebindTwice(amount: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function noDiscount(amount: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function memberPrice(amount: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function guestPrice(amount: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function mixChannels(a: number, b: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function bucketOf(key: number, buckets: number): number;
 
 /**
  * A channel value held between a floor and a ceiling.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function clampChannel(value: number, lo: number, hi: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function scaleFee(fee: bigint, factor: bigint): bigint;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function bigQuotient(a: bigint, b: bigint): bigint;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function sameLabel(a: string, b: string): boolean;
 
 /**
  * Doubles as a check on short-circuiting. When `b` is 0 the right-hand side is not evaluated.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function safeQuotientIsPositive(a: number, b: number): boolean;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function canCheckout(signedIn: boolean, cartTotal: number, stock: number): boolean;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function cappedCharge(amount: number, budget: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function atLeast(amount: number, floor: number): number;
 
@@ -400,17 +400,17 @@ export declare function atLeast(amount: number, floor: number): number;
  * Amounts in different currencies cannot be added. `===` is unusable on the JS side, so a structural
  * equality helper is called.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function addMoney(a: Money, b: Money): Result<Money, string>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function sameMoney(a: Money, b: Money): boolean;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function currenciesOf(items: readonly Money[]): readonly string[];
 
@@ -418,69 +418,69 @@ export declare function currenciesOf(items: readonly Money[]): readonly string[]
  * Adds the amounts up whatever currency each carries; `addMoney` is the operation that refuses to mix
  * them.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function cartTotal(items: readonly Money[]): number;
 
 /**
  * The lines of a cart, cheapest first. Lines that cost the same keep the order they came in.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function cheapestFirst(items: readonly Money[]): readonly Money[];
 
 /**
  * Labels in the order the subset compares strings, which counts code points.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function inLabelOrder(labels: readonly string[]): readonly string[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function total(xs: readonly number[]): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function trackingOf(state: OrderState): Option<string>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function canRefund(role: Role, state: OrderState): boolean;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function firstTracking(states: readonly OrderState[]): Option<string>;
 
 /**
  * The orders this role may still refund. The predicate reads `role` from outside the lambda.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function refundableOnly(role: Role, states: readonly OrderState[]): readonly OrderState[];
 
 /**
  * The state transition to shipped. Rejects states that cannot transition and an empty tracking id.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function ship(state: OrderState, trackingId: string): Result<OrderState, string>;
 
 /**
  * The label shown next to a line item.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function quantityLabel(quantity: number): string;
 
 /**
  * Whether a subscription carries on. Both cases are named, so no fallback is needed.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function renewalLabel(autoRenew: boolean): string;
 
@@ -488,7 +488,7 @@ export declare function renewalLabel(autoRenew: boolean): string;
  * An amount of zero is free whatever the currency, and an amount carrying no currency cannot be
  * charged at all.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function chargeable(amount: Money): boolean;
 
@@ -496,7 +496,7 @@ export declare function chargeable(amount: Money): boolean;
  * The shipping line shown once a transition has been attempted. A draft or cancelled order has nothing
  * to show, so one arm reaches past `ok` and leaves the state itself open.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function settleMessage(outcome: Result<OrderState, string>): string;
 
@@ -504,14 +504,14 @@ export declare function settleMessage(outcome: Result<OrderState, string>): stri
  * The order the settlement placed, if it placed one. The wildcard here stands for both the states that
  * are not `placed` and the error, so the split the certificate makes reaches `Except` as well.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function settledOrderId(outcome: Result<OrderState, string>): number;
 
 /**
  * A role with no daily limit recorded may do nothing.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function dailyLimit(role: Role): number;
 
@@ -520,47 +520,47 @@ export declare function dailyLimit(role: Role): number;
  * The certificate splits the scrutinee to show the binding arm did not fire, which `Option` needs as much
  * as a type the program declares.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function monthlyLimit(role: Role): number;
 
 /**
  * How many results lie beyond the page in hand.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function remainingItems(page: Paginated<Money>): number;
 
 /**
  * The whole list served as a single page.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function firstPage(amounts: readonly number[]): Paginated<number>;
 
 /**
  * Accepts an order quantity or says why it was refused.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function validateQuantity(quantity: number): Validated<string, number>;
 
 /**
  * The line shown once a quantity has been checked.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function validationMessage(outcome: Validated<string, number>): string;
 
 /**
  * The amount and the tax charged on it, as the two lines they are billed as.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function amountWithTax(amount: number): readonly number[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function currencyOf(item: Money): string;
 
@@ -568,105 +568,105 @@ export declare function currencyOf(item: Money): string;
  * The lines shown before the fold. A count past the end of the order shows the whole of it, where
  * `pageOf` would have refused the window.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `indexOutOfBounds`.
  */
 export declare function previewLines(amounts: readonly number[], upTo: number): readonly number[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function linesBelowFold(amounts: readonly number[], upTo: number): readonly number[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function cartIsEmpty(items: readonly Money[]): boolean;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function stocksSku(skus: readonly string[], sku: string): boolean;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function amountsTotal(amounts: readonly number[]): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function spreadsheetCount(fileNames: readonly string[]): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function firstAmount(amounts: readonly number[]): Option<number>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `indexOutOfBounds`.
  */
 export declare function latestEvent(events: readonly string[]): Option<string>;
 
 /**
  * Every line of every order in one list.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function allLines(orders: readonly readonly number[][]): readonly number[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function linesWithTax(amounts: readonly number[]): readonly number[];
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function noteIsBlank(note: string): boolean;
 
 /**
  * The listed price, or the fallback where the sku is not in the book.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function priceOr(prices: ReadonlyMap<string, number>, sku: string, fallback: number): number;
 
 /**
  * One line per currency. Where a currency appears twice the later line is the one kept.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function byCurrency(items: readonly Money[]): ReadonlyMap<string, Money>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function quantityOr(quantity: Option<number>, fallback: number): number;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.
  */
 export declare function discountedIfAny(amount: Option<number>): Option<number>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function settledOrElse(outcome: Result<Money, string>, fallback: Money): Money;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function settledCurrency(outcome: Result<Money, string>): Result<string, string>;
 
 /**
  * The refusal upper-cased. What the settlement accepted is handed back untouched.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function loudRefusal(outcome: Result<Money, string>): Result<Money, string>;
 
 /**
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function settledMoney(outcome: Result<Money, string>): Option<Money>;
 
@@ -674,27 +674,27 @@ export declare function settledMoney(outcome: Result<Money, string>): Option<Mon
  * The tracking id of every order that has one, and an empty string for the rest. The `match` is inside
  * the traversal's own function rather than in a declaration of its own.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function trackingIds(states: readonly OrderState[]): readonly string[];
 
 /**
  * How many of the amounts are refunds, with the test written where the count is.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function refundCount(amounts: readonly number[]): number;
 
 /**
  * A charge as it appears on a credit note, where money leaving is written negative.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
  */
 export declare function creditNoteAmount(amount: number): number;
 
 /**
  * What the sign on a statement line means.
  *
- * @throws {Error} whose `code` is `typeError`, `int53Overflow`, `divByZero` or `indexOutOfBounds`.
+ * @throws {Error} whose `code` is `typeError`.
  */
 export declare function directionLabel(sign: number): string;
