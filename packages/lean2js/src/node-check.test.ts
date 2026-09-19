@@ -54,7 +54,12 @@ describe("the script emit runs on Node", () => {
   });
 
   it("calls with the objects written back to front and with a key no type declares", () => {
-    const money = { t: "obj", ctor: "Money", fields: { amount: int53(1), currency: int53(2) } };
+    const money = {
+      t: "obj",
+      key: "tag",
+      ctor: "Money",
+      fields: { amount: int53(1), currency: int53(2) },
+    };
     const run = check('export function f(m) { return Object.keys(m).join(","); }', [
       vector({
         args: [money],
