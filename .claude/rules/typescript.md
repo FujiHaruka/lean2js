@@ -30,3 +30,8 @@ string in `Lean2Js/NodeCheck.lean`, so the thing under test is the text that act
 
 Generative coverage is the emitter's job: `lean2js` runs every vector on Node before it writes
 anything. A test here should name a case that the vectors cannot reach or that is worth having a name.
+
+The vectors cannot reach the `.d.ts` at all, because nothing they do is a compile. `dts.test.ts` is
+where tsc is put on the generated file — on its own terms, since `skipLibCheck` means no other build
+here reads it — and on calls the entry check accepts and refuses. Each `@ts-expect-error` there fails
+`pnpm typecheck` the moment its call starts compiling, so a type that quietly widens is caught.

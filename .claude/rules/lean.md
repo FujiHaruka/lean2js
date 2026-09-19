@@ -50,6 +50,10 @@ to a consumer.
   handful the guarantee itself rests on. `lake build` lets `sorry` through with a warning; this is what
   turns that into a failure. A public theorem added to `Example.lean` needs a line here, and a proof
   whose axiom set changes needs its line updated.
+- **`Lean2Js/Checks.lean`** sweeps every declaration made by a module of this repository and fails on an
+  axiom outside `propext` / `Classical.choice` / `Quot.sound`. `Axioms.lean` only reaches what a shipped
+  claim depends on; this is what stops a `sorry` in a `private` lemma nothing shipped reaches. It is in
+  `Checks.lean` because that is the only module whose imports reach every other one.
 - **`Lean2Js/Tests.lean`** holds `#guard`s for programs the compiler must *not* accept. The differential
   test only says that what got through answers the same in JS; that what must not get through does not
   can only be checked on this side.

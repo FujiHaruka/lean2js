@@ -152,7 +152,7 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `spreadsheetCount(fileNames: readonly string[]): number`
 - `firstAmount(amounts: readonly number[]): Option<number>`
 - `latestEvent(events: readonly string[]): Option<string>`
-- `allLines(orders: readonly readonly number[][]): readonly number[]`
+- `allLines(orders: readonly (readonly number[])[]): readonly number[]`
   Every line of every order in one list.
 - `linesWithTax(amounts: readonly number[]): readonly number[]`
 - `noteIsBlank(note: string): boolean`

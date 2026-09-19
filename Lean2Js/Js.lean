@@ -203,6 +203,15 @@ def sourceMapLink : String := "//# sourceMappingURL=index.js.map\n"
 def Module.render (m : Module) : String :=
   preamble ++ Func.renderAll m.funcs ++ sourceMapLink
 
+/-- An element type as `[]` reads it. `[]` binds tighter than `readonly` and than `=>`, so those two are
+the ones that need parentheses around them: a list of lists would otherwise print as
+`readonly readonly number[][]`, which TypeScript refuses, and reads as `readonly number[][]` where it is
+told to carry on. -/
+private def parenElem : Core.Ty → String → String
+  | .array _, printed => "(" ++ printed ++ ")"
+  | .fn _ _, printed => "(" ++ printed ++ ")"
+  | _, printed => printed
+
 mutual
 
 /-- The type the `.d.ts` gives a value of this type. Total for the reason the renderers are: the file the
@@ -218,7 +227,7 @@ def tsType : Core.Ty → String
   | .named n args => n ++ "<" ++ tsTypeList args ++ ">"
   | .option t => "Option<" ++ tsType t ++ ">"
   | .result ok err => "Result<" ++ tsType ok ++ ", " ++ tsType err ++ ">"
-  | .array t => "readonly " ++ tsType t ++ "[]"
+  | .array t => "readonly " ++ parenElem t (tsType t) ++ "[]"
   | .dict v => "ReadonlyMap<string, " ++ tsType v ++ ">"
   | .fn params ret => "(" ++ tsParams 0 params ++ ") => " ++ tsType ret
 termination_by ty => sizeOf ty

@@ -58,7 +58,8 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   ([`encoded_values_fit_dts`]). The `.d.ts` is the only type a consumer actually reads, so **both
   directions are in the manifest**. What those three call the `.d.ts` side is `Dts.TsSat` — the declared
   type read as a predicate in Lean. How TypeScript reads the printed `.d.ts` text is the one thing
-  trusted here.
+  trusted here, and it is checked rather than proved: tsc is run over the generated file on its own
+  terms, and over calls into it that the entry check accepts and refuses.
 - **Outside the proofs** — every vector generated for the artifact (38298 of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against

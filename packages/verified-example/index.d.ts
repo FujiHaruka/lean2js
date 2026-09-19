@@ -612,7 +612,7 @@ export declare function latestEvent(events: readonly string[]): Option<string>;
  *
  * @throws {Error} whose `code` is `typeError`.
  */
-export declare function allLines(orders: readonly readonly number[][]): readonly number[];
+export declare function allLines(orders: readonly (readonly number[])[]): readonly number[];
 
 /**
  * @throws {Error} whose `code` is `typeError`, `int53Overflow` or `divByZero`.

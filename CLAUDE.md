@@ -13,9 +13,10 @@ green.**
   package is written only where `eval`, the JS model inside Lean and the assembled package running on
   Node agree on every generated vector. When that fails, the thing to fix is the compiler or the
   semantics — never the check, and never the set of vectors it runs.
-- **Never weaken the claim to close the proof.** No `sorry` (`Lean2Js/Axioms.lean` would fail), no
-  narrowing a theorem so the proof goes through, no softening a sentence in `docs/guarantees.md` so a
-  weak theorem matches it.
+- **Never weaken the claim to close the proof.** No `sorry` anywhere — `Lean2Js/Axioms.lean` pins the
+  shipped theorems and `Lean2Js/Checks.lean` sweeps every declaration this repository makes, so the
+  build fails where `lake build` alone only warns. No narrowing a theorem so the proof goes through, no
+  softening a sentence in `docs/guarantees.md` so a weak theorem matches it.
 - **Shipped theorems are not written by hand.** `lean2js` gathers every public theorem in the manifest's
   namespace and uses the signature Lean prints, so the published list cannot drift from the proofs. Add
   a public theorem to `Lean2Js/Example.lean` → add its `#print axioms` line to `Lean2Js/Axioms.lean`.

@@ -524,7 +524,7 @@
     {
       "name": "allLines",
       "signature": "(orders : Array Array Int53) → Array Int53",
-      "declaration": "allLines(orders: readonly readonly number[][]): readonly number[]",
+      "declaration": "allLines(orders: readonly (readonly number[])[]): readonly number[]",
       "doc": "Every line of every order in one list."
     },
     {

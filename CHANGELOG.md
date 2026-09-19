@@ -4,6 +4,12 @@ Versions follow the `version` in `lakefile.toml`, which is also the `compiler.ve
 `proof-manifest.json`. Pin a package to a tag rather than to `main`: the `rev` in your `lakefile.toml` is
 what decides which compiler your artifact was built by.
 
+## Unreleased
+
+- A list of lists now prints as `readonly (readonly number[])[]` in the `.d.ts` and in the signatures
+  the manifest carries. It printed as `readonly readonly number[][]`, which TypeScript refuses outright,
+  and which reads as an array of *mutable* arrays wherever a build is told to carry on past the error.
+
 ## 0.1.0
 
 The first tagged release.
