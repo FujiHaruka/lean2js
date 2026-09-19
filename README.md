@@ -152,6 +152,7 @@ end MyLogic
 lake build                           # checks the logic and the theorems
 lake exe lean2js MyLogic --out dist  # checks them again, then writes the npm package
 # 2733 vectors agree on Node v24.18.0
+# needs 99 of the 10000 fuel the artifact runs at
 # wrote 9 exports to dist
 ```
 
@@ -275,7 +276,7 @@ wrote.
 
 ## What is guaranteed
 
-- **Proved about the compiler, once.** For every one of the 36 expression forms in the subset, the
+- **Proved about the compiler, once.** For every expression form in the subset, the
   generated JavaScript agrees with the reference semantics: it returns the same value, throws the
   same code where the semantics traps, and refuses at the boundary what the semantics would not
   accept. The text of `index.js` reads back as the module the compiler built, and the `.d.ts` admits

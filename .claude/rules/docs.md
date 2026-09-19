@@ -30,12 +30,21 @@ today.
 overflow trap instead of following JavaScript, why `Int53.div` exists rather than Lean's `/` — a reader
 meets those as today's behaviour, so the reason stays with them.
 
-## Numbers are measured, and they move together
+## A number is measured, or it is not in the document
 
-Write a number only if you measured it on the current tree. Expression forms, public functions,
-declarations, runtime helpers, vector counts and the fuel figure are quoted in `README.md`,
-`docs/guarantees.md` and `CHANGELOG.md` — when one moves, correct every place quoting it **in the same
-commit**.
+**A count is not a claim.** Expression forms, public functions, shipped declarations, run-time helpers,
+table rows: the claim is the quantifier, so write *every form*, *every public function*, *one per shipped
+declaration*. A count on top of that gives a reader nothing except something to check, which will be
+wrong by the time they check it — as the one in `CHANGELOG.md` already was.
+
+The few numbers a reader cannot get any other way — how many vectors an artifact was checked on, and how
+much of the fuel ceiling it needs, and the ceiling itself — are **written by
+`scripts/update-numbers.sh`** into the documents that quote them, between `<!--n:name-->` markers, out
+of what `lean2js` prints while it emits. CI runs it and fails on the diff. Never type one of those in: change what is measured, or change the
+marker.
+
+A transcript is not a claim either: the sample output in `README.md` shows what the command prints, and a
+reader whose own run counts differently has lost nothing.
 
 ## Code in a document has to work
 

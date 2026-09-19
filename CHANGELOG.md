@@ -9,12 +9,13 @@ what decides which compiler your artifact was built by.
 - A list of lists now prints as `readonly (readonly number[])[]` in the `.d.ts` and in the signatures
   the manifest carries. It printed as `readonly readonly number[][]`, which TypeScript refuses outright,
   and which reads as an array of *mutable* arrays wherever a build is told to carry on past the error.
+- Emitting a package now prints how much of the fuel ceiling the program needs, beside the vector count.
 
 ## 0.1.0
 
 The first tagged release.
 
-- A Lean 4 subset — 36 expression forms — that compiles to ESM with a `.d.ts`, a source map and a proof
+- A Lean 4 subset that compiles to ESM with a `.d.ts`, a source map and a proof
   manifest, and carries no runtime and no dependencies.
 - `@[ship]` reads a declaration out of a `def` and `ship_package` writes, per declaration, the proof that
   the declaration computes it. A declaration without that certificate is not written out.

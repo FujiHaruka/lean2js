@@ -372,7 +372,8 @@ program carries the name, and a lambda has none. `priced tenPercentOff amount` i
   not. A class constraint is read on a `@[expand] def` and nowhere else, because there it is gone before
   the AST exists.
 - **There is a fuel ceiling.** The fuel a program needs follows from the depth of its expressions and
-  the number of its declarations; past 10000 it cannot be written out. `ship_package` checks this.
+  the number of its declarations; past <!--n:fuelCeiling-->10000<!--/n--> it cannot be written out.
+  `ship_package` checks this.
 - **A composite key is two sorts.** `Arr.sortByKey` takes one key, of type `Int` or `String`, and is
   stable. So an order on two fields is written as two calls: sort by the secondary key first, then by
   the primary one, and the secondary order survives inside each group.

@@ -36,7 +36,7 @@ Node-side tests, so a partial run decides nothing.
 pnpm lean:build && pnpm lean:emit
 pnpm typecheck && pnpm test && pnpm lint
 pnpm package:check && pnpm template:check
-git diff --exit-code -- packages/verified-example
+pnpm numbers && git diff --exit-code -- packages/verified-example docs/guarantees.md templates
 ```
 
 `.github/workflows/ci.yml` runs the same set. `lake` runs at the repository root — `lakefile.toml` and

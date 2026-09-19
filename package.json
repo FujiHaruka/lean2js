@@ -16,6 +16,7 @@
     "lean:build": "lake build",
     "package:check": "publint packages/verified-example && attw --pack packages/verified-example --profile esm-only",
     "lean:emit": "lake exe lean2js Lean2Js.Example --out packages/verified-example",
+    "numbers": "./scripts/update-numbers.sh",
     "template:check": "./scripts/check-template.sh"
   },
   "devDependencies": {

@@ -102,6 +102,7 @@ def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
       ("proof-manifest.json", a.toJson.renderPretty ++ "\n"),
       ("package.json", (packageJson a.manifest).renderPretty ++ "\n")]
     checkOnNode files vectors
+    IO.println s!"needs {Cost.cost a.program} of the {defaultFuel} fuel the artifact runs at"
     IO.FS.createDirAll outDir
     -- the transcribed source is named after the package, so renaming the package would otherwise leave
     -- the old one behind, next to a manifest that does not mention it

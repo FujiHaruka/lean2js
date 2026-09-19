@@ -17,8 +17,10 @@ jobs:
           package-manager-cache: false
       - name: Regenerate the package
         run: lake exe lean2js Lean2Js.Example --out packages/verified-example
-      - name: Generated package is up to date
-        run: git diff --exit-code -- packages/verified-example
+      - name: The numbers the documents quote are the measured ones
+        run: ./scripts/update-numbers.sh
+      - name: The generated package and the measured numbers are up to date
+        run: git diff --exit-code -- packages/verified-example docs/guarantees.md templates
       - name: The user package template builds and emits
         run: ./scripts/check-template.sh
 
