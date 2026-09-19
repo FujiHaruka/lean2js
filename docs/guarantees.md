@@ -71,6 +71,13 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   `propext` / `Classical.choice` / `Quot.sound` is also checked before anything is written — a proof
   plugged with `sorry` gets through `lake build` with only a warning, so this is where it is stopped.
 
+**A statement in the manifest names no symbol the package cannot answer for.** `@[expand]` writes a `def`
+out where it is called, so a constant a theorem reads by name is a number in `index.js` and nothing else.
+`proof-manifest.json` carries those constants and their values under `constants`, and the package README
+lists them; a constant whose value has no place there — anything but an `Int`, a `String` or a `Bool` —
+fails the build instead. An empty `constants` means no shipped statement named one, not that the gathering
+was skipped.
+
 **What the `@throws` line names is read off the syntax, not proved.** `decl_traps` proves the generated
 code throws the code `eval` traps with; *which* codes a given function can trap with is a separate
 question, and the line in `index.d.ts` answers it by reading the body — each operation contributes the

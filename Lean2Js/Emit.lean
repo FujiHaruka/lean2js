@@ -110,6 +110,7 @@ def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
         IO.FS.removeFile entry.path
     for (name, text) in files do
       IO.FS.writeFile (outDir / name) text
-    IO.println s!"wrote {a.program.publicDecls.length} exports to {outDir}"
+    IO.println
+      s!"wrote {a.program.publicDecls.length} exports and {a.claims.length} theorems to {outDir}"
 
 end Lean2Js

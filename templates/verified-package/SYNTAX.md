@@ -399,9 +399,16 @@ sides to it.
   are refused along with anything outside the `Int53` range. JavaScript's `Number()` reads all four.
 - `Str.indexOf? s t` answers `none` for absence where JavaScript's `indexOf` answers `-1`. The empty
   needle sits at `0`, in both. The answer is an index `Str.substring` accepts.
+- **`Str.split s ""` answers `[s]`**, the whole string in a one-element array. JavaScript's `"abc".split("")`
+  answers `["a", "b", "c"]`; this does not, and it does not refuse either — a check written on the
+  characters it was expected to hand back is quietly wrong rather than refused. **The subset cannot walk a
+  string of unknown length character by character at all**: there is no character type and no repetition
+  outside the array traversals. A field whose length is fixed is read with `Str.substring s i (i + 1)` at
+  each literal position, behind a `Str.length` guard; a field whose length is not fixed is checked with
+  `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` instead.
 - `Str.replace s pat rep` rewrites **every** occurrence, the way JavaScript's `replaceAll` does and its
   `replace` does not. An empty `pat` leaves `s` as it is, where `replaceAll("", r)` inserts at every
-  position — the same divergence `Str.split s ""` carries, which is what `Str.replace` is written from.
+  position — the same inertness `Str.split s ""` has, which is what `Str.replace` is written from.
 - `Str.repeat s n` gives `""` for a count of zero or less, where JavaScript's own throws on a negative
   one. It and `Str.padStart`, which is written from it, are the two operations whose result grows with a
   *value* rather than with the text, so **the count has to be bounded by the program**: a literal, a

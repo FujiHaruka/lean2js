@@ -49,6 +49,20 @@ theorem total_of_three (a b c : Int) : Arr.sum [a, b, c] = a + b + c := by
   simp; omega
 ```
 
+**Gates stacked on each other take one `split` per `if`.** A real rule is rarely one conditional deep,
+and `simp` alone will not pick the branch a hypothesis rules in:
+
+```lean
+@[ship]
+def tierOf (quantity : Int) : Int := if quantity < 10 then 1 else if quantity < 100 then 2 else 3
+
+/-- An order of a hundred or more is in the top tier. -/
+theorem large_orders_are_tier_three (quantity : Int) (hbig : 100 ≤ quantity) :
+    tierOf quantity = 3 := by
+  simp only [tierOf]
+  split <;> omega
+```
+
 **`decide` reaches less far than it looks.** It needs a `Decidable` instance for the whole proposition,
 and an equation between two values of your own `structure`, or between two `Except String YourType`, does
 not get one — not even with `deriving DecidableEq` on every part, because the equation is between terms
@@ -60,20 +74,36 @@ theorem free_plan_invoice : invoiceFor .free 0 .noDiscount = .ok ⟨[⟨"Free se
 
 ## Where `simp` goes wrong
 
-- **A hypothesis about a call is destroyed by unfolding that call.** Where `h : totalOf amounts = 500`,
-  `simp [totalOf, h]` replaces `totalOf amounts` with `Arr.sum amounts` before `h` can fire, and nothing
-  is left for `h` to match. Worse, the hint blames the wrong side — it reports **`h`** as the unused
-  argument and suggests `simp [totalOf]`, which is the one to drop. `simp [h]` closes it.
-  A hypothesis about something *inside* the body is the opposite case: there the unfolding is what
-  exposes it, and naming the definition is right. `h : prices.get sku = none` needs
-  `simp [priceOrZero, h]`, because `prices.get sku` does not appear until `priceOrZero` is opened.
+- **Naming a definition in `simp` replaces every rule about it with its body.** This is one rule with
+  three faces, and the `simp` hint points the wrong way in all three: it reports the argument that stopped
+  matching as **unused**, which is the one to keep.
+  - A hypothesis about a call. Where `h : totalOf amounts = 500`, `simp [totalOf, h]` opens
+    `totalOf amounts` into `Arr.sum amounts` before `h` can fire. The hint blames `h`; the one to drop is
+    `totalOf`. `simp [h]` closes it.
+  - A prelude name that already carries equations. `simp` closes
+    `Str.join [a, b] "-" = a ++ "-" ++ b` on its own; `simp [Str.join]` leaves you looking at `joinStr`,
+    because naming it took the equations off the table. The vocabulary in the next section steps by
+    itself — do not ask for it by name.
+  - The opposite case, where naming it is right: a hypothesis about something *inside* the body.
+    `h : prices.get sku = none` needs `simp [priceOrZero, h]`, because `prices.get sku` does not appear
+    until `priceOrZero` is opened.
 - **Spell a numeric literal the way the goal spells it.** `simp` computes `14 * 24 * 60 * 60 * 1000` in
   the goal but not inside a hypothesis you handed it as a rewrite rule, so a hypothesis written
   `elapsed > 14 * 24 * 60 * 60 * 1000` will not fire against a goal holding `1209600000`. Pick one
   spelling and use it in both, or normalise with `omega`.
-- **State a hypothesis the way the `def` tests it.** If the body asks `Str.isEmpty (Str.trim s)`, the
-  hypothesis to carry is `Str.length (Str.trim s) = 0`, not `Str.trim s = ""`. The two are the same fact
-  and only the first is the one `simp` can use, because it is the one the body reduces to.
+- **State a hypothesis the way the `def` tests it, and open the helper that tests it.** If the body asks
+  `Str.isEmpty (Str.trim s)`, the hypothesis to carry is `Str.length (Str.trim s) = 0`, not
+  `Str.trim s = ""` — the first is what the body reduces to. `Str.isEmpty` has to be named beside it, or
+  the two never meet: `simp [labelOf, Str.isEmpty, h]`, where `simp [labelOf, h]` stops with `h` reported
+  unused. This is the one place the rule above runs the other way, because `Str.isEmpty` is what stands
+  between the hypothesis and the branch.
+
+**A claim about the characters of an arbitrary string is out of reach.** The `Str.*` vocabulary answers
+in its own terms — `Str.includes`, `Str.indexOf?`, `Str.substring`, `Str.length` — and nothing in the
+library carries a fact from one of those answers down to `String.toList` and `Char`. So "this string holds
+exactly two hyphens, whatever the parts were" has no route, while "this string holds no hyphen, because
+`Str.includes s "-" = false`" is already stated in the vocabulary and needs no bridge. State the claim in
+the vocabulary the body uses, or prove it of concrete instances with `decide`.
 
 ## What the prelude's functions are
 
