@@ -303,18 +303,21 @@ def powTen (n : Int) : Int :=
   1 文字ずつ歩けない」を併せて書いた。
 - `if` を 2 段重ねた `split <;> omega` の例が無い（2 番と 4 番が独立に要求）。足した。
 
-**2 番が捨てた `ship_package` の生ゴールは、証明書合成のバグだった。** `@[expand]` の本体が自分の引数の
-`match` のとき、`reify` は splitter の motive を書き出すのに program と env を穴で置いており、その穴は
-`y`（場合分けする値）の下で作られるので `y` の関数になる。1 つの項に `match` が 2 つあると、両者の
-program の穴どうしが先に解け、**一方の scrutinee がもう一方のものに解かれる** —— `roleRank a + roleRank b`
-が `(fun a => a) ?m` と `(fun b => b) ?m` になる。program と env を名指す `denotes_matchE_split` を通し、
-splitter の major premise を穴でなく scrutinee そのものにして直した。`roleRank .member` /
-`roleRank a + roleRank b` / `roleRank a >= roleRank .member` / `xs.map (fun x => roleRank x + roleRank .admin)`
-はいずれも通る。
+**2 番が捨てた `ship_package` の生ゴールは、証明書合成のバグだった。** splitter の結論は motive を
+場合分けする値に適用したものだが、`reify` はその値も穴で渡しており、書き出した motive の中の program と
+env も `y` の下に作られる穴だった。穴に穴を適用した形はパターンではないので解けず、1 つの項に `match` が
+2 つあると両者の program の穴が先に一致して、**一方の scrutinee がもう一方のものに解かれる** ——
+`roleRank a + roleRank b` が `(fun a => a) ?m` と `(fun b => b) ?m` になる。直したのは 2 か所で、
+splitter を `∀ y` の下で使う `denotes_matchE_split` を通して motive を束縛変数に適用させること（2 回
+呼びが解ける）と、major premise を穴でなく scrutinee そのものにすること（`roleRank .member` のように
+リテラルを渡すと `match` が先に潰れて読み戻せないので、こちらが要る）。`roleRank .member` /
+`roleRank a + roleRank b` / `roleRank a >= roleRank .member` / 外側の変数を読む arm /
+`xs.map (fun x => roleRank x + roleRank .admin)` はいずれも通る。
 
 **証明書が型検査に落ちたときは `def` を名指すようになった。** `reify_proof%` の elaborate は
-`withSynthesize` で穴を閉じきってから、落ちたら `def` の位置に「これは `def` ではなく walk の欠陥」と
-書いて投げる。以前は `ship_package` の行に生ゴールだけが出ていた。
+`withSynthesize` で穴を閉じきってから `def` の位置に投げ直す。arm の中のタクティクは投げずに自分で
+報告するので、そちらは新しく出たエラーを見て同じ 1 行を `def` の位置に足す。どちらも「これは `def` では
+なく walk の欠陥」と書く。以前は `ship_package` の行に生ゴールだけが出ていた。
 
 **このセッションでは直していない新規の指摘が 1 件ある:**
 
