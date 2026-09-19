@@ -964,3 +964,27 @@ def manifest : Manifest := {
 }
 
 end Lean2Js.Example
+
+section AuditProbe
+open Lean2Js Lean2Js.Example Lean2Js.Core Lean2Js.Enc
+
+-- theorem 1: the two structurally different leaves
+#guard directChildren (.leaf "") == 0
+#guard directChildren (.leaf "日本語") == 0
+
+-- the fact docstring 1 also reads on, but that theorem 1 does not state
+#guard directChildren (.group "empty" []) == 0
+
+-- theorem 2 at two structurally different depths
+#guard directChildren (.group "flat" [.leaf "a", .leaf "b"]) == 2
+#guard directChildren (.group "root" [.leaf "a", .group "b" [.leaf "c", .group "d" [.leaf "e"]]]) == 2
+
+-- is a deep Category reachable through the shipping path at all?
+#eval evalCall program "directChildren"
+  [toValue (Category.group "root" [.leaf "a", .group "b" [.leaf "c", .leaf "d"]])]
+#eval evalCall program "directChildren" [toValue (Category.leaf "x")]
+#eval evalCall program "directChildren" [toValue (Category.group "empty" [])]
+#eval (toValue (Category.group "root" [Category.leaf "a"]) : Value)
+#eval program.findType? "Category" |>.isSome
+
+end AuditProbe

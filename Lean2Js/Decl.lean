@@ -413,8 +413,8 @@ mutual
 
 theorem checkTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
     ∀ (ty : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (v : Value),
-      tyDescIn p st b ty = .ok d → StackAgrees p st env → Js.envOk env = true → Js.descOk env.length d = true →
-      Value.hasTy p v ty = true →
+      tyDescIn p st b ty = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasTy p v ty = true →
       Js.checkTy env (encodeValue v) d = true
   | .bool, st, env, _, _, v, hd, hsa, henv, _, hv => by
     obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
@@ -566,8 +566,8 @@ termination_by _ _ _ _ _ _ fs => sizeOf fs
 
 theorem checkList_encodeList (p : Program) (hn : TypesNamesOk p) :
     ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (xs : List Value),
-      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true → Js.descOk env.length d = true →
-      Value.hasElemTy p xs elem = true →
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasElemTy p xs elem = true →
       Js.checkList env (encodeList xs) d = true
   | _, st, env, _, _, [], _, hsa, henv, _, _ => by simp [encodeList, checkList_nil]
   | elem, st, env, b, d, x :: rest, hd, hsa, henv, hdo, hv => by
@@ -582,14 +582,15 @@ termination_by _ _ _ _ _ xs => sizeOf xs
 theorem checkEntries_encodeFields (p : Program) (hn : TypesNamesOk p) :
     ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc)
       (es : List (String × Value)),
-      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true → Js.descOk env.length d = true →
-      Value.hasEntryTys p es elem = true →
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasEntryTys p es elem = true →
       Js.checkEntries env (encodeFields es) d = true
   | _, st, env, _, _, [], _, hsa, henv, _, _ => by simp [encodeFields, checkEntries_nil]
   | elem, st, env, b, d, (key, v) :: rest, hd, hsa, henv, hdo, hv => by
     rw [hasEntryTys_cons, Bool.and_eq_true] at hv
     rw [show encodeFields ((key, v) :: rest) = (key, encodeValue v) :: encodeFields rest by
-        rw [encodeFields.eq_def], checkEntries_cons, checkTy_encodeValue p hn elem st env b d v hd hsa henv hdo hv.1,
+        rw [encodeFields.eq_def], checkEntries_cons,
+      checkTy_encodeValue p hn elem st env b d v hd hsa henv hdo hv.1,
       checkEntries_encodeFields p hn elem st env b d rest hd hsa henv hdo hv.2]
     simp
 termination_by _ _ _ _ _ es => sizeOf es
