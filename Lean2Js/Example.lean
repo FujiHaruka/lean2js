@@ -855,7 +855,7 @@ compiler prints actually computes; `helperArgsOk` is what a call to a row is sti
 only for the Int53 range a type has already given, the distinct keys a `Map` cannot break, and the shapes
 on which `__eq`'s walk and the model's structural equality decide the same thing.
 
-`__ck` and the six traversal helpers are not rows: the model evaluates them as rules of its own, and
+`__ck` and the seven traversal helpers are not rows: the model evaluates them as rules of its own, and
 `HelperProof` answers those against the same printed source. -/
 theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : List Js.JsValue)
     (r : Js.JsResult) (hok : HelperSem.helperArgsOk name args)

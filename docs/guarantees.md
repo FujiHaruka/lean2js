@@ -5,7 +5,7 @@ The README's *What is guaranteed* is the summary of this page; the statements, t
 structure of the proofs are in the [Lean reference](https://fujiharuka.github.io/lean2js/).
 
 ```
-your Lean def  ──certificate (one per declaration, all 106 shipped)──  reference semantics
+your Lean def  ──certificate (one per declaration, all 108 shipped)──  reference semantics
       │
       └──your theorems are ordinary Lean equations about this def
 
@@ -67,7 +67,7 @@ model of the generated JS  ──run-time check (on Node, every vector)──  r
   `lean2js` collects every public theorem in the same namespace and uses the signature Lean prints as the
   wording. The per-declaration certificates are not listed one by one: they correspond one-to-one with
   the shipped declarations and nothing is written if one is missing, so what is published is that they
-  are all there rather than 106 restatements of one shape. That no theorem rests on an axiom beyond
+  are all there rather than 108 restatements of one shape. That no theorem rests on an axiom beyond
   `propext` / `Classical.choice` / `Quot.sound` is also checked before anything is written — a proof
   plugged with `sorry` gets through `lake build` with only a warning, so this is where it is stopped.
 

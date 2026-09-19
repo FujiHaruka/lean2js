@@ -724,7 +724,7 @@
     {
       "name": "helpers_ship_as_modelled",
       "statement": "helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : List Js.JsValue) (r : Js.JsResult)\n  (hok : HelperSem.helperArgsOk name args) (h : Js.helper name args = some r) :\n  HelperSem.Helper.Calls ext name (List.map HelperSem.ofJs args) (HelperSem.ofRes r)",
-      "doc": "The runtime helpers are the last hand-written JavaScript in the artifact, and the model of the\ngenerated code reaches most of them through one table. Every row of that table is what the source the\ncompiler prints actually computes; `helperArgsOk` is what a call to a row is still asked for, and it asks\nonly for the Int53 range a type has already given, the distinct keys a `Map` cannot break, and the shapes\non which `__eq`'s walk and the model's structural equality decide the same thing.\n\n`__ck` and the six traversal helpers are not rows: the model evaluates them as rules of its own, and\n`HelperProof` answers those against the same printed source."
+      "doc": "The runtime helpers are the last hand-written JavaScript in the artifact, and the model of the\ngenerated code reaches most of them through one table. Every row of that table is what the source the\ncompiler prints actually computes; `helperArgsOk` is what a call to a row is still asked for, and it asks\nonly for the Int53 range a type has already given, the distinct keys a `Map` cannot break, and the shapes\non which `__eq`'s walk and the model's structural equality decide the same thing.\n\n`__ck` and the seven traversal helpers are not rows: the model evaluates them as rules of its own, and\n`HelperProof` answers those against the same printed source."
     },
     {
       "name": "entry_check_fits_dts",

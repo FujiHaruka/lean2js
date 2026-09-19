@@ -19,7 +19,9 @@ where it stands: a function reaches a call as the name of a declaration. That is
 program needs be counted from its syntax alone — a call only reaches backwards, so the stack is at most as
 deep as the list of declarations. Repetition is the same line. The six traversals `map`, `filter`,
 `find?`, `all`, `any` and `foldl` are one pass over an array, whose length costs no fuel at all, and the
-lambda in one of them is the traversal's own syntax rather than a value of its own.
+lambda in one of them is the traversal's own syntax rather than a value of its own. `Arr.sortByKey` is
+the seventh: it reads each element's key in one pass and the ordering is not a walk over the subset at
+all, so its length costs no fuel either.
 
 So there is one question to ask rather than a table to consult:
 
