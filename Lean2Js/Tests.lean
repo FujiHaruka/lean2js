@@ -518,6 +518,26 @@ order they ship in: a callee moves ahead of its caller, and a declaration handed
 ahead of the callee it is handed to. A cycle cannot be written at all — Lean turns the `def`s away first
 — so what the compiler does with one is pinned above, on declarations built by hand. -/
 
+/-! ## What reaches the `.d.ts`
+
+A declared type is printed only where a consumer can name it: from the signature of a public function, or
+through the fields of a type already reachable that way. A type that only ever holds an intermediate
+value -- the accumulator a `foldl` carries -- is in no public signature, and printing it would invite a
+consumer to build one. -/
+
+private def hiddenTypeProgram : Program :=
+  { types := [struct "Accum" [("running", .int53)], struct "Money" [("amount", .int53)]],
+    decls := [decl "amountOf" [("m", .named "Money" [])] .int53 (proj (v "m") "amount")] }
+
+private def nestedTypeProgram : Program :=
+  { types := [struct "Line" [("label", .string)], struct "Cart" [("line", .named "Line" [])]],
+    decls := [decl "cartLabel" [("c", .named "Cart" [])] .string (proj (proj (v "c") "line") "label")] }
+
+#guard ((Js.renderDts hiddenTypeProgram).splitOn "Accum").length == 1
+#guard ((Js.renderDts hiddenTypeProgram).splitOn "export type Money").length == 2
+#guard ((Js.renderDts nestedTypeProgram).splitOn "export type Line").length == 2
+#guard ((Js.renderDts nestedTypeProgram).splitOn "export type Cart").length == 2
+
 namespace Gathered
 
 @[ship] def withRule (rule : Int → Int) (x : Int) : Int := rule x
