@@ -303,12 +303,21 @@ def powTen (n : Int) : Int :=
   1 文字ずつ歩けない」を併せて書いた。
 - `if` を 2 段重ねた `split <;> omega` の例が無い（2 番と 4 番が独立に要求）。足した。
 
-**このセッションでは直していない新規の指摘が 2 件ある:**
+**2 番が捨てた `ship_package` の生ゴールは、証明書合成のバグだった。** `@[expand]` の本体が自分の引数の
+`match` のとき、`reify` は splitter の motive を書き出すのに program と env を穴で置いており、その穴は
+`y`（場合分けする値）の下で作られるので `y` の関数になる。1 つの項に `match` が 2 つあると、両者の
+program の穴どうしが先に解け、**一方の scrutinee がもう一方のものに解かれる** —— `roleRank a + roleRank b`
+が `(fun a => a) ?m` と `(fun b => b) ?m` になる。program と env を名指す `denotes_matchE_split` を通し、
+splitter の major premise を穴でなく scrutinee そのものにして直した。`roleRank .member` /
+`roleRank a + roleRank b` / `roleRank a >= roleRank .member` / `xs.map (fun x => roleRank x + roleRank .admin)`
+はいずれも通る。
 
-- **`ship_package` の証明書合成が閉じないとき、`Denote.Denotes` / `firstMatch ?m.1377 ...` の生ゴールが
-  出る。** SYNTAX.md が `reify` の拒否について約束している「名指しで断る」形になっておらず、2 番は
-  原因（`≥` か / `@[expand]` の二重呼び出しか / 入れ子か）を切り分けられないまま該当関数を捨てた。
-  この処理系で一番読めない出力。
+**証明書が型検査に落ちたときは `def` を名指すようになった。** `reify_proof%` の elaborate は
+`withSynthesize` で穴を閉じきってから、落ちたら `def` の位置に「これは `def` ではなく walk の欠陥」と
+書いて投げる。以前は `ship_package` の行に生ゴールだけが出ていた。
+
+**このセッションでは直していない新規の指摘が 1 件ある:**
+
 - **`Str.*` の答えから `String.toList` / `Char` の事実に降りる補題が無い。** 「ハイフンがちょうど 2 本」
   のような文字を数える主張は、任意の文字列については届かない。PROVING.md には境界として 1 文書いたが、
   補題を足してはいない。
