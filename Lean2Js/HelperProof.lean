@@ -6784,4 +6784,405 @@ theorem calls_out_outTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk 0 
       (by rw [has_checkTy]; exact hh), outV_ofJs]
   rfl
 
+/-! ## Walking a value of a type that names itself
+
+`__fold` is the helper a fold in the subset compiles to. It walks a value from the leaves up and hands
+each node to the one callback the compiler passed, with each field that came round already replaced by
+what the callback answered for it — so the callback reads a node of the shape the type declares and
+dispatches on the tag, which is what a `match` does.
+
+Nothing emits a call to it yet: the `Core.Expr` form and its compilation are the commit after this one.
+What is here is the helper and the statement that it computes what the model says, which is the
+expensive half and the one this repository requires before a helper may ship.
+-/
+
+open Lean2Js.Js (FoldKind FoldFields FoldSpec)
+
+def specValFields : FoldFields → List Val
+  | [] => []
+  | (n, k) :: rest => .arr [.str n, .str k.render] :: specValFields rest
+
+/-- The spec as the object `__fold` reads it: one entry per constructor, holding that constructor's
+fields in declared order. Written as a recursion rather than through `List.map`, and reached through an
+`abbrev`, so that the walk can see the `obj` constructor and step into the read. -/
+def specValEntries : FoldSpec → List (String × Val)
+  | [] => []
+  | (c, fs) :: rest => (c, .arr (specValFields fs)) :: specValEntries rest
+
+abbrev specVal (spec : FoldSpec) : Val := .obj (specValEntries spec)
+
+mutual
+
+/-- What `__fold` computes: the callback's answer for the node, with each field that came round already
+replaced by the callback's answer for it. -/
+def foldV (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec) : Val → Res Val
+  | .obj es =>
+    match lookupV es key with
+    | .str tag =>
+      match (spec.find? (·.1 == tag)).map (·.2) with
+      | some fs =>
+        (foldPairs ext i key spec es fs).bind fun ps =>
+          ext i [.obj (mapSetAll [(key, .str tag)] ps)]
+      | none => .stuck
+    | _ => .stuck
+  | _ => .stuck
+termination_by v => (sizeOf v, 1, 0)
+
+def foldList (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec) : List Val → Res (List Val)
+  | [] => .ok []
+  | x :: rest =>
+    (foldV ext i key spec x).bind fun y =>
+      (foldList ext i key spec rest).bind fun ys => .ok (y :: ys)
+termination_by xs => (sizeOf xs, 2, 0)
+
+/-- A field the spec says holds a list of the type coming round. A value that is not an array is one
+the entry check would not have let through, so the walk declines to answer for it rather than guessing.
+
+Written apart from `foldPairs` so that the match is on a value and not on a proof: an arm matching on
+`lookupV es n` in place makes that arm depend on the equation, and nothing can then case on the field. -/
+def foldListAt (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec) : Val → Res (List Val)
+  | .arr xs => foldList ext i key spec xs
+  | _ => .stuck
+termination_by v => (sizeOf v, 3, 0)
+
+def foldPairs (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec) (es : List (String × Val)) :
+    FoldFields → Res (List (String × Val))
+  | [] => .ok []
+  | (n, .plain) :: rest =>
+    (foldPairs ext i key spec es rest).bind fun ps => .ok ((n, lookupV es n) :: ps)
+  | (n, .self) :: rest =>
+    have := sizeOf_lookupV_lt es n
+    (foldV ext i key spec (lookupV es n)).bind fun v =>
+      (foldPairs ext i key spec es rest).bind fun ps => .ok ((n, v) :: ps)
+  | (n, .list) :: rest =>
+    have := sizeOf_lookupV_lt es n
+    (foldListAt ext i key spec (lookupV es n)).bind fun ys =>
+      (foldPairs ext i key spec es rest).bind fun ps => .ok ((n, .arr ys) :: ps)
+termination_by fs => (sizeOf (Val.obj es), 0, sizeOf fs)
+
+end
+
+mutual
+
+/-- Enough fuel for `__fold`, by the same recursion as `foldV`. A generous constant per level: the
+claim is stated for every larger amount, so an upper bound is all a proof needs. -/
+def foldFuel (key : String) (spec : FoldSpec) : Val → Nat
+  | .obj es =>
+    match lookupV es key with
+    | .str tag =>
+      match (spec.find? (·.1 == tag)).map (·.2) with
+      | some fs => foldFuelPairs key spec es fs + 30
+      | none => 30
+    | _ => 30
+  | _ => 30
+termination_by v => (sizeOf v, 1, 0)
+
+def foldFuelList (key : String) (spec : FoldSpec) : List Val → Nat
+  | [] => 6
+  | x :: rest => foldFuel key spec x + foldFuelList key spec rest + 22
+termination_by xs => (sizeOf xs, 2, 0)
+
+def foldFuelListAt (key : String) (spec : FoldSpec) : Val → Nat
+  | .arr xs => foldFuelList key spec xs + 6
+  | _ => 6
+termination_by v => (sizeOf v, 3, 0)
+
+def foldFuelPairs (key : String) (spec : FoldSpec) (es : List (String × Val)) : FoldFields → Nat
+  | [] => 6
+  | (_, .plain) :: rest => foldFuelPairs key spec es rest + 30
+  | (n, .self) :: rest =>
+    have := sizeOf_lookupV_lt es n
+    foldFuel key spec (lookupV es n) + foldFuelPairs key spec es rest + 30
+  | (n, .list) :: rest =>
+    have := sizeOf_lookupV_lt es n
+    foldFuelListAt key spec (lookupV es n) + foldFuelPairs key spec es rest + 30
+termination_by fs => (sizeOf (Val.obj es), 0, sizeOf fs)
+
+end
+
+theorem find_fold : Helper.defs.find? (·.name == "__fold") = some Helper.fold := rfl
+
+/-- The pairs the loop pushes, as the array literals it pushes them as. -/
+def pairVals : List (String × Val) → List Val
+  | [] => []
+  | (n, v) :: rest => .arr [.str n, v] :: pairVals rest
+
+theorem foldList_loop (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec) (G O X : Val) :
+    ∀ (xs : List Val) (acc : List Val) (f : Nat),
+    (∀ x ∈ xs, ∀ g : Nat,
+      callDef ext (g + foldFuel key spec x) "__fold" [x, .str key, specVal spec, .ext i]
+        = foldV ext i key spec x) →
+    evalFor ext (f + foldFuelList key spec xs + 6)
+      [("ys", .arr acc), ("g", G), ("out", O), ("x", X), ("key", .str key),
+       ("spec", specVal spec), ("f", .ext i)] "c" xs
+      [.push "ys" (.call "__fold" [(.var "c"), (.var "key"), (.var "spec"), (.var "f")])]
+      = (foldList ext i key spec xs).bind fun ys =>
+          .ok (.next [("ys", .arr (acc ++ ys)), ("g", G), ("out", O), ("x", X), ("key", .str key),
+            ("spec", specVal spec), ("f", .ext i)]) := by
+  intro xs
+  induction xs with
+  | nil => intro acc f _; simp only [foldFuelList]; walk; simp [foldList]
+  | cons x rest ih =>
+    intro acc f hsub
+    simp only [foldFuelList]
+    rw [show f + (foldFuel key spec x + foldFuelList key spec rest + 22) + 6
+      = (f + foldFuel key spec x + foldFuelList key spec rest + 27) + 1 from by omega]
+    walk
+    rw [show f + foldFuel key spec x + foldFuelList key spec rest + 25
+      = (f + foldFuelList key spec rest + 25) + foldFuel key spec x from by omega,
+      hsub x (by simp), foldList]
+    cases foldV ext i key spec x with
+    | stuck => rfl
+    | thrown c => rfl
+    | ok v =>
+      walk
+      simp only [Option.getD]
+      rw [show f + foldFuel key spec x + foldFuelList key spec rest + 27
+        = (f + foldFuel key spec x + 21) + foldFuelList key spec rest + 6 from by omega,
+        ih _ _ (fun y hy g => hsub y (by simp [hy]) g)]
+      cases foldList ext i key spec rest with
+      | stuck => rfl
+      | thrown c => rfl
+      | ok ys => simp
+
+/-- The body of the loop `__fold` runs over a constructor's fields. Named so that the lemma below and
+the helper read the same text. -/
+abbrev foldBody : List Helper.Stmt :=
+  [.ifThen (.bin "===" (.index (.var "g") (.num 1)) (.str "self")) [
+      .push "out" (.arrayLit [.index (.var "g") (.num 0),
+        .call "__fold" [.index (.var "x") (.index (.var "g") (.num 0)),
+          (.var "key"), (.var "spec"), (.var "f")]])],
+   .ifThen (.bin "===" (.index (.var "g") (.num 1)) (.str "list")) [
+      .const "ys" (.arrayLit []),
+      .forOf "c" (.index (.var "x") (.index (.var "g") (.num 0))) [
+        .push "ys" (.call "__fold" [(.var "c"), (.var "key"), (.var "spec"), (.var "f")])],
+      .push "out" (.arrayLit [.index (.var "g") (.num 0), (.var "ys")])],
+   .ifThen (.bin "===" (.index (.var "g") (.num 1)) (.str "plain")) [
+      .push "out" (.arrayLit [.index (.var "g") (.num 0),
+        .index (.var "x") (.index (.var "g") (.num 0))])]]
+
+/-- `walk`, with the two indices a spec entry is read at reduced in between. An entry is
+`[name, kind]`, so every branch of the loop reads element 0 or element 1 of one, and `Int.toNat` on a
+literal is what otherwise stands in the way of the next step. -/
+local macro "walkSpec" : tactic =>
+  `(tactic| (try walk
+             try simp only [show ((0:Int).toNat) = 0 from rfl, show ((1:Int).toNat) = 1 from rfl,
+               List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD]
+             try walk))
+
+set_option maxHeartbeats 1000000 in
+theorem foldPairs_loop (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec)
+    (es : List (String × Val))
+    (hsub : ∀ (w : Val), sizeOf w < sizeOf (Val.obj es) → ∀ g : Nat,
+      callDef ext (g + foldFuel key spec w) "__fold" [w, .str key, specVal spec, .ext i]
+        = foldV ext i key spec w) :
+    ∀ (fs : FoldFields) (acc : List Val) (f : Nat),
+    evalFor ext (f + foldFuelPairs key spec es fs + 6)
+      [("out", .arr acc), ("x", Val.obj es), ("key", .str key), ("spec", specVal spec),
+       ("f", .ext i)] "g" (specValFields fs) foldBody
+      = (foldPairs ext i key spec es fs).bind fun ps =>
+          .ok (.next [("out", .arr (acc ++ pairVals ps)), ("x", Val.obj es), ("key", .str key),
+            ("spec", specVal spec), ("f", .ext i)]) := by
+  intro fs
+  induction fs with
+  | nil => intro acc f; simp only [foldFuelPairs, specValFields]; walk; simp [foldPairs, pairVals]
+  | cons fd rest ih =>
+    obtain ⟨n, kind⟩ := fd
+    intro acc f
+    simp only [foldBody] at ih ⊢
+    cases kind with
+    | plain =>
+      simp only [foldFuelPairs, specValFields, FoldKind.render]
+      rw [show f + (foldFuelPairs key spec es rest + 30) + 6
+        = (f + foldFuelPairs key spec es rest + 35) + 1 from by omega]
+      walkSpec
+      rw [show f + foldFuelPairs key spec es rest + 35
+        = (f + 29) + foldFuelPairs key spec es rest + 6 from by omega, ih, foldPairs]
+      cases foldPairs ext i key spec es rest with
+      | stuck => rfl
+      | thrown c => rfl
+      | ok ps => simp [pairVals]
+    | self =>
+      simp only [foldFuelPairs, specValFields, FoldKind.render]
+      rw [show f + (foldFuel key spec (lookupV es n) + foldFuelPairs key spec es rest + 30) + 6
+        = (f + foldFuel key spec (lookupV es n) + foldFuelPairs key spec es rest + 35) + 1
+          from by omega]
+      walkSpec
+      rw [show f + foldFuel key spec (lookupV es n) + foldFuelPairs key spec es rest + 29
+        = (f + foldFuelPairs key spec es rest + 29) + foldFuel key spec (lookupV es n) from by omega,
+        hsub (lookupV es n) (by rw [Val.obj.sizeOf_spec]; exact sizeOf_lookupV_lt es n), foldPairs]
+      cases foldV ext i key spec (lookupV es n) with
+      | stuck => rfl
+      | thrown c => rfl
+      | ok v =>
+        walkSpec
+        rw [show f + foldFuel key spec (lookupV es n) + foldFuelPairs key spec es rest + 35
+          = (f + foldFuel key spec (lookupV es n) + 29) + foldFuelPairs key spec es rest + 6
+            from by omega, ih]
+        cases foldPairs ext i key spec es rest with
+        | stuck => rfl
+        | thrown c => rfl
+        | ok ps => simp [pairVals]
+    | list =>
+      simp only [foldFuelPairs, specValFields, FoldKind.render]
+      rw [foldPairs]
+      cases hln : lookupV es n
+      case arr xs =>
+        simp only [foldFuelListAt, foldListAt]
+        rw [show f + (foldFuelList key spec xs + 6 + foldFuelPairs key spec es rest + 30) + 6
+          = (f + foldFuelList key spec xs + foldFuelPairs key spec es rest + 41) + 1 from by omega]
+        walkSpec
+        simp only [hln]
+        have hmem : ∀ y ∈ xs, sizeOf y < sizeOf (Val.obj es) := by
+          intro y hy
+          have h1 := List.sizeOf_lt_of_mem hy
+          have h2 := sizeOf_lookupV_lt es n
+          rw [hln] at h2
+          simp only [Val.arr.sizeOf_spec] at h2
+          rw [Val.obj.sizeOf_spec]
+          omega
+        rw [show f + foldFuelList key spec xs + foldFuelPairs key spec es rest + 37
+          = (f + foldFuelPairs key spec es rest + 31) + foldFuelList key spec xs + 6 from by omega,
+          foldList_loop ext i key spec (.arr [.str n, .str "list"]) (.arr acc) (Val.obj es) xs []
+            _ (fun y hy g => hsub y (hmem y hy) g)]
+        cases foldList ext i key spec xs with
+        | stuck => rfl
+        | thrown c => rfl
+        | ok ys =>
+          walkSpec
+          simp only [List.nil_append]
+          rw [show f + foldFuelList key spec xs + foldFuelPairs key spec es rest + 41
+            = (f + foldFuelList key spec xs + 35) + foldFuelPairs key spec es rest + 6
+              from by omega, ih]
+          cases foldPairs ext i key spec es rest with
+          | stuck => rfl
+          | thrown c => rfl
+          | ok ps => simp [pairVals]
+      all_goals
+        simp only [foldFuelListAt, foldListAt]
+        rw [show f + (6 + foldFuelPairs key spec es rest + 30) + 6
+          = (f + foldFuelPairs key spec es rest + 41) + 1 from by omega]
+        walkSpec
+        rw [hln]
+        walkSpec
+
+/-- `Object.fromEntries` over the pairs the loop pushed. No side condition: what it builds is what
+`mapSetAll` builds, a later pair carrying the same name replacing an earlier one, and that is what the
+walk says it builds rather than a list the names have to be distinct for. -/
+theorem fromPairs_pairVals :
+    ∀ (ps : List (String × Val)) (acc : List (String × Val)),
+    fromPairs acc (pairVals ps) = some (mapSetAll acc ps) := by
+  intro ps
+  induction ps with
+  | nil => intro acc; simp [pairVals, fromPairs, mapSetAll]
+  | cons pd rest ih => obtain ⟨n, v⟩ := pd; intro acc; rw [pairVals, fromPairs, mapSetAll, ih]
+
+/-- The spec is read by the constructor's name, so a name the spec does not carry reads as `undefined`
+and the loop the walk runs over it is one the model declines to answer for. -/
+theorem lookupV_specValEntries (spec : FoldSpec) (tag : String) :
+    lookupV (specValEntries spec) tag
+      = match (spec.find? (·.1 == tag)).map (·.2) with
+        | some fs => .arr (specValFields fs)
+        | none => .undef := by
+  induction spec with
+  | nil => simp [lookupV, specValEntries]
+  | cons b rest ih =>
+    obtain ⟨c, fs⟩ := b
+    by_cases h : c == tag
+    · simp [lookupV, specValEntries, h]
+    · simp only [specValEntries, lookupV, List.find?_cons] at ih ⊢
+      simp only [h]
+      exact ih
+
+set_option maxHeartbeats 1000000 in
+private theorem calls_fold_aux (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec) :
+    ∀ (n : Nat) (v : Val), sizeOf v < n → ∀ (f : Nat),
+    callDef ext (f + foldFuel key spec v) "__fold" [v, .str key, specVal spec, .ext i]
+      = foldV ext i key spec v := by
+  intro n
+  induction n with
+  | zero => intro v h; exact absurd h (by omega)
+  | succ n ih =>
+    intro v hlt f
+    cases v
+    case obj es =>
+      rw [foldV, foldFuel]
+      cases hk : lookupV es key
+      case str tag =>
+        simp only []
+        cases hfs : (spec.find? (·.1 == tag)).map (·.2)
+        case some fs =>
+          rw [show f + (foldFuelPairs key spec es fs + 30)
+            = (f + foldFuelPairs key spec es fs + 29) + 1 from by omega,
+            callDef_block find_fold rfl rfl]
+          simp only [Helper.fold]
+          walk
+          rw [hk]
+          simp only [lookupV_specValEntries, hfs]
+          walk
+
+          rw [show f + foldFuelPairs key spec es fs + 27
+            = (f + 21) + foldFuelPairs key spec es fs + 6 from by omega,
+            foldPairs_loop ext i key spec es
+              (fun w hw g => ih w (by omega) g) fs [Val.arr [Val.str key, Val.str tag]] _]
+          cases foldPairs ext i key spec es fs with
+          | stuck => rfl
+          | thrown c => rfl
+          | ok ps =>
+            walk
+            rw [List.cons_append, List.nil_append, fromPairs, mapSet]
+            simp only [List.any_nil, Bool.false_eq_true, if_false, List.nil_append]
+            rw [fromPairs_pairVals]
+            walk
+            cases ext i [Val.obj (mapSetAll [(key, Val.str tag)] ps)] with
+            | stuck => rfl
+            | thrown c => rfl
+            | ok w => rfl
+        case none =>
+          rw [show f + 30 = (f + 29) + 1 from by omega, callDef_block find_fold rfl rfl]
+          simp only [Helper.fold]
+          walk
+          rw [hk]
+          simp only [lookupV_specValEntries, hfs]
+          walk
+      all_goals
+        rw [show f + 30 = (f + 29) + 1 from by omega, callDef_block find_fold rfl rfl]
+        simp only [Helper.fold]
+        walk
+        rw [hk]
+        walk
+    -- `x[key]` on an array or a `Map` answers out of the prototype rather than stuck, so those two
+    -- read the spec at a number before they stop, and the key they answer at is the one to split on.
+    case arr ys =>
+      simp only [foldV, foldFuel]
+      rw [show f + 30 = (f + 29) + 1 from by omega, callDef_block find_fold rfl rfl]
+      simp only [Helper.fold]
+      by_cases hkey : key = "length"
+      · subst hkey; walk
+      · walk
+        repeat' split
+        all_goals simp_all
+    case dict ds =>
+      simp only [foldV, foldFuel]
+      rw [show f + 30 = (f + 29) + 1 from by omega, callDef_block find_fold rfl rfl]
+      simp only [Helper.fold]
+      by_cases hkey : key = "size"
+      · subst hkey; walk
+      · walk
+        repeat' split
+        all_goals simp_all
+    all_goals
+      simp only [foldV, foldFuel]
+      rw [show f + 30 = (f + 29) + 1 from by omega, callDef_block find_fold rfl rfl]
+      simp only [Helper.fold]
+      walk
+
+/-- `__fold` computes what `foldV` says, at every value and every callback. The value is walked from
+the leaves up and each node is handed to the callback once, so a callback that throws stops the walk
+where the helper stops it. -/
+theorem calls_fold (ext : Ext) (i : Nat) (key : String) (spec : FoldSpec) (v : Val) (f : Nat) :
+    callDef ext (f + foldFuel key spec v) "__fold" [v, .str key, specVal spec, .ext i]
+      = foldV ext i key spec v :=
+  calls_fold_aux ext i key spec (sizeOf v + 1) v (by omega) f
+
 end Lean2Js.HelperSem

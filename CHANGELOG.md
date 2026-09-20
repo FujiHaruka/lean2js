@@ -38,6 +38,18 @@ what decides which compiler your artifact was built by.
   the three used to read as the same value — and which of them comes back is exactly what the declared
   type decides.
 
+- **The walk a fold takes over a type that names itself is in the runtime, and proved.** `__fold`
+  walks a value from the leaves up and hands each node to the one callback the compiler passes, with
+  each field that came round already replaced by what the callback answered for it — so the callback
+  reads a node of the shape the type declares and dispatches on the tag, which is what a `match` does.
+  `calls_fold` says it computes what the model says, at every value and every callback.
+
+  **Nothing calls it yet.** The `Core.Expr` form that will is the next piece of work, so the helper
+  ships proved and unreached; the proof comes first because a helper this repository ships is one a
+  theorem covers. One callback rather than one per constructor is what keeps the helper's `apply` at
+  the arity it has: a constructor's field count varies, and a helper cannot apply a callback to an
+  argument list it only has at run time.
+
 - **An argument written as a plain object is in the vectors.** A `Dict.Obj V` parameter accepts either
   a `Map` or a plain object, and every vector used to offer it a `Map`: the half a consumer of a
   generated package actually writes was proved and run by nothing. A parameter whose type reaches such a

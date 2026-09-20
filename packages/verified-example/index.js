@@ -646,6 +646,28 @@ const __out = (x, t, e) => {
 // expanded, so nothing is in scope before the descriptor is entered.
 const __ck = (x, t) => (__has(x, t, []) ? __norm(x, t, []) : __fail("typeError"));
 
+// The node is rebuilt rather than written to: every field the type declares is copied in
+// declared order, so what the callback reads is what encodeValue would have written.
+const __fold = (x, key, spec, f) => {
+  const out = [[key, (x)[key]]];
+  for (const g of (spec)[(x)[key]]) {
+    if (((g)[1] === "self")) {
+      out.push([(g)[0], __fold((x)[(g)[0]], key, spec, f)]);
+    }
+    if (((g)[1] === "list")) {
+      const ys = [];
+      for (const c of (x)[(g)[0]]) {
+        ys.push(__fold(c, key, spec, f));
+      }
+      out.push([(g)[0], ys]);
+    }
+    if (((g)[1] === "plain")) {
+      out.push([(g)[0], (x)[(g)[0]]]);
+    }
+  }
+  return (f)(Object.fromEntries(out));
+};
+
 /** add : (a : Int53, b : Int53) → Int53 */
 export function add(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);

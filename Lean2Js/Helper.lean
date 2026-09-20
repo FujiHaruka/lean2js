@@ -1050,12 +1050,46 @@ def ck : Def :=
       (.call "__norm" [(.var "x"), (.var "t"), .arrayLit []])
       (.call "__fail" [.str "typeError"])) }
 
+/-! `__fold` walks a value of a type that names itself, from the leaves up. What it hands the callback
+is the node itself with each field that came round replaced by what the callback answered for it, so the
+callback reads a node of the shape the type declares and dispatches on the key the constructor's name is
+carried under — which is what a `match` does, and what the compiler compiles the alternatives to.
+
+One callback rather than one per constructor is what keeps `.apply` at the arity it has: a constructor's
+field count varies, and a helper cannot apply a callback to an argument list it only has at run time.
+
+The spec is an object keyed by the constructor's name, holding that constructor's fields in declared
+order as `[name, kind]`. The kind is read off the spec rather than off the value: which field comes
+round is the declared type's to say, and a value that happens to hold an object is not a node. -/
+
+def fold : Def :=
+
+  { name := "__fold", params := ["x", "key", "spec", "f"]
+    doc := ["The node is rebuilt rather than written to: every field the type declares is copied in",
+            "declared order, so what the callback reads is what encodeValue would have written."]
+    body := .block [
+      .const "out" (.arrayLit [.arrayLit [(.var "key"), .index (.var "x") (.var "key")]]),
+      .forOf "g" (.index (.var "spec") (.index (.var "x") (.var "key"))) [
+        .ifThen (.bin "===" (.index (.var "g") (.num 1)) (.str "self")) [
+          .push "out" (.arrayLit [.index (.var "g") (.num 0),
+            .call "__fold" [.index (.var "x") (.index (.var "g") (.num 0)),
+              (.var "key"), (.var "spec"), (.var "f")]])],
+        .ifThen (.bin "===" (.index (.var "g") (.num 1)) (.str "list")) [
+          .const "ys" (.arrayLit []),
+          .forOf "c" (.index (.var "x") (.index (.var "g") (.num 0))) [
+            .push "ys" (.call "__fold" [(.var "c"), (.var "key"), (.var "spec"), (.var "f")])],
+          .push "out" (.arrayLit [.index (.var "g") (.num 0), (.var "ys")])],
+        .ifThen (.bin "===" (.index (.var "g") (.num 1)) (.str "plain")) [
+          .push "out" (.arrayLit [.index (.var "g") (.num 0),
+            .index (.var "x") (.index (.var "g") (.num 0))])]],
+      .ret (.apply (.var "f") [.prim "Object.fromEntries" [(.var "out")]]) ] }
+
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
   str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
   startsAt, indexOf, join, «repeat», rep, range, substring, aslice, aconcat, areverse, atIdx,
   dget, dhas, dset, dkeys, dvalues, ddelete, eq, map, filter, find, all, any, reduce, keyle,
-  merge, msort, sortBy, isObj, hasFields, has, normFields, norm, outFields, out, ck
+  merge, msort, sortBy, isObj, hasFields, has, normFields, norm, outFields, out, ck, fold
 ]
 
 def runtime : String := renderAll defs

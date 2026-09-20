@@ -56,6 +56,30 @@ the walk measured by the value: the entry is fed back as a `ctors` node, which d
 no step can land on another `ref`. -/
 abbrev TyEnv := List (String × TyAlts)
 
+/-- How a fold carries one of a constructor's fields: the declared type coming round, a list of it
+coming round, or neither. It is what `EncDeriving.kindOf` already computes at the `deriving`, written
+where the generated code reads it. -/
+inductive FoldKind where
+  | self
+  | list
+  | plain
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+def FoldKind.render : FoldKind → String
+  | .self => "self"
+  | .list => "list"
+  | .plain => "plain"
+
+/-- A constructor's fields in declared order, each with the way the fold carries it. -/
+abbrev FoldFields := List (String × FoldKind)
+
+/-- What a fold is given about a declared type: its constructors by name, each with its fields.
+
+Apart from `TyAlts`, which carries the same names, because the two say different things: one is what a
+value is checked against, this is which of a node's fields the walk goes into. A fold reads it at the
+constructor the value carries, so a name it does not hold is a value the walk declines to answer for. -/
+abbrev FoldSpec := List (String × FoldFields)
+
 mutual
 
 /-- The descriptor the entry check reads. Total for the reason `Expr.render` is: the text the artifact

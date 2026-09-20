@@ -140,11 +140,15 @@ text says the length of, which runs its body once per element.
 The `index.js` that is written **reads back as the same AST**
 ([`parseModule_render_of_compileProgram`], no caveat). The run-time helpers the generated code calls under
 the `__` prefix are hand-written, but **everything the model assumes of them** agrees with what the printer
-writes out: every row of the table ([`helpers_ship_as_modelled`]), and the nine the model holds as
+writes out: every row of the table ([`helpers_ship_as_modelled`]), and the ten the model holds as
 evaluation rules rather than as table rows — `__ck` ([`calls_ck_checkTy`]), `__out`
-([`calls_out_outTy`]) and the seven traversal helpers ([`calls_map`] and the rest). `__ck` and `__out`
-are the two an entry calls directly, one at each side of it. The helpers none of those name are reached
-only from another helper, and are unfolded inside its proof.
+([`calls_out_outTy`]), the seven traversal helpers ([`calls_map`] and the rest) and `__fold`
+([`calls_fold`]). `__ck` and `__out` are the two an entry calls directly, one at each side of it. The
+helpers none of those name are reached only from another helper, and are unfolded inside its proof.
+
+**`__fold` is in the file and nothing calls it.** It is the walk a fold over a type that names itself
+takes, and the form in the subset that will call it is not there yet, so it ships proved and unreached
+— proved first because a helper this repository ships is one a theorem covers.
 
 An argument the entry check accepts satisfies the type the `.d.ts` prints for that parameter
 ([`entry_check_fits_dts`]), and an argument satisfying it passes the entry check, with the range caveat
@@ -248,3 +252,4 @@ range of spellings.
 [`calls_out_outTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_out_outTy
 [`retWalk_id_of_retNoDictObj`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.retWalk_id_of_retNoDictObj
 [`calls_map`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_map
+[`calls_fold`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_fold

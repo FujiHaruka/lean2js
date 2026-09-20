@@ -341,15 +341,25 @@ def fold : Def :=
 
 | | |
 | --- | --- |
-| `calls_fold` | still the phase. `calls_norm`'s block is 1170 lines of which `calls_norm_aux` is 410; the fold's spec has three kinds where a `TyDesc` has a dozen and needs no induction on a rank, so smaller than that — but it is the same kind of proof, and it is what makes the helper more than dead code |
+| ~~`calls_fold`~~ | **done.** 400 lines in `HelperProof.lean`, against the 1170 `calls_norm`'s block takes: three kinds where a `TyDesc` has a dozen, and no induction on a rank. The helper and the proof landed together |
 | `Core.Expr.foldE`, `Eval`, and the covering side | unchanged: a new form is layer 3, and `Sound` and `Correct` each gain a case — though both lean on `matchE`'s existing `compileAlts` and `chain` |
 | `EncDeriving` emitting `T.fold` and `denotes_fold` | unchanged, and still the other expensive half |
 | `Reify` finding the fold by an attribute | unchanged, and still cheap |
 
-**The order this re-pricing suggests.** The helper cannot land before `calls_fold`: this repository keeps
-dead code only where a theorem covers it — `comparable`'s entry is the precedent — so a runtime helper
-nothing calls and nothing proves is not a state to leave the tree in. `calls_fold` and the helper are one
-commit; everything above is the commit after it.
+**The order this re-pricing suggests, and what it cost.** The helper could not land before `calls_fold`:
+this repository keeps dead code only where a theorem covers it — `comparable`'s entry is the precedent —
+so a runtime helper nothing calls and nothing proves is not a state to leave the tree in. The two landed
+as one commit; everything above is the commit after it.
+
+Three things the proof turned on, for whoever writes the next one of these:
+
+- **A match on `lookupV es n` inside an arm makes that arm depend on the equation**, and nothing can then
+  `cases` on the field. `foldListAt` exists only to move the match onto a value.
+- **`walk` cannot step into a read of a `def`.** `specVal` is an `abbrev` over `Val.obj` for that reason:
+  the walk has to see the constructor to reduce `index`.
+- **`x[key]` on an array or a `Map` answers out of the prototype**, so those two scrutinees reach the
+  read of the spec before they stop, and `repeat' split` is what finishes them. Every other non-object
+  stops at the first read.
 
 ## Phases
 
@@ -459,8 +469,10 @@ Measured on the way: the generated `__has` accepts a value 500 levels deep on No
 does not declare at every level, and refuses a bad constructor or an out-of-range number arbitrarily far
 inside.
 
-**Phase 5 is not started; its shape is chosen and its JavaScript side is now measured rather than
-estimated** — see "Phase 5, re-priced" above, which is what the reader should price from. A shipped `def` still reads
+**Phase 5 is started: `__fold` and `calls_fold` are in.** Its shape is chosen and its JavaScript side
+was measured rather than estimated — see "Phase 5, re-priced" above, which is what the reader should
+price the rest from. The helper is in the shipped runtime, proved and reached by nothing; the
+`Core.Expr` form that will reach it is the next commit. A shipped `def` still reads
 the constructor it was handed and the fields directly under it. What reading `Eval` and `Cost` settled is
 written out under "Walking a value of a recursive type" above: fuel measures nesting depth rather than
 work, so the syntactic bound survives exactly as long as the depth of the incoming value is bounded — and
