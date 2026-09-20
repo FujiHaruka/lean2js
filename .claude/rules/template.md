@@ -28,7 +28,11 @@ is sold on, each by the message the user would see:
 - an `@[expand] def` whose body leaves the subset, named at the mark (`which is marked @[expand]`)
 - a recursive `@[expand] def` (`cannot be recursive`)
 - a hand-built `Program` with no certificate (`with no certificate`)
-- a module Node disagrees with — and that nothing is left behind in `--out` when any of these refuse
+- a module Node disagrees with (`disagrees with eval on Node`), and, told apart from it, a `node`
+  that exits without ever reaching a verdict (`before the check reached a verdict`) — the second is
+  a broken install rather than a bad module, and reporting it as the first sends a reader to the
+  compiler for a fault on their machine
+- that nothing is left behind in `--out` when any of these refuse
 - that an `@[expand] def` leaves no name at all in the generated package
 - that `proof-manifest.json` names the version in `lakefile.toml`
 

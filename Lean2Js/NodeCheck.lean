@@ -11,6 +11,11 @@ engine itself.
 
 namespace Lean2Js
 
+/-- The words the check prints where it ran to a verdict and the vectors did not agree. `emit` reads them
+back out of what the script printed, which is how a module the engine disagreed with is told apart from a
+node that never reached the comparison at all. -/
+def nodeDisagreementMark : String := "vectors disagree on Node"
+
 /-- A string rather than a `.mjs` file read by `include_str`: Lake does not track a file `include_str`
 reads, so an edit to it would leave the old script running until this module rebuilt for another reason. -/
 def nodeCheckScript : String := r#"
@@ -153,5 +158,6 @@ if (failures.length === 0) {
 "#
 
 #guard (nodeCheckScript.splitOn (Json.str extraKeyName).render).length == 2
+#guard (nodeCheckScript.splitOn nodeDisagreementMark).length == 2
 
 end Lean2Js

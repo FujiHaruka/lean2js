@@ -28,6 +28,12 @@ what decides which compiler your artifact was built by.
   package pointed at it, and a constant a theorem names reaches it already written out to its value, so
   that reader never closed the check from it alone. `index.js` carries the same bodies.
 
+- A node that never reached the comparison is told apart from a module the comparison refused. `emit`
+  reads back the verdict line the check prints: where that line is there the failure is the module's and
+  the message says so, and where it is not — a `node` on `PATH` killed the moment it starts, a module
+  that could not be imported at all — the message names the exit code and says that nothing was held
+  against the engine. Neither writes the package. Only one of the two is the compiler's to fix.
+
 ## 0.2.0
 
 - A declared type may name itself, directly or through a `List` of itself, and the type a consumer reads

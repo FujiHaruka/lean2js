@@ -36,14 +36,31 @@ for file in index.js index.d.ts package.json proof-manifest.json README.md; do
 done
 test ! -e dist/vectors.json || { echo "the vectors were written into dist"; exit 1; }
 
-# A node that disagrees with every vector stands in for a module that disagrees with eval on Node.
+# A node that disagrees with every vector stands in for a module that disagrees with eval on Node. It has
+# to print the verdict the real check prints, because that line is the whole of what tells a module the
+# engine refused from a node that never reached the comparison.
 mkdir "$work/disagreeing-node"
-printf '#!/bin/sh\nexit 1\n' > "$work/disagreeing-node/node"
+printf '#!/bin/sh\necho "3 of 3 vectors disagree on Node v0.0.0"\nexit 1\n' > "$work/disagreeing-node/node"
 chmod +x "$work/disagreeing-node/node"
-if PATH="$work/disagreeing-node:$PATH" lake exe lean2js MyLogic --out refused; then
+if PATH="$work/disagreeing-node:$PATH" lake exe lean2js MyLogic --out refused 2> refused.err; then
   echo "lean2js wrote a package Node did not agree with"; exit 1
 fi
+grep -q 'disagrees with eval on Node' refused.err \
+  || { cat refused.err; echo "lean2js refused for another reason"; exit 1; }
 test ! -e refused || { echo "lean2js left files behind for a package Node did not agree with"; exit 1; }
+
+# A node that dies without a word stands in for a broken install rather than a bad module. It is refused
+# too, but under its own name: reported as a disagreement it sends a reader to the compiler for a fault
+# that is on their machine.
+mkdir "$work/silent-node"
+printf '#!/bin/sh\nexit 137\n' > "$work/silent-node/node"
+chmod +x "$work/silent-node/node"
+if PATH="$work/silent-node:$PATH" lake exe lean2js MyLogic --out unrun 2> unrun.err; then
+  echo "lean2js wrote a package no node ever checked"; exit 1
+fi
+grep -q 'before the check reached a verdict' unrun.err \
+  || { cat unrun.err; echo "a node that never ran was reported as a module that disagrees"; exit 1; }
+test ! -e unrun || { echo "lean2js left files behind for a package no node checked"; exit 1; }
 
 # The namespace is the package, so neither a declaration ship_package did not gather nor a public theorem
 # that is not proved may slip out of it quietly.

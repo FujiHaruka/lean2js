@@ -74,12 +74,20 @@ private def checkOnNode (files : List (String × String)) (vectors : String) : I
     IO.print out.stdout
     IO.eprint out.stderr
     unless out.exitCode == 0 do
-      throw (IO.userError "the emitted module disagrees with eval on Node")
+      if (out.stdout.splitOn nodeDisagreementMark).length > 1 then
+        throw (IO.userError "the emitted module disagrees with eval on Node")
+      else
+        throw (IO.userError
+          s!"node exited with {out.exitCode} before the check reached a verdict, so the module was never \
+held against the engine; what node itself printed is above, and a node that printed nothing is a broken \
+install rather than a module to fix")
 
 /-- Checks before it writes. Every vector has to agree between `eval` and the model of the generated JS,
 the text of the module has to read back as the module it was compiled from, and
 the package, assembled in a scratch directory, has to agree with `eval` on every vector when Node runs
-it. A disagreement fails the build rather than reaching the package. -/
+it. A disagreement fails the build rather than reaching the package, and so does a node that never got as
+far as disagreeing — the two are refused under different names, because only one of them is the
+compiler's to fix. -/
 def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
   let jsModule ← IO.ofExcept a.program.checked
   match checkAgreement a.program 400 200 with
