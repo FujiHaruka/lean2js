@@ -22,7 +22,7 @@ namespace Lean2Js.Parse
 reads back as the form the reader has a constructor for. -/
 def dispatchNames : List String :=
   ["true", "false", "new", "__ck", "__out", "__map", "__filter", "__find", "__all", "__any",
-   "__reduce", "__sortBy"]
+   "__reduce", "__sortBy", "__fold"]
 
 def okCallee (s : String) : Bool := okName s && !dispatchNames.contains s
 
@@ -59,6 +59,8 @@ def RenderableExpr : Js.Expr → Bool
     RenderableExpr arr && RenderableExpr init && okName accName && okName elemName
       && RenderableExpr body
   | .out _ e => RenderableExpr e
+  | .foldJs scrut _ _ binder body =>
+    RenderableExpr scrut && okName binder && RenderableExpr body
 termination_by e => sizeOf e
 
 def RenderableList : List Js.Expr → Bool
@@ -137,6 +139,11 @@ theorem render_reduceJs (arr init : Js.Expr) (a e : String) (body : Js.Expr) :
     Js.Expr.render (.reduceJs arr init a e body) =
       "__reduce(" ++ arr.render ++ ", " ++ init.render ++ ", (" ++ a ++ ", " ++ e
         ++ ") => (" ++ body.render ++ "))" := by rw [Js.Expr.render]
+theorem render_foldJs (scrut : Js.Expr) (key : String) (spec : Js.FoldSpec) (b : String)
+    (body : Js.Expr) :
+    Js.Expr.render (.foldJs scrut key spec b body) =
+      "__fold(" ++ scrut.render ++ ", \"" ++ escapeString key ++ "\", { " ++ Js.renderFoldSpec spec
+        ++ " }, (" ++ b ++ ") => (" ++ body.render ++ "))" := by rw [Js.Expr.render]
 
 /-! ## Separators
 
@@ -440,6 +447,18 @@ theorem render_reduceJs_toList (arr init : Js.Expr) (a e : String) (body : Js.Ex
   simp only [String.toList_append, List.append_assoc]
   rfl
 
+theorem render_foldJs_toList (scrut : Js.Expr) (key : String) (spec : Js.FoldSpec) (b : String)
+    (body : Js.Expr) :
+    (Js.Expr.render (.foldJs scrut key spec b body)).toList =
+      '_' :: '_' :: 'f' :: 'o' :: 'l' :: 'd' :: '(' :: (scrut.render.toList ++
+        (',' :: ' ' :: '"' :: ((escapeString key).toList ++ ('"' :: ',' :: ' ' :: '{' :: ' ' ::
+          ((Js.renderFoldSpec spec).toList ++ (' ' :: '}' :: ',' :: ' ' :: '(' :: (b.toList ++
+            (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+              (body.render.toList ++ [')', ')']))))))))) := by
+  rw [render_foldJs]
+  simp only [String.toList_append, List.append_assoc]
+  rfl
+
 theorem renderList_nil_toList : (Js.Expr.renderList []).toList = [] := by
   rw [Js.Expr.renderList]; rfl
 
@@ -584,6 +603,10 @@ theorem parseIdentList_render (e : Js.Expr) (he : RenderableExpr e = true) (f : 
     rw [render_out_toList] at h
     exact identList_name_head f ['_', '_', 'o', 'u', 't'] (by simp) (by decide)
       (by decide) (by decide) (by decide) _ h
+  | .foldJs scrut key spec b body =>
+    rw [render_foldJs_toList] at h
+    exact identList_name_head f ['_', '_', 'f', 'o', 'l', 'd'] (by simp) (by decide)
+      (by decide) (by decide) (by decide) _ h
   | .mapJs arr b body =>
     rw [render_mapJs_toList] at h
     exact identList_name_head f ['_', '_', 'm', 'a', 'p'] (by simp) (by decide)
@@ -705,6 +728,7 @@ theorem parseArrowHead_render (e : Js.Expr) (he : RenderableExpr e = true) (f : 
   | .dictLit entries => rw [render_dictLit_toList]; exact arrowHead_ne _ (by decide) _
   | .check d e => rw [render_check_toList]; exact arrowHead_ne _ (by decide) _
   | .out d e => rw [render_out_toList]; exact arrowHead_ne _ (by decide) _
+  | .foldJs scrut key spec b body => rw [render_foldJs_toList]; exact arrowHead_ne _ (by decide) _
   | .mapJs arr b body => rw [render_mapJs_toList]; exact arrowHead_ne _ (by decide) _
   | .filterJs arr b body => rw [render_filterJs_toList]; exact arrowHead_ne _ (by decide) _
   | .sortByJs arr b body => rw [render_sortByJs_toList]; exact arrowHead_ne _ (by decide) _
@@ -827,6 +851,8 @@ theorem render_head (e : Js.Expr) (he : RenderableExpr e = true) :
   | .dictLit entries => exact ⟨'n', _, render_dictLit_toList entries, by decide⟩
   | .check d e => exact ⟨'_', _, render_check_toList d e, by decide⟩
   | .out d e => exact ⟨'_', _, render_out_toList d e, by decide⟩
+  | .foldJs scrut key spec b body =>
+    exact ⟨'_', _, render_foldJs_toList scrut key spec b body, by decide⟩
   | .mapJs arr b body => exact ⟨'_', _, render_mapJs_toList arr b body, by decide⟩
   | .filterJs arr b body => exact ⟨'_', _, render_filterJs_toList arr b body, by decide⟩
   | .sortByJs arr b body => exact ⟨'_', _, render_sortByJs_toList arr b body, by decide⟩
@@ -976,6 +1002,8 @@ theorem render_head_num (e : Js.Expr) (he : RenderableExpr e = true) {c : Char} 
     exact absurd (hstart 'n' _ (render_dictLit_toList entries) (by decide)) (by simp)
   | .check d e' => exact absurd (hstart '_' _ (render_check_toList d e') (by decide)) (by simp)
   | .out d e' => exact absurd (hstart '_' _ (render_out_toList d e') (by decide)) (by simp)
+  | .foldJs scrut key spec b body =>
+    exact absurd (hstart '_' _ (render_foldJs_toList scrut key spec b body) (by decide)) (by simp)
   | .mapJs arr b body =>
     exact absurd (hstart '_' _ (render_mapJs_toList arr b body) (by decide)) (by simp)
   | .filterJs arr b body =>
@@ -998,6 +1026,26 @@ theorem descSize_le (d : Js.TyDesc) : descSize d ≤ (Js.TyDesc.render d).toList
     (motive3 := fun fs => fieldsSize fs ≤ (Js.TyDesc.renderFields fs).toList.length + 1) <;>
   simp_all [descSize, altsSize, fieldsSize, Js.TyDesc.render, Js.TyDesc.renderAlts,
     Js.TyDesc.renderFields, String.toList_append, List.length_append] <;> omega
+
+/-- The spec reader's budget, read off the text the same way the descriptor's is. -/
+theorem foldFieldsSize_le (fs : Js.FoldFields) :
+    foldFieldsSize fs ≤ (Js.renderFoldFields fs).toList.length + 1 := by
+  induction fs using Js.renderFoldFields.induct <;>
+    simp_all [foldFieldsSize, Js.renderFoldFields, String.toList_append, List.length_append] <;>
+    omega
+
+theorem specSize_le (spec : Js.FoldSpec) :
+    specSize spec ≤ (Js.renderFoldSpec spec).toList.length + 1 := by
+  induction spec using Js.renderFoldSpec.induct with
+  | case1 => simp [specSize, Js.renderFoldSpec]
+  | case2 c fs =>
+    have h := foldFieldsSize_le fs
+    simp [specSize, Js.renderFoldSpec, String.toList_append, List.length_append]
+    omega
+  | case3 c fs b _ ih =>
+    have h := foldFieldsSize_le fs
+    simp [specSize, Js.renderFoldSpec, String.toList_append, List.length_append] at ih ⊢
+    omega
 
 theorem parseInt_neg_ofNat (n : Nat) (rest : List Char) (hrest : notDigitFirst rest) :
     parseInt ('-' :: (natDigits n ++ rest)) = some (-(n : Int), rest) := by
@@ -1571,6 +1619,88 @@ theorem parseExpr_append (e : Js.Expr) (he : RenderableExpr e = true) (f : Nat)
         let r ← expect [')'] r
         pure (Js.Expr.arrowCall ps body as, r)) = some (Js.Expr.arrowCall ps body args, rest)
       rw [parseExprList_append args he.2 g (by omega) ')' (Or.inl rfl) rest]
+      simp [expect]
+  | .foldJs scrut key spec b body =>
+    rw [RenderableExpr] at he
+    simp only [Bool.and_eq_true] at he
+    rw [render_foldJs_toList] at hf ⊢
+    simp only [List.cons_append, List.append_assoc, List.nil_append] at hf ⊢
+    simp only [List.length_cons, List.length_append] at hf
+    have hs := specSize_le spec
+    obtain ⟨k, rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+    · show parseExpr (k + 1 + 1) ("__fold".toList ++ ('(' :: (scrut.render.toList ++
+        (',' :: ' ' :: '"' :: ((escapeString key).toList ++ ('"' :: ',' :: ' ' :: '{' :: ' ' ::
+          ((Js.renderFoldSpec spec).toList ++ (' ' :: '}' :: ',' :: ' ' :: '(' :: (b.toList ++
+            (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+              (body.render.toList ++ (')' :: ')' :: rest)))))))))))) = _
+      rw [parseExpr_name (k + 1) "__fold" (by decide) _
+        (by intro c r hc; cases hc; decide), parseNamed]
+      show (do
+        let (x, cs) ← parseExpr k (scrut.render.toList ++
+          (',' :: ' ' :: '"' :: ((escapeString key).toList ++ ('"' :: ',' :: ' ' :: '{' :: ' ' ::
+            ((Js.renderFoldSpec spec).toList ++ (' ' :: '}' :: ',' :: ' ' :: '(' :: (b.toList ++
+              (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+                (body.render.toList ++ (')' :: ')' :: rest))))))))))
+        let cs ← expect [',', ' '] cs
+        let (ky, cs) ← parseStr cs
+        let cs ← expect [',', ' ', '{', ' '] cs
+        let (sp, cs) ← parseFoldSpec k cs
+        let cs ← expect [' ', '}', ',', ' ', '('] cs
+        let (bn, cs) ← parseIdent cs
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.foldJs x ky sp bn bd, cs))
+          = some (Js.Expr.foldJs scrut key spec b body, rest)
+      rw [parseExpr_append scrut he.1.1 k (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      show (do
+        let (ky, cs) ← parseStr ('"' :: ((escapeString key).toList ++
+          ('"' :: ',' :: ' ' :: '{' :: ' ' ::
+            ((Js.renderFoldSpec spec).toList ++ (' ' :: '}' :: ',' :: ' ' :: '(' :: (b.toList ++
+              (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+                (body.render.toList ++ (')' :: ')' :: rest)))))))))
+        let cs ← expect [',', ' ', '{', ' '] cs
+        let (sp, cs) ← parseFoldSpec k cs
+        let cs ← expect [' ', '}', ',', ' ', '('] cs
+        let (bn, cs) ← parseIdent cs
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.foldJs scrut ky sp bn bd, cs))
+          = some (Js.Expr.foldJs scrut key spec b body, rest)
+      rw [parseStr_cons key]
+      show (do
+        let (sp, cs) ← parseFoldSpec k ((Js.renderFoldSpec spec).toList ++
+          (' ' :: '}' :: ',' :: ' ' :: '(' :: (b.toList ++
+            (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+              (body.render.toList ++ (')' :: ')' :: rest))))))
+        let cs ← expect [' ', '}', ',', ' ', '('] cs
+        let (bn, cs) ← parseIdent cs
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.foldJs scrut key sp bn bd, cs))
+          = some (Js.Expr.foldJs scrut key spec b body, rest)
+      rw [parseFoldSpec_append spec k (by omega) _ ⟨_, rfl⟩]
+      show (do
+        let (bn, cs) ← parseIdent (b.toList ++
+          (')' :: ' ' :: '=' :: '>' :: ' ' :: '(' ::
+            (body.render.toList ++ (')' :: ')' :: rest))))
+        let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+        let (bd, cs) ← parseExpr k cs
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.foldJs scrut key spec bn bd, cs))
+          = some (Js.Expr.foldJs scrut key spec b body, rest)
+      rw [parseIdent_append b (okName_ne_nil he.1.2) (okName_all he.1.2) _
+        (by intro c r hc; cases hc; decide)]
+      show (do
+        let (bd, cs) ← parseExpr k (body.render.toList ++ (')' :: ')' :: rest))
+        let cs ← expect [')', ')'] cs
+        pure (Js.Expr.foldJs scrut key spec b bd, cs))
+          = some (Js.Expr.foldJs scrut key spec b body, rest)
+      rw [parseExpr_append body he.2 k (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
       simp [expect]
   | .mapJs arr b body =>
     rw [RenderableExpr] at he

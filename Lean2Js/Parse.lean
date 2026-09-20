@@ -633,6 +633,155 @@ termination_by f
 
 end
 
+/-! ## Fold specs
+
+A spec carries the shape `TyAlts` does with a kind where a descriptor sits, so the reader is the
+descriptor's with the descent taken out: a kind is one of three words and nothing below it nests. The
+budget is still the spec's own size, because the recursion is on the text rather than on the tree.
+
+The spec is printed as an object rather than as nested arrays, because `__fold` indexes it by the
+constructor's name, so the end of an empty one is told from the start of an entry the way `parseObjFields`
+tells them apart — by the space that opens ` }`. -/
+
+def foldFieldsSize : Js.FoldFields → Nat
+  | [] => 1
+  | _ :: rest => foldFieldsSize rest + 1
+
+def specSize : Js.FoldSpec → Nat
+  | [] => 1
+  | (_, fs) :: rest => foldFieldsSize fs + specSize rest + 1
+
+theorem foldFieldsSize_pos (fs : Js.FoldFields) : 0 < foldFieldsSize fs := by
+  match fs with
+  | [] => simp [foldFieldsSize]
+  | _ :: _ => simp [foldFieldsSize]
+
+theorem specSize_pos (spec : Js.FoldSpec) : 0 < specSize spec := by
+  match spec with
+  | [] => simp [specSize]
+  | (_, _) :: _ => simp [specSize]
+
+/-- The three words `FoldKind.render` writes. A fourth is a text this printer does not write, so the
+reader has nothing to give back for it. -/
+def parseFoldKind : List Char → Option (Js.FoldKind × List Char)
+  | cs => do
+    let (s, cs) ← parseStr cs
+    match s with
+    | "self" => pure (.self, cs)
+    | "list" => pure (.list, cs)
+    | "plain" => pure (.plain, cs)
+    | _ => none
+
+theorem parseFoldKind_cons (k : Js.FoldKind) (tail : List Char) :
+    parseFoldKind ('"' :: ((Js.FoldKind.render k).toList ++ ('"' :: tail))) = some (k, tail) := by
+  cases k
+  · show parseFoldKind ('"' :: 's' :: 'e' :: 'l' :: 'f' :: '"' :: tail) = _
+    simp [parseFoldKind, parseStr, unescape]
+  · show parseFoldKind ('"' :: 'l' :: 'i' :: 's' :: 't' :: '"' :: tail) = _
+    simp [parseFoldKind, parseStr, unescape]
+  · show parseFoldKind ('"' :: 'p' :: 'l' :: 'a' :: 'i' :: 'n' :: '"' :: tail) = _
+    simp [parseFoldKind, parseStr, unescape]
+
+def parseFoldFields : Nat → List Char → Option (Js.FoldFields × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match cs with
+    | ']' :: _ => some ([], cs)
+    | _ => do
+      let cs ← expect ['['] cs
+      let (name, cs) ← parseStr cs
+      let cs ← expect [',', ' '] cs
+      let (k, cs) ← parseFoldKind cs
+      let cs ← expect [']'] cs
+      match expect [',', ' '] cs with
+      | none => pure ([(name, k)], cs)
+      | some cs => do
+        let (rest, cs) ← parseFoldFields f cs
+        pure ((name, k) :: rest, cs)
+
+def parseFoldSpec : Nat → List Char → Option (Js.FoldSpec × List Char)
+  | 0, _ => none
+  | f + 1, cs =>
+    match cs with
+    | ' ' :: _ => some ([], cs)
+    | _ => do
+      let (c, cs) ← parseStr cs
+      let cs ← expect [':', ' ', '['] cs
+      let (fs, cs) ← parseFoldFields f cs
+      let cs ← expect [']'] cs
+      match expect [',', ' '] cs with
+      | none => pure ([(c, fs)], cs)
+      | some cs => do
+        let (rest, cs) ← parseFoldSpec f cs
+        pure ((c, fs) :: rest, cs)
+
+theorem parseFoldFields_append (fs : Js.FoldFields) (f : Nat) (hf : foldFieldsSize fs ≤ f)
+    (rest : List Char) (hrest : ∃ r, rest = ']' :: r) :
+    parseFoldFields f ((Js.renderFoldFields fs).toList ++ rest) = some (fs, rest) := by
+  obtain ⟨r, rfl⟩ := hrest
+  match f with
+  | 0 => exact absurd (Nat.lt_of_lt_of_le (foldFieldsSize_pos fs) hf) (by omega)
+  | f + 1 =>
+    match fs with
+    | [] =>
+      rw [show Js.renderFoldFields [] = "" from by rw [Js.renderFoldFields]]
+      show parseFoldFields (f + 1) (']' :: r) = _
+      simp [parseFoldFields]
+    | [(n, k)] =>
+      rw [Js.renderFoldFields]
+      simp only [String.toList_append, List.append_assoc]
+      show parseFoldFields (f + 1) ('[' :: ('"' :: ((escapeString n).toList ++ ('"' :: ',' :: ' ' ::
+        ('"' :: ((Js.FoldKind.render k).toList ++ ('"' :: ']' :: ']' :: r))))))) = _
+      simp [parseFoldFields, expect, parseStr_cons, parseFoldKind_cons]
+    | (n, k) :: b :: fs =>
+      rw [foldFieldsSize] at hf
+      have hb := foldFieldsSize_pos (b :: fs)
+      have ih := parseFoldFields_append (b :: fs) f (by omega) (']' :: r) ⟨_, rfl⟩
+      rw [Js.renderFoldFields]
+      simp only [String.toList_append, List.append_assoc]
+      show parseFoldFields (f + 1) ('[' :: ('"' :: ((escapeString n).toList ++ ('"' :: ',' :: ' ' ::
+        ('"' :: ((Js.FoldKind.render k).toList ++ ('"' :: ']' :: ',' :: ' ' ::
+          ((Js.renderFoldFields (b :: fs)).toList ++ (']' :: r))))))))) = _
+      simp [parseFoldFields, expect, parseStr_cons, parseFoldKind_cons, ih]
+      simp
+termination_by f
+
+theorem parseFoldSpec_append (spec : Js.FoldSpec) (f : Nat) (hf : specSize spec ≤ f)
+    (rest : List Char) (hrest : ∃ r, rest = ' ' :: r) :
+    parseFoldSpec f ((Js.renderFoldSpec spec).toList ++ rest) = some (spec, rest) := by
+  obtain ⟨r, rfl⟩ := hrest
+  match f with
+  | 0 => exact absurd (Nat.lt_of_lt_of_le (specSize_pos spec) hf) (by omega)
+  | f + 1 =>
+    match spec with
+    | [] =>
+      rw [show Js.renderFoldSpec [] = "" from by rw [Js.renderFoldSpec]]
+      show parseFoldSpec (f + 1) (' ' :: r) = _
+      simp [parseFoldSpec]
+    | [(c, fs)] =>
+      have hfz := specSize_pos ([] : Js.FoldSpec)
+      rw [specSize] at hf
+      have ih := parseFoldFields_append fs f (by omega) (']' :: ' ' :: r) ⟨_, rfl⟩
+      rw [Js.renderFoldSpec]
+      simp only [String.toList_append, List.append_assoc]
+      show parseFoldSpec (f + 1) ('"' :: ((escapeString c).toList ++ ('"' :: ':' :: ' ' :: '[' ::
+        ((Js.renderFoldFields fs).toList ++ (']' :: ' ' :: r))))) = _
+      simp [parseFoldSpec, expect, parseStr_cons, ih]
+    | (c, fs) :: b :: spec =>
+      rw [specSize] at hf
+      have hb := specSize_pos (b :: spec)
+      have ihf := parseFoldFields_append fs f (by omega) (']' :: ',' :: ' ' ::
+        ((Js.renderFoldSpec (b :: spec)).toList ++ (' ' :: r))) ⟨_, rfl⟩
+      have ihs := parseFoldSpec_append (b :: spec) f (by omega) (' ' :: r) ⟨_, rfl⟩
+      rw [Js.renderFoldSpec]
+      simp only [String.toList_append, List.append_assoc]
+      show parseFoldSpec (f + 1) ('"' :: ((escapeString c).toList ++ ('"' :: ':' :: ' ' :: '[' ::
+        ((Js.renderFoldFields fs).toList ++ (']' :: ',' :: ' ' ::
+          ((Js.renderFoldSpec (b :: spec)).toList ++ (' ' :: r))))))) = _
+      simp [parseFoldSpec, expect, parseStr_cons, ihf, ihs]
+      simp
+termination_by f
+
 /-! ## Expressions
 
 The grammar is fully parenthesised and has no optional whitespace, so one character of lookahead picks
@@ -770,6 +919,19 @@ def parseNamed : Nat → String → List Char → Option (Js.Expr × List Char)
       let (body, cs) ← parseExpr f cs
       let cs ← expect [')', ')'] cs
       pure (.reduceJs arr init acc elem body, cs)
+    else if name == "__fold" then do
+      let cs ← expect ['('] cs
+      let (scrut, cs) ← parseExpr f cs
+      let cs ← expect [',', ' '] cs
+      let (key, cs) ← parseStr cs
+      let cs ← expect [',', ' ', '{', ' '] cs
+      let (spec, cs) ← parseFoldSpec f cs
+      let cs ← expect [' ', '}', ',', ' ', '('] cs
+      let (binder, cs) ← parseIdent cs
+      let cs ← expect [')', ' ', '=', '>', ' ', '('] cs
+      let (body, cs) ← parseExpr f cs
+      let cs ← expect [')', ')'] cs
+      pure (.foldJs scrut key spec binder body, cs)
     else
       match expect ['('] cs with
       | none => some (.ident name, cs)
@@ -1012,6 +1174,9 @@ private def x : Js.Expr := .ident "x"
   .out (.option (.dictObj .string)) x, .out (.dict (.dictObj .int53)) x,
   .out (.mu "tag" [("leaf", []), ("node", [("kids", .array (.ref 0))])]) x,
   .mapJs x "e" x, .filterJs x "e" x, .findJs x "e" x,
-  .quantJs .all x "e" x, .quantJs .any x "e" x, .reduceJs x (.num 0) "a" "e" x].all roundTrips
+  .quantJs .all x "e" x, .quantJs .any x "e" x, .reduceJs x (.num 0) "a" "e" x,
+  .foldJs x "tag" [] "n" x, .foldJs x "tag" [("leaf", [])] "n" x,
+  .foldJs x "tag" [("leaf", [("v", .plain)]), ("node", [("kids", .list)])] "n" x,
+  .foldJs x "kind" [("wrap", [("inner", .self), ("v", .plain)])] "n" x].all roundTrips
 
 end Lean2Js.Parse

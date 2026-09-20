@@ -147,8 +147,12 @@ evaluation rules rather than as table rows — `__ck` ([`calls_ck_checkTy`]), `_
 helpers none of those name are reached only from another helper, and are unfolded inside its proof.
 
 **`__fold` is in the file and nothing calls it.** It is the walk a fold over a type that names itself
-takes, and the form in the subset that will call it is not there yet, so it ships proved and unreached
-— proved first because a helper this repository ships is one a theorem covers.
+takes, and `calls_fold` says it computes what the model says. The form the generated code would write
+the call as is in the compiler's AST too: `Js.Expr.foldJs` prints as `__fold(...)`, reads back as itself
+under [`parseModule_render`] the way every other form does, and `JsSem` walks it as a rule of its own.
+Neither is reached — the form in the subset that would build one is not there, and what ties `JsSem`'s
+walk to `calls_fold` is the work after that. Both ship ahead of their use because what this repository
+ships is what a theorem covers.
 
 An argument the entry check accepts satisfies the type the `.d.ts` prints for that parameter
 ([`entry_check_fits_dts`]), and an argument satisfying it passes the entry check, with the range caveat
@@ -241,6 +245,7 @@ range of spellings.
 [`firstMatch_isSome`]: https://fujiharuka.github.io/lean2js/Lean2Js/Exhaustive.html#Lean2Js.Exhaustive.firstMatch_isSome
 [`stepCall_agrees`]: https://fujiharuka.github.io/lean2js/Lean2Js/StepAgree.html#Lean2Js.StepAgree.stepCall_agrees
 [`parseModule_render_of_compileProgram`]: https://fujiharuka.github.io/lean2js/Lean2Js/Renderable.html#Lean2Js.Compile.parseModule_render_of_compileProgram
+[`parseModule_render`]: https://fujiharuka.github.io/lean2js/Lean2Js/Roundtrip.html#Lean2Js.Parse.parseModule_render
 [`helpers_ship_as_modelled`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.helpers_ship_as_modelled
 [`entry_check_fits_dts`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.entry_check_fits_dts
 [`dts_fits_entry_check`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.dts_fits_entry_check

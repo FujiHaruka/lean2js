@@ -290,14 +290,29 @@ compiles through the same `compileAlts` and the same `chain`, with only the appl
 `name → Ty` — the "change the compiler's shape rather than its vocabulary" this section rejected for the
 module-level-function option is not paid here either.
 
-**`foldJs` is `mapJs` with one more argument.**
+**`foldJs` is `mapJs` with two more arguments — and it landed as this, measured rather than sketched:**
 
 ```
-| foldJs (scrut : Expr) (spec : FoldSpec) (binder : String) (body : Expr)
+| foldJs (scrut : Expr) (key : String) (spec : FoldSpec) (binder : String) (body : Expr)
 ```
 
-rendering `__fold(scrut, "tag", <spec>, (binder) => body)`. `mapJs` is the twin to copy in `Js`,
-`JsSem`, `Parse`, `Roundtrip` and `Renderable`, which is the technique that has paid all chain long.
+rendering `__fold(scrut, "tag", { "ctor": [["field", "self"]] }, (binder) => (body))`. **The key is
+carried and not written as `"tag"`**, which is where this section was wrong: a declared type tells its
+constructors apart by whatever `@[discriminator "..."]` named, `Helper.fold` takes `key` as a parameter
+and `calls_fold` is stated at every key, so a literal `"tag"` would have emitted a read of the wrong
+field for every type that renames its discriminator.
+
+`mapJs` is the twin to copy in `Js`, `Parse`, `Roundtrip` and `Renderable`. **It is not the twin in
+`JsSem`**: `mapJs` walks a list and the fold walks a value, so the evaluator's four new walkers mirror
+`foldV` / `foldList` / `foldListAt` / `foldPairs` instead, and the `eval` block's termination measure
+went from `(fuel, k, n)` to `(fuel, phase, sizeOf v, tag, len)` to carry both shapes. `lookupField` and
+`sizeOf_lookupField` were already in `JsSem` for `checkFields`, which is what made that mechanical.
+
+**The spec is the one piece with no twin**, as priced: it prints as the object `__fold` indexes by
+constructor name — `{ }` and ` }` spelled as `objLit` spells them, so the reader tells an empty spec
+from an entry by the one space, the way `parseObjFields` does — and `parseFoldSpec` / `parseFoldFields`
+take their budget off the text the way `parseDesc` / `parseAlts` / `parseFields` do, with
+`specSize_le` beside `descSize_le`.
 
 **The helper, written and run.** Two `Def`s in the existing vocabulary, 24 lines of printed JavaScript:
 `__fold(x, key, spec, f)`, which is one expression, and `__foldFields(x, key, fields, spec, f)`, which
@@ -342,6 +357,7 @@ def fold : Def :=
 | | |
 | --- | --- |
 | ~~`calls_fold`~~ | **done.** 400 lines in `HelperProof.lean`, against the 1170 `calls_norm`'s block takes: three kinds where a `TyDesc` has a dozen, and no induction on a rank. The helper and the proof landed together |
+| ~~`Js.Expr.foldJs`~~ | **done.** The form, its printer, its reader, the roundtrip case and the evaluator's walk. The spec's printer and reader were the real work, as priced; `JsSem` was not mechanical and the measure widened |
 | `Core.Expr.foldE`, `Eval`, and the covering side | unchanged: a new form is layer 3, and `Sound` and `Correct` each gain a case — though both lean on `matchE`'s existing `compileAlts` and `chain` |
 | `EncDeriving` emitting `T.fold` and `denotes_fold` | unchanged, and still the other expensive half |
 | `Reify` finding the fold by an attribute | unchanged, and still cheap |
@@ -469,10 +485,12 @@ Measured on the way: the generated `__has` accepts a value 500 levels deep on No
 does not declare at every level, and refuses a bad constructor or an out-of-range number arbitrarily far
 inside.
 
-**Phase 5 is started: `__fold` and `calls_fold` are in.** Its shape is chosen and its JavaScript side
-was measured rather than estimated — see "Phase 5, re-priced" above, which is what the reader should
-price the rest from. The helper is in the shipped runtime, proved and reached by nothing; the
-`Core.Expr` form that will reach it is the next commit. A shipped `def` still reads
+**Phase 5 is started: `__fold`, `calls_fold` and `Js.Expr.foldJs` are in.** Its shape is chosen and its
+JavaScript side was measured rather than estimated — see "Phase 5, re-priced" above, which is what the
+reader should price the rest from. The helper is in the shipped runtime, proved and reached by nothing,
+and the form the compiler would write the call as is in the AST, printed, read back and walked by the
+model — also reached by nothing. What is left is the `Core.Expr` form that builds one, and with it the
+proof that the model's walk is the one `calls_fold` is about. A shipped `def` still reads
 the constructor it was handed and the fields directly under it. What reading `Eval` and `Cost` settled is
 written out under "Walking a value of a recursive type" above: fuel measures nesting depth rather than
 work, so the syntactic bound survives exactly as long as the depth of the incoming value is bounded — and

@@ -50,6 +50,21 @@ what decides which compiler your artifact was built by.
   the arity it has: a constructor's field count varies, and a helper cannot apply a callback to an
   argument list it only has at run time.
 
+- **The form the generated code writes that call as is in.** `Js.Expr.foldJs` carries the scrutinee, the
+  key a value's constructor name is read under, the spec of which of a constructor's fields come round,
+  and the callback as a binder and a body. It prints as
+  `__fold(scrut, "tag", { "ctor": [["field", "self"]] }, (n) => (body))`, the reader gives it back, and
+  `JsSem` walks it as an evaluation rule rather than as a call to the helper — the way `mapJs` is
+  walked, because nothing in the model is ever a closure.
+
+  The spec is the one piece with no twin to copy. It prints as the object `__fold` indexes by
+  constructor name, and its reader takes its budget off the text the way a type descriptor's reader
+  does. The form carries the discriminator key rather than writing `"tag"`: a declared type tells its
+  constructors apart by whatever `@[discriminator "..."]` named, and the helper reads that field.
+
+  **Still nothing builds one.** The `Core.Expr` form is the next piece of work, and what ties the
+  model's walk to `calls_fold` goes with it.
+
 - **An argument written as a plain object is in the vectors.** A `Dict.Obj V` parameter accepts either
   a `Map` or a plain object, and every vector used to offer it a `Map`: the half a consumer of a
   generated package actually writes was proved and run by nothing. A parameter whose type reaches such a

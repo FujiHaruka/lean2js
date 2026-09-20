@@ -80,6 +80,24 @@ value is checked against, this is which of a node's fields the walk goes into. A
 constructor the value carries, so a name it does not hold is a value the walk declines to answer for. -/
 abbrev FoldSpec := List (String × FoldFields)
 
+/-- A constructor's fields as the generated code reads them: each field's name beside the way the fold
+carries it, in declared order. Written as a recursion rather than through `List.map`, for the reason the
+rest of the printer is: the text the artifact carries has to be something a proof can unfold. -/
+def renderFoldFields : FoldFields → String
+  | [] => ""
+  | [(n, k)] => "[\"" ++ escapeString n ++ "\", \"" ++ k.render ++ "\"]"
+  | (n, k) :: rest =>
+    "[\"" ++ escapeString n ++ "\", \"" ++ k.render ++ "\"], " ++ renderFoldFields rest
+
+/-- The spec `__fold` reads, printed as the object it indexes by the constructor's name. Spelled `{ ` and
+` }` the way `Expr.objLit` is, so that the reader tells the end of an empty one from the start of an
+entry by the same one character of lookahead. -/
+def renderFoldSpec : FoldSpec → String
+  | [] => ""
+  | [(c, fs)] => "\"" ++ escapeString c ++ "\": [" ++ renderFoldFields fs ++ "]"
+  | (c, fs) :: rest =>
+    "\"" ++ escapeString c ++ "\": [" ++ renderFoldFields fs ++ "], " ++ renderFoldSpec rest
+
 mutual
 
 /-- The descriptor the entry check reads. Total for the reason `Expr.render` is: the text the artifact
@@ -186,6 +204,14 @@ inductive Expr where
   /-- The walk a result takes on the way back out of an entry, the mirror of `check`. It runs no check:
   what the body handed back already has the declared type, so there is nothing left to refuse. -/
   | out (d : TyDesc) (e : Expr)
+  /-- The walk a fold takes over a value of a type that names itself, from the leaves up. `key` is what
+  the value carries its constructor's name under and `spec` which of a constructor's fields come round,
+  so that `__fold` can rebuild the node before `body` ever sees it: the binder is bound to the node with
+  each field that came round already replaced by the fold's answer for it.
+
+  `key` is carried rather than written as `"tag"` because a declared type tells its constructors apart by
+  whatever `@[discriminator "..."]` named, and the helper reads that field. -/
+  | foldJs (scrut : Expr) (key : String) (spec : FoldSpec) (binder : String) (body : Expr)
   deriving Inhabited, BEq
 
 inductive Stmt where
@@ -241,6 +267,9 @@ def Expr.render : Expr → String
   | .sortByJs arr binder body =>
     "__sortBy(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
   | .out d e => "__out(" ++ e.render ++ ", " ++ d.render ++ ", [])"
+  | .foldJs scrut key spec binder body =>
+    "__fold(" ++ scrut.render ++ ", \"" ++ escapeString key ++ "\", { " ++ renderFoldSpec spec
+      ++ " }, (" ++ binder ++ ") => (" ++ body.render ++ "))"
 termination_by e => sizeOf e
 
 def Expr.renderList : List Expr → String

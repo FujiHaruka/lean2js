@@ -943,7 +943,9 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
         let acc ← eval m f env init
         evalReduceJs m f env accName elemName body acc xs
       | _ => .error "typeError"
-termination_by (fuel, 0, 0)
+    | .foldJs scrut key spec binder body => do
+      evalFoldJs m f env key spec binder body (← eval m f env scrut)
+termination_by (fuel, 0, 0, 0, 0)
 
 def evalList (m : Module) (fuel : Nat) (env : JsEnv) (es : List Expr) :
     Except String (List JsValue) :=
@@ -953,7 +955,7 @@ def evalList (m : Module) (fuel : Nat) (env : JsEnv) (es : List Expr) :
     let v ← eval m fuel env e
     let vs ← evalList m fuel env rest
     .ok (v :: vs)
-termination_by (fuel, 1, es.length)
+termination_by (fuel, 1, 0, 0, es.length)
 
 /-- The combinators are walked here rather than modelled as a function value handed to a helper, so that
 nothing in the model is ever a closure. -/
@@ -965,7 +967,7 @@ def evalMapJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body : 
     let v ← eval m fuel ((binder, x) :: env) body
     let vs ← evalMapJs m fuel env binder body rest
     .ok (v :: vs)
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 def evalFilterJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body : Expr)
     (xs : List JsValue) : Except String (List JsValue) :=
@@ -976,7 +978,7 @@ def evalFilterJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body
     | .bool true => do .ok (x :: (← evalFilterJs m fuel env binder body rest))
     | .bool false => evalFilterJs m fuel env binder body rest
     | _ => .error "typeError"
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 def evalFindJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body : Expr)
     (xs : List JsValue) : Except String JsValue :=
@@ -987,7 +989,7 @@ def evalFindJs (m : Module) (fuel : Nat) (env : JsEnv) (binder : String) (body :
     | .bool true => .ok (.obj [("tag", .str "some"), ("value", x)])
     | .bool false => evalFindJs m fuel env binder body rest
     | _ => .error "typeError"
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 def evalQuantJs (m : Module) (fuel : Nat) (env : JsEnv) (op : Core.QuantOp) (binder : String)
     (body : Expr) (xs : List JsValue) : Except String JsValue :=
@@ -1000,7 +1002,7 @@ def evalQuantJs (m : Module) (fuel : Nat) (env : JsEnv) (op : Core.QuantOp) (bin
       | .all => if b then evalQuantJs m fuel env op binder body rest else .ok (.bool false)
       | .any => if b then .ok (.bool true) else evalQuantJs m fuel env op binder body rest
     | _ => .error "typeError"
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 def evalReduceJs (m : Module) (fuel : Nat) (env : JsEnv) (accName elemName : String)
     (body : Expr) (acc : JsValue) (xs : List JsValue) : JsResult :=
@@ -1009,7 +1011,71 @@ def evalReduceJs (m : Module) (fuel : Nat) (env : JsEnv) (accName elemName : Str
   | x :: rest => do
     let next ← eval m fuel ((elemName, x) :: (accName, acc) :: env) body
     evalReduceJs m fuel env accName elemName body next rest
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
+
+/-- What `__fold` computes, walked here rather than reached as a call to the helper, the way `mapJs` is:
+the node is rebuilt out of the fields the spec names, with each field that came round replaced by the
+answer for it, and `body` runs on the rebuilt node with `binder` bound to it.
+
+A field the spec names and the node does not carry is a missing property read, which this model refuses
+exactly as `member` does — real JavaScript reads `undefined` there, and a node the entry check accepted
+carries every field its constructor declares. -/
+def evalFoldJs (m : Module) (fuel : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (v : JsValue) : JsResult :=
+  match v with
+  | .obj es =>
+    match lookupField es key with
+    | some (.str tag) =>
+      match (spec.find? (·.1 == tag)).map (·.2) with
+      | some fs => do
+        let ps ← evalFoldPairs m fuel env key spec binder body es fs
+        eval m fuel ((binder, .obj (mapSetAll [(key, .str tag)] ps)) :: env) body
+      | none => .error "typeError"
+    | _ => .error "typeError"
+  | _ => .error "typeError"
+termination_by (fuel, 2, sizeOf v, 1, 0)
+
+def evalFoldList (m : Module) (fuel : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (xs : List JsValue) : Except String (List JsValue) :=
+  match xs with
+  | [] => .ok []
+  | x :: rest => do
+    let y ← evalFoldJs m fuel env key spec binder body x
+    let ys ← evalFoldList m fuel env key spec binder body rest
+    .ok (y :: ys)
+termination_by (fuel, 2, sizeOf xs, 2, 0)
+
+/-- A field the spec says holds a list of the type coming round. Anything but an array is a value the
+entry check would not have let through, so the walk refuses it rather than guessing. -/
+def evalFoldListAt (m : Module) (fuel : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (v : JsValue) : Except String (List JsValue) :=
+  match v with
+  | .arr xs => evalFoldList m fuel env key spec binder body xs
+  | _ => .error "typeError"
+termination_by (fuel, 2, sizeOf v, 3, 0)
+
+def evalFoldPairs (m : Module) (fuel : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (es : List (String × JsValue)) :
+    FoldFields → Except String (List (String × JsValue))
+  | [] => .ok []
+  | (n, k) :: rest =>
+    match h : lookupField es n with
+    | none => .error "typeError"
+    | some v =>
+      have := sizeOf_lookupField es n h
+      match k with
+      | .plain => do
+        let ps ← evalFoldPairs m fuel env key spec binder body es rest
+        .ok ((n, v) :: ps)
+      | .self => do
+        let y ← evalFoldJs m fuel env key spec binder body v
+        let ps ← evalFoldPairs m fuel env key spec binder body es rest
+        .ok ((n, y) :: ps)
+      | .list => do
+        let ys ← evalFoldListAt m fuel env key spec binder body v
+        let ps ← evalFoldPairs m fuel env key spec binder body es rest
+        .ok ((n, .arr ys) :: ps)
+termination_by fs => (fuel, 2, sizeOf (JsValue.obj es), 0, sizeOf fs)
 
 def evalStmts (m : Module) (fuel : Nat) (env : JsEnv) (stmts : List Stmt) : JsResult :=
   match stmts with
@@ -1018,7 +1084,7 @@ def evalStmts (m : Module) (fuel : Nat) (env : JsEnv) (stmts : List Stmt) : JsRe
   | .const name val :: rest => do
     let v ← eval m fuel env val
     evalStmts m fuel ((name, v) :: env) rest
-termination_by (fuel, 1, stmts.length + 1)
+termination_by (fuel, 1, 0, 0, stmts.length + 1)
 
 end
 
