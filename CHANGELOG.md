@@ -8,9 +8,9 @@ what decides which compiler your artifact was built by.
 
 - A package no longer carries `index.js.map`, and `index.js` no longer ends in a `sourceMappingURL`
   line. The map told a consumer nothing the names did not already tell them — the generated code keeps
-  each declaration's name and order, and the transcribed source ships beside it — while the one thing it
-  could get wrong, its line arithmetic, was checked against this repository's example rather than inside
-  `emit`, where every other file a package carries is checked. A bundler folds a dependency's map into
+  each declaration's name and order — while the one thing it could get wrong, its line arithmetic, was
+  checked against this repository's example rather than inside `emit`, where every other file a package
+  carries is checked. A bundler folds a dependency's map into
   its own silently, so a map that is off by a line reaches a consumer as a wrong answer they have no way
   to question.
 - A package no longer carries the transcribed `.lean2js` source either. It was there for a reader
