@@ -31,8 +31,10 @@ jobs:
       fail-fast: false
       matrix:
         # One archive per `System.Platform.target`, which is what Lake looks for by name. A platform with
-        # no archive here is not broken: its build falls back to the source.
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+        # no archive here is not broken: its build falls back to the source. `x86_64-apple-darwin` is left
+        # out on those terms: the `macos-13` runner queues for the better part of an hour where the rest
+        # finish in three minutes, and it holds up nothing but itself.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
