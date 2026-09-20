@@ -6,6 +6,12 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- Where Lean's own library and the vocabulary name the same operation, a refusal names the word to write
+  instead: `xs.length` comes back `write Arr.length instead` rather than only with the rule it broke.
+  The table covers the `List` and `String` names the vocabulary renames, and it is read over the whole
+  refused term rather than its head, because `xs.length` reaches the walk under a coercion. A name the
+  walk reads — `map`, `filter`, `foldl`, `reverse` — is not in it.
+
 - The codes an export throws are a type in `index.d.ts` rather than prose beside the signature.
   `TrapCode` is the closed set of them and `TrapError<Code>` is what a call throws, so a consumer who
   switches over `code` and misses one has a type error instead of a branch nobody wrote. Each function's

@@ -213,6 +213,22 @@ grep -q 'one element per whole number below a value' unbounded.err \
   || { cat unbounded.err; echo "the build failed for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
 
+# Where Lean's own library and the vocabulary name the same operation, the refusal is the substitution.
+# The term reaches the walk under a coercion, so what is pinned here is that the name a reader wrote is
+# found inside it rather than only at its head.
+cat >> MyLogic.lean <<'LEAN'
+
+namespace MyLogic
+@[ship] def lineCount (xs : List Int) : Int := (List.length xs : Nat)
+end MyLogic
+LEAN
+if lake build > vocabulary.err 2>&1; then
+  echo "a name the subset does not read was accepted"; exit 1
+fi
+grep -q 'write Arr.length instead' vocabulary.err \
+  || { cat vocabulary.err; echo "the refusal did not name the word to write instead"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
+
 # Which key a type's constructors are told apart by is the author's call, written above the type. The
 # happy path goes all the way through the differential run on Node before anything is written.
 cat > MyLogic.lean <<'LEAN'

@@ -37,6 +37,48 @@ private def vocabularyRule : String :=
   "the subset reads the operators, the constructors and the Arr / Str / Dict / Opt / Exc / Int53 / \
     BigInt vocabulary rather than Lean's own library"
 
+/-- Where Lean's own library and the vocabulary name the same operation. The walk stops at the name that
+was written, and what its reader wants next is the name to write instead: for these the whole of the
+difference is that one substitution, so a refusal that only cites the rule sends them to a document to
+learn a word this already knows. A name that is read rather than refused — `map`, `filter`, `foldl`,
+`reverse`, `++` — is not here and must not be: the table is only ever consulted after the walk has
+already stopped. -/
+private def insteadOf : Name → Option String
+  | ``List.length => some "Arr.length"
+  | ``List.take => some "Arr.take"
+  | ``List.drop => some "Arr.drop"
+  | ``List.getD => some "Arr.get"
+  | ``List.head? | ``List.head! => some "Arr.head?"
+  | ``List.getLast? => some "Arr.last?"
+  | ``List.isEmpty => some "Arr.isEmpty"
+  | ``List.contains | ``List.elem => some "Arr.contains"
+  | ``List.count => some "Arr.count"
+  | ``List.sum => some "Arr.sum"
+  | ``List.flatten => some "Arr.flatten"
+  | ``List.flatMap => some "Arr.flatMap"
+  | ``List.range => some "Arr.range"
+  | ``String.length => some "Str.length"
+  | ``String.trim => some "Str.trim"
+  | ``String.toUpper => some "Str.upper"
+  | ``String.toLower => some "Str.lower"
+  | ``String.startsWith | ``String.isPrefixOf => some "Str.startsWith"
+  | ``String.endsWith => some "Str.endsWith"
+  | ``String.isEmpty => some "Str.isEmpty"
+  | ``String.splitOn => some "Str.split"
+  | ``String.replace => some "Str.replace"
+  | ``String.intercalate => some "Str.join"
+  | ``String.toNat? => some "Str.toInt?"
+  | ``String.take | ``String.drop => some "Str.substring"
+  | _ => none
+
+/-- The rule the term broke, with the substitution in front of it where the refused term names something
+the table knows. The whole term is read rather than its head, because the name a reader wrote is often
+one coercion down from it: `xs.length` reaches the walk as `↑xs.length`, whose head is the coercion. -/
+private def refusalAdvice (e : Lean.Expr) (rule : String) : String :=
+  match e.getUsedConstants.findSome? insteadOf with
+  | some name => s!"write {name} instead; {rule}"
+  | none => rule
+
 /-- How many explicit arguments a cited certificate takes, counted off its statement rather than off the
 `∀` the statement unfolds to. `f ..` would keep going into `Denotes` itself. -/
 private partial def statedArity : Lean.Expr → Nat
@@ -379,7 +421,7 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
         throwError "reify: the call to {c} needs {cert}, which is not in scope"
       unless ns.isPrefixOf c do
         throwError "reify: {e} is outside the subset this walk reads\n\
-          {if e.isLambda then repeatRule else vocabularyRule}"
+          {refusalAdvice e (if e.isLambda then repeatRule else vocabularyRule)}"
     let mut items := #[]
     let mut proof ← `(Lean2Js.Denote.denotesArgs_nil _ _)
     let mut answers := #[]
@@ -482,7 +524,7 @@ where
   u32Only (α : Lean.Expr) (lemma : Name) : TermElabM Name := do
     match ← whnf α with
     | .const ``UInt32 _ => return lemma
-    | _ => throwError "reify: {e} is outside the subset this walk reads\n{vocabularyRule}"
+    | _ => throwError "reify: {e} is outside the subset this walk reads\n{refusalAdvice e vocabularyRule}"
   /-- `Int53`, `UInt32`, `BigInt` and `String` are ordered by different functions on both sides, so a
   comparison reads as the lemma for the type being compared. -/
   cmp (α : Lean.Expr) (op : Name) (intLemma u32Lemma strLemma bigLemma : Name) (l r : Lean.Expr) :
@@ -726,7 +768,7 @@ where
         let (be, bp) ← walk citing ns names xs b
         return (be, ← `(Lean2Js.Denote.denotes_decide_eq_true _ _ _ _ $bp))
       else
-        throwError "reify: {prop} is outside the subset this walk reads\n{vocabularyRule}"
+        throwError "reify: {prop} is outside the subset this walk reads\n{refusalAdvice prop vocabularyRule}"
     | _ =>
       throwError "reify: {mkApp2 (mkConst ``Decidable.decide) prop inst} is outside the subset \
         this walk reads\n{vocabularyRule}"

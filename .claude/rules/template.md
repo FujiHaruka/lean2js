@@ -21,6 +21,9 @@ The script does not only check that the happy path writes five files. It pins th
 is sold on, each by the message the user would see:
 
 - a declaration `ship_package` did not gather (`does not carry it`)
+- a name the vocabulary renames, refused with the substitution rather than with the rule alone
+  (`write Arr.length instead`) — written under a coercion, which is the shape the head of the term alone
+  does not reach
 - a theorem proved with `sorry` (`rests on sorryAx`)
 - a `structure` whose constructor was never named (`would ship as "mk"`)
 - a field named the key its own type is told apart by (`may not have a field named kind`), beside the

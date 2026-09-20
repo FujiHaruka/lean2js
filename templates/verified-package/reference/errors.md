@@ -22,7 +22,13 @@ term inside it stopped the walk is in the message.
 | a name JavaScript has taken | `compile failed: constructor name is reserved in JavaScript: delete` |
 | an `@[expand] def` whose body leaves the subset | `reify: writing out MyLogic.half, which is marked @[expand] — ...` |
 | `match` on two values | `matches on more than one value, which this walk does not read` |
+| a name the vocabulary has its own word for | `reify: s.toUpper is outside the subset this walk reads`, then `write Str.upper instead` |
 | anything else | `reify: <term> is outside the subset this walk reads`, and the rule of the three it broke |
+
+**Where the difference is one substitution, the refusal is the substitution.** `xs.length`,
+`s.splitOn`, `List.take`, `String.intercalate` and the rest of Lean's library that the vocabulary
+renames come back naming the word to write, so the table in [`vocabulary.md`](vocabulary.md) is for
+reading before you write rather than after a build fails.
 
 Where there is nothing better to say, a refusal closes with the rule the term broke:
 
