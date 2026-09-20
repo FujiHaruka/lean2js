@@ -209,6 +209,44 @@ that is the whole of what an author can do today. Three ways to close it, cheape
 
 The first is the one to take. **Settle it before writing it**, as with the two questions before it.
 
+## Step 4, priced: the narrowing is asymmetric, and the plan's own table is wrong about it
+
+**Measured in the tree on 2026-09-20, after step 5 landed.** The context table at the top says
+`Js.tsType (.dictObj v)` goes from the union to `{ readonly [key: string]: V }`. Taken literally that is
+not reachable, and the reason is `Dts.checkTy_tsSat` — *what the entry check lets through, the `.d.ts`
+admits*. The entry check accepts a `Map` at a `dictObj` descriptor and is meant to keep accepting one
+(the plan's own non-goal table says the argument side is unchanged), so narrowing the printed type on
+both sides would make `checkTy_tsSat` false. Weakening it to fit is what `CLAUDE.md` forbids.
+
+**So the narrowing is on the returning side only, and that is the better answer anyway.** A `Dict.Obj V`
+parameter really does take either shape, and the union is the honest type for it. A `Dict.Obj V` return
+is always a plain object — `encodeAt` at a `dictObj` writes `.obj`, and `hasTy_tsSat` already takes the
+`dictObjLit` arm — so the union there is sound but imprecise, and the imprecision is what makes a
+consumer narrow a type they never had to.
+
+| | Printed as | Why |
+| --- | --- | --- |
+| a `Dict.Obj V` parameter | `ReadonlyMap<string, V> \| { readonly [key: string]: V }` | the entry takes either, and `checkTy_tsSat` says so |
+| a `Dict.Obj V` return | `{ readonly [key: string]: V }` | the entry walks it out; nothing else can come back |
+
+**The shape.** `Js.tsTypeOut`, a twin of `tsType` that narrows `.dictObj` and recurses structurally
+through `option` / `result` / `array` / `dict`; `Dts.TsSatOut`, the same twin without the `dictObjMap`
+arm; `Dts.hasTy_tsSatOut : TsSatOut p ty (encodeAt p ty v)`, which is the proof landed at step 5 with one
+arm's constructor changed. `Js.declareFn` (`Js.lean:339`–`342`) prints `tsTypeOut` for the return and
+`tsType` for the parameters, and `Manifest.lean:78` does the same for the signature line.
+
+**Both twins stop at a `.named` type**, and that is a decision rather than an oversight: a declared
+type's interface is printed once and serves both directions, so a `Dict.Obj` *field* keeps the union
+even though a returned value's field is always an object. `TsSatOut` at `.named` delegates to `TsSat`,
+which admits both, so this stays sound — it gives up precision at exactly the place where one printed
+interface has to answer for two directions.
+
+**One lemma the wiring needs**: `TsSatOut p ty jv → TsSat p ty jv`, a structural induction, so that a
+value a consumer got back from one call still satisfies the parameter type of the next.
+
+`Dts.checkTy_tsSat`, `Dts.tsSat_checkTy` and `Dts.hasTy_tsSat` are shipped, so this is a `/proof-audit`
+run, not just a `lake build`.
+
 ## Files
 
 | File | What moves |
