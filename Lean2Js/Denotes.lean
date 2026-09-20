@@ -2010,5 +2010,29 @@ theorem denotes_errorE (p : Program) (env : Env) (ok : Ty) (e : Expr) {ε β : T
     rw [← h]
     rfl
 
+/-! ### Walking a value of a type that names itself
+
+A fold evaluates its scrutinee and then walks it, and the walk is on the value rather than on the
+expression, so the step that reads it cannot be one lemma: `T.fold` is written per type and so is the
+theorem that the subset's walk computes it. This is everything around that theorem, which is what
+`deriving Enc` generates and hands over as `hw`. `denotes_mapE`'s twin, with the walk abstracted where
+that one has `evalMapItems_denotes`. -/
+
+theorem denotes_foldE (p : Program) (env : Env) (scrut : Expr) (tn : String) (ta : List Ty)
+    (result : Ty) (alts : List Alt) {β : Type} [Enc β] (x : β) {α : Type} [Enc α] (t : α)
+    (hs : Denotes p env scrut x)
+    (hw : ∀ {f : Nat}, f ≤ defaultFuel → ∀ v : Value,
+      evalFold p f env tn ta alts (toValue x) = .ok v → v = toValue t) :
+    Denotes p env (.foldE scrut tn ta result alts) t := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_foldE] at h
+  cases hx : evalExpr p 9999 env scrut with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hs (by simp [defaultFuel]) w hx] at h
+    simp only [bind, Except.bind] at h
+    exact hw (by simp [defaultFuel]) v h
+
 end Lean2Js.Denote
 
