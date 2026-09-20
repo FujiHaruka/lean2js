@@ -36,6 +36,26 @@ initialize discriminatorAttr : ParametricAttribute String ←
 private def discriminatorOf (t : Name) : CommandElabM String :=
   return (discriminatorAttr.getParam? (← getEnv) t).getD "tag"
 
+/-- The mark `deriving Enc` puts on the fold it writes for a type that names itself, carrying the name
+of the type the fold walks.
+
+A mark rather than a suffix: an author may write their own `T.fold`, and reading that one as the
+generated one would build a certificate about the wrong function. -/
+syntax (name := foldOf) "foldOf " str : attr
+
+initialize foldOfAttr : ParametricAttribute String ←
+  registerParametricAttribute {
+    name := `foldOf
+    descr := "the declared type this generated fold walks"
+    getParam := fun _ stx =>
+      match stx with
+      | `(attr| foldOf $tn:str) => return tn.getString
+      | _ => throwError "expected `foldOf \"<type>\"`"
+  }
+
+/-- The type a fold walks, where the declaration carries the mark `deriving Enc` put on it. -/
+def foldOf? (env : Environment) (n : Name) : Option String := foldOfAttr.getParam? env n
+
 /-- Where a field's type stands to the type being declared. A field that is the type itself, or a list of
 it, is what makes the declaration recursive: its encoding is the one being written rather than one an
 `Enc` instance already answers for. -/
@@ -99,6 +119,13 @@ private partial def subsetTy (self : Name) (params : Array (Lean.Expr × String)
         has no type for"
     `(Lean2Js.Core.Ty.named $(⟨Syntax.mkStrLit c.getString!⟩)
       [$(← args.mapM (subsetTy self params)),*])
+
+/-- A constructor's field types as Lean syntax, which is what the fold's algebra is written from. Only a
+type that names itself has a fold, and such a type takes no parameters, so every field type is closed and
+`typeStx` reads it. -/
+private def leanFieldTys (c : Name) : TermElabM (Array Term) := do
+  let ci ← getConstInfoCtor c
+  forallTelescopeReducing ci.type fun args _ => args.mapM fun a => do typeStx (← inferType a)
 
 /-- How a field stands to the type being declared. A field that reaches the type through anything but a
 list of it is refused: the encoding would have to be written through a shape nothing here recurses
@@ -276,6 +303,35 @@ private def recHasTyAlt (typeDefId toValueId acceptsVId hasTyId hasTysId hp : Id
     `(matchAltExpr| | $(← ctorPat s):term, $h => by
         rw [$toValueId:ident]; rw [$acceptsVId:ident] at $h:ident; exact $named)
 
+/-- What the fold is handed for one constructor: the constructor's own field types, with a field that
+came round replaced by the answer for it, answering the fold's own type. -/
+private def algebraTy (beta : Ident) (leanTys : Array Term) (kinds : Array FieldKind) :
+    TermElabM Term := do
+  let mut ty ← `($beta)
+  for (lt, k) in (leanTys.zip kinds).reverse do
+    let arg ← match k with
+      | .plain => pure lt
+      | .selfDirect => `($beta)
+      | .selfList => `(List $beta)
+    ty ← `($arg → $ty)
+  return ty
+
+/-- One arm of the generated fold: the constructor's own function, applied to the fields with every one
+that came round already walked. -/
+private def foldAlt (foldId foldListId : Ident) (algebra : Array Ident) (i : Nat) (s : CtorShape) :
+    TermElabM (TSyntax ``matchAltExpr) := do
+  let bs := binders s
+  let mut args : Array Term := #[]
+  for j in [0:s.fields.size] do
+    let x := bs[j]!
+    args := args.push (← match s.kinds[j]! with
+      | .plain => `($x)
+      | .selfDirect => `($foldId $algebra* $x)
+      | .selfList => `($foldListId $algebra* $x))
+  let f := algebra[i]!
+  let rhs ← if args.isEmpty then `($f) else `($f $args*)
+  `(matchAltExpr| | $(← ctorPat s):term => $rhs)
+
 /-- The list companions' alternatives, written with plain names rather than hygienic ones so that the
 pattern a binder is introduced by and the term that uses it are the same name. -/
 private def simpArgs (ts : Array Term) :
@@ -343,6 +399,8 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
     let acceptsId := mkIdent (t ++ `accepts)
     let hasTyId := mkIdent (t ++ `toValue_hasTy)
     let hasTysId := mkIdent (t ++ `toValues_hasTy)
+    let foldId := mkIdent (t ++ `fold)
+    let foldListId := mkIdent (t ++ `foldList)
     let p := mkIdent `p
     let hp := mkIdent `hp
     let cmds ← liftTermElabM do
@@ -359,8 +417,16 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
         (recHasTyAlt typeDefId toValueId acceptsVId hasTyId hasTysId hp nameLit)
       let ofValuesMapAlts ← recOfValuesMapAlts ofValuesId roundTripId ofValuesMapId
       let hasTysAlts ← recHasTysAlts p acceptsVsId hasTyId hasTysId hp
+      let beta := mkIdent `β
+      let algebra : Array Ident := shapes.mapIdx fun i _ => mkIdent (Name.mkSimple s!"f{i}")
+      let leanTys ← shapes.mapM fun s => leanFieldTys s.name
+      let algebraBinders ← (algebra.zip (shapes.zip leanTys)).mapM fun (f, s, lts) => do
+        `(Lean.Parser.Term.bracketedBinderF| ($f : $(← algebraTy beta lts s.kinds)))
+      let foldAlts ← shapes.mapIdxM fun i s => foldAlt foldId foldListId algebra i s
+      let foldAttr ← `(attr| foldOf $(⟨Syntax.mkStrLit t.getString!⟩):str)
       let x := mkIdent `x
       let v := mkIdent `v
+      let xs := mkIdent `xs
       return #[
         ← `(command| def $(head `typeDef) : Lean2Js.Core.TypeDef :=
               { name := $nameLit, params := [], ctors := [$ctorDefs,*],
@@ -414,7 +480,17 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
               toValue_hasTy h := $hasTyId h.1 h.2),
         ← `(command| @[simp] theorem $(head `toValue_eq) :
               (Lean2Js.Enc.toValue : $typeId → Lean2Js.Value) = $toValueId := rfl),
-        ← `(command| @[simp] theorem $(head `ty_eq) : (Lean2Js.Enc.ty (α := $typeId)) = $tyStx := rfl)
+        ← `(command| @[simp] theorem $(head `ty_eq) : (Lean2Js.Enc.ty (α := $typeId)) = $tyStx := rfl),
+        ← `(command| mutual
+            @[$foldAttr:attr] def $(head `fold) {$beta : Type}
+                $algebraBinders* ($x : $typeId) : $beta :=
+              match $x:ident with $foldAlts:matchAlt*
+            def $(head `foldList) {$beta : Type} $algebraBinders* ($xs : List $typeId) :
+                List $beta :=
+              match $xs:ident with
+              | [] => []
+              | y :: ys => $foldId $algebra* y :: $foldListId $algebra* ys
+            end)
       ]
     cmds.forM elabCommand
     return true

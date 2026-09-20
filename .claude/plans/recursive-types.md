@@ -954,3 +954,31 @@ and `/proof-audit`.
 still true, and it does not enumerate the fragment's forms. `Lean2Js/Traps.lean`'s module comment does
 move: the reason `noMatchingAlternative` is not among the codes a declaration reaches now covers a fold's
 alternatives as well as a `match`'s.
+
+### Phase 5's author-facing half, started on 2026-09-21: the catamorphism is written, and nothing reads it
+
+**`deriving Enc` now writes the fold.** For a type that names itself the handler emits, beside the
+encoding and its proofs, a `mutual` block holding the catamorphism and its list companion:
+
+```
+Category.fold     : {β : Type} → (String → β) → (String → List β → β) → Category → β
+Category.foldList : {β : Type} → (String → β) → (String → List β → β) → List Category → List β
+```
+
+One function per constructor, in declaration order, each taking the constructor's own field types with a
+field that came round replaced by the answer for it — `selfDirect` becomes `β` and `selfList` becomes
+`List β`. `EncDeriving.kindOf` already classified every field that way for the encoding, so the algebra
+is read off `CtorShape.kinds` and costs no new analysis. The list companion is a `mutual` twin rather
+than a `cs.map (fold f)`, for the same reason `ofValue` / `ofValues` is one.
+
+**The mark is an attribute, as priced.** `@[foldOf "Category"]`, a second `ParametricAttribute` beside
+`@[discriminator]`, with `Enc.foldOf?` to read it back. A suffix convention would read an author's own
+`Category.fold` as the generated one and build a certificate about the wrong function.
+
+**Nothing reads the mark yet.** The fold is exercised in `Lean2Js/Denote.lean` — four `#guard`s over
+`Example.Category` and a `#guard_msgs` on the mark — and read by nothing else. It is the definition
+`denotes_fold` will be about, landed and checked before anything reads it, the way `Js.Expr.foldJs` was.
+
+**What is left is unchanged in shape and is the expensive half**: `denotes_fold`, generated per type by
+induction over the constructors with the list half in the same `mutual` block, and then `Reify` reading
+a call of a marked fold into `Core.Expr.foldE`. After that, `Example`, `Axioms` and the documents.

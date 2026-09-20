@@ -115,6 +115,29 @@ theorem add_comm_ships (m : Js.Module) (hm : Compile.compileProgram Example.prog
 
 end
 
+/-! ### The fold `deriving Enc` writes for a type that names itself
+
+A type that names itself has a walk over it, and the subset has no recursion to spell one with, so the
+walk has to be a name — and a name per type, because the algebra has one function per constructor.
+`deriving Enc` writes that name beside the encoding and marks it with the type it walks, so that the
+walk is found by the mark rather than by a suffix an author's own `Category.fold` would also carry.
+
+Nothing reads the mark yet. This is the definition the certificate will be about. -/
+
+private def catalogue : Example.Category :=
+  .group "root" [.leaf "socks", .group "tools" [.leaf "saw", .leaf "plane"]]
+
+#guard Example.Category.fold (fun _ => 1) (fun _ counts => Arr.sum counts) catalogue == 3
+#guard Example.Category.fold (fun _ => 1) (fun _ nodes => 1 + Arr.sum nodes) catalogue == 5
+#guard Example.Category.fold (fun name => name) (fun name _ => name) catalogue == "root"
+#guard Example.Category.foldList (fun _ => 1) (fun _ cs => Arr.sum cs) [] == ([] : List Int)
+
+/-- info: some "Category" -/
+#guard_msgs in
+open Lean in
+#eval show Elab.Command.CommandElabM (Option String) from
+  return Lean2Js.Enc.foldOf? (← getEnv) ``Example.Category.fold
+
 /-! ### What the walk refuses
 
 A refusal that cannot name what to write instead names the rule the term broke, and the three rules are
