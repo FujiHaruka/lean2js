@@ -1045,3 +1045,32 @@ existential. Budget it as the phase's one real induction, not as a step.
 **Measure first, again.** Before writing `T.denotes_fold`, write a `#guard` that `firstMatch` over
 generated alternatives picks the arm the constructor names — the whole plan above rests on that
 reducing, and it is one line to check.
+
+### The walk's recipe, measured end to end on 2026-09-21
+
+**One constructor's case of `T.denotes_fold` was written by hand against `Example.Category` and it goes
+through.** Not committed — it is the shape the generator emits, and writing it twice is the thing to
+avoid. What it settles:
+
+| Step | What does it |
+| --- | --- |
+| the type lookup | `(p.types.find? (·.name == "Category")).bind (fun td => td.findAt? [] ctor) = some c` is **`rfl`**, even against `Example.program`'s whole type list |
+| the node | `rw [T.toValue, evalFold_obj] at h`, then `simp only [<that lookup>, bind, Except.bind] at h` |
+| the fields | `rw [evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ (show lookupFieldV … = some … from rfl)]`, then `simp only [show foldKindOf "T" [] <fieldTy> = FoldKind.plain from rfl, bind, Except.bind]`, then `evalFoldFields_nil`. `foldKindOf` at a concrete field type is `rfl` |
+| the arm | the tactic pinned by the two `example`s in `Lean2Js/Denote.lean` |
+| the body | `simp only [List.cons_append, List.nil_append] at h`, then the alternative's own `Denotes` hypothesis applied at `hf` — **not** `evalExpr_var`, which wants the fuel as `f + 1` and does not meet an abstract `f` |
+
+**The hypothesis shape that works** is the fold's fuel bound and one `Denotes` per constructor:
+
+```
+example (env : Env) (f : Nat) (hf : f ≤ defaultFuel) (v : Value) (n : String)
+    (hb : Denotes Example.program (("name", toValue n) :: env) (Core.Expr.var "name") n)
+    (h : evalFold Example.program f env "Category" [] catAlts
+      (Example.Category.toValue (.leaf n)) = .ok v) :
+    v = toValue n
+```
+
+**What the `group` case adds, and it is the only thing left unmeasured**: the folded field goes through
+`evalFoldListAt` and `evalFoldList`, so that case needs the `List T` half of the `mutual` block, and the
+induction hypothesis arrives there rather than at the node. `eventuallyFold_of_fold`'s second and third
+walkers are the shape to copy, without the fuel existential.
