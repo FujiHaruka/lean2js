@@ -241,6 +241,9 @@ def at? (xs : List JsValue) (i : Int) : JsResult :=
     | some v => .ok v
     | none => fail "indexOutOfBounds"
 
+/-- The whole numbers below `n`, as the model's numbers. -/
+def rangeNums (n : Int) : List JsValue := (List.range n.toNat).map fun k => .num (Int.ofNat k)
+
 end Runtime
 
 open _root_.Lean2Js.Js.Runtime
@@ -274,6 +277,7 @@ def helper (name : String) (args : List JsValue) : Option JsResult :=
   | "__aslice", [.arr xs, .num a, .num b] => some (arrSlice xs a b)
   | "__aconcat", [.arr a, .arr b] => some (.ok (.arr (a ++ b)))
   | "__areverse", [.arr xs] => some (.ok (.arr xs.reverse))
+  | "__range", [.num n] => some (.ok (.arr (rangeNums n)))
   | "__dget", [.dict entries, .str key] =>
     some (.ok (match (entries.find? (·.1 == key)).map (·.2) with
       | some v => .obj [("tag", .str "some"), ("value", v)]
@@ -336,6 +340,7 @@ inductive HelperRow : String → List JsValue → Prop where
   | aslice (xs : List JsValue) (a b : Int) : HelperRow "__aslice" [.arr xs, .num a, .num b]
   | aconcat (a b : List JsValue) : HelperRow "__aconcat" [.arr a, .arr b]
   | areverse (xs : List JsValue) : HelperRow "__areverse" [.arr xs]
+  | range (n : Int) : HelperRow "__range" [.num n]
   | dget (es : List (String × JsValue)) (k : String) : HelperRow "__dget" [.dict es, .str k]
   | dhas (es : List (String × JsValue)) (k : String) : HelperRow "__dhas" [.dict es, .str k]
   | dset (es : List (String × JsValue)) (k : String) (v : JsValue) :

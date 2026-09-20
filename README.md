@@ -137,7 +137,9 @@ JavaScript has** — `boolean`, `number`, `bigint`, `string`, `Array`, `Map`, a 
 why the vocabulary is `Arr.*` / `Str.*` / `Dict.*` rather than Lean's library. And **every call goes to
 a name written above it**: no recursion, no closure and no function built where it stands, so the fuel a
 program needs follows from its syntax. One question decides almost all of it: **could you write it in
-plain JavaScript, with no function in a variable, and no loop but an `Array` method?**
+plain JavaScript, with no function in a variable, and no loop but an `Array` method?** A loop that runs
+a number of times rather than once per element is `Arr.range n` folded over, and how far it counts has
+to be bounded by the program text.
 
 ```lean
 @[ship]
@@ -155,7 +157,7 @@ def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
 | `inductive` and `structure` with `deriving Enc`, including one that names itself, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
-| List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`) and `match` (nested, wildcard, literal) | Metaprogramming |
+| List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`), `Arr.range n` for a body that runs a number of times, and `match` (nested, wildcard, literal) | Metaprogramming |
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
 | Pure `def`s marked `@[ship]` | Recursion in a `def` / non-termination / DOM access |
 | A lambda where a traversal takes one, and a declaration's name passed to a call | Functions as values: a function in a variable, a closure, a function type on the public boundary |

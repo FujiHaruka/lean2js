@@ -6,6 +6,16 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- `Arr.range n` is in the subset: the whole numbers below `n`, as an `Array Int53`, and `[]` for a count
+  of zero or less. It is what a body folds over when it has to run a number of times rather than once per
+  element it was handed — a power, a schedule, the characters of a string — which the subset had no way
+  to write. How far it counts has to be bounded by the program text: a literal, a `min` / `max` clamp, or
+  arithmetic over those, up to 4096 elements. A count the text leaves open is refused by the
+  declaration's name at `lake build`, and a length is not a bound, so `Arr.range (Arr.length xs)` is
+  refused where `Arr.range (min (Arr.length xs) 256)` is read. What is measured against the ceiling is
+  the product, so a traversal over an `Arr.range` counts its body once per element. The rule and the
+  ceiling are `Str.repeat`'s, which until now was the only place a value decided how big a result was.
+
 - A package no longer carries `index.js.map`, and `index.js` no longer ends in a `sourceMappingURL`
   line. The map told a consumer nothing the names did not already tell them — the generated code keeps
   each declaration's name and order — while the one thing it could get wrong, its line arithmetic, was

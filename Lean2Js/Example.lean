@@ -139,6 +139,16 @@ amount keeps its digits and overruns the column. -/
 @[ship]
 def amountColumn (amount : Int) : String := Str.padStart (Int53.toString amount) 12 " "
 
+/-- The most rows a single printed receipt numbers. -/
+@[expand] def maxReceiptRows : Int := 999
+
+/-- The line numbers a printed receipt gives its rows, counting from one. The count is clamped: a
+receipt prints at most `maxReceiptRows` rows, and `Arr.range` asks that the text bound how far it
+counts. -/
+@[ship]
+def lineNumbers (rows : Int) : List Int :=
+  (Arr.range (min (max rows 0) maxReceiptRows)).map (fun i => i + 1)
+
 /-- Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree. -/
 @[ship]
 def sortsBefore (a b : String) : Bool := a < b
@@ -629,6 +639,27 @@ the answer holds. -/
 theorem reference_from_three_parts (a b c : String) :
     referenceFrom [a, b, c] = a ++ "-" ++ b ++ "-" ++ c := by
   simp [referenceFrom, String.append_assoc]
+
+/-- A receipt numbers one row per row it prints: as many numbers as the clamped count says, whatever
+`rows` was asked for. -/
+theorem line_numbers_counts_the_rows (rows : Int) :
+    Arr.length (lineNumbers rows) = min (max rows 0) maxReceiptRows := by
+  rw [lineNumbers, Arr.length, List.length_map, Arr.range, List.length_map, List.length_range,
+    maxReceiptRows]
+  simp only [Int.ofNat_eq_natCast]
+  omega
+
+/-- The numbers a receipt prints are exactly the rows it has: a number is one of them when it is at
+least 1 and at most the clamped count, and is not one of them otherwise. -/
+theorem line_numbers_are_rows (rows k : Int) :
+    k ∈ lineNumbers rows ↔ 1 ≤ k ∧ k ≤ min (max rows 0) maxReceiptRows := by
+  rw [lineNumbers, Arr.range]
+  simp only [List.map_map, List.mem_map, Function.comp_def, List.mem_range, maxReceiptRows]
+  constructor
+  · rintro ⟨j, hj, rfl⟩
+    omega
+  · rintro ⟨hlo, hhi⟩
+    exact ⟨(k - 1).toNat, by omega, by omega⟩
 
 private theorem find_clampQuantity : program.find? "clampQuantity" = some clampQuantityDecl := rfl
 

@@ -451,6 +451,18 @@ def rep : Def :=
       .ret (.cond (.bin "===" (.bin "%" (.var "n") (.num 2)) (.num 1))
         (.bin "+" (.var "s") (.var "half")) (.var "half"))] }
 
+def range : Def :=
+
+  { name := "__range", params := ["n"]
+    doc := ["The only loop here runs over an array, so the count becomes an array of that length",
+            "before anything is pushed: __rep builds an n-character string and __chars splits it.",
+            "What is pushed is the length reached so far, which is the index being filled."]
+    body := .block [
+      .const "out" (.arrayLit []),
+      .forOf "c" (.call "__chars" [.call "__rep" [.str "x", (.var "n")]]) [
+        .push "out" (lengthOf (.var "out"))],
+      .ret (.var "out")] }
+
 def substring : Def :=
 
   { name := "__substring", params := ["s", "lo", "hi"]
@@ -924,9 +936,9 @@ def ck : Def :=
 def defs : List Def := [
   fail, i53, i53div, i53mod, u32mul, u32div, u32mod, bigdiv, bigmod, abs, min, max, chars, cp,
   str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
-  startsAt, indexOf, join, «repeat», rep, substring, aslice, aconcat, areverse, atIdx, dget, dhas, dset, dkeys, dvalues,
-  ddelete, eq, map, filter, find, all, any, reduce, keyle, merge, msort, sortBy, isObj, hasFields,
-  has, normFields, norm, ck
+  startsAt, indexOf, join, «repeat», rep, range, substring, aslice, aconcat, areverse, atIdx,
+  dget, dhas, dset, dkeys, dvalues, ddelete, eq, map, filter, find, all, any, reduce, keyle,
+  merge, msort, sortBy, isObj, hasFields, has, normFields, norm, ck
 ]
 
 def runtime : String := renderAll defs

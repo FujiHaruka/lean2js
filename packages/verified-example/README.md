@@ -50,6 +50,8 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   The rule a printed receipt puts between its sections: `mark` written out 32 times, which is one column each where `mark` is a single character.
 - `amountColumn(amount: number): string`
   An amount in minor units, right-aligned in the column a printed receipt gives it. Too wide an amount keeps its digits and overruns the column.
+- `lineNumbers(rows: number): readonly number[]`
+  The line numbers a printed receipt gives its rows, counting from one. The count is clamped: a receipt prints at most `maxReceiptRows` rows, and `Arr.range` asks that the text bound how far it counts.
 - `sortsBefore(a: string, b: string): boolean`
   Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
 - `mentionsTerm(text: string, term: string): boolean`
@@ -262,6 +264,24 @@ the answer holds.
 
 ```lean
 theorem reference_from_three_parts (a b c : String) : referenceFrom [a, b, c] = a ++ "-" ++ b ++ "-" ++ c
+```
+
+### line_numbers_counts_the_rows
+
+A receipt numbers one row per row it prints: as many numbers as the clamped count says, whatever
+`rows` was asked for.
+
+```lean
+theorem line_numbers_counts_the_rows (rows : Int) : Arr.length (lineNumbers rows) = min (max rows 0) maxReceiptRows
+```
+
+### line_numbers_are_rows
+
+The numbers a receipt prints are exactly the rows it has: a number is one of them when it is at
+least 1 and at most the clamped count, and is not one of them otherwise.
+
+```lean
+theorem line_numbers_are_rows (rows k : Int) : k ∈ lineNumbers rows ↔ 1 ≤ k ∧ k ≤ min (max rows 0) maxReceiptRows
 ```
 
 ### draft_never_ships
@@ -553,6 +573,7 @@ theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.f
 A statement below reads one of these by name. The package holds the value, written out where it was used, so it is given here rather than left as a symbol nothing in the package defines.
 
 - `maxLineQuantity : Int` = `999`
+- `maxReceiptRows : Int` = `999`
 
 ## Axioms
 

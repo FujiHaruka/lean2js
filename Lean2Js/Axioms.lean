@@ -57,6 +57,14 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.reference_from_three_parts
 
+/-- info: 'Lean2Js.Example.line_numbers_counts_the_rows' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.line_numbers_counts_the_rows
+
+/-- info: 'Lean2Js.Example.line_numbers_are_rows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.line_numbers_are_rows
+
 /-- info: 'Lean2Js.Example.draft_never_ships' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.draft_never_ships

@@ -9,6 +9,7 @@ constructors and the operators.
 | On | What you write | Instead of |
 | --- | --- | --- |
 | `List T` | `Arr.length` `Arr.get` `Arr.slice` | `List.length` counts in `Nat`; a read past the end traps rather than answering a default |
+| | `Arr.range` | `List.range`, which counts in `Nat`. This is the array a body folds over when it has to run a number of times, and how far it counts has to be bounded by the program text |
 | | `Arr.sortByKey` | `List.mergeSort`, which takes a comparison. The key's type carries the order: `Int` or `String` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's, which repeat by recursion |
 | `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API, none of which is read |
@@ -26,6 +27,7 @@ element type.
 | `Arr.length` | `List α → Int` |
 | `Arr.get` | `[Inhabited α] → List α → Int → α` — the index is the second argument |
 | `Arr.slice` | `List α → Int → Int → List α` — `lo` then `hi`, `hi` excluded |
+| `Arr.range` | `Int → List Int` — the whole numbers below it, `[]` for a count of zero or less |
 | `Arr.take` / `Arr.drop` | `List α → Int → List α` |
 | `Arr.isEmpty` | `List α → Bool` |
 | `Arr.contains` | `[BEq α] → List α → α → Bool` — the array first, the wanted element second |
@@ -87,5 +89,6 @@ stable, so an order on two fields is two calls: sort by the secondary key first,
 one.
 
 An array or string operation missing from these tables but needing no new concept is usually writable as
-a `@[expand] def` of your own. `foldl` is the loop and `Arr.slice` is the window, which is all the rest
-of this vocabulary is made of.
+a `@[expand] def` of your own. `foldl` is the loop, `Arr.range` is what gives it something to run over
+when there is no array in hand, and `Arr.slice` is the window — which is all the rest of this vocabulary
+is made of.

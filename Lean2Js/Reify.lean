@@ -260,6 +260,7 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     return (← `(Lean2Js.Core.Expr.arrayReverse $ae),
             ← `(Lean2Js.Denote.denotes_arrayReverse _ _ _ _ $ap))
   | (``HAppend.hAppend, #[α, _, _, _, l, r]) => concat α l r
+  | (``Lean2Js.Arr.range, #[n]) => unary `range ``Lean2Js.Denote.denotes_range n
   | (``Lean2Js.Arr.length, #[_, l]) =>
     let (ae, ap) ← walk citing ns names xs l
     return (← `(Lean2Js.Core.Expr.length $ae),

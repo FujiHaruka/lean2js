@@ -378,6 +378,10 @@ def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except S
     let (jx, tx) ← compileExpr p ctx x
     if tx == .int53 then .ok (.call "__str" [jx], .string)
     else .error "toString expects Int53"
+  | .un .range x => do
+    let (jx, tx) ← compileExpr p ctx x
+    if tx == .int53 then .ok (.call "__range" [jx], .array .int53)
+    else .error "Arr.range expects Int53"
   | .bin op lhs rhs => do
     let (jl, tl) ← compileExpr p ctx lhs
     let (jr, tr) ← compileExpr p ctx rhs

@@ -894,7 +894,18 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        shred h
        all_goals exact renderable_of_ok h (renderable_call (by decide)
          (renderableList_cons hjx renderableList_nil)))
-  -- 16: a binary operator
+  -- 16: the whole numbers below a count
+  · intro ctx x ihx hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jx, tx⟩, hx, h⟩ := bind_ok h
+       try simp only at h
+       have hjx := ihx hctx jx tx hx
+       shred h
+       all_goals exact renderable_of_ok h (renderable_call (by decide)
+         (renderableList_cons hjx renderableList_nil)))
+  -- 17: a binary operator
   · intro ctx op lhs rhs ihl ihr hctx j t h
     rw [compileExpr] at h
     peel h
@@ -920,7 +931,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
                  (renderable_call (by decide) hpair) (renderable_num 0))
            | exact renderable_of_ok h
                (renderable_binary (okOp_of_orderSymbol (by assumption)) hjl hjr))
-  -- 17: a conditional
+  -- 18: a conditional
   · intro ctx c t' e ihc iht ihe hctx j t h
     rw [compileExpr] at h
     peel h
@@ -937,7 +948,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
           all_goals
             exact renderable_of_ok h
               (renderable_cond (ihc hctx jc tc hc) (iht hctx jt tt ht) (ihe hctx je te he))))
-  -- 18: a let inside an expression
+  -- 19: a let inside an expression
   · intro ctx name ty val body ihv ihb hctx j t h
     rw [compileExpr] at h
     peel h
@@ -956,7 +967,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
             (by simp [okName_of_validateIdent hvi])
             (ihb (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jb tb hb)
             (renderableList_cons (ihv hctx jv tv hv) renderableList_nil))))
-  -- 19, 20: a call through a parameter holding a function
+  -- 20, 21: a call through a parameter holding a function
   · intro ctx fn args params ret hfound hsome _ j t h
     rw [compileExpr] at h
     peel h
@@ -977,7 +988,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
           all_goals
             exact renderable_of_ok h
               (renderable_call (okCallee_of_ctx hctx hfound) (ihargs hctx js hjs))))
-  -- 21, 22: a name in scope that is not a function, and a name that is nowhere
+  -- 22, 23: a name in scope that is not a function, and a name that is nowhere
   · intro ctx fn args val hne hfound _ j t h
     rw [compileExpr] at h
     peel h
@@ -987,7 +998,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     rw [compileExpr] at h
     peel h
     all_goals (simp only [hnone, hfind] at h; peel h)
-  -- 23: a call on a declaration
+  -- 24: a call on a declaration
   · intro ctx fn args hnone d hfind ihargs hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1003,7 +1014,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
              try simp only at h
              exact renderable_of_ok h
                (renderable_call (okCallee_of_decl_name hp hfind) (ihargs hctx js hjs)))))
-  -- 24: a constructor
+  -- 25: a constructor
   · intro ctx typeName tyArgs ctorName args ihargs hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1022,7 +1033,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
                 all_goals
                   exact renderable_of_ok h
                     (renderable_objOf _ _ (renderablePairs_zip _ _ (ihargs hctx js hjs)))))))
-  -- 25: a field read
+  -- 26: a field read
   · intro ctx e field ihe hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1035,7 +1046,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
          exact renderable_of_ok h
            (renderable_member hje
              (okName_of_proj hfn (by assumption) (by assumption) (by assumption))))
-  -- 27: a match
+  -- 28: a match
   · intro ctx scrut alts ihs iha hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1056,7 +1067,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
                   exact renderable_of_ok h
                     (renderable_arrowCall (by decide) (renderable_chain _ harmsok)
                     (renderableList_cons (ihs hctx jscrut tscrut hsc) renderableList_nil))))))
-  -- 28, 29, 30, 31: the built-in constructors
+  -- 29, 30, 31, 32: the built-in constructors
   · intro ctx elem _ j t h
     rw [compileExpr] at h
     peel h
@@ -1092,7 +1103,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        try simp only at h
        exact renderable_of_ok h
          (renderable_objOf _ _ (renderablePairs_cons (ihe hctx je te he) renderablePairs_nil)))
-  -- 32: an array literal
+  -- 33: an array literal
   · intro ctx elem items iha hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1103,7 +1114,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        try simp only at h
        split at h <;> peel h
        all_goals exact renderable_of_ok h (renderable_arrayLit (iha hctx js hjs)))
-  -- 33: an index
+  -- 34: an index
   · intro ctx arr idx iharr ihidx hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1119,7 +1130,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          (split at h <;> peel h
           all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
-  -- 34: a length
+  -- 35: a length
   · intro ctx arr iharr hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1135,7 +1146,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
            | exact renderable_of_ok h (renderable_call (by decide)
                (renderableList_cons (renderable_call (by decide)
                  (renderableList_cons h1 renderableList_nil)) renderableList_nil)))
-  -- 35: a slice
+  -- 36: a slice
   · intro ctx arr lo hi iharr ihlo ihhi hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1154,7 +1165,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          (split at h <;> peel h
           all_goals exact renderable_of_ok h (renderable_call (by decide) htriple)))
-  -- 36: a reverse
+  -- 37: a reverse
   · intro ctx arr iharr hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1166,7 +1177,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          exact renderable_of_ok h (renderable_call (by decide)
            (renderableList_cons h1 renderableList_nil)))
-  -- 37, 38, 39, 40: the traversals that take one binder
+  -- 38, 39, 40, 41: the traversals that take one binder
   · intro ctx arr binder body iharr ihbody hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1233,7 +1244,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
           all_goals
             exact renderable_of_ok h (renderable_quantJs h1 (okName_of_validateIdent hvi)
               (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
-  -- 41: a reduce
+  -- 42: a reduce
   · intro ctx arr init accName elemName body iharr ihinit ihbody hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1260,7 +1271,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
               (okName_of_validateIdent hva) (okName_of_validateIdent hve)
               (ihbody _ _ (ctxOk_cons (okCallee_of_validateIdent hve)
               (ctxOk_cons (okCallee_of_validateIdent hva) hctx)) jbody tbody hbody))))
-  -- 42: a sort by key
+  -- 43: a sort by key
   · intro ctx arr binder body iharr ihbody hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1278,7 +1289,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
           all_goals
             exact renderable_of_ok h (renderable_sortByJs h1 (okName_of_validateIdent hvi)
               (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
-  -- 43: a dictionary literal
+  -- 44: a dictionary literal
   · intro ctx value entries ihv hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1293,7 +1304,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          exact renderable_of_ok h
            (renderable_dictLit (renderablePairs_zip _ _ (ihv hctx js hjs))))
-  -- 44, 45, 49: reading and deleting from a dictionary
+  -- 45, 46, 50: reading and deleting from a dictionary
   · intro ctx d key ihd ihk hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1324,7 +1335,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          (split at h <;> peel h
           all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
-  -- 46: writing to a dictionary
+  -- 47: writing to a dictionary
   · intro ctx d key val ihd ihk ihv hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1345,7 +1356,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
           all_goals
             (split at h <;> peel h
              all_goals exact renderable_of_ok h (renderable_call (by decide) htriple))))
-  -- 47, 48: the keys and the values
+  -- 48, 49: the keys and the values
   · intro ctx d ihd hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1383,7 +1394,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          (split at h <;> peel h
           all_goals exact renderable_of_ok h (renderable_call (by decide) hpair)))
-  -- 50, 51: the string helpers
+  -- 51, 52: the string helpers
   · intro ctx op e ihe hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1409,7 +1420,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
             exact renderable_of_ok h (renderable_call (okCallee_strBinHelper op)
               (renderableList_cons (ihl hctx jl tl hl)
               (renderableList_cons (ihr hctx jr tr hr) renderableList_nil)))))
-  -- 52: a substring
+  -- 53: a substring
   · intro ctx str lo hi ihs ihlo ihhi hctx j t h
     rw [compileExpr] at h
     peel h
@@ -1428,7 +1439,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
               (renderableList_cons (ihs hctx jstr tstr hs)
               (renderableList_cons (ihlo hctx jlo tlo hlo)
                 (renderableList_cons (ihhi hctx jhi thi hhi) renderableList_nil))))))
-  -- 53, 54: the values of a dictionary literal
+  -- 54, 55: the values of a dictionary literal
   · intro ctx _ js h
     rw [compileValues] at h
     simp only [Except.ok.injEq] at h
@@ -1445,7 +1456,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     subst h
     simp only [List.map_cons]
     exact renderableList_cons (ihe hctx je te he) (ihr hctx tail htail)
-  -- 55, 56: the alternatives of a match
+  -- 56, 57: the alternatives of a match
   · intro ctx ty _ arms h
     rw [compileAlts] at h
     simp only [Except.ok.injEq] at h
@@ -1481,7 +1492,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     refine ⟨?_, ihrest hctx tail htail⟩
     simp only [ArmOk, Bool.and_eq_true]
     exact ⟨⟨⟨htests, hnames⟩, hpaths⟩, ihbody binds (ctxOk_append hbinds hctx) jbody tbody hb⟩
-  -- 57, 58: the arguments of a call
+  -- 58, 59: the arguments of a call
   · intro ctx _ js h
     rw [compileArgs] at h
     simp only [Except.ok.injEq] at h

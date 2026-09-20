@@ -147,6 +147,31 @@ grep -q 'cannot be recursive' recursive.err \
   || { cat recursive.err; echo "the build failed for another reason"; exit 1; }
 cp MyLogic.lean.orig MyLogic.lean
 
+# A result whose size a value decides is refused where the program text does not bound that value, at
+# `ship_package` rather than at the mark. A length is not a bound: nothing in the text says how long an
+# array a caller passes is.
+cat > MyLogic.lean <<'LEAN'
+import Lean2Js
+
+namespace MyLogic
+
+open Lean2Js Lean2Js.Core Lean2Js.Enc
+
+@[ship] def indices (xs : List Int) : List Int := Arr.range (Arr.length xs)
+
+def manifest : Manifest := { package := "@example/my-logic", version := "0.1.0" }
+
+ship_package
+
+end MyLogic
+LEAN
+if lake build > unbounded.err 2>&1; then
+  echo "an Arr.range the program text does not bound was accepted"; exit 1
+fi
+grep -q 'one element per whole number below a value' unbounded.err \
+  || { cat unbounded.err; echo "the build failed for another reason"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
+
 # Which key a type's constructors are told apart by is the author's call, written above the type. The
 # happy path goes all the way through the differential run on Node before anything is written.
 cat > MyLogic.lean <<'LEAN'

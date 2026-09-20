@@ -386,9 +386,16 @@ theorem noFn_mkInt53 {i : Int} {v : Value} (h : mkInt53 i = .ok v) : noFn v = tr
   · injection h
   · (injection h with h; subst h); rw [noFn]
 
+private theorem noFnList_rangeValues (n : Int) : noFnList (rangeValues n) = true := by
+  rw [rangeValues]
+  induction List.range n.toNat with
+  | nil => rw [List.map_nil, noFnList]
+  | cons _ rest ih => rw [List.map_cons, noFnList, ih, noFn]; rfl
+
 theorem noFn_applyUn {op : UnOp} {x v : Value} (h : applyUn op x = .ok v) : noFn v = true := by
   rw [applyUn.eq_def] at h
   split at h <;> first
+    | ((injection h with h; subst h); rw [noFn]; exact noFnList_rangeValues _)
     | ((injection h with h; subst h); rw [noFn])
     | exact noFn_mkInt53 h
     | injection h

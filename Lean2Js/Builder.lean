@@ -39,6 +39,7 @@ def not' (e : Expr) : Expr := .un .not e
 def neg' (e : Expr) : Expr := .un .neg e
 def abs' (e : Expr) : Expr := .un .abs e
 def toString' (e : Expr) : Expr := .un .toString e
+def range' (e : Expr) : Expr := .un .range e
 def min' (a b : Expr) : Expr := .bin .min a b
 def max' (a b : Expr) : Expr := .bin .max a b
 def fnRef (name : String) : Expr := .fnRef name

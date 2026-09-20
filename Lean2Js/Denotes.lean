@@ -259,6 +259,14 @@ theorem denotes_toString (p : Program) (env : Env) (e : Expr) (a : Int) (h : Den
     simp only [applyUn, Except.ok.injEq] at hw
     exact hw.symm) h
 
+theorem denotes_range (p : Program) (env : Env) (e : Expr) (a : Int) (h : Denotes p env e a) :
+    Denotes p env (.un .range e) (Arr.range a) :=
+  denotes_un p env .range e a _ (fun _ hw => by
+    rw [toValue_int] at hw
+    simp only [applyUn, Except.ok.injEq] at hw
+    rw [← hw]
+    simp [Arr.range, rangeValues, List.map_map, Function.comp_def]) h
+
 theorem denotes_letE (p : Program) (env : Env) (name : String) (ty : Ty) (val body : Expr)
     {β : Type} [Enc β] (x : β) {α : Type} [Enc α] (t : α)
     (hv : Denotes p env val x) (hb : Denotes p ((name, toValue x) :: env) body t) :

@@ -192,6 +192,15 @@ export declare function receiptRule(mark: string): string;
 export declare function amountColumn(amount: number): string;
 
 /**
+ * The line numbers a printed receipt gives its rows, counting from one. The count is clamped: a
+ * receipt prints at most `maxReceiptRows` rows, and `Arr.range` asks that the text bound how far it
+ * counts.
+ *
+ * @throws {Error} whose `code` is `typeError` or `int53Overflow`.
+ */
+export declare function lineNumbers(rows: number): readonly number[];
+
+/**
  * Comparison in code point order. JS's `<` compares UTF-16 units, so it does not agree.
  *
  * @throws {Error} whose `code` is `typeError`.

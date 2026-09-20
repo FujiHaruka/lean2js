@@ -177,6 +177,17 @@ const __rep = (s, n) => {
   return (((n % 2) === 1) ? (s + half) : half);
 };
 
+// The only loop here runs over an array, so the count becomes an array of that length
+// before anything is pushed: __rep builds an n-character string and __chars splits it.
+// What is pushed is the length reached so far, which is the index being filled.
+const __range = (n) => {
+  const out = [];
+  for (const c of __chars(__rep("x", n))) {
+    out.push((out).length);
+  }
+  return out;
+};
+
 // Indices count code points, and one outside the string fails rather than being clamped.
 const __substring = (s, lo, hi) => {
   const xs = __chars(s);
@@ -711,6 +722,12 @@ export function receiptRule(__p0) {
 export function amountColumn(__p0) {
   const amount = __ck(__p0, ["int53"]);
   return (((__i53(__strlen(" ")) === 0) || (12 <= __i53(__strlen(__str(amount))))) ? __str(amount) : (__substring(__repeat(" ", __i53((12 - __i53(__strlen(__str(amount)))))), 0, __i53((12 - __i53(__strlen(__str(amount)))))) + __str(amount)));
+}
+
+/** lineNumbers : (rows : Int53) → Array Int53 */
+export function lineNumbers(__p0) {
+  const rows = __ck(__p0, ["int53"]);
+  return __map(__range(__min(__max(rows, 0), 999)), (i) => (__i53((i + 1))));
 }
 
 /** sortsBefore : (a : String, b : String) → Bool */

@@ -243,6 +243,13 @@ theorem agree_areverse (ext : Ext) (xs : List Js.JsValue) (f : Nat) :
   rw [show f + (xs.length + 9) = f + (xs.map ofJs).length + 9 from by simp; omega, calls_areverse]
   simp
 
+theorem agree_range (ext : Ext) (n : Int) (f : Nat) :
+    callDef ext (f + (5 * n.toNat + 30)) "__range" [ofJs (.num n)]
+      = ofRes (.ok (.arr (rangeNums n))) := by
+  rw [show f + (5 * n.toNat + 30) = f + 5 * n.toNat + 30 from by omega]
+  simp only [ofJs_num, calls_range, ofRes_ok, ofJs_arr, rangeNums, List.map_map]
+  simp
+
 /-! ## Dictionaries -/
 
 theorem agree_dhas (ext : Ext) (es : List (String × Js.JsValue)) (k : String) (f : Nat) :
@@ -675,6 +682,7 @@ theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : 
       | exact eventually_of_offset _ (fun f => agree_aslice ext _ _ _ f)
       | exact eventually_of_offset _ (fun f => agree_aconcat ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_areverse ext _ f)
+      | exact eventually_of_offset _ (fun f => agree_range ext _ f)
       | exact eventually_of_offset _ (fun f => agree_dget ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_dhas ext _ _ f)
       | exact eventually_of_offset _ (fun f => agree_dset ext _ _ _ f)

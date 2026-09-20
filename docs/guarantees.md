@@ -57,7 +57,7 @@ assumes the declared type, and the refusing one assumes the declaration is publi
 - Running out of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on
   the fuel needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against
   the ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
-  <!--n:fuelNeeded-->998<!--/n-->).
+  <!--n:fuelNeeded-->1007<!--/n-->).
 - **What that rests on**: the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
   exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
@@ -80,13 +80,15 @@ number of declared types down, so what the differential run compares on a type t
 shallow. That every deeper value is accepted, refused and normalised the same way is what the three
 directions say, at every environment a `mu` puts the walk in.
 
-**A string the model can name may be longer than an engine will build.** Strings in the model are
-mathematical, and the only bound on a length is the `Int53` one that `Str.length` traps past; a JavaScript
-engine gives up long before. The two operations that take a length as a number, `Str.repeat` and
-`Str.padStart` which is written from it, are what reach that far from small arguments. Both trap at the
-same `Int53` bound on the result length rather than at the engine's, which nothing here names — and a
-shipped declaration cannot reach either, because a count the program text leaves unbounded, or bounds
-above 4096 copies, is refused by the declaration's name before anything is compiled.
+**A value the model can name may be bigger than an engine will build.** Strings and arrays in the model
+are mathematical, and the only bound on a length is the `Int53` one that `Str.length` traps past; a
+JavaScript engine gives up long before. The three operations that take a size as a number — `Str.repeat`,
+`Str.padStart` which is written from it, and `Arr.range` — are what reach that far from small arguments.
+None of them traps at the engine's bound, which nothing here names, and a shipped declaration cannot
+reach it either: a deciding value the program text leaves unbounded, or bounds above 4096 copies or
+elements, is refused by the declaration's name before anything is compiled. What is measured against
+that ceiling is the product — a repeat of a repeat multiplies, and so does a traversal over an array the
+text says the length of, which runs its body once per element.
 
 ## The artifact and the `.d.ts`
 
@@ -116,7 +118,7 @@ real JavaScript answer alike, not the range of spellings.
 
 ## What is checked rather than proved
 
-- **Every vector generated for the artifact** (<!--n:vectors-->38746<!--/n--> of them for this example) is
+- **Every vector generated for the artifact** (<!--n:vectors-->38968<!--/n--> of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
   real JavaScript. One disagreement and nothing is written to the output directory.

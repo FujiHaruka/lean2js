@@ -114,6 +114,7 @@ told to unfold.
 | `Str.padStart s n pad` | `s` widened to `n` code points with `pad` in front, `s` itself when already that wide |
 | `Str.length s` | the number of code points, not UTF-16 units |
 | `Arr.get xs i` | the element, defined where `i` is in range |
+| `Arr.range n` | `(List.range n.toNat).map` into `Int`, so `List.mem_range` and `List.length_range` are what a goal about it lands on |
 
 So a goal about division opens with `simp [Int53.div]` and lands on `Int.tdiv`, where `omega` and
 `Int.tdiv_*` take over.

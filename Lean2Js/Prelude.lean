@@ -44,6 +44,13 @@ namespace Arr
 /-- How many elements, as the `Int53` the subset counts in. -/
 def length (xs : List α) : Int := Int.ofNat xs.length
 
+/-- The whole numbers below `n`, and none of them where `n` is not positive.
+
+This is the array a body folds over when it has to run a number of times rather than once per element it
+was handed. It is the one array whose length a value rather than the syntax decides, so `Bound` asks that
+the program text bound that value -- `Arr.range (min (max n 0) 64)` -- exactly as it does of a repeat. -/
+def range (n : Int) : List Int := (List.range n.toNat).map fun k : Nat => (k : Int)
+
 /-- The element at an index. An index outside the array traps rather than answering `default`; what is
 written here is what the total function has to say in a case the certificate never reaches. -/
 def get [Inhabited α] (xs : List α) (i : Int) : α := xs.getD i.toNat default

@@ -1219,6 +1219,55 @@ theorem calls_rep (ext : Ext) (s : String) (n : Int) (f : Nat) :
       = .ok (.str (strRepeatFrom s n.toNat)) :=
   calls_rep_aux ext (n.toNat + 1) s n (by omega) f
 
+theorem find_range : Helper.defs.find? (·.name == "__range") = some Helper.range := rfl
+
+private theorem toList_repeatX : ∀ m : Nat, (strRepeatFrom "x" m).toList = List.replicate m 'x'
+  | 0 => rfl
+  | m + 1 => by rw [strRepeatFrom, String.toList_append, toList_repeatX m]; rfl
+
+/-- The loop keeps no counter of its own: it pushes the length the array has reached, so the element it
+adds is the index it is at. That is why the induction runs on the accumulator as well as on what is left
+to walk, and why the numbers start where the accumulator ends rather than at zero. -/
+theorem range_loop (ext : Ext) (xs acc : List Val) (N : Val) (f : Nat) :
+    evalFor ext (f + xs.length + 3) [("out", .arr acc), ("n", N)] "c" xs
+        [.push "out" (.field (.var "out") "length")]
+      = .ok (.next [("out", .arr (acc ++ (List.range' acc.length xs.length).map
+          (fun k => Val.num (Int.ofNat k)))), ("n", N)]) := by
+  induction xs generalizing acc with
+  | nil =>
+    walk
+    simp
+  | cons x rest ih =>
+    rw [show f + (x :: rest).length + 3 = (f + rest.length + 3) + 1 from by simp; omega]
+    walk
+    simp only [Option.getD]
+    rw [ih]
+    simp [List.range'_succ]
+
+theorem calls_range (ext : Ext) (n : Int) (f : Nat) :
+    callDef ext (f + 5 * n.toNat + 30) "__range" [.num n]
+      = .ok (.arr ((List.range n.toNat).map fun k => Val.num (Int.ofNat k))) := by
+  have hchars : (strRepeatFrom "x" n.toNat).toList.length = n.toNat := by
+    rw [toList_repeatX, List.length_replicate]
+  have hlen : ((strRepeatFrom "x" n.toNat).toList.map fun c => Val.str c.toString).length
+      = n.toNat := by
+    rw [List.length_map, hchars]
+  rw [show f + 5 * n.toNat + 30 = (f + 5 * n.toNat + 29) + 1 from by omega,
+    callDef_block find_range rfl rfl]
+  simp only [Helper.range, Helper.lengthOf]
+  walk
+  rw [show f + 5 * n.toNat + 24 = (f + n.toNat + 8) + 4 * n.toNat + 16 from by omega, calls_rep]
+  walk
+  rw [show f + 5 * n.toNat + 26 = (f + 5 * n.toNat + 21) + 5 from by omega, calls_chars]
+  walk
+  rw [show f + 5 * n.toNat + 27
+        = (f + 4 * n.toNat + 24)
+          + ((strRepeatFrom "x" n.toNat).toList.map fun c => Val.str c.toString).length + 3
+      from by rw [hlen]; omega,
+    range_loop]
+  walk
+  simp [hchars, List.range_eq_range']
+
 /-- The bound `__repeat` tests is the one `applyStrBin` states, divided through by the length: the
 product is what overflows, and dividing keeps the test itself inside the safe integers. -/
 private theorem div_bound (M L : Nat) (n : Int) (hL : 1 ≤ L) :

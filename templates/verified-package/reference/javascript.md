@@ -20,18 +20,25 @@ the reference semantics and the generated code to it.
   empty needle sits at `0`, in both. The answer is an index `Str.substring` accepts.
 - **`Str.split s ""` answers `[s]`**, where `"abc".split("")` answers `["a", "b", "c"]`. It does not
   refuse either, so a check written on the characters it was expected to hand back is quietly wrong.
-  **The subset cannot walk a string of unknown length character by character at all**: there is no
-  character type and no repetition outside the array traversals. Read a fixed-length field with
-  `Str.substring s i (i + 1)` at each literal position behind a `Str.length` guard; check a field of
-  unknown length with
+  To walk the characters, count them out: `(Arr.range (min (Str.length s) 256)).map (fun i => Str.substring s i (i + 1))`
+  hands back one-character strings, the `min` being the bound `Arr.range` asks for. There is still no
+  character type, and the clamp is a real ceiling — past it the tail of the string is not looked at — so
+  a field of unknown length is better checked with
   `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?`.
 - **`Str.replace s pat rep` rewrites every occurrence**, as `replaceAll` does. An empty `pat` leaves `s`
   as it is, where `replaceAll("", r)` inserts at every position.
 - **`Str.repeat s n` gives `""` for a count of zero or less**, where JavaScript's own throws on a
-  negative one. It and `Str.padStart`, written from it, are the two operations whose result grows with a
-  *value*, so **the count has to be bounded by the program**: a literal, a `min` / `max` clamp, or
-  arithmetic over those, up to 4096 copies. `Str.padStart s width " "` with a width the caller chooses
-  is refused by name at `lake build`; `Str.padStart s (min (max width 0) 15) " "` is not.
+  negative one. So does `Arr.range n`, which gives `[]`.
+- **A result whose size a value decides has to be bounded by the program.** `Str.repeat`, `Str.padStart`
+  written from it, and `Arr.range` are the three, and for each the deciding value has to be a literal, a
+  `min` / `max` clamp, or arithmetic over those — up to 4096 copies or elements. `Str.padStart s width " "`
+  with a width the caller chooses is refused by name at `lake build`; `Str.padStart s (min (max width 0) 15) " "`
+  is not, and neither is `Arr.range (min (max n 0) 64)`. **A length is not a bound**: nothing in the text
+  says how long an array a caller passes is, so `Arr.range (Arr.length xs)` is refused where
+  `Arr.range (min (Arr.length xs) 256)` is read. **What is counted is the product**: a traversal over an
+  `Arr.range` runs its body once per element, so `(Arr.range 64).map (fun i => Arr.range 64)` is at the
+  ceiling and `(Arr.range 4096).map (fun i => Arr.range 4096)` is far past it. The bound is what the
+  differential run can carry, not what JavaScript can hold: an engine builds far longer arrays than this.
 - **`Str.padStart s n pad` cuts the pad where the width falls**, so a multi-character pad does not
   overshoot. A width `s` already reaches, and an empty `pad`, leave `s` as it is. JavaScript's own counts
   UTF-16 units, so it pads astral text short.
@@ -51,4 +58,4 @@ the reference semantics and the generated code to it.
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out |
 | `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure |
 | walking a type that names itself | A `def` reads the constructor it was handed and the fields directly under it. Take the answer for each child as a parameter, or do the walk in TypeScript and call in per node |
-| `**` / `Math.pow` / `10 ^ n` | For a power of ten, `Opt.getD (Str.toInt? ("1" ++ Str.repeat "0" (min (max n 0) 15))) 0`. Otherwise repeated multiplication over a fixed range. The clamp is not optional |
+| `**` / `Math.pow` / `10 ^ n` | `(Arr.range (min (max n 0) 40)).foldl (fun running step => running * b) 1`, with `b` the base: one multiplication per step. For a power of ten, `Opt.getD (Str.toInt? ("1" ++ Str.repeat "0" (min (max n 0) 15))) 0` says it without the fold. The clamp is not optional either way |

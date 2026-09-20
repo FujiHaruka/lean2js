@@ -454,6 +454,26 @@ theorem hasElemTy_of_subset {p : Program} {xs ys : List Value} {elem : Ty}
     Value.hasElemTy p ys elem = true :=
   (hasElemTy_iff p ys elem).mpr fun y hy => (hasElemTy_iff p xs elem).mp h y (hsub y hy)
 
+/-- The count has to be the typed value rather than a bare `Int`: what keeps every element inside
+`Int53` is that the count already is, and the elements are all below it. -/
+theorem applyUn_range_int53 {p : Program} {n : Int} {v : Value}
+    (hn : Value.hasTy p (.int53 n) .int53 = true) (h : applyUn .range (.int53 n) = .ok v) :
+    Value.hasTy p v (.array .int53) = true := by
+  rw [hasTy_int53] at hn
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hn
+  simp only [applyUn, Except.ok.injEq] at h
+  subst h
+  rw [hasTy_array]
+  refine (hasElemTy_iff p _ _).mpr fun x hx => ?_
+  rw [rangeValues] at hx
+  obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hx
+  have hlt : k < n.toNat := List.mem_range.1 hk
+  rw [hasTy_int53]
+  simp only [Bool.and_eq_true, decide_eq_true_eq]
+  simp only [int53Min, int53Max] at hn ⊢
+  simp only [Int.ofNat_eq_natCast]
+  omega
+
 theorem hasElemTy_getElem? {p : Program} {xs : List Value} {elem : Ty} {n : Nat} {v : Value}
     (h : Value.hasElemTy p xs elem = true) (hg : xs[n]? = some v) :
     Value.hasTy p v elem = true :=
@@ -2240,6 +2260,21 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
         split at hc
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hc
           exact hc.2 ▸ applyUn_toString_hasTy he
+        · simp at hc
+      | range =>
+        simp only [Compile.compileExpr, bind, Except.bind] at hc
+        split at hc
+        · simp at hc
+        rename_i xPair hcx
+        obtain ⟨jx, tx⟩ := xPair
+        have hwt := ih ctx env xE jx tx w hx henv hcx hw
+        split at hc
+        · rename_i htx
+          have htx' : tx = Ty.int53 := by simpa using htx
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+          obtain ⟨i, hi⟩ := hasTy_int53_inv (htx' ▸ hwt)
+          subst hi
+          exact hc.2 ▸ applyUn_range_int53 (htx' ▸ hwt) he
         · simp at hc
     | bin hl hr =>
       rename_i op lhsE rhsE

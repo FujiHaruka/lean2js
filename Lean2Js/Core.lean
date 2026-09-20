@@ -215,6 +215,10 @@ inductive UnOp where
   | neg
   | abs
   | toString
+  /-- The whole numbers below an `Int53`. It is here rather than beside the array operations because it
+  takes no array: it is where an array a number rather than an existing value sizes comes from, which is
+  what `Bound` asks the program text to bound. -/
+  | range
   deriving Repr, BEq, Inhabited
 
 inductive BinOp where

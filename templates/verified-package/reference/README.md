@@ -11,7 +11,10 @@ them.
 **2. Every call goes to a name written above it.** No recursion, no closure, no function built where it
 stands: a function reaches a call as the name of a declaration. Repetition is the seven array
 traversals — `map`, `filter`, `find?`, `all`, `any`, `foldl` and `Arr.sortByKey` — whose lambda is the
-traversal's own syntax rather than a value.
+traversal's own syntax rather than a value. The array they walk need not have come from a caller:
+`Arr.range n` is the whole numbers below `n`, so a body that has to run a number of times folds over
+those. How far it counts has to be bounded by the program text, which is the one thing `Arr.range` asks
+that nothing else does.
 
 One question settles almost everything:
 

@@ -466,12 +466,13 @@ string already reaches, and an empty pad, leave the string alone. -/
 #guard Str.padStart "7" 3 "" == "7"
 #guard Str.padStart "" 3 "x" == "xxx"
 
-/-! ## What bounds a `Str.repeat`
+/-! ## What bounds a result a value sizes
 
-`Str.repeat` is the one result whose size a value decides, and `eval`, the model of the JS and the JSON
-handed to Node each hold that result whole. `Bound.programBounded` is where the count has to be bounded by
-the program text; these are the shapes either side of that line. A clamp reads through a `let`, and a
-binder that shadows the clamped name stops it. -/
+`Str.repeat` and `Arr.range` are the two results whose size a value decides, and `eval`, the model of the
+JS and the JSON handed to Node each hold that result whole. `Bound.programBounded` is where the deciding
+value has to be bounded by the program text; these are the shapes either side of that line. A clamp reads
+through a `let`, and a binder that shadows the clamped name stops it. A length is not a bound: nothing in
+the text says how long the array a caller passes is. -/
 
 private def boundOk (body : Expr) : Bool :=
   (Bound.programBounded
@@ -495,6 +496,37 @@ private def clampTo (limit : Int) : Expr := min' (max' (v "n") (int53 0)) (int53
 #guard !boundOk («repeat» (repeatsBy (int53 4096)) (int53 4096))
 #guard !boundOk
   (letIn "width" .int53 (clampTo 64) (map' (v "xs") "width" (repeatsBy (v "width"))))
+
+private def rangeBoundOk (body : Expr) : Bool :=
+  (Bound.programBounded
+    { decls := [decl "rule" [("n", .int53), ("xs", .array .int53)] (.array .int53) body] }).isOk
+
+#guard rangeBoundOk (range' (int53 64))
+#guard rangeBoundOk (range' (clampTo 64))
+#guard rangeBoundOk (range' (int53 4096))
+#guard rangeBoundOk (range' (matchOn (v "n") [altP (pInt53 0) (int53 8), altP pWild (int53 16)]))
+#guard rangeBoundOk (letIn "width" .int53 (clampTo 64) (range' (v "width")))
+#guard rangeBoundOk (range' (clampTo 64 *' clampTo 64))
+
+#guard !rangeBoundOk (range' (v "n"))
+#guard !rangeBoundOk (range' (int53 4097))
+#guard !rangeBoundOk (range' (len (v "xs")))
+#guard !rangeBoundOk (range' (max' (v "n") (int53 0)))
+#guard !rangeBoundOk (range' (clampTo 128 *' clampTo 128))
+#guard !rangeBoundOk (map' (v "xs") "width" (range' (v "width")))
+
+/-! A traversal runs its body once per element, so what the ceiling is measured against is the product.
+Only a traversal the text says the length of multiplies: an array a caller passes is as long as the
+vector generator made it. -/
+
+#guard rangeBoundOk (map' (range' (int53 64)) "i" (range' (int53 64)))
+#guard rangeBoundOk (map' (v "xs") "y" (range' (int53 4096)))
+#guard rangeBoundOk (map' (array .int53 [int53 1, int53 2]) "i" (range' (int53 2048)))
+
+#guard !rangeBoundOk (map' (range' (int53 4096)) "i" (range' (int53 4096)))
+#guard !rangeBoundOk (map' (range' (int53 64)) "i" (range' (int53 65)))
+#guard !rangeBoundOk (map' (array .int53 [int53 1, int53 2]) "i" (range' (int53 2049)))
+#guard !boundOk (map' (range' (int53 64)) "i" (repeatsBy (int53 65)))
 
 
 private def Box : TypeDef :=

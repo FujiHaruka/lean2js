@@ -148,6 +148,12 @@
       "doc": "An amount in minor units, right-aligned in the column a printed receipt gives it. Too wide an\namount keeps its digits and overruns the column."
     },
     {
+      "name": "lineNumbers",
+      "signature": "(rows : Int53) → Array Int53",
+      "declaration": "lineNumbers(rows: number): readonly number[]",
+      "doc": "The line numbers a printed receipt gives its rows, counting from one. The count is clamped: a\nreceipt prints at most `maxReceiptRows` rows, and `Arr.range` asks that the text bound how far it\ncounts."
+    },
+    {
       "name": "sortsBefore",
       "signature": "(a : String, b : String) → Bool",
       "declaration": "sortsBefore(a: string, b: string): boolean",
@@ -658,6 +664,16 @@
       "doc": "Three parts come out of `referenceFrom` in the order they went in, with a hyphen written between each\nneighbouring pair. Hyphens the parts themselves carry are not counted, so this says nothing about how many\nthe answer holds."
     },
     {
+      "name": "line_numbers_counts_the_rows",
+      "statement": "line_numbers_counts_the_rows (rows : Int) : Arr.length (lineNumbers rows) = min (max rows 0) maxReceiptRows",
+      "doc": "A receipt numbers one row per row it prints: as many numbers as the clamped count says, whatever\n`rows` was asked for."
+    },
+    {
+      "name": "line_numbers_are_rows",
+      "statement": "line_numbers_are_rows (rows k : Int) : k ∈ lineNumbers rows ↔ 1 ≤ k ∧ k ≤ min (max rows 0) maxReceiptRows",
+      "doc": "The numbers a receipt prints are exactly the rows it has: a number is one of them when it is at\nleast 1 and at most the clamped count, and is not one of them otherwise."
+    },
+    {
       "name": "draft_never_ships",
       "statement": "draft_never_ships (trackingId : String) :\n  evalCall program \"ship\" [Value.obj \"draft\" [], Value.str trackingId] =\n    Except.ok (Value.obj \"error\" [(\"error\", Value.str \"a draft order cannot ship\")])",
       "doc": "A draft order cannot ship, whatever tracking id comes with it."
@@ -781,6 +797,11 @@
   "constants": [
     {
       "name": "maxLineQuantity",
+      "type": "Int",
+      "value": 999
+    },
+    {
+      "name": "maxReceiptRows",
       "type": "Int",
       "value": 999
     }

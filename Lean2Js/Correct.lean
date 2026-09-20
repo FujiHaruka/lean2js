@@ -788,6 +788,10 @@ theorem encodeList_eq (xs : List Value) : encodeList xs = xs.map encodeValue := 
   | nil => simp [encodeList]
   | cons x rest ih => simp [encodeList, ih]
 
+theorem encodeList_rangeValues (n : Int) : encodeList (rangeValues n) = Js.Runtime.rangeNums n := by
+  rw [encodeList_eq, rangeValues, Js.Runtime.rangeNums, List.map_map]
+  simp [Function.comp_def, encodeValue]
+
 /-- The array reads count elements on both sides. The model's extra guard against an index outside the
 safe integers is the one the reference semantics gets from the index being an `Int53` at all. -/
 theorem at?_ok {xs : List Value} {n : Int} {v : Value}
@@ -869,6 +873,9 @@ theorem helper_abs_big (a : Int) :
 
 theorem helper_str (a : Int) :
     Js.helper "__str" [.num a] = some (.ok (.str (toString a))) := rfl
+
+theorem helper_range (n : Int) :
+    Js.helper "__range" [.num n] = some (.ok (.arr (Js.Runtime.rangeNums n))) := rfl
 
 theorem i53_of_mkInt53 {i : Int} {v : Value} (h : mkInt53 i = .ok v) :
     Js.Runtime.i53 i = .ok (encodeValue v) := by
@@ -4111,6 +4118,27 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
           Eventually m jenv jx (.num i)) ?_
         simp [helper_str, encodeValue]
       · simp at hc
+    | range =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      have hwt := typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw
+      split at hc
+      · rename_i htx
+        have htx' : tx = Ty.int53 := Ty.eq_of_beq htx
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+        obtain ⟨hje, _⟩ := hc
+        subst hje
+        obtain ⟨i, hi⟩ := hasTy_int53_inv (htx' ▸ hwt)
+        subst hi
+        simp only [applyUn, Except.ok.injEq] at he
+        subst he
+        refine eventually_call1 (by simpa [encodeValue] using ihx henv hjenv hcx hw :
+          Eventually m jenv jx (.num i)) ?_
+        simp [helper_range, encodeValue, encodeList_rangeValues]
+      · simp at hc
   | bin hl hr =>
     rename_i op lhsE rhsE
     have ihl := ih hl
@@ -7262,6 +7290,27 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         simp [applyUn] at he
       · simp at hc
     | toString =>
+      simp only [Compile.compileExpr, bind, Except.bind] at hc
+      split at hc
+      · simp at hc
+      rename_i xPair hcx
+      obtain ⟨jx, tx⟩ := xPair
+      split at hc
+      · rename_i htx
+        have htx' : tx = Ty.int53 := Ty.eq_of_beq htx
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+        obtain ⟨hje, _⟩ := hc
+        subst hje
+        split at he
+        · rename_i e0 hxe
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          exact eventuallyErr_call1 (ihx henv hcov hjenv hcx hxe hne)
+        rename_i w hw
+        obtain ⟨i, rfl⟩ := hasTy_int53_inv
+          (htx' ▸ typeSound p hprog f ctx env xE jx tx w hx.typeChecked henv hcx hw)
+        simp [applyUn] at he
+      · simp at hc
+    | range =>
       simp only [Compile.compileExpr, bind, Except.bind] at hc
       split at hc
       · simp at hc

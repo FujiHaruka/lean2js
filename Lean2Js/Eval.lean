@@ -31,6 +31,11 @@ semantics easier to line up than quietly returning a wrong answer. -/
 def mkInt53 (i : Int) : Except Err Value :=
   if i < int53Min || int53Max < i then .error .int53Overflow else .ok (.int53 i)
 
+/-- The elements of `Arr.range n`: the whole numbers below `n`, and none of them when `n` is not
+positive. Every element is smaller than `n`, so an argument that is an `Int53` bounds them all and no
+element of the answer can be out of range. -/
+def rangeValues (n : Int) : List Value := (List.range n.toNat).map fun k => .int53 (Int.ofNat k)
+
 def applyUn : UnOp → Value → Except Err Value
   | .not, .bool b => .ok (.bool !b)
   | .neg, .int53 i => mkInt53 (-i)
@@ -38,6 +43,7 @@ def applyUn : UnOp → Value → Except Err Value
   | .abs, .int53 i => mkInt53 i.natAbs
   | .abs, .bigint i => .ok (.bigint i.natAbs)
   | .toString, .int53 i => .ok (.str (toString i))
+  | .range, .int53 n => .ok (.arr (rangeValues n))
   | op, _ => .error (.typeError s!"unary {repr op} applied to a value of the wrong type")
 
 /-- Integer division is pinned to truncation. Lean's `/` is floor division (`-7 / 2 = -4`), which
