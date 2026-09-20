@@ -239,7 +239,31 @@ def evenShare (amount : Int) (parties : Int) : Int := Int53.divRound amount (max
 /-- Which whole day an instant falls in, counting from the epoch, where an instant before it belongs to
 the day it is inside rather than to the one after: `divFloor` and not `div`. -/
 @[ship]
-def dayOfInstant (ms : Int) : Int := Int53.divFloor ms 86400000
+def dayOfInstant (ms : Int) : Int := Cal.dayOfInstant ms
+
+/-- The day a calendar date falls on, counting from 1970-01-01. -/
+@[ship]
+def dayNumber (year : Int) (month : Int) (day : Int) : Int := Cal.fromCivil year month day
+
+/-- The calendar year a day number falls in. -/
+@[ship]
+def yearOf (days : Int) : Int := Cal.year days
+
+/-- The calendar month a day number falls in, 1 through 12. -/
+@[ship]
+def monthOf (days : Int) : Int := Cal.month days
+
+/-- The day of the month a day number falls on, 1 through 31. -/
+@[ship]
+def dayOfMonthOf (days : Int) : Int := Cal.day days
+
+/-- The day of the week a day number falls on, 0 for Sunday through 6 for Saturday. -/
+@[ship]
+def weekdayOf (days : Int) : Int := Cal.weekday days
+
+/-- How many days a calendar month holds, a leap February included. -/
+@[ship]
+def monthLength (year : Int) (month : Int) : Int := Cal.daysInMonth year month
 
 @[ship]
 def negate (a : Int) : Int := -a
@@ -1059,7 +1083,7 @@ theorem the_day_holds_the_instant (ms : Int) :
     have k := Int.tmod_nonneg (a := -ms) 86400000 (by omega)
     rw [Int.neg_tmod] at k
     omega
-  simp only [dayOfInstant, Int53.divFloor, Int53.div, Int53.mod, beq_iff_eq]
+  simp only [dayOfInstant, Cal.dayOfInstant, Int53.divFloor, Int53.div, Int53.mod, beq_iff_eq]
   refine ⟨?_, ?_⟩ <;> (repeat' split) <;> omega
 
 omit [Discriminators] in

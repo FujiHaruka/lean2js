@@ -13,15 +13,15 @@
   "artifacts": [
     {
       "file": "index.js",
-      "sha256": "b20355f7e80bdc70a3cb81b320a0e468212cdbf1520c7be0f84f2564be602531"
+      "sha256": "1039bfa1e345c8ec65cc69769ef40363f18495499118be6c08d08834d5db72cf"
     },
     {
       "file": "index.d.ts",
-      "sha256": "08c7ab501b0693352bb10e97bebe01105e1f74912ad82f82f6fa603e78ad981c"
+      "sha256": "207286865621d62cac9bdfc0e658fc89668e15634bd11fdb04593449335500dd"
     },
     {
       "file": "README.md",
-      "sha256": "f24a58769fc5d8b527e50637df05edb42ddfa4db3e927826ef6bedf9e5bccf51"
+      "sha256": "bcbea4a96a3df2cb0a6e95f099d3c2b06e3c295bc943575977c232da02d30893"
     },
     {
       "file": "package.json",
@@ -290,6 +290,42 @@
       "signature": "(ms : Int53) → Int53",
       "declaration": "dayOfInstant(ms: number): number",
       "doc": "Which whole day an instant falls in, counting from the epoch, where an instant before it belongs to\nthe day it is inside rather than to the one after: `divFloor` and not `div`."
+    },
+    {
+      "name": "dayNumber",
+      "signature": "(year : Int53, month : Int53, day : Int53) → Int53",
+      "declaration": "dayNumber(year: number, month: number, day: number): number",
+      "doc": "The day a calendar date falls on, counting from 1970-01-01."
+    },
+    {
+      "name": "yearOf",
+      "signature": "(days : Int53) → Int53",
+      "declaration": "yearOf(days: number): number",
+      "doc": "The calendar year a day number falls in."
+    },
+    {
+      "name": "monthOf",
+      "signature": "(days : Int53) → Int53",
+      "declaration": "monthOf(days: number): number",
+      "doc": "The calendar month a day number falls in, 1 through 12."
+    },
+    {
+      "name": "dayOfMonthOf",
+      "signature": "(days : Int53) → Int53",
+      "declaration": "dayOfMonthOf(days: number): number",
+      "doc": "The day of the month a day number falls on, 1 through 31."
+    },
+    {
+      "name": "weekdayOf",
+      "signature": "(days : Int53) → Int53",
+      "declaration": "weekdayOf(days: number): number",
+      "doc": "The day of the week a day number falls on, 0 for Sunday through 6 for Saturday."
+    },
+    {
+      "name": "monthLength",
+      "signature": "(year : Int53, month : Int53) → Int53",
+      "declaration": "monthLength(year: number, month: number): number",
+      "doc": "How many days a calendar month holds, a leap February included."
     },
     {
       "name": "negate",

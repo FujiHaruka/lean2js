@@ -348,6 +348,48 @@ export declare function evenShare(amount: number, parties: number): number;
 export declare function dayOfInstant(ms: number): number;
 
 /**
+ * The day a calendar date falls on, counting from 1970-01-01.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function dayNumber(year: number, month: number, day: number): number;
+
+/**
+ * The calendar year a day number falls in.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function yearOf(days: number): number;
+
+/**
+ * The calendar month a day number falls in, 1 through 12.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function monthOf(days: number): number;
+
+/**
+ * The day of the month a day number falls on, 1 through 31.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function dayOfMonthOf(days: number): number;
+
+/**
+ * The day of the week a day number falls on, 0 for Sunday through 6 for Saturday.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function weekdayOf(days: number): number;
+
+/**
+ * How many days a calendar month holds, a leap February included.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function monthLength(year: number, month: number): number;
+
+/**
  * @throws {TrapError<"typeError" | "int53Overflow">}
  */
 export declare function negate(a: number): number;

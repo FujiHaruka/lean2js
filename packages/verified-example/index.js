@@ -878,6 +878,53 @@ export function dayOfInstant(__p0) {
   return ((__i53mod(ms, 86400000) === 0) ? q : ((ms < 0) ? ((86400000 < 0) ? q : __i53((q - 1))) : ((86400000 < 0) ? __i53((q - 1)) : q)));
 }
 
+/** dayNumber : (year : Int53, month : Int53, day : Int53) → Int53 */
+export function dayNumber(__p0, __p1, __p2) {
+  const year = __ck(__p0, ["int53"]);
+  const month = __ck(__p1, ["int53"]);
+  const day = __ck(__p2, ["int53"]);
+  const y = ((month <= 2) ? __i53((year - 1)) : year);
+  const era = __i53div(((y >= 0) ? y : __i53((y - 399))), 400);
+  const yoe = __i53((y - __i53((era * 400))));
+  const doy = __i53((__i53((__i53div(__i53((__i53((153 * __i53((month + ((month > 2) ? -3 : 9))))) + 2)), 5) + day)) - 1));
+  const doe = __i53((__i53((__i53((__i53((yoe * 365)) + __i53div(yoe, 4))) - __i53div(yoe, 100))) + doy));
+  return __i53((__i53((__i53((era * 146097)) + doe)) - 719468));
+}
+
+/** yearOf : (days : Int53) → Int53 */
+export function yearOf(__p0) {
+  const days = __ck(__p0, ["int53"]);
+  const doy = ((yoe) => (__i53((((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))) - __i53((__i53((__i53((365 * yoe)) + __i53div(yoe, 4))) - __i53div(yoe, 100)))))))(((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468)))));
+  return __i53((__i53((((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468)))) + __i53((((z) => (__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097)))(__i53((days + 719468))) * 400)))) + ((__i53div(__i53((__i53((5 * doy)) + 2)), 153) >= 10) ? 1 : 0)));
+}
+
+/** monthOf : (days : Int53) → Int53 */
+export function monthOf(__p0) {
+  const days = __ck(__p0, ["int53"]);
+  const mp = __i53div(__i53((__i53((5 * ((yoe) => (__i53((((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))) - __i53((__i53((__i53((365 * yoe)) + __i53div(yoe, 4))) - __i53div(yoe, 100)))))))(((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))))))) + 2)), 153);
+  return __i53((mp + ((mp < 10) ? 3 : -9)));
+}
+
+/** dayOfMonthOf : (days : Int53) → Int53 */
+export function dayOfMonthOf(__p0) {
+  const days = __ck(__p0, ["int53"]);
+  const doy = ((yoe) => (__i53((((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))) - __i53((__i53((__i53((365 * yoe)) + __i53div(yoe, 4))) - __i53div(yoe, 100)))))))(((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468)))));
+  return __i53((__i53((doy - __i53div(__i53((__i53((153 * __i53div(__i53((__i53((5 * doy)) + 2)), 153))) + 2)), 5))) + 1));
+}
+
+/** weekdayOf : (days : Int53) → Int53 */
+export function weekdayOf(__p0) {
+  const days = __ck(__p0, ["int53"]);
+  return __i53((__i53((days + 4)) - __i53((7 * ((q) => (((__i53mod(__i53((days + 4)), 7) === 0) ? q : ((__i53((days + 4)) < 0) ? ((7 < 0) ? q : __i53((q - 1))) : ((7 < 0) ? __i53((q - 1)) : q)))))(__i53div(__i53((days + 4)), 7))))));
+}
+
+/** monthLength : (year : Int53, month : Int53) → Int53 */
+export function monthLength(__p0, __p1) {
+  const year = __ck(__p0, ["int53"]);
+  const month = __ck(__p1, ["int53"]);
+  return __i53((((y) => (((era) => (((yoe) => (((doy) => (((doe) => (__i53((__i53((__i53((era * 146097)) + doe)) - 719468))))(__i53((__i53((__i53((__i53((yoe * 365)) + __i53div(yoe, 4))) - __i53div(yoe, 100))) + doy)))))(__i53((__i53((__i53div(__i53((__i53((153 * __i53((((month >= 12) ? 1 : __i53((month + 1))) + ((((month >= 12) ? 1 : __i53((month + 1))) > 2) ? -3 : 9))))) + 2)), 5) + 1)) - 1)))))(__i53((y - __i53((era * 400)))))))(__i53div(((y >= 0) ? y : __i53((y - 399))), 400))))(((((month >= 12) ? 1 : __i53((month + 1))) <= 2) ? __i53((((month >= 12) ? __i53((year + 1)) : year) - 1)) : ((month >= 12) ? __i53((year + 1)) : year))) - ((y) => (((era) => (((yoe) => (((doy) => (((doe) => (__i53((__i53((__i53((era * 146097)) + doe)) - 719468))))(__i53((__i53((__i53((__i53((yoe * 365)) + __i53div(yoe, 4))) - __i53div(yoe, 100))) + doy)))))(__i53((__i53((__i53div(__i53((__i53((153 * __i53((month + ((month > 2) ? -3 : 9))))) + 2)), 5) + 1)) - 1)))))(__i53((y - __i53((era * 400)))))))(__i53div(((y >= 0) ? y : __i53((y - 399))), 400))))(((month <= 2) ? __i53((year - 1)) : year))));
+}
+
 /** negate : (a : Int53) → Int53 */
 export function negate(__p0) {
   const a = __ck(__p0, ["int53"]);

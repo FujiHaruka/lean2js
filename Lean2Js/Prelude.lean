@@ -369,6 +369,98 @@ def toString (a : Int) : String := ToString.toString a
 
 end Int53
 
+/-! ### The civil calendar
+
+Days counted from 1970-01-01, and the civil date of a day, by Howard Hinnant's algorithms. Both are
+integer arithmetic and nothing else, which is why the calendar can be in the subset where `Date` cannot:
+a date is an amount of days, an instant is an amount of milliseconds, and neither reads a clock or a
+zone. The calendar is proleptic Gregorian — carried backwards past its adoption rather than switching,
+which is what an epoch day count is everywhere.
+
+Each of `year`, `month` and `day` reads the whole date out of the day number, so asking for all three
+writes the arithmetic out three times. There is no tuple in the subset to hand back instead. -/
+
+namespace Cal
+
+/-- The day a civil date falls on, counting from 1970-01-01, which is day zero. A month outside 1..12 or
+a day outside the month is not refused: the arithmetic carries it, so 2026-13-01 is 2027-01-01. -/
+@[expand] def fromCivil (year month day : Int) : Int :=
+  let y := if month ≤ 2 then year - 1 else year
+  let era := Int53.div (if y ≥ 0 then y else y - 399) 400
+  let yoe := y - era * 400
+  let doy := Int53.div (153 * (month + (if month > 2 then -3 else 9)) + 2) 5 + day - 1
+  let doe := yoe * 365 + Int53.div yoe 4 - Int53.div yoe 100 + doy
+  era * 146097 + doe - 719468
+
+/-- The four-hundred-year era a day falls in, counted from the one holding 0000-03-01. Written out
+because the three readings below each need it, and the subset has nothing to share it with. -/
+@[expand] def era (days : Int) : Int :=
+  let z := days + 719468
+  Int53.div (if z ≥ 0 then z else z - 146096) 146097
+
+/-- The day's place inside its era, in 0..146096. -/
+@[expand] def dayOfEra (days : Int) : Int :=
+  let z := days + 719468
+  z - Int53.div (if z ≥ 0 then z else z - 146096) 146097 * 146097
+
+/-- The day's year inside its era, in 0..399. -/
+@[expand] def yearOfEra (days : Int) : Int :=
+  let doe := dayOfEra days
+  Int53.div (doe - Int53.div doe 1460 + Int53.div doe 36524 - Int53.div doe 146096) 365
+
+/-- The day's place inside its year, counting from the first of March, in 0..365. -/
+@[expand] def dayOfYear (days : Int) : Int :=
+  let yoe := yearOfEra days
+  dayOfEra days - (365 * yoe + Int53.div yoe 4 - Int53.div yoe 100)
+
+/-- The month in March-first numbering, in 0..11. January and February are 10 and 11, which is what
+makes a leap day the last day of the year and the arithmetic above carry no special case. -/
+@[expand] def monthOfYear (days : Int) : Int := Int53.div (5 * dayOfYear days + 2) 153
+
+/-- The civil year the day falls in. -/
+@[expand] def year (days : Int) : Int :=
+  let doy := dayOfYear days
+  yearOfEra days + era days * 400 + (if Int53.div (5 * doy + 2) 153 ≥ 10 then 1 else 0)
+
+/-- The civil month, 1..12. -/
+@[expand] def month (days : Int) : Int :=
+  let mp := monthOfYear days
+  mp + (if mp < 10 then 3 else -9)
+
+/-- The civil day of the month, 1..31. -/
+@[expand] def day (days : Int) : Int :=
+  let doy := dayOfYear days
+  doy - Int53.div (153 * Int53.div (5 * doy + 2) 153 + 2) 5 + 1
+
+/-- The day of the week, 0 for Sunday through 6 for Saturday. Day zero is a Thursday. -/
+@[expand] def weekday (days : Int) : Int := days + 4 - 7 * Int53.divFloor (days + 4) 7
+
+/-- Whether a year carries a leap day, by the Gregorian rule. -/
+@[expand] def isLeapYear (year : Int) : Bool :=
+  if Int53.mod year 400 == 0 then true
+  else if Int53.mod year 100 == 0 then false
+  else Int53.mod year 4 == 0
+
+/-- How many days a month holds, read as the distance to the first of the next month so that it cannot
+disagree with `fromCivil` about a leap February. -/
+@[expand] def daysInMonth (year month : Int) : Int :=
+  fromCivil (if month ≥ 12 then year + 1 else year) (if month ≥ 12 then 1 else month + 1) 1
+    - fromCivil year month 1
+
+/-- The day an instant falls in, an instant being milliseconds from the epoch. An instant before the
+epoch belongs to the day it is inside, which is `divFloor` and not `div`. -/
+@[expand] def dayOfInstant (ms : Int) : Int := Int53.divFloor ms 86400000
+
+/-- The first instant of a day. -/
+@[expand] def instantOfDay (days : Int) : Int := days * 86400000
+
+#guard fromCivil 1970 1 1 = 0
+#guard fromCivil 1969 12 31 = -1
+#guard year 0 = 1970 && month 0 = 1 && day 0 = 1
+#guard weekday 0 = 4
+
+end Cal
+
 namespace Opt
 
 @[expand] def getD (o : Option α) (dflt : α) : α :=

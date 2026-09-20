@@ -14,6 +14,7 @@ constructors and the operators.
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's, which repeat by recursion |
 | `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API, none of which is read |
 | `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.divFloor` `Int53.divCeil` `Int53.divRound` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | `/`, which floors where the subset truncates, and `toString` |
+| `Int` as a date | `Cal.fromCivil` `Cal.year` `Cal.month` `Cal.day` `Cal.weekday` `Cal.isLeapYear` `Cal.daysInMonth` `Cal.dayOfInstant` `Cal.instantOfDay` | `Date`, which reads a clock and a zone. A day is an `Int` of days from 1970-01-01, an instant an `Int` of milliseconds |
 | `Dict V` | `Dict.ofList` `Dict.ofPairs` `.get` `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` | `List (String × V)`, which already encodes as an array |
 | `Option T` / `Except E A` | `Opt.getD` `Opt.map` `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | `Option.getD` and `Except.map`, imported before this library is read |
 
@@ -65,6 +66,15 @@ element type.
 | `Dict.keys` / `Dict.values` | `Dict α → List String` / `Dict α → List α` |
 | `Dict.size` | `Dict α → Int` |
 
+| `Cal` | |
+| --- | --- |
+| `Cal.fromCivil` | `Int → Int → Int → Int` — year, month, day, to days from 1970-01-01 |
+| `Cal.year` / `Cal.month` / `Cal.day` | `Int → Int` — the civil date a day number falls on |
+| `Cal.weekday` | `Int → Int` — 0 for Sunday through 6 for Saturday |
+| `Cal.isLeapYear` | `Int → Bool` |
+| `Cal.daysInMonth` | `Int → Int → Int` — the year, then the month |
+| `Cal.dayOfInstant` / `Cal.instantOfDay` | `Int → Int` — epoch milliseconds to a day number, and back |
+
 | `Int` / `BigInt` / `Option` / `Except` | |
 | --- | --- |
 | `Int53.div` / `Int53.mod` | `Int → Int → Int` — `div` truncates towards zero |
@@ -81,10 +91,16 @@ element type.
 | `Exc.mapError` | `Except ε α → (ε → ε') → Except ε' α` |
 | `Exc.toOption` | `Except ε α → Option α` |
 
-**`Str.replace`, `Str.isEmpty`, `Str.padStart`, the three rounded divisions, and everything from `Arr.take` down is `@[expand]`**, so
+**`Str.replace`, `Str.isEmpty`, `Str.padStart`, the three rounded divisions, the whole of `Cal`, and everything from `Arr.take` down is `@[expand]`**, so
 each call writes the body out where it stands: nothing of them reaches `index.js`, and the fuel the
 program needs grows with how deeply they nest. `Arr.contains` needs `BEq T` (`deriving DecidableEq`);
 `Arr.head?` and `Arr.last?` need `Inhabited T` (`deriving Inhabited`).
+
+**`Cal.year`, `Cal.month` and `Cal.day` each read the whole date out of the day number**, because the
+subset has no tuple to hand three answers back in. Asking for all three writes the arithmetic out three
+times, and what that costs is fuel: a body that reads a date is deep, and `Cost.cost` charges that depth
+once per declaration in the program. The example needs <!--n:fuelNeeded-->2073<!--/n--> of
+<!--n:fuelCeiling-->10000<!--/n--> with six calendar functions in it.
 
 **A composite key is two sorts.** `Arr.sortByKey` takes one key, of type `Int` or `String`, and is
 stable, so an order on two fields is two calls: sort by the secondary key first, then by the primary

@@ -10,6 +10,9 @@ the reference semantics and the generated code to it.
 - **A length is counted in code points.** `Str.length`, `Str.substring`, `Str.indexOf?`, `Str.repeat`
   and `Str.padStart` count what `Array.from` counts, not UTF-16 units, so a surrogate pair is one
   character and `substring` never splits one in half.
+- **The calendar is the one `Date.UTC` counts.** `Cal.fromCivil y m d` answers what
+  `Date.UTC(y, m - 1, d) / 86400000` answers, proleptic Gregorian on both sides with no zone near
+  either. A month outside 1..12 carries, as `Date.UTC`'s does. What is not there is the clock.
 - **A rounded division rounds the way the name says, and `Math.round` is not one of them.** `Int53.div`
   truncates; `Int53.divFloor`, `Int53.divCeil` and `Int53.divRound` are the same division rounded
   towards negative infinity, towards positive infinity, and with a half away from zero. JavaScript's
@@ -60,7 +63,7 @@ the reference semantics and the generated code to it.
 | --- | --- |
 | `padEnd` | `if Str.isEmpty pad \|\| n ≤ Str.length s then s else s ++ Str.substring (Str.repeat pad k) 0 k`, with `k` the width less `Str.length s`. Without the guard the call traps where JavaScript's own returns `s` |
 | regular expressions | `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split`, or match in TypeScript |
-| `Date` / `Date.now()` / time zones | Take the instant as `Int` epoch milliseconds, and declare your own calendar `structure` for the parts |
+| `Date.now()` / time zones / formatting | The clock and the zone are ambient state, so the instant arrives as a parameter: an `Int` of epoch milliseconds. The calendar itself is there — `Cal.dayOfInstant` to a day, then `Cal.year` / `Cal.month` / `Cal.day` |
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out |
 | `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure |
 | walking a type that names itself | A `def` reads the constructor it was handed and the fields directly under it. Take the answer for each child as a parameter, or do the walk in TypeScript and call in per node |

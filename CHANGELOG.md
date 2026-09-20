@@ -6,6 +6,23 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- The civil calendar is in the subset, as `Cal`. `Cal.fromCivil` counts a date to days from
+  1970-01-01 and `Cal.year` / `Cal.month` / `Cal.day` read a date back out of a day number, with
+  `Cal.weekday`, `Cal.isLeapYear`, `Cal.daysInMonth` and the `Cal.dayOfInstant` / `Cal.instantOfDay`
+  bridge to epoch milliseconds beside them. It is Howard Hinnant's arithmetic and nothing else — no
+  table, no branch per month — which is why a calendar can be in a subset that has no `Date`: the clock
+  and the zone are ambient state and stay outside, so an instant arrives as a parameter. `Cal.fromCivil`
+  answers what `Date.UTC(y, m - 1, d) / 86400000` answers. Until now a package that filed anything by
+  date had to carry its own leap-year rule, which is the kind of arithmetic that is wrong for a century
+  before anyone notices.
+
+  Three things it costs. `year`, `month` and `day` each read the whole date out, because there is no
+  tuple to hand three answers back in, so asking for all three writes the arithmetic three times. A body
+  that reads a date is deep, and `Cost.cost` charges that depth once per declaration, so a program using
+  the calendar needs more of the fuel ceiling — this repository's example went from 1043 to 2073 of
+  10000 by shipping six calendar functions. And a month outside 1..12 carries rather than being refused,
+  as `Date.UTC`'s does.
+
 - `Int53.divFloor`, `Int53.divCeil` and `Int53.divRound` are in the subset: the division `Int53.div`
   already does, rounded towards negative infinity, towards positive infinity, and with a half away from
   zero. An amount in minor units is what the subset has instead of a fractional number, and every such

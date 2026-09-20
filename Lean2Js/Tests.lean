@@ -672,4 +672,41 @@ def program : Program := program%
 
 end Gathered
 
+/-! ## The calendar answers what a calendar answers
+
+`Cal` is arithmetic with no special case in it, which is what lets it be in the subset — and also what
+means a transposed constant is wrong everywhere rather than at a boundary. The round trip is what says
+the two directions are inverse over a stretch holding four centuries, every leap rule and both sides of
+the epoch; the named days are what says the count is anchored where a reader thinks it is. These live
+here rather than beside the definitions because they are a user's build to run otherwise. -/
+
+section Calendar
+
+#guard Cal.fromCivil 1970 1 1 == 0
+#guard Cal.fromCivil 1969 12 31 == -1
+#guard Cal.fromCivil 2000 3 1 == 11017
+#guard Cal.fromCivil 1900 1 1 == -25567
+#guard Cal.fromCivil 2400 2 29 == 157113
+
+#guard Cal.year 0 == 1970 && Cal.month 0 == 1 && Cal.day 0 == 1
+#guard Cal.year (-1) == 1969 && Cal.month (-1) == 12 && Cal.day (-1) == 31
+#guard Cal.weekday 0 == 4
+#guard Cal.weekday (-1) == 3
+
+#guard Cal.isLeapYear 2000 && !Cal.isLeapYear 1900 && Cal.isLeapYear 2024 && !Cal.isLeapYear 2023
+#guard Cal.daysInMonth 2024 2 == 29 && Cal.daysInMonth 2023 2 == 28
+#guard Cal.daysInMonth 2024 12 == 31 && Cal.daysInMonth 2024 4 == 30
+
+-- Every 37th day over four centuries, on both sides of the epoch.
+#guard (List.range 4000).all fun i =>
+  let z : Int := (i : Int) * 37 - 40000
+  Cal.fromCivil (Cal.year z) (Cal.month z) (Cal.day z) == z
+
+-- A weekday advances by one a day, and wraps at seven, on both sides of the epoch.
+#guard (List.range 2000).all fun i =>
+  let z : Int := (i : Int) - 1000
+  Cal.weekday (z + 1) == (if Cal.weekday z == 6 then 0 else Cal.weekday z + 1)
+
+end Calendar
+
 end Lean2Js.Tests

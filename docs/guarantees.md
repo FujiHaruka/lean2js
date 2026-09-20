@@ -57,7 +57,7 @@ assumes the declared type, and the refusing one assumes the declaration is publi
 - Running out of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on
   the fuel needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against
   the ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
-  <!--n:fuelNeeded-->1043<!--/n-->).
+  <!--n:fuelNeeded-->2073<!--/n-->).
 - **What that rests on**: the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
   exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
@@ -118,7 +118,7 @@ real JavaScript answer alike, not the range of spellings.
 
 ## What is checked rather than proved
 
-- **Every vector generated for the artifact** (<!--n:vectors-->40891<!--/n--> of them for this example) is
+- **Every vector generated for the artifact** (<!--n:vectors-->42955<!--/n--> of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
   real JavaScript. One disagreement and nothing is written to the output directory.

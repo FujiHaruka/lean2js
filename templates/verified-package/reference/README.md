@@ -22,10 +22,10 @@ One question settles almost everything:
 > method?**
 
 A no there is a no here. A yes is read, except for fractional numbers, a comparison function handed to a
-sort, regular expressions, `Set`, `Date`, `null` / `undefined`, and side effects —
+sort, regular expressions, `Set`, the clock and the zone, `null` / `undefined`, and side effects —
 [`javascript.md`](javascript.md) is what to write instead.
 
-The vocabulary is `Arr.*` / `Str.*` / `Dict.*` / `Int53.*` / `BigInt.*` rather than Lean's own library:
+The vocabulary is `Arr.*` / `Str.*` / `Dict.*` / `Int53.*` / `BigInt.*` / `Cal.*` rather than Lean's own library:
 each name is the JavaScript operation, held to one answer on both sides. `Opt.*` and `Exc.*` are
 shorthand for a `match`.
 
@@ -47,7 +47,7 @@ time that is not a value**, which is also why a `@[ship] def` is monomorphic.
 | --- | --- |
 | [`declarations.md`](declarations.md) | `@[ship]`, `@[expand]`, declaring types, and the TypeScript a consumer sees |
 | [`expressions.md`](expressions.md) | literals, operators, `match`, calls, lambdas |
-| [`vocabulary.md`](vocabulary.md) | `Arr` / `Str` / `Dict` / `Opt` / `Exc` / `Int53` / `BigInt`, with signatures |
+| [`vocabulary.md`](vocabulary.md) | `Arr` / `Str` / `Dict` / `Opt` / `Exc` / `Int53` / `BigInt` / `Cal`, with signatures |
 | [`javascript.md`](javascript.md) | where the subset's answer differs from JavaScript's, and what to write for what is not there |
 | [`errors.md`](errors.md) | what a refusal says |
 | [`proving.md`](proving.md) | the tactics you have, and the shapes a theorem takes |

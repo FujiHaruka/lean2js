@@ -88,6 +88,18 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   One party's share of an amount split evenly, rounded to the nearest whole unit with a half going away from zero. A count of zero or less is read as one, as `shareOf` reads it.
 - `dayOfInstant(ms: number): number`
   Which whole day an instant falls in, counting from the epoch, where an instant before it belongs to the day it is inside rather than to the one after: `divFloor` and not `div`.
+- `dayNumber(year: number, month: number, day: number): number`
+  The day a calendar date falls on, counting from 1970-01-01.
+- `yearOf(days: number): number`
+  The calendar year a day number falls in.
+- `monthOf(days: number): number`
+  The calendar month a day number falls in, 1 through 12.
+- `dayOfMonthOf(days: number): number`
+  The day of the month a day number falls on, 1 through 31.
+- `weekdayOf(days: number): number`
+  The day of the week a day number falls on, 0 for Sunday through 6 for Saturday.
+- `monthLength(year: number, month: number): number`
+  How many days a calendar month holds, a leap February included.
 - `negate(a: number): number`
 - `priceGap(a: number, b: number): number`
 - `discounted(amount: number, percent: number): number`
