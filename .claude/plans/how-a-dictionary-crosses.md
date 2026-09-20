@@ -38,18 +38,34 @@ constructor is what the proofs already know how to do: `Sound`, `Correct` and `D
 that is the `dict` case with a different `JsValue` on the JavaScript side, and `InFragment.all` covers
 it or the boundary has moved.
 
-**The model's value does not move.** `Value.dict` stays an association list, which is what keeps the
-reference semantics and every theorem about a `Dict` unchanged: the two types differ in how they
-*cross*, not in what they *are*. `encodeValue` is where they part, and it is the one place a proof has
-to say which it is looking at.
+**The shape is decided at the boundary, and only there.** `encodeValue` takes no `Ty` and cannot be
+given one: it is named 598 times, 360 of them in `Correct.lean`, and every statement of the
+expression-level induction reads `Eventually m jenv je (encodeValue v)`. So the two forms do not part
+there. They part at the entry function — the same place item A put the argument check — and *inside* the
+generated module a dictionary is a `Map` whatever its declared type says:
 
-**What the operations do.** `__dget` and the rest take a `Map`. The object form needs its own six, and
-they are the place prototype pollution would get in — so they are written over `Object.create(null)`
-and a key the object did not own is `undefined` rather than something inherited. `HelperSem.prim` is
-the trusted table, and these are built from what is already in it.
+- `Value.hasTy p (.dict entries) (.dictObj elem)` holds. A `dictObj`'s value is a `.dict` value, so the
+  model's value really does not move and neither does `eval`.
+- `normTy` gains `| .obj fields, .dictObj t => .dict (normEntries env fields t)`. The normaliser already
+  rebuilds an argument out of its `TyDesc`, so an incoming plain object becomes the `Map` the body runs
+  on, exactly as a reordered constructor object becomes the canonical one.
+- A new `outTy`, the mirror of `normTy`, turns a `Map` back into a plain object at every `dictObj`
+  position of the declared return type. The entry, which today is
+  `checks ++ [.ret (.call (bodyName …) …)]`, wraps that call in the helper `outTy` models; a return type
+  holding no `dictObj` gets no wrapper at all.
+- So there are **no new operations**. `__dget` and the other five keep taking a `Map`, `Eval` and `Step`
+  do not move, and `Sound` and `Correct` gain the `dictObj` cases of the *type* rules rather than cases
+  of the semantics.
 
-**Order.** The `.d.ts` and the literal first, so a consumer can see the shape; the entry check and the
-normaliser second; the operations last. Each leaves every gate green.
+**What `decl_correct` says.** Its right-hand side becomes the encoding at the declared return type
+rather than the bare one — `Js.callFunctionAt m g' fn jargs = .ok (encodeAt p d.ret v)`, where `encodeAt`
+is `encodeValue` composed with the crossing. `ArgsDecode` already reads the parameters' types, so the
+argument side needs nothing beyond the new `checkTy` and `normTy` cases. `DeclBodyAgrees` keeps the bare
+`encodeValue`: the body is inside the boundary.
+
+**Order.** `Ty.dictObj` through the layers that only have to carry it, with `hasTy`, the `.d.ts` and the
+descriptor, so a consumer can see the shape; `checkTy` / `normTy` and the entry second; `outTy`, its
+helper and `decl_correct`'s new right-hand side last. Each leaves every gate green.
 
 ## Non-goals
 
@@ -58,20 +74,22 @@ normaliser second; the operations last. Each leaves every gate green.
 | Changing what `Dict V` does | It is what a package already ships; moving it would break every consumer of every package built so far |
 | A number- or symbol-keyed object | The model's dictionary is string-keyed and that is what `Value.dict` says |
 | Choosing per function rather than per type | The `.d.ts` names a type, and a consumer reading two spellings of one dictionary is worse off than one conversion |
+| Six operations over the object form | There are none to add: inside the module a dictionary is a `Map` whatever it crosses as, so `__dget` and the rest are already the operations of both |
 
 ## Files
 
 | File | What moves |
 | --- | --- |
-| `Lean2Js/Core.lean` | `Ty.dictObj` |
-| `Lean2Js/Value.lean` | `hasTy` at the new type; `encodeValue` parting |
-| `Lean2Js/Prelude.lean` | `Dict.Obj` and its vocabulary |
+| `Lean2Js/Core.lean` | `Ty.dictObj`, and the `Ty` walks that only carry it |
+| `Lean2Js/Value.lean` | `hasTy` at the new type, answering for a `.dict` value |
+| `Lean2Js/Prelude.lean` | `Dict.Obj` |
 | `Lean2Js/Enc.lean`, `Lean2Js/EncDeriving.lean` | the instance |
-| `Lean2Js/Js.lean` | `TyDesc`, `tsType`, the literal |
-| `Lean2Js/JsSem.lean`, `Lean2Js/Norm.lean` | `checkTy` / `normTy` |
-| `Lean2Js/Helper.lean`, `HelperProof.lean`, `HelperAgree.lean` | the six operations and their agreement |
-| `Lean2Js/Sound.lean`, `Correct.lean`, `Decl.lean`, `Dts.lean` | one case each |
-| `Lean2Js/Parse.lean`, `Roundtrip.lean` | reading the new descriptor and literal back |
+| `Lean2Js/Js.lean` | `TyDesc.dictObj`, `tsType` |
+| `Lean2Js/JsSem.lean`, `Lean2Js/Norm.lean` | `checkTy` / `normTy` at the new descriptor, and `outTy` |
+| `Lean2Js/Helper.lean`, `HelperProof.lean`, `HelperAgree.lean` | the helper `outTy` models, and its agreement |
+| `Lean2Js/Compile.lean` | the entry wrapping its call where the return type holds a `dictObj` |
+| `Lean2Js/Sound.lean`, `Correct.lean`, `Decl.lean`, `Dts.lean` | the type rules' new case, and `decl_correct`'s right-hand side |
+| `Lean2Js/Parse.lean`, `Roundtrip.lean` | reading the new descriptor back |
 | `Lean2Js/Vectors.lean` | values of the new type |
 | `Lean2Js/Example.lean`, `Axioms.lean` | a public function over one |
 | the documents | `reference/declarations.md`'s table of what a consumer sees, `vocabulary.md`, `javascript.md`, `README.md`, `CHANGELOG.md` |
@@ -79,8 +97,10 @@ normaliser second; the operations last. Each leaves every gate green.
 ## Risks
 
 - **This is the widest of the remaining items.** It is a new `Ty` constructor, which
-  `extending-the-subset.md` calls the expensive layer — `Sound` and `Correct` each gain a case. Read
-  that file's touch order before starting.
+  `extending-the-subset.md` calls the expensive layer. Read that file's touch order before starting.
+  What keeps it from being the whole of that layer is that the new constructor carries no new
+  *semantics*: every `Ty` walk gains a case beside `.dict`, and what is genuinely new is one descriptor,
+  two `normTy`-shaped functions and one helper.
 - **Two spellings of one idea.** A package can now ship both, and a consumer meets both. The reference
   has to say which to reach for, and the answer is the object unless something inside the package needs
   a `Map`'s ordering.
