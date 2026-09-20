@@ -102,8 +102,8 @@ def labelOrBlank (labels : List String) : String := firstOr labels ""
   JavaScript engine's stack allows, which on Node 24 at its default stack size is several hundred
   levels; past that the call throws a `RangeError` rather than a trap, so bound the depth yourself if a
   consumer can send an unbounded one. Refused: a type that
-  reaches itself through anything but a `List` of itself, and a type that names itself *and* takes type
-  parameters. A shipped `def` walks one with the fold `deriving Enc` writes beside the encoding, since
+  reaches itself through anything but itself or a `List` of itself — through an `Option`, an `Except`, a
+  `Dict` or a field of another type — and a type that names itself *and* takes type parameters. A shipped `def` walks one with the fold `deriving Enc` writes beside the encoding, since
   the `def` itself cannot recurse: [`expressions.md`](expressions.md).
 - **A type parameter is a `Type`.** `structure Paginated (T : Type)` is fine; `Type 1` and class
   constraints are not.

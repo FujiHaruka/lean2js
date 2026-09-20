@@ -107,8 +107,12 @@ expansion has no such fixed point — one applied to a bigger argument each time
 budget `tyDescBudget` gives it and is refused by name rather than compiled — **as a return type as well
 as a parameter's**, because the entry has to expand a return type before it can tell whether reading the
 result back out through it does anything, and here it cannot. **What a shipped `def` may do
-with such a value is unchanged**: it reads the constructor it was handed and the fields directly under it,
-because walking further is a recursion and the subset has none.
+with such a value has moved**: it walks it, with the fold `deriving Enc` writes beside the encoding. The
+walk is a form of the subset (`Core.Expr.foldE`) and not a recursion in the `def` — the `def` still cannot
+recurse — so it is carried by the same three directions every other form is, its last alternative resting
+on [`foldFirstMatch_isSome`] and the step from the author's own `fold` to that form on
+`Denotes.denotes_foldE`, proved once, together with the per-type theorem `deriving Enc` proves beside the
+fold.
 
 **That depth is carried by the proof and not by a vector.** The generator stops building a value a fixed
 number of declared types down, so what the differential run compares on a type that names itself is

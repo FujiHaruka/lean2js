@@ -123,8 +123,8 @@ walk has to be a name — and a name per type, because the algebra has one funct
 walk is found by the mark rather than by a suffix an author's own `Category.fold` would also carry.
 
 Beside the fold it writes the alternatives a fold is reified to and the certificate that the subset's
-walk over them computes it. `Reify` does not read any of it yet: what is here is the definition and the
-theorem, landed and checked before anything cites them. -/
+walk over them computes it. `Reify` reads all three where an author calls the fold, so what is pinned here
+is what that reading stands on. -/
 
 private def catalogue : Example.Category :=
   .group "root" [.leaf "socks", .group "tools" [.leaf "saw", .leaf "plane"]]

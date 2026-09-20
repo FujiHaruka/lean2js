@@ -211,7 +211,7 @@ inductive Chain where
 inductive Shape where
   | dot
   | pair (left : Shape) (right : Shape)
-  | many (tag : String) (parts : List Shape) (spare : Shape)
+  | many (label : String) (parts : List Shape) (spare : Shape)
   deriving Enc
 
 example := @Chain.denotes_fold
@@ -223,6 +223,27 @@ example := @Shape.denotes_fold
 
 #guard Shape.fold 1 (fun l r => l + r) (fun _ ps s => Arr.sum ps + s)
   (.many "top" [.dot, .pair .dot .dot] .dot) == 4
+
+/-! And what a shipped `def` does with them. `Example.Category` is the only fold the example ships and it
+carries neither a constructor with no fields nor a field that is the type itself, so these are what say
+the walk reads those two: a constructor with no fields is handed a plain expression where the others are
+handed a lambda, and a field that came round arrives as the answer for it. `ship_package` is what makes
+that a check rather than an elaboration — it reifies each declaration, writes its certificate, compiles
+it and asks the fuel ceiling. -/
+
+@[ship]
+def chainLength (chain : Chain) : Int :=
+  Chain.fold 0 (fun _ rest => 1 + rest) chain
+
+@[ship]
+def shapeSize (shape : Shape) : Int :=
+  Shape.fold 1 (fun l r => l + r) (fun _ parts spare => 1 + Arr.sum parts + spare) shape
+
+ship_package
+
+#guard program.decls.map (·.name) == ["chainLength", "shapeSize"]
+#guard chainLength (.link "a" (.link "b" .tip)) == 2
+#guard shapeSize (.many "top" [.dot, .pair .dot .dot] .dot) == 5
 
 end Walked
 
