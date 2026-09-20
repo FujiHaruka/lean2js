@@ -602,6 +602,43 @@ ones. -/
 
 end Dict
 
+/-- The same dictionary as `Dict`, declared to cross the boundary as a plain object rather than as a
+`Map`. Inside the module the two are one thing — a value of either is a `Value.dict`, and every
+operation runs on the same `Map` — so what the constructor decides is only what a consumer meets:
+`JSON.stringify` of a `Map` is `{}`, and what a consumer stringifies is a return value.
+
+There is no literal here. A `Dict.Obj` is one a consumer handed in, or one built from it by `set` and
+`erase`, which give back the spelling they were handed. Writing one out key by key needs a form the
+compiler does not have; `.claude/plans/a-dictionary-on-the-way-out.md` prices the three ways to add
+one. -/
+structure Dict.Obj (α : Type) where
+  entries : List (String × α)
+
+namespace Dict.Obj
+
+def get (d : Dict.Obj α) (k : String) : Option α := (d.entries.find? (·.1 == k)).map (·.2)
+
+def has (d : Dict.Obj α) (k : String) : Bool := d.entries.any (·.1 == k)
+
+/-- Writing a key already present leaves it where it is; writing a new one appends. -/
+def set (d : Dict.Obj α) (k : String) (v : α) : Dict.Obj α :=
+  ⟨if d.entries.any (·.1 == k) then d.entries.map (fun e => if e.1 == k then (k, v) else e)
+   else d.entries ++ [(k, v)]⟩
+
+def erase (d : Dict.Obj α) (k : String) : Dict.Obj α := ⟨d.entries.filter (·.1 != k)⟩
+
+def keys (d : Dict.Obj α) : List String := d.entries.map (·.1)
+
+def values (d : Dict.Obj α) : List α := d.entries.map (·.2)
+
+/-- How many entries, as the `Int53` the subset counts in. -/
+def size (d : Dict.Obj α) : Int := Int.ofNat d.entries.length
+
+/-- What `k` is bound to, or `dflt` where it is bound to nothing. -/
+@[expand] def getD (d : Dict.Obj α) (k : String) (dflt : α) : α := Opt.getD (d.get k) dflt
+
+end Dict.Obj
+
 open Enc in
 /-- The entry an encoded `Dict` carries for one of its own. -/
 def encEntry [Enc α] (e : String × α) : String × Value := (e.1, toValue e.2)
@@ -653,6 +690,23 @@ instance [Enc α] : Enc (Dict α) where
 @[simp] theorem ty_dict [Enc α] : (ty (Dict α)) = .dict (ty (α := α)) := rfl
 
 @[simp] theorem toValue_dict [Enc α] (d : Dict α) :
+    (toValue d : Value) = .dict (d.entries.map encEntry) := rfl
+
+instance [Enc α] : Enc (Dict.Obj α) where
+  ty := .dictObj (ty (α := α))
+  toValue d := .dict (d.entries.map encEntry)
+  ofValue
+    | .dict es => (ofEntries es).map Dict.Obj.mk
+    | _ => none
+  ofValue_toValue d := by simp [ofEntries_map d.entries]
+  accepts p d := keysDistinct (d.entries.map (·.1)) = true ∧ ∀ e ∈ d.entries, accepts p e.2
+  toValue_hasTy h := by
+    rw [hasTy_dictObj, keys_encEntry, h.1, hasEntryTys_toValue h.2]
+    rfl
+
+@[simp] theorem ty_dictObj [Enc α] : (ty (Dict.Obj α)) = .dictObj (ty (α := α)) := rfl
+
+@[simp] theorem toValue_dictObj [Enc α] (d : Dict.Obj α) :
     (toValue d : Value) = .dict (d.entries.map encEntry) := rfl
 
 instance : Enc BigInt where

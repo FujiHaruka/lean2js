@@ -304,6 +304,46 @@ export declare function withdrawn(prices: ReadonlyMap<string, number>, sku: stri
 export declare function catalogueSize(prices: ReadonlyMap<string, number>): number;
 
 /**
+ * @throws {TrapError<"typeError">}
+ */
+export declare function objPriceOf(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): Option<number>;
+
+/**
+ * @throws {TrapError<"typeError">}
+ */
+export declare function objIsListed(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): boolean;
+
+/**
+ * The price book after one price change, handed back as an object. A sku already in the book keeps its
+ * place.
+ *
+ * @throws {TrapError<"typeError">}
+ */
+export declare function objRepriced(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string, amount: number): ReadonlyMap<string, number> | { readonly [key: string]: number };
+
+/**
+ * The price book after a sku is withdrawn, handed back as an object.
+ *
+ * @throws {TrapError<"typeError">}
+ */
+export declare function objWithdrawn(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): ReadonlyMap<string, number> | { readonly [key: string]: number };
+
+/**
+ * @throws {TrapError<"typeError">}
+ */
+export declare function objListedSkus(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly string[];
+
+/**
+ * @throws {TrapError<"typeError">}
+ */
+export declare function objListedPrices(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly number[];
+
+/**
+ * @throws {TrapError<"typeError" | "int53Overflow">}
+ */
+export declare function objCatalogueSize(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): number;
+
+/**
  * Truncating division. Division by zero traps on the JS side too.
  *
  * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}

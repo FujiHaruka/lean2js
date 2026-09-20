@@ -1253,6 +1253,121 @@ theorem denotes_lengthDict (p : Program) (env : Env) (d : Expr) {β : Type} [Enc
     simp only [toValue_dict, bind, Except.bind, List.length_map] at h
     exact mkInt53_ok h
 
+/-! The same seven over a `Dict.Obj`. Each proof is its `Dict` twin with one name substituted: the two
+spellings encode to the same `Value.dict`, so what the evaluator does to a receiver does not depend on
+which of them the author declared. -/
+
+theorem denotes_dictObjGet (p : Program) (env : Env) (d key : Expr) {β : Type} [Enc β] (m : Dict.Obj β)
+    (k : String) (hd : Denotes p env d m) (hk : Denotes p env key k) :
+    Denotes p env (.dictGet d key) (Dict.Obj.get m k) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictGet] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      rw [hx, hy, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy] at h
+      simp only [toValue_dictObj, toValue_str, bind, Except.bind, dictLookup, Except.ok.injEq] at h
+      rw [← h, find?_map_encEntry, Dict.Obj.get]
+      cases (m.entries.find? (·.1 == k)).map (·.2) <;> rfl
+
+theorem denotes_dictObjHas (p : Program) (env : Env) (d key : Expr) {β : Type} [Enc β] (m : Dict.Obj β)
+    (k : String) (hd : Denotes p env d m) (hk : Denotes p env key k) :
+    Denotes p env (.dictHas d key) (Dict.Obj.has m k) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictHas] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      rw [hx, hy, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy] at h
+      simp only [toValue_dictObj, toValue_str, bind, Except.bind, Except.ok.injEq] at h
+      rw [← h, any_map_encEntry]
+      rfl
+
+theorem denotes_dictObjSet (p : Program) (env : Env) (d key val : Expr) {β : Type} [Enc β]
+    (m : Dict.Obj β) (k : String) (x : β)
+    (hd : Denotes p env d m) (hk : Denotes p env key k) (hv : Denotes p env val x) :
+    Denotes p env (.dictSet d key val) (Dict.Obj.set m k x) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictSet] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      cases hz : evalExpr p 9999 env val with
+      | error err => rw [hx, hy, hz] at h; simp [bind, Except.bind] at h
+      | ok z =>
+        rw [hx, hy, hz, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy,
+          hv (by simp [defaultFuel]) z hz] at h
+        simp only [toValue_dictObj, toValue_str, bind, Except.bind, Except.ok.injEq] at h
+        rw [← h, dictWith_map_encEntry]
+        rfl
+
+theorem denotes_dictObjDelete (p : Program) (env : Env) (d key : Expr) {β : Type} [Enc β] (m : Dict.Obj β)
+    (k : String) (hd : Denotes p env d m) (hk : Denotes p env key k) :
+    Denotes p env (.dictDelete d key) (Dict.Obj.erase m k) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictDelete] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    cases hy : evalExpr p 9999 env key with
+    | error err => rw [hx, hy] at h; simp [bind, Except.bind] at h
+    | ok u =>
+      rw [hx, hy, hd (by simp [defaultFuel]) w hx, hk (by simp [defaultFuel]) u hy] at h
+      simp only [toValue_dictObj, toValue_str, bind, Except.bind, Except.ok.injEq] at h
+      rw [← h, filter_map_encEntry]
+      rfl
+
+theorem denotes_dictObjKeys (p : Program) (env : Env) (d : Expr) {β : Type} [Enc β] (m : Dict.Obj β)
+    (hd : Denotes p env d m) : Denotes p env (.dictKeys d) (Dict.Obj.keys m) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictKeys] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hd (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_dictObj, bind, Except.bind, Except.ok.injEq] at h
+    rw [← h, toValue_list, Dict.Obj.keys]
+    simp [encEntry]
+
+theorem denotes_dictObjValues (p : Program) (env : Env) (d : Expr) {β : Type} [Enc β] (m : Dict.Obj β)
+    (hd : Denotes p env d m) : Denotes p env (.dictValues d) (Dict.Obj.values m) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictValues] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hd (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_dictObj, bind, Except.bind, Except.ok.injEq] at h
+    rw [← h, toValue_list, Dict.Obj.values]
+    simp [encEntry]
+
+theorem denotes_lengthDictObj (p : Program) (env : Env) (d : Expr) {β : Type} [Enc β] (m : Dict.Obj β)
+    (hd : Denotes p env d m) : Denotes p env (.length d) (Dict.Obj.size m) := by
+  intro f hf v he
+  have h := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_length] at h
+  cases hx : evalExpr p 9999 env d with
+  | error err => rw [hx] at h; simp [bind, Except.bind] at h
+  | ok w =>
+    rw [hx, hd (by simp [defaultFuel]) w hx] at h
+    simp only [toValue_dictObj, bind, Except.bind, List.length_map] at h
+    exact mkInt53_ok h
+
 /-- The entries of a dictionary literal. The keys are part of the form rather than evaluated, so what is
 walked is only the values, and the lemma carries the keys as an equation. -/
 def DenotesEntries (p : Program) (env : Env) {β : Type} [Enc β] :

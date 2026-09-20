@@ -2309,11 +2309,10 @@ theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty
 the descriptor the entry is compiled against reaches none either. This is what carries the author's
 reading — "nothing here uses `Dict.Obj`" — over to the reading the compiler consults when it decides
 whether an entry needs a walk out at all. -/
-theorem descNoDictObj_tyDesc {p : Program} (hp : p.noDictObj = true) (b : Nat) (ty : Ty) :
+theorem descNoDictObj_tyDesc {p : Program} (hp : p.typesNoDictObj = true) (b : Nat) (ty : Ty) :
     Ty.noDictObj ty = true → ∀ d, Compile.tyDescIn p st b ty = .ok d →
       Js.descNoDictObj d = true := by
-  have hpt : p.types.all TypeDef.noDictObj = true := by
-    rw [Program.noDictObj, Bool.and_eq_true] at hp; exact hp.1
+  have hpt : p.types.all TypeDef.noDictObj = true := hp
   induction st, b, ty using Compile.tyDescIn.induct (p := p)
     (motive2 := fun st b cs => (∀ c ∈ cs, ∀ f ∈ c.fields, Ty.noDictObj f.ty = true) →
       ∀ alts, Compile.tyDescAlts p st b cs = .ok alts → Js.altsNoDictObj alts = true)
@@ -2433,15 +2432,25 @@ theorem descNoDictObj_tyDesc {p : Program} (hp : p.noDictObj = true) (b : Nat) (
         rw [Js.fieldsNoDictObj]
         simp [iht (hf f (by simp)) dt hdt, ihr (fun g hg => hf g (by simp [hg])) rs hrs]
 
-/-- **No entry of such a program emits a walk out.** The return descriptor the compiler expands reaches
-no `dictObj`, so `Compile.retWalk` is the identity and the function written out is the one it was before
-a dictionary could cross the boundary as a plain object. -/
+/-- **An entry whose return type reaches no `dictObj` emits no walk out.** The return descriptor the
+compiler expands reaches none, so `Compile.retWalk` is the identity and the function written out is the
+one it was before a dictionary could cross the boundary as a plain object. This is stated per
+declaration because that is what a real program exhibits: one declaration of it may hand a dictionary
+across as an object while its neighbour does not. -/
+theorem retWalk_id_of_retNoDictObj {p : Program} (hp : p.typesNoDictObj = true)
+    {d : Decl} (hret : Ty.noDictObj d.ret = true) {desc : Js.TyDesc}
+    (hdesc : Compile.tyDesc p (Compile.tyDescBudget p d.ret) d.ret = .ok desc) (e : Js.Expr) :
+    Compile.retWalk desc e = e := by
+  rw [Compile.retWalk, if_pos (descNoDictObj_tyDesc (st := []) hp _ d.ret hret desc hdesc)]
+
+/-- **No entry of a program that declares no `dictObj` anywhere emits a walk out**, which is every
+declaration of it at once. -/
 theorem retWalk_id_of_noDictObj {p : Program} (hp : p.noDictObj = true)
     {d : Decl} (hd : d ∈ p.decls) {desc : Js.TyDesc}
     (hdesc : Compile.tyDesc p (Compile.tyDescBudget p d.ret) d.ret = .ok desc) (e : Js.Expr) :
-    Compile.retWalk desc e = e := by
-  rw [Compile.retWalk, if_pos (descNoDictObj_tyDesc (st := []) hp _ d.ret
-    (Program.noDictObj_ret hp hd) desc hdesc)]
+    Compile.retWalk desc e = e :=
+  retWalk_id_of_retNoDictObj (Program.typesNoDictObj_of_noDictObj hp)
+    (Program.noDictObj_ret hp hd) hdesc e
 
 /-- Where the descriptor the entry read reaches no dictionary crossing as a plain object, reading a
 value out through its declared type is reading it without one, so the entry emits no walk and hands back

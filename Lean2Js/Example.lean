@@ -220,6 +220,35 @@ def withdrawn (prices : Dict Int) (sku : String) : Dict Int := prices.erase sku
 @[ship]
 def catalogueSize (prices : Dict Int) : Int := prices.size
 
+/-! The same price book at the other spelling. `Dict.Obj` crosses the boundary as a plain object rather
+than as a `Map`, so `JSON.stringify` of what these hand back is the book itself. Inside the module the
+two are one thing, and the operations below are the ones above under different names. -/
+
+@[ship]
+def objPriceOf (prices : Dict.Obj Int) (sku : String) : Option Int := prices.get sku
+
+@[ship]
+def objIsListed (prices : Dict.Obj Int) (sku : String) : Bool := prices.has sku
+
+/-- The price book after one price change, handed back as an object. A sku already in the book keeps its
+place. -/
+@[ship]
+def objRepriced (prices : Dict.Obj Int) (sku : String) (amount : Int) : Dict.Obj Int :=
+  prices.set sku amount
+
+/-- The price book after a sku is withdrawn, handed back as an object. -/
+@[ship]
+def objWithdrawn (prices : Dict.Obj Int) (sku : String) : Dict.Obj Int := prices.erase sku
+
+@[ship]
+def objListedSkus (prices : Dict.Obj Int) : List String := prices.keys
+
+@[ship]
+def objListedPrices (prices : Dict.Obj Int) : List Int := prices.values
+
+@[ship]
+def objCatalogueSize (prices : Dict.Obj Int) : Int := prices.size
+
 /-- Truncating division. Division by zero traps on the JS side too. -/
 @[ship]
 def divide (a b : Int) : Int := Int53.div a b
@@ -822,12 +851,17 @@ the agreement does not depend on which. -/
 variable [Discriminators]
 
 omit [Discriminators] in
-/-- No type this program declares, and no parameter or return type it uses, is a dictionary the
-declaration told the compiler to hand across the boundary as a plain object rather than as a `Map`.
-Every entry therefore emits no walk out and returns exactly what its body built — that step is
-`Decl.retWalk_id_of_noDictObj` — which is what lets the claims below be stated at `encodeValue`, the
-spelling they have always had. -/
-theorem program_noDictObj : program.noDictObj = true := rfl
+/-- No type this program declares carries a dictionary the declaration told the compiler to hand across
+the boundary as a plain object rather than as a `Map`. This is the half `encodeAt` reads — it recurses
+into a declared type's fields and never into a declaration — so every claim below whose own return type
+reaches no such dictionary is stated at `encodeValue`, the spelling it has always had, through
+`encodeAt_eq_encodeValue`.
+
+The program itself does hand one across: `objRepriced` and `objWithdrawn` return a `Dict.Obj Int`, so
+their entries emit the walk out that `Compile.retWalk` expands and their results are read at `encodeAt`
+rather than at `encodeValue`. Every other `obj` declaration takes one and returns something that reaches
+none, so its entry emits no walk and this theorem carries it to `encodeValue` like any other. -/
+theorem program_typesNoDictObj : program.typesNoDictObj = true := rfl
 
 -- The hypothesis every claim below opens with, discharged where `lake build` can see it rather than
 -- only where `pnpm lean:emit` does: this program compiles, at the reading its own types declare.
@@ -842,7 +876,7 @@ theorem add_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = .
     (hdec : Decl.ArgsDecode program addDecl.params jargs args)
     (he : evalCall program "add" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "add" jargs = .ok (encodeValue v) :=
-  by rw [← encodeAt_eq_encodeValue (p := program) program_noDictObj
+  by rw [← encodeAt_eq_encodeValue (p := program) program_typesNoDictObj
       (show Ty.noDictObj addDecl.ret = true from rfl) v]
      exact Decl.decl_correct program m "add" addDecl jargs args v hm find_add hdec he
 
@@ -852,7 +886,7 @@ theorem discounted_calls_agree (m : Js.Module) (hm : Compile.compileProgram prog
     (hdec : Decl.ArgsDecode program discountedDecl.params jargs args)
     (he : evalCall program "discounted" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "discounted" jargs = .ok (encodeValue v) :=
-  by rw [← encodeAt_eq_encodeValue (p := program) program_noDictObj
+  by rw [← encodeAt_eq_encodeValue (p := program) program_typesNoDictObj
       (show Ty.noDictObj discountedDecl.ret = true from rfl) v]
      exact Decl.decl_correct program m "discounted" discountedDecl jargs args v hm find_discounted hdec he
 
@@ -863,7 +897,7 @@ theorem rebindTwice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
     (hdec : Decl.ArgsDecode program rebindTwiceDecl.params jargs args)
     (he : evalCall program "rebindTwice" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "rebindTwice" jargs = .ok (encodeValue v) :=
-  by rw [← encodeAt_eq_encodeValue (p := program) program_noDictObj
+  by rw [← encodeAt_eq_encodeValue (p := program) program_typesNoDictObj
       (show Ty.noDictObj rebindTwiceDecl.ret = true from rfl) v]
      exact Decl.decl_correct program m "rebindTwice" rebindTwiceDecl jargs args v hm find_rebindTwice hdec he
 
@@ -878,7 +912,7 @@ theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
     (hdec : Decl.ArgsDecode program memberPriceDecl.params jargs args)
     (he : evalCall program "memberPrice" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "memberPrice" jargs = .ok (encodeValue v) :=
-  by rw [← encodeAt_eq_encodeValue (p := program) program_noDictObj
+  by rw [← encodeAt_eq_encodeValue (p := program) program_typesNoDictObj
       (show Ty.noDictObj memberPriceDecl.ret = true from rfl) v]
      exact Decl.decl_correct program m "memberPrice" memberPriceDecl jargs args v hm find_memberPrice hdec he
 
@@ -888,6 +922,7 @@ theorem memberPrice_calls_agree (m : Js.Module) (hm : Compile.compileProgram pro
 throws is matched by a generated function that throws the same code. -/
 
 omit [Discriminators] in
+set_option maxRecDepth 8000 in
 /-- The first of the two checks the emitter runs on a program before it writes anything: every call goes
 backwards. -/
 theorem program_progOk : Cost.progOk program = true := rfl
@@ -934,7 +969,7 @@ theorem addMoney_calls_agree (m : Js.Module) (hm : Compile.compileProgram progra
     (hdec : Decl.ArgsDecode program addMoneyDecl.params jargs args)
     (he : evalCall program "addMoney" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "addMoney" jargs = .ok (encodeValue v) :=
-  by rw [← encodeAt_eq_encodeValue (p := program) program_noDictObj
+  by rw [← encodeAt_eq_encodeValue (p := program) program_typesNoDictObj
       (show Ty.noDictObj addMoneyDecl.ret = true from rfl) v]
      exact Decl.decl_correct program m "addMoney" addMoneyDecl jargs args v hm find_addMoney hdec he
 
@@ -945,7 +980,7 @@ theorem ship_calls_agree (m : Js.Module) (hm : Compile.compileProgram program = 
     (hdec : Decl.ArgsDecode program shipDecl.params jargs args)
     (he : evalCall program "ship" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "ship" jargs = .ok (encodeValue v) :=
-  by rw [← encodeAt_eq_encodeValue (p := program) program_noDictObj
+  by rw [← encodeAt_eq_encodeValue (p := program) program_typesNoDictObj
       (show Ty.noDictObj shipDecl.ret = true from rfl) v]
      exact Decl.decl_correct program m "ship" shipDecl jargs args v hm find_ship hdec he
 
@@ -955,7 +990,7 @@ theorem cartTotal_calls_agree (m : Js.Module) (hm : Compile.compileProgram progr
     (hdec : Decl.ArgsDecode program cartTotalDecl.params jargs args)
     (he : evalCall program "cartTotal" args = .ok v) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' "cartTotal" jargs = .ok (encodeValue v) :=
-  by rw [← encodeAt_eq_encodeValue (p := program) program_noDictObj
+  by rw [← encodeAt_eq_encodeValue (p := program) program_typesNoDictObj
       (show Ty.noDictObj cartTotalDecl.ret = true from rfl) v]
      exact Decl.decl_correct program m "cartTotal" cartTotalDecl jargs args v hm find_cartTotal hdec he
 
@@ -1053,13 +1088,15 @@ theorem dts_fits_entry_check (m : Js.Module) (hm : Compile.compileProgram progra
     (hr : Dts.inRange [] jv d = true) : Js.checkTy [] jv d = true :=
   Dts.tsSat_checkTy program (Decl.typesNamesOk_of_compileProgram hm) jv ty [] [] b d hd .nil hts hr
 
-/-- What comes back, rather than what goes in: a value the reference semantics gives a declared type to
-encodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration
-returns, and `decl_correct` says the generated function returns that value read through the declared
-return type, which for this program is its encoding (`program_noDictObj`). -/
+/-- What comes back, rather than what goes in: a value the reference semantics gives a declared type to,
+read out through that type, is one the published `.d.ts` admits. `typeSound` gives the type to whatever a
+declaration returns, and `decl_correct` says the generated function returns exactly that reading — so
+this is the value a consumer meets, at every return type including one that hands a dictionary across as
+a plain object. Where the type reaches no such dictionary the reading is the encoding itself
+(`encodeAt_eq_encodeValue`, `program_typesNoDictObj`). -/
 theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (v : Value) (ty : Ty) (hv : Value.hasTy program v ty = true) :
-    Dts.TsSat program ty (encodeValue v) :=
+    Dts.TsSat program ty (encodeAt program ty v) :=
   Dts.hasTy_tsSat program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
 
 omit [Discriminators] in

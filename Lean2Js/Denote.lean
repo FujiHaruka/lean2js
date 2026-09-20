@@ -26,8 +26,14 @@ theorem encode_toValue (i : Int) : encodeValue (toValue i) = .num i := by
   simp [encodeValue]
 
 /-- One declaration, as the claim an author wants: on arguments the entry accepts, the shipped function
-either answers what the author's own `def` computes or throws one of the codes `Err` enumerates. The
-certificate is the only part of this that changes from one declaration to the next. -/
+either answers what the author's own `def` computes, read out through the type the declaration gave it,
+or throws one of the codes `Err` enumerates. The certificate is the only part of this that changes from
+one declaration to the next.
+
+The reading is `encodeAt` rather than `encodeValue` because a return type may say a dictionary crosses
+as a plain object, and then the two differ. Where it says no such thing —
+`encodeAt_eq_encodeValue`, which each concrete claim below is rewritten through — they are the same
+function and the claim is the one it has always been. -/
 theorem decl_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
     (fn : String) (d : Decl) (jargs : List Js.JsValue) (args : List Value) {α : Type} [Enc α] (t : α)
     (hd : Example.program.find? fn = some d)
@@ -36,15 +42,13 @@ theorem decl_ships (m : Js.Module) (hm : Compile.compileProgram Example.program 
     (hdec : Decl.ArgsDecode Example.program d.params jargs args)
     (hcert : Denotes Example.program (bindParams d.params args) d.body t) :
     ∃ g, ∀ g', g ≤ g' →
-      Js.callFunctionAt m g' fn jargs = .ok (encodeValue (toValue t))
+      Js.callFunctionAt m g' fn jargs = .ok (encodeAt Example.program d.ret (toValue t))
       ∨ ∃ err : Err, Js.callFunctionAt m g' fn jargs = .error err.code := by
   cases he : evalCall Example.program fn args with
   | ok v =>
     obtain ⟨g, hg⟩ := Decl.decl_correct Example.program m fn d jargs args v hm hd hdec he
     refine ⟨g, fun g' hle => Or.inl ?_⟩
-    rw [hg g' hle, encodeAt_eq_encodeValue (p := Example.program) Example.program_noDictObj
-        (Program.noDictObj_ret Example.program_noDictObj (List.mem_of_find?_eq_some hd)) v,
-      hcert (Nat.le_refl _) v (by rwa [Decl.evalCall_body hd hdec.length htyped] at he)]
+    rw [hg g' hle, hcert (Nat.le_refl _) v (by rwa [Decl.evalCall_body hd hdec.length htyped] at he)]
   | error err =>
     obtain ⟨g, hg⟩ := Decl.decl_traps_at_cost Example.program m fn d jargs args err hm hd hpub
       Example.program_progOk Example.program_cost_fits htyped hdec he
@@ -59,6 +63,8 @@ theorem add_ships (m : Js.Module) (hm : Compile.compileProgram Example.program =
       [toValue a, toValue b] := ⟨toValue_hasTy ha, toValue_hasTy hb, trivial⟩
   have h := decl_ships m hm "add" Example.addDecl _ [toValue a, toValue b] (Example.add a b)
     rfl rfl htyped (Decl.argsDecode_of_compileProgram (fn := "add") hm rfl htyped) (Example.add_certificate a b)
+  rw [encodeAt_eq_encodeValue (p := Example.program) Example.program_typesNoDictObj
+    (show Ty.noDictObj Example.addDecl.ret = true from rfl)] at h
   simpa [encodeValue] using h
 
 /-- The one that makes the shape worth the trouble: `lineTotal` calls `clampQuantity`, and the step that
@@ -77,6 +83,8 @@ theorem lineTotal_ships (m : Js.Module) (hm : Compile.compileProgram Example.pro
     [toValue unitPrice, toValue quantity] (Example.lineTotal unitPrice quantity) rfl rfl htyped
     (Decl.argsDecode_of_compileProgram (fn := "lineTotal") hm rfl htyped)
     (Example.lineTotal_certificate unitPrice quantity)
+  rw [encodeAt_eq_encodeValue (p := Example.program) Example.program_typesNoDictObj
+    (show Ty.noDictObj Example.lineTotalDecl.ret = true from rfl)] at h
   simpa [encodeValue] using h
 
 theorem roleRank_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
@@ -91,6 +99,8 @@ theorem roleRank_ships (m : Js.Module) (hm : Compile.compileProgram Example.prog
   have h := decl_ships m hm "roleRank" Example.roleRankDecl _ [toValue r] (Example.roleRank r)
     rfl rfl htyped (Decl.argsDecode_of_compileProgram (fn := "roleRank") hm rfl htyped)
     (Example.roleRank_certificate r)
+  rw [encodeAt_eq_encodeValue (p := Example.program) Example.program_typesNoDictObj
+    (show Ty.noDictObj Example.roleRankDecl.ret = true from rfl)] at h
   simpa [encodeValue] using h
 
 /-- `add_comm` is proved about `Example.add`, and rewriting it into `add_ships` is the whole descent.

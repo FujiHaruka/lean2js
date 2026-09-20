@@ -554,13 +554,21 @@ def TypeDef.noDictObj (t : TypeDef) : Bool :=
 def Decl.noDictObj (d : Decl) : Bool :=
   d.params.all (fun param => param.ty.noDictObj) && d.ret.noDictObj
 
+/-- Whether no type this program declares reaches a `dictObj`. This is the half `encodeAt` reads: it
+recurses into a declared type's fields and never into a declaration, so a program may hand a dictionary
+across as a plain object and still satisfy this. -/
+def Program.typesNoDictObj (p : Program) : Bool := p.types.all TypeDef.noDictObj
+
 /-- Whether nothing this program declares crosses the boundary as a plain object.
 
 Every claim written before a dictionary could cross as one holds under this, which is what lets those
 claims keep the exact text they have: `encodeAt_eq_encodeValue` carries them back to `encodeValue`
 rather than restating them. -/
 def Program.noDictObj (p : Program) : Bool :=
-  p.types.all TypeDef.noDictObj && p.decls.all Decl.noDictObj
+  p.typesNoDictObj && p.decls.all Decl.noDictObj
+
+theorem Program.typesNoDictObj_of_noDictObj {p : Program} (h : p.noDictObj = true) :
+    p.typesNoDictObj = true := by rw [Program.noDictObj, Bool.and_eq_true] at h; exact h.1
 
 theorem TypeDef.noDictObj_ctorsAt {t : TypeDef} (h : t.noDictObj = true)
     {args : List Ty} (ha : Ty.noDictObjList args = true) :
@@ -602,16 +610,16 @@ scrutinee's type, so only the typing of `ctor` uses this. -/
 def Program.ownerOf? (p : Program) (ctor : String) : Option TypeDef :=
   p.types.find? fun t => t.ctors.any (·.name == ctor)
 
-/-- The field types a constructor is read at, where the program reaches no `dictObj` and the type was
-used at arguments that reach none. This is the step `encodeAt` takes at a `named` type. -/
-theorem Program.noDictObj_findAt? {p : Program} (hp : p.noDictObj = true)
+/-- The field types a constructor is read at, where no type the program declares reaches a `dictObj` and
+the type was used at arguments that reach none. This is the step `encodeAt` takes at a `named` type. -/
+theorem Program.noDictObj_findAt? {p : Program} (hp : p.typesNoDictObj = true)
     {n : String} {t : TypeDef} (ht : p.findType? n = some t)
     {args : List Ty} (ha : Ty.noDictObjList args = true)
     {ctor : String} {c : CtorDef} (hc : t.findAt? args ctor = some c) :
     ∀ f ∈ c.fields, Ty.noDictObj f.ty = true := by
-  rw [Program.noDictObj, Bool.and_eq_true] at hp
+  rw [Program.typesNoDictObj] at hp
   refine TypeDef.noDictObj_ctorsAt
-    (List.all_eq_true.mp hp.1 t (List.mem_of_find?_eq_some ht)) ha c ?_
+    (List.all_eq_true.mp hp t (List.mem_of_find?_eq_some ht)) ha c ?_
   exact List.mem_of_find?_eq_some hc
 
 /-- What a type's key has to be before a constructor's name can be read as carrying it. -/

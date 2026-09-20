@@ -147,8 +147,14 @@ may not name a constructor `none`, `some`, `ok` or `error`.
 | `Except E A` | `{ tag: "ok", value: A } \| { tag: "error", error: E }` |
 | `List T` | `readonly T[]` |
 | `Dict V` | `ReadonlyMap<string, V>` |
+| `Dict.Obj V` | `ReadonlyMap<string, V> \| { readonly [key: string]: V }` |
 | your own type with `deriving Enc` | `{ tag: "Money", ... }`, under the key the type declares |
 | `Int → Int` | not published; a declaration taking a function is internal |
+
+**`Dict V` and `Dict.Obj V` are one dictionary declared to cross differently.** An entry taking either
+accepts both shapes, which is why both are in the type. What the spelling decides is what it hands
+*back*: a `Dict V` return is a `Map`, and a `Dict.Obj V` return is a plain object — the one
+`JSON.stringify` serialises, since it writes `{}` for a `Map`.
 
 `Int` maps to `Int53`. Lean's `Int` is unbounded and `Int53` is not, so the certificate states one
 direction — if it returns, the two agree — and the overflowing side throws `int53Overflow`.

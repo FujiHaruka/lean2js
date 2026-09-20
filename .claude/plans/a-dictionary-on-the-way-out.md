@@ -170,6 +170,45 @@ arm it needs already exists: `normTy` at a `dictObj` turns an object back into a
 **Settle this before any of step 3 is written** — it decides what `DeclAgrees` says, and every line of
 the entry's wrapper is downstream of that.
 
+## What step 5 cost, and the one thing it left open
+
+**Measured in the tree on 2026-09-20.** `Dict.Obj` reached `Prelude.lean` and `Example.lean` ships seven
+declarations over one. 44355 vectors agree on Node, up 1400; fuel 2209 of 10000; 127 exports. The two
+helper branches from `2c7aee5` and the `__out` walk from leg 6 stopped being dead at that commit.
+
+The `Prelude` / `Denotes` / `Reify` half was mechanical, as the twin-structure decision predicted: the
+seven `denotes_dictObj*` lemmas are their `Dict` twins with one name substituted and compiled first try,
+because the two spellings encode to the same `Value.dict`.
+
+**What was not predicted is that the shipped claims had to move.** `Example.program_noDictObj` said no
+type and no declaration of the program reaches a `dictObj`, and seven declarations over `Dict.Obj Int`
+make that false. The answer was to split the predicate at the line `encodeAt` actually reads:
+`Program.typesNoDictObj` is the `p.types` half, which is all `encodeAt` recurses into, and
+`encodeAt_eq_encodeValue` and `descNoDictObj_tyDesc` are stated over it. That is a strengthening — a
+weaker hypothesis — so `Denote.decl_ships` was restated at `encodeAt` the way `decl_correct` was in step
+3, and each concrete `*_ships` and `*_calls_agree` is rewritten back through
+`encodeAt_eq_encodeValue` and keeps its published text byte for byte. The shipped theorem is now
+`program_typesNoDictObj`, which is true and says what the program is.
+
+**A `Dict.Obj` inside a declared type is proved and unexercised.** `EncDeriving` emits `.dictObj` for
+such a field and `__out`'s `ctors` / `fields` branches walk into one, but nothing runs it: putting one in
+`Example.lean` would make `program.typesNoDictObj` false, and the seven `*_calls_agree` theorems would
+lose the reading that keeps their published text where it is. The place for that coverage is a program
+whose claims are its own — `templates/verified-package/`, which emits and runs its own vectors on Node.
+
+**The one thing left open: there is no `Dict.Obj` literal.** `Core.Expr.dictLit` carries the value type
+and `compileExpr` gives it `.dict value`, so `Dict.Obj.ofList` has no form to reify to. `set` and
+`erase` give back the receiver's spelling, so a declaration that takes a `Dict.Obj` can return one, and
+that is the whole of what an author can do today. Three ways to close it, cheapest first:
+
+| Shape | What it costs | What it gives up |
+| --- | --- | --- |
+| **A field on `dictLit`** — the form carries which spelling it was written at | every `match` on `.dictLit` across the eighteen modules that name it, but no new form: `InFragment.all`, `Sound` and `Correct` each keep one case | nothing |
+| **`compileDecl` accepts `.dict v` against a declared `.dictObj v`** | one relaxation in one place | it works at a declaration's return position and nowhere else — not in a `let`, not in a `match` arm |
+| **A new `Core.Expr` form** | `Sound` and `Correct` each gain a case — `extending-the-subset.md`'s layer 3 | nothing, but it is the most expensive layer for the least new meaning |
+
+The first is the one to take. **Settle it before writing it**, as with the two questions before it.
+
 ## Files
 
 | File | What moves |

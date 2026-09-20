@@ -92,6 +92,7 @@ private partial def subsetTy (self : Name) (params : Array (Lean.Expr × String)
   | (``Except, #[ε, β]) =>
     `(Lean2Js.Core.Ty.result $(← subsetTy self params β) $(← subsetTy self params ε))
   | (``Lean2Js.Dict, #[β]) => `(Lean2Js.Core.Ty.dict $(← subsetTy self params β))
+  | (``Lean2Js.Dict.Obj, #[β]) => `(Lean2Js.Core.Ty.dictObj $(← subsetTy self params β))
   | (c, args) =>
     unless (← getEnv).contains (c ++ `typeDef) do
       throwError "deriving Enc: a field of type {α} carries a type parameter into a shape the subset \

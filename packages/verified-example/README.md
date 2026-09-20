@@ -77,6 +77,15 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `withdrawn(prices: ReadonlyMap<string, number>, sku: string): ReadonlyMap<string, number>`
   The price book after a sku is withdrawn. A sku that was never listed leaves the book unchanged.
 - `catalogueSize(prices: ReadonlyMap<string, number>): number`
+- `objPriceOf(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): Option<number>`
+- `objIsListed(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): boolean`
+- `objRepriced(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string, amount: number): ReadonlyMap<string, number> | { readonly [key: string]: number }`
+  The price book after one price change, handed back as an object. A sku already in the book keeps its place.
+- `objWithdrawn(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): ReadonlyMap<string, number> | { readonly [key: string]: number }`
+  The price book after a sku is withdrawn, handed back as an object.
+- `objListedSkus(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly string[]`
+- `objListedPrices(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly number[]`
+- `objCatalogueSize(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): number`
 - `divide(a: number, b: number): number`
   Truncating division. Division by zero traps on the JS side too.
 - `remainder(a: number, b: number): number`
@@ -336,16 +345,21 @@ theorem same_currency_adds (x y : Int) (currency : String) (hx : int53Min ≤ x 
     Except.ok (Value.obj "ok" [("value", money (x + y) currency)])
 ```
 
-### program_noDictObj
+### program_typesNoDictObj
 
-No type this program declares, and no parameter or return type it uses, is a dictionary the
-declaration told the compiler to hand across the boundary as a plain object rather than as a `Map`.
-Every entry therefore emits no walk out and returns exactly what its body built — that step is
-`Decl.retWalk_id_of_noDictObj` — which is what lets the claims below be stated at `encodeValue`, the
-spelling they have always had.
+No type this program declares carries a dictionary the declaration told the compiler to hand across
+the boundary as a plain object rather than as a `Map`. This is the half `encodeAt` reads — it recurses
+into a declared type's fields and never into a declaration — so every claim below whose own return type
+reaches no such dictionary is stated at `encodeValue`, the spelling it has always had, through
+`encodeAt_eq_encodeValue`.
+
+The program itself does hand one across: `objRepriced` and `objWithdrawn` return a `Dict.Obj Int`, so
+their entries emit the walk out that `Compile.retWalk` expands and their results are read at `encodeAt`
+rather than at `encodeValue`. Every other `obj` declaration takes one and returns something that reaches
+none, so its entry emits no walk and this theorem carries it to `encodeValue` like any other.
 
 ```lean
-theorem program_noDictObj : program.noDictObj = true
+theorem program_typesNoDictObj : program.typesNoDictObj = true
 ```
 
 ### add_calls_agree
@@ -581,14 +595,16 @@ theorem dts_fits_entry_check [Discriminators] (m : Js.Module) (hm : Compile.comp
 
 ### encoded_values_fit_dts
 
-What comes back, rather than what goes in: a value the reference semantics gives a declared type to
-encodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration
-returns, and `decl_correct` says the generated function returns that value read through the declared
-return type, which for this program is its encoding (`program_noDictObj`).
+What comes back, rather than what goes in: a value the reference semantics gives a declared type to,
+read out through that type, is one the published `.d.ts` admits. `typeSound` gives the type to whatever a
+declaration returns, and `decl_correct` says the generated function returns exactly that reading — so
+this is the value a consumer meets, at every return type including one that hands a dictionary across as
+a plain object. Where the type reaches no such dictionary the reading is the encoding itself
+(`encodeAt_eq_encodeValue`, `program_typesNoDictObj`).
 
 ```lean
 theorem encoded_values_fit_dts [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value)
-  (ty : Ty) (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeValue v)
+  (ty : Ty) (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeAt program ty v)
 ```
 
 ### steps_agree

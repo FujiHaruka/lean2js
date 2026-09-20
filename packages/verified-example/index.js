@@ -1085,6 +1085,81 @@ function __b_catalogueSize(prices) {
   return __i53((prices).size);
 }
 
+/** objPriceOf : (prices : Dict.Obj Int53, sku : String) → Option Int53 */
+export function objPriceOf(__p0, __p1) {
+  const prices = __ck(__p0, ["dictObj", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  return __b_objPriceOf(prices, sku);
+}
+
+function __b_objPriceOf(prices, sku) {
+  return __dget(prices, sku);
+}
+
+/** objIsListed : (prices : Dict.Obj Int53, sku : String) → Bool */
+export function objIsListed(__p0, __p1) {
+  const prices = __ck(__p0, ["dictObj", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  return __b_objIsListed(prices, sku);
+}
+
+function __b_objIsListed(prices, sku) {
+  return __dhas(prices, sku);
+}
+
+/** objRepriced : (prices : Dict.Obj Int53, sku : String, amount : Int53) → Dict.Obj Int53 */
+export function objRepriced(__p0, __p1, __p2) {
+  const prices = __ck(__p0, ["dictObj", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  const amount = __ck(__p2, ["int53"]);
+  return __out(__b_objRepriced(prices, sku, amount), ["dictObj", ["int53"]], []);
+}
+
+function __b_objRepriced(prices, sku, amount) {
+  return __dset(prices, sku, amount);
+}
+
+/** objWithdrawn : (prices : Dict.Obj Int53, sku : String) → Dict.Obj Int53 */
+export function objWithdrawn(__p0, __p1) {
+  const prices = __ck(__p0, ["dictObj", ["int53"]]);
+  const sku = __ck(__p1, ["string"]);
+  return __out(__b_objWithdrawn(prices, sku), ["dictObj", ["int53"]], []);
+}
+
+function __b_objWithdrawn(prices, sku) {
+  return __ddelete(prices, sku);
+}
+
+/** objListedSkus : (prices : Dict.Obj Int53) → Array String */
+export function objListedSkus(__p0) {
+  const prices = __ck(__p0, ["dictObj", ["int53"]]);
+  return __b_objListedSkus(prices);
+}
+
+function __b_objListedSkus(prices) {
+  return __dkeys(prices);
+}
+
+/** objListedPrices : (prices : Dict.Obj Int53) → Array Int53 */
+export function objListedPrices(__p0) {
+  const prices = __ck(__p0, ["dictObj", ["int53"]]);
+  return __b_objListedPrices(prices);
+}
+
+function __b_objListedPrices(prices) {
+  return __dvalues(prices);
+}
+
+/** objCatalogueSize : (prices : Dict.Obj Int53) → Int53 */
+export function objCatalogueSize(__p0) {
+  const prices = __ck(__p0, ["dictObj", ["int53"]]);
+  return __b_objCatalogueSize(prices);
+}
+
+function __b_objCatalogueSize(prices) {
+  return __i53((prices).size);
+}
+
 /** divide : (a : Int53, b : Int53) → Int53 */
 export function divide(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);

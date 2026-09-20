@@ -365,6 +365,30 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     let (de, dp) ← walk citing ns names xs d
     return (← `(Lean2Js.Core.Expr.length $de),
             ← `(Lean2Js.Denote.denotes_lengthDict _ _ _ _ $dp))
+  | (``Lean2Js.Dict.Obj.get, #[_, d, k]) =>
+    dictKeyed `dictGet ``Lean2Js.Denote.denotes_dictObjGet d k
+  | (``Lean2Js.Dict.Obj.has, #[_, d, k]) =>
+    dictKeyed `dictHas ``Lean2Js.Denote.denotes_dictObjHas d k
+  | (``Lean2Js.Dict.Obj.erase, #[_, d, k]) =>
+    dictKeyed `dictDelete ``Lean2Js.Denote.denotes_dictObjDelete d k
+  | (``Lean2Js.Dict.Obj.set, #[_, d, k, v]) =>
+    let (de, dp) ← walk citing ns names xs d
+    let (ke, kp) ← walk citing ns names xs k
+    let (ve, vp) ← walk citing ns names xs v
+    return (← `(Lean2Js.Core.Expr.dictSet $de $ke $ve),
+            ← `(Lean2Js.Denote.denotes_dictObjSet _ _ _ _ _ _ _ _ $dp $kp $vp))
+  | (``Lean2Js.Dict.Obj.keys, #[_, d]) =>
+    let (de, dp) ← walk citing ns names xs d
+    return (← `(Lean2Js.Core.Expr.dictKeys $de),
+            ← `(Lean2Js.Denote.denotes_dictObjKeys _ _ _ _ $dp))
+  | (``Lean2Js.Dict.Obj.values, #[_, d]) =>
+    let (de, dp) ← walk citing ns names xs d
+    return (← `(Lean2Js.Core.Expr.dictValues $de),
+            ← `(Lean2Js.Denote.denotes_dictObjValues _ _ _ _ $dp))
+  | (``Lean2Js.Dict.Obj.size, #[_, d]) =>
+    let (de, dp) ← walk citing ns names xs d
+    return (← `(Lean2Js.Core.Expr.length $de),
+            ← `(Lean2Js.Denote.denotes_lengthDictObj _ _ _ _ $dp))
   | (``Lean2Js.Arr.sortByKey, #[_, _, _, _, l, f]) =>
     traverse `sortByKeyE ``Lean2Js.Denote.denotes_sortByKeyE f l
   | (``List.map, #[_, _, f, l]) => traverse `mapE ``Lean2Js.Denote.denotes_mapE f l

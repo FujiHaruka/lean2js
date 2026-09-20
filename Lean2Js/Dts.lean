@@ -96,128 +96,127 @@ theorem lookup_key (key ctor : String) (rest : List (String × Js.JsValue)) :
 
 mutual
 
+/-- What a declaration hands back fits the published `.d.ts`. The reading is `encodeAt` — the value read
+out through the type the declaration was declared to return — because that is what the entry returns:
+at a `dictObj` it walks a `Map` into a plain object, and the `.d.ts` admits both. -/
 theorem hasTy_tsSat (p : Program) (hn : Decl.TypesNamesOk p) :
-    ∀ (v : Value) (ty : Ty), Value.hasTy p v ty = true → TsSat p ty (encodeValue v)
+    ∀ (v : Value) (ty : Ty), Value.hasTy p v ty = true → TsSat p ty (encodeAt p ty v)
   | v, .bool, hv => by
     obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
-    rw [show encodeValue (Value.bool x) = .bool x from by rw [encodeValue.eq_def]]
+    rw [encodeAt_bool (p := p) x]
     exact .bool x
   | v, .int53, hv => by
     obtain ⟨i, rfl⟩ := hasTy_int53_inv hv
-    rw [show encodeValue (Value.int53 i) = .num i from by rw [encodeValue.eq_def]]
+    rw [encodeAt_int53 (p := p) i]
     exact .int53 i
   | v, .uint32, hv => by
     obtain ⟨n, rfl⟩ := hasTy_uint32_inv hv
-    rw [show encodeValue (Value.uint32 n) = .num n.toNat from by rw [encodeValue.eq_def]]
+    rw [encodeAt_uint32 (p := p) n]
     exact .uint32 _
   | v, .string, hv => by
     obtain ⟨s, rfl⟩ := hasTy_string_inv hv
-    rw [show encodeValue (Value.str s) = .str s from by rw [encodeValue.eq_def]]
+    rw [encodeAt_string (p := p) s]
     exact .string s
   | v, .bigint, hv => by
     obtain ⟨i, rfl⟩ := hasTy_bigint_inv hv
-    rw [show encodeValue (Value.bigint i) = .bigint i from by rw [encodeValue.eq_def]]
+    rw [encodeAt_bigint (p := p) i]
     exact .bigint i
   | _, .var _, hv => (hasTy_var_inv hv).elim
   | v, .fn ps r, hv => by
     obtain ⟨name, rfl⟩ := hasTy_fn_inv hv
-    rw [show encodeValue (Value.fn name) = .fn name from by rw [encodeValue.eq_def]]
+    rw [encodeAt_fn (p := p) ps r name]
     exact .fn ps r name
   | v, .option elem, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_option_inv hv
     rcases hasTy_option_fields hv with ⟨rfl, rfl⟩ | ⟨rfl, hfs⟩
-    · rw [show encodeValue (Value.obj "none" []) = .obj [("tag", .str "none")] from by
-        simp [encodeValue, encodeFields]]
+    · rw [encodeAt_none (p := p) elem]
       exact .none (lookup_key _ _ _)
     · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
-      rw [show encodeValue (Value.obj "some" [("value", x)])
-            = .obj (("tag", .str "some") :: [("value", encodeValue x)]) from by
-          simp [encodeValue, encodeFields]]
+      rw [encodeAt_some (p := p) [("value", x)] elem]
+      simp only [encodeFieldsAt]
       exact .some (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x elem hx)
   | v, .result ok err, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_result_inv hv
     rcases hasTy_result_fields hv with ⟨rfl, hfs⟩ | ⟨rfl, hfs⟩
     · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
-      rw [show encodeValue (Value.obj "ok" [("value", x)])
-            = .obj (("tag", .str "ok") :: [("value", encodeValue x)]) from by
-          simp [encodeValue, encodeFields]]
+      rw [encodeAt_ok (p := p) [("value", x)] ok err]
+      simp only [encodeFieldsAt]
       exact .ok (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x ok hx)
     · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
-      rw [show encodeValue (Value.obj "error" [("error", x)])
-            = .obj (("tag", .str "error") :: [("error", encodeValue x)]) from by
-          simp [encodeValue, encodeFields]]
+      rw [encodeAt_error (p := p) [("error", x)] ok err]
+      simp only [encodeFieldsAt]
       exact .error (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSat p hn x err hx)
   | v, .array elem, hv => by
     obtain ⟨xs, rfl⟩ := hasTy_array_inv hv
     rw [hasTy_array] at hv
-    rw [show encodeValue (Value.arr xs) = .arr (encodeList xs) from by rw [encodeValue.eq_def]]
-    exact .array (tsSatList_encodeList p hn xs elem hv)
+    rw [encodeAt_array (p := p) xs elem]
+    exact .array (tsSatList_encodeListAt p hn xs elem hv)
   | v, .dict elem, hv => by
     obtain ⟨es, rfl⟩ := hasTy_dict_inv hv
     rw [hasTy_dict, Bool.and_eq_true] at hv
-    rw [show encodeValue (Value.dict es) = .dict (encodeFields es) from by rw [encodeValue.eq_def]]
-    exact .dict (tsSatEntries_encodeFields p hn es elem hv.2)
+    rw [encodeAt_dict (p := p) es elem]
+    exact .dict (tsSatEntries_encodeEntriesAt p hn es elem hv.2)
   | v, .dictObj elem, hv => by
     obtain ⟨es, rfl⟩ := hasTy_dictObj_inv hv
     rw [hasTy_dictObj, Bool.and_eq_true] at hv
-    rw [show encodeValue (Value.dict es) = .dict (encodeFields es) from by rw [encodeValue.eq_def]]
-    exact .dictObjMap (tsSatEntries_encodeFields p hn es elem hv.2)
+    rw [encodeAt_dictObj (p := p) es elem]
+    exact .dictObjLit (tsSatEntries_encodeEntriesAt p hn es elem hv.2)
   | v, .named n args, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hv
     obtain ⟨t, c, ht, hc, hfs⟩ := hasTy_named_fields hv
     have hname : c.name = ctor := by simpa using List.find?_some hc
-    rw [show encodeValue (Value.obj ctor fields)
-          = .obj ((keyFor ctor, .str ctor) :: encodeFields fields) from by rw [encodeValue.eq_def]]
+    rw [encodeAt_named (p := p) n args ctor fields t c ht hc]
     obtain ⟨hkey, hnotag, hnodup⟩ := (hn n args t ht).2 c (List.mem_of_find?_eq_some hc)
     have hkey' : keyFor ctor = t.discriminator := by rw [← hname]; exact hkey
-    have hlook : Js.lookupField ((t.discriminator, Js.JsValue.str ctor) :: encodeFields fields)
+    have hlook : Js.lookupField ((t.discriminator, Js.JsValue.str ctor)
+          :: encodeFieldsAt p fields (c.fields.map fun f => (f.name, f.ty)))
         t.discriminator = some (.str c.name) := by
       rw [hname]; exact lookup_key _ _ _
     rw [hkey']
     exact .named ht (List.mem_of_find?_eq_some hc) hlook
-      ((tsSatFields_encodeFields p hn c.fields fields hnodup hfs).weaken _
+      ((tsSatFields_encodeFieldsAt p hn c.fields fields hnodup hfs).weaken _
         (fun f hf => Ne.symm (hname ▸ hkey' ▸ hnotag f hf)))
 termination_by v => sizeOf v
 
-theorem tsSatList_encodeList (p : Program) (hn : Decl.TypesNamesOk p) :
+theorem tsSatList_encodeListAt (p : Program) (hn : Decl.TypesNamesOk p) :
     ∀ (xs : List Value) (elem : Ty), Value.hasElemTy p xs elem = true →
-      ∀ y ∈ encodeList xs, TsSat p elem y
-  | [], _, _, y, hy => by rw [encodeList] at hy; simp at hy
+      ∀ y ∈ encodeListAt p xs elem, TsSat p elem y
+  | [], _, _, y, hy => by rw [encodeListAt] at hy; simp at hy
   | x :: rest, elem, h, y, hy => by
     rw [Value.hasElemTy, Bool.and_eq_true] at h
-    rw [encodeList] at hy
+    rw [encodeListAt] at hy
     rcases List.mem_cons.mp hy with rfl | hm
     · exact hasTy_tsSat p hn x elem h.1
-    · exact tsSatList_encodeList p hn rest elem h.2 y hm
+    · exact tsSatList_encodeListAt p hn rest elem h.2 y hm
 termination_by xs => sizeOf xs
 
-theorem tsSatEntries_encodeFields (p : Program) (hn : Decl.TypesNamesOk p) :
+theorem tsSatEntries_encodeEntriesAt (p : Program) (hn : Decl.TypesNamesOk p) :
     ∀ (es : List (String × Value)) (elem : Ty), Value.hasEntryTys p es elem = true →
-      ∀ e ∈ encodeFields es, TsSat p elem e.2
-  | [], _, _, e, he => by rw [encodeFields] at he; simp at he
+      ∀ e ∈ encodeEntriesAt p es elem, TsSat p elem e.2
+  | [], _, _, e, he => by rw [encodeEntriesAt] at he; simp at he
   | (k, v) :: rest, elem, h, e, he => by
     rw [Value.hasEntryTys, Bool.and_eq_true] at h
-    rw [encodeFields] at he
+    rw [encodeEntriesAt] at he
     rcases List.mem_cons.mp he with rfl | hm
     · exact hasTy_tsSat p hn v elem h.1
-    · exact tsSatEntries_encodeFields p hn rest elem h.2 e hm
+    · exact tsSatEntries_encodeEntriesAt p hn rest elem h.2 e hm
 termination_by es => sizeOf es
 
-theorem tsSatFields_encodeFields (p : Program) (hn : Decl.TypesNamesOk p) :
+theorem tsSatFields_encodeFieldsAt (p : Program) (hn : Decl.TypesNamesOk p) :
     ∀ (fdecls : List Field) (fs : List (String × Value)),
       (fdecls.map (·.name)).Nodup →
       Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true →
-      TsSatFields p fdecls (encodeFields fs)
+      TsSatFields p fdecls (encodeFieldsAt p fs (fdecls.map fun f => (f.name, f.ty)))
   | [], _, _, _ => .nil
   | _ :: _, [], _, h => by simp [Value.hasFieldTys] at h
   | f :: rest, (k, v) :: fs', hnd, h => by
     simp only [List.map_cons, Value.hasFieldTys, Bool.and_eq_true, beq_iff_eq] at h
     simp only [List.map_cons, List.nodup_cons, List.mem_map] at hnd
     obtain ⟨⟨hk, hty⟩, hrest⟩ := h
-    rw [encodeFields]
-    refine .cons (x := encodeValue v) (by rw [hk]; exact Js.lookupField_head ..) ?_ ?_
+    simp only [List.map_cons, encodeFieldsAt]
+    refine .cons (x := encodeAt p f.ty v) (by rw [hk]; exact Js.lookupField_head ..) ?_ ?_
     · exact hasTy_tsSat p hn v f.ty hty
-    · exact (tsSatFields_encodeFields p hn rest fs' hnd.2 hrest).weaken _
+    · exact (tsSatFields_encodeFieldsAt p hn rest fs' hnd.2 hrest).weaken _
         (fun g hg heq => hnd.1 ⟨g, hg, (hk ▸ heq).symm⟩)
 termination_by _ fs => sizeOf fs
 

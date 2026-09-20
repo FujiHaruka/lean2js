@@ -127,6 +127,10 @@ theorem encodeAt_string (s : String) : encodeAt p .string (.str s) = .str s := b
 theorem encodeAt_bigint (i : Int) : encodeAt p .bigint (.bigint i) = .bigint i := by
   rw [encodeAt.eq_def]; simp [encodeValue]
 
+theorem encodeAt_fn (ps : List Ty) (r : Ty) (name : String) :
+    encodeAt p (.fn ps r) (.fn name) = .fn name := by
+  rw [encodeAt.eq_def]; simp [encodeValue]
+
 theorem encodeAt_none (elem : Ty) :
     encodeAt p (.option elem) (.obj "none" []) = .obj [("tag", .str "none")] := by
   rw [encodeAt.eq_def]; simp [encodeValue, encodeFields]
@@ -198,7 +202,7 @@ end
 could be declared. The lemma below is what carries those claims across unchanged: each is rewritten
 through it and keeps the exact text it has, rather than gaining a hypothesis it did not have. -/
 
-private theorem encodeAt_all [Discriminators] {p : Program} (hp : p.noDictObj = true) :
+private theorem encodeAt_all [Discriminators] {p : Program} (hp : p.typesNoDictObj = true) :
     (∀ (ty : Ty) (v : Value), Ty.noDictObj ty = true → encodeAt p ty v = encodeValue v)
       ∧ (∀ (entries : List (String × Value)) (elem : Ty), Ty.noDictObj elem = true →
           encodeEntriesAt p entries elem = encodeFields entries)
@@ -299,9 +303,9 @@ private theorem encodeAt_all [Discriminators] {p : Program} (hp : p.noDictObj = 
       ihrest (fun pair hm => hty pair (List.mem_cons_of_mem _ hm))]
 
 
-/-- Where the program declares no `dictObj` and the type reaches none, reading a value through its
-declared type is reading it without one. -/
-theorem encodeAt_eq_encodeValue [Discriminators] {p : Program} (hp : p.noDictObj = true)
+/-- Where no type the program declares reaches a `dictObj` and the type reaches none, reading a value
+through its declared type is reading it without one. -/
+theorem encodeAt_eq_encodeValue [Discriminators] {p : Program} (hp : p.typesNoDictObj = true)
     {ty : Ty} (hty : Ty.noDictObj ty = true) (v : Value) : encodeAt p ty v = encodeValue v :=
   (encodeAt_all hp).1 ty v hty
 

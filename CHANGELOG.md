@@ -6,6 +6,20 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- **A dictionary can cross the boundary as a plain object.** `Dict.Obj V` is the same dictionary as
+  `Dict V` — the same seven operations, the same `Map` inside the module — declared to be handed across
+  as `{ "a": 1 }` rather than as a `Map`. `JSON.stringify` of a `Map` is `{}`, and what a consumer
+  stringifies is a return value.
+
+  An entry taking one accepts either shape and hands the body a `Map`; an entry returning one walks the
+  result back out through its declared return type. `set` and `erase` give back the spelling they were
+  handed, so a declaration that takes a `Dict.Obj` can return one. There is no literal at that spelling:
+  `Dict.ofList` and `Dict.ofPairs` build a `Dict`.
+
+  One operation reads a receiver at either spelling — `Compile.dictValueTy` is what the compiler matches
+  on — so `Sound` and `Correct` keep a single case per operation and nothing about the `Map` spelling
+  moved.
+
 - **A call through a function value is read back in.** A declaration's entry hands its result back
   through the type it was declared at, so the one call inside a package that goes to an entry — a call
   through a function-typed parameter — now reads that result back the way it reads an argument. The

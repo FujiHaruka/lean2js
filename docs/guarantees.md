@@ -65,6 +65,16 @@ every call a consumer can make. The other two cover every declaration, exported 
   has to name a declaration of the same package — so within the proofs this is a cost rather than a
   guarantee. It is not only a cost outside them: what a hand-written JavaScript function handed to such a
   parameter returns used to reach the body unread, and now meets the same check an argument meets.
+- **A dictionary crosses at the shape its declared type asks for.** A return type of `Dict V` hands back
+  a `Map`; one of `Dict.Obj V` hands back a plain object, which is what `JSON.stringify` serialises —
+  it writes `{}` for a `Map`. The entry walks the value its body built out through its declared return
+  type to do that, and the walk is one of the two the model holds as an evaluation rule
+  ([`calls_out_outTy`]). **This is per declaration, not per package**: an entry whose return type
+  reaches no `Dict.Obj` emits no walk and returns exactly what its body built
+  ([`retWalk_id_of_retNoDictObj`]), so it is the function it was, while its neighbour that does return
+  one walks. The walk itself is in every package's preamble either way — the runtime helpers are one
+  fixed list. The two spellings are one dictionary inside the package: the same operations run on both,
+  and what the constructor decides is only what a consumer meets.
 - **Except for a dictionary holding the same key twice, all three directions speak for every spelling of
   the arguments the entry check accepts** (`ArgsDecode`) — the order of keys and keys the declaration does
   not name are carried by the same theorems as the canonical spelling. That one excluded shape exists only
@@ -78,7 +88,7 @@ every call a consumer can make. The other two cover every declaration, exported 
 - Running out of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on
   the fuel needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against
   the ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
-  <!--n:fuelNeeded-->2090<!--/n-->).
+  <!--n:fuelNeeded-->2209<!--/n-->).
 - **What that rests on**: the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
   exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
@@ -143,7 +153,7 @@ real JavaScript answer alike, not the range of spellings.
 
 ## What is checked rather than proved
 
-- **Every vector generated for the artifact** (<!--n:vectors-->42955<!--/n--> of them for this example) is
+- **Every vector generated for the artifact** (<!--n:vectors-->44355<!--/n--> of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
   real JavaScript. One disagreement and nothing is written to the output directory.
@@ -202,4 +212,5 @@ real JavaScript answer alike, not the range of spellings.
 [`checkAgreement`]: https://fujiharuka.github.io/lean2js/Lean2Js/Agree.html#Lean2Js.checkAgreement
 [`calls_ck_checkTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_ck_checkTy
 [`calls_out_outTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_out_outTy
+[`retWalk_id_of_retNoDictObj`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.retWalk_id_of_retNoDictObj
 [`calls_map`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_map
