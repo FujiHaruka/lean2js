@@ -129,13 +129,9 @@ What actually cost something, none of it anticipated:
 
 ## What is left of G
 
-- `outTy`, the mirror of `normTy` on the way out, and the entry wrapping its `.ret (.call (bodyName …))`
-  where the return type holds a `dictObj`. This is where `encodeAt` becomes unavoidable, and it is what
-  narrows the `.d.ts` return position from the union to the object.
-- `Dict.Obj` in `Prelude.lean`, its `Enc` instance and the `EncDeriving` line — the point at which any
-  of this becomes reachable.
-- A public function over one in `Example.lean`, its `#print axioms` line, a `/proof-audit` run, and the
-  documents: `reference/declarations.md`, `vocabulary.md`, `javascript.md`, `README.md`, `CHANGELOG.md`.
+The way out: `outTy`, `encodeAt`, the entry's wrapper, `Dict.Obj` itself and the documents. It is priced
+in its own plan — `.claude/plans/a-dictionary-on-the-way-out.md` — because it is a multi-leg item on its
+own, and because the `.d.ts` union this half shipped is exactly what that half removes.
 
 ## Risks
 
