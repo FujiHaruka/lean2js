@@ -1,0 +1,50 @@
+name: Release
+
+# A user's `lake build` compiles this library before it compiles a line of their own, and there is a lot
+# of it. `preferReleaseBuild` in `lakefile.toml` asks Lake to fetch the archive this uploads instead, for
+# the tag their `rev` names; every way that can fail ends in the source build they would have had anyway.
+#
+# The proofs are not rebuilt here. The tag is a commit that was already on `main`, so `ci.yml` has
+# checked them at it, and `checks` is a target a user never builds — what is packed is what they do.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ github.ref_name }}
+    steps:
+      - name: The release the archives attach to
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --verify-tag --notes "See CHANGELOG.md." || gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+
+  archive:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        # One archive per `System.Platform.target`, which is what Lake looks for by name. A platform with
+        # no archive here is not broken: its build falls back to the source.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+      - name: Build what a user builds, and nothing they do not
+        run: lake build Lean2Js lean2js
+      - name: Attach it to the release
+        run: lake upload "$TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}

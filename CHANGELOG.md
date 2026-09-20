@@ -6,6 +6,14 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- A tag carries a build of this library, and a user's first `lake build` fetches it instead of compiling
+  it. `preferReleaseBuild` asks Lake for the archive attached to the release for the tag the `rev`
+  names, and `.github/workflows/release.yml` is what attaches one per platform on a tag push. A rev that
+  is not a tag, a platform with no archive, and a download that fails all end in the source build they
+  would have had, so the fast path can only be faster. What it adds to the trusted base is in
+  `README.md`, with the `lake build --no-cache` that opts out. The proofs are not in the archive and
+  never were: `checks` is a target a user does not build.
+
 - Where Lean's own library and the vocabulary name the same operation, a refusal names the word to write
   instead: `xs.length` comes back `write Arr.length instead` rather than only with the rule it broke.
   The table covers the `List` and `String` names the vocabulary renames, and it is read over the whole

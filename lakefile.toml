@@ -2,6 +2,13 @@ name = "Lean2Js"
 version = "0.2.0"
 defaultTargets = ["Lean2Js", "checks", "lean2js"]
 
+# A user's build compiles this library before it compiles a line of their own. Where their `rev` names a
+# tag, Lake fetches the archive `.github/workflows/release.yml` attached to it instead; a rev with no
+# tag, a platform with no archive, and a download that fails all end in the source build they would
+# otherwise have had. It never fires for this repository's own gates: Lake skips the fetch where the
+# dependency already has a build directory, which the working tree always does.
+preferReleaseBuild = true
+
 [[lean_lib]]
 name = "Lean2Js"
 

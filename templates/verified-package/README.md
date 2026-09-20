@@ -9,6 +9,11 @@ lake build                            # checks the logic and the theorems
 lake exe lean2js MyLogic --out dist   # checks them again, then writes the npm package into dist/
 ```
 
+The first `lake build` fetches this library rather than compiling it, where your `rev` names a tag and
+an archive was attached to that tag's release for your platform. Everything else — a rev that is a bare
+commit, a platform with no archive, a download that fails — compiles it, which is minutes rather than
+seconds. `lake build --no-cache` always compiles.
+
 `lean2js` reads the `manifest`, the `Program` and the public theorems of the module it is given
 (`--manifest` points it at a different constant). It checks before it writes: every generated vector has
 to agree between the reference semantics and the model of the generated JavaScript, and then between the
@@ -17,7 +22,7 @@ resting on an axiom other than `propext` / `Classical.choice` / `Quot.sound` fai
 
 | File | What it is |
 | --- | --- |
-| `lakefile.toml` | The dependency on `Lean2Js`, pinned to a tag. That `rev` decides which compiler your artifact was built by |
+| `lakefile.toml` | The dependency on `Lean2Js`, pinned to a tag. That `rev` decides which compiler your artifact was built by, and — being a tag — whether the first build fetches it or compiles it |
 | `MyLogic.lean` | The business logic, the theorems, and the manifest |
 | [`reference/`](reference/README.md) | What a shipped `def` may be written in, and what you prove it with |
 

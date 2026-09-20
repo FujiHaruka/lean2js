@@ -211,8 +211,10 @@ number that is not an integer, or is outside their range, and the call is refuse
 declare are ignored, and every spelling a JavaScript caller can construct is inside what the theorems
 state.
 
-Still trusted: how TypeScript reads the printed `.d.ts` text, Lean's own kernel and elaborator, and
-Node. And no proof here can tell you whether the rule you wrote down is the rule the business wanted.
+Still trusted: how TypeScript reads the printed `.d.ts` text, Lean's own kernel and elaborator, Node,
+and — where your `rev` names a tag — this compiler as built for that tag's release rather than as
+compiled on your machine, which `lake build --no-cache` undoes. And no proof here can tell you whether
+the rule you wrote down is the rule the business wanted.
 
 [`docs/guarantees.md`](docs/guarantees.md) has the whole assembly, and the
 [Lean reference](https://fujiharuka.github.io/lean2js/) has the statements, their hypotheses and the
