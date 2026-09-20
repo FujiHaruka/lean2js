@@ -79,9 +79,9 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `catalogueSize(prices: ReadonlyMap<string, number>): number`
 - `objPriceOf(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): Option<number>`
 - `objIsListed(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): boolean`
-- `objRepriced(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string, amount: number): ReadonlyMap<string, number> | { readonly [key: string]: number }`
+- `objRepriced(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string, amount: number): { readonly [key: string]: number }`
   The price book after one price change, handed back as an object. A sku already in the book keeps its place.
-- `objWithdrawn(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): ReadonlyMap<string, number> | { readonly [key: string]: number }`
+- `objWithdrawn(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): { readonly [key: string]: number }`
   The price book after a sku is withdrawn, handed back as an object.
 - `objListedSkus(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly string[]`
 - `objListedPrices(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly number[]`
@@ -596,15 +596,28 @@ theorem dts_fits_entry_check [Discriminators] (m : Js.Module) (hm : Compile.comp
 ### encoded_values_fit_dts
 
 What comes back, rather than what goes in: a value the reference semantics gives a declared type to,
-read out through that type, is one the published `.d.ts` admits. `typeSound` gives the type to whatever a
-declaration returns, and `decl_correct` says the generated function returns exactly that reading — so
-this is the value a consumer meets, at every return type including one that hands a dictionary across as
-a plain object. Where the type reaches no such dictionary the reading is the encoding itself
-(`encodeAt_eq_encodeValue`, `program_typesNoDictObj`).
+read out through that type, is one the published `.d.ts` admits at the type it prints for a *return*,
+which is the narrower of the two where the type reaches a dictionary crossing as a plain object.
+`typeSound` gives the type to whatever a declaration returns, and `decl_correct` says the generated
+function returns exactly that reading — so this is the value a consumer meets. Where the type reaches no
+such dictionary the reading is the encoding itself (`encodeAt_eq_encodeValue`,
+`program_typesNoDictObj`).
 
 ```lean
 theorem encoded_values_fit_dts [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value)
-  (ty : Ty) (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeAt program ty v)
+  (ty : Ty) (hv : Value.hasTy program v ty = true) : Dts.TsSatOut program ty (encodeAt program ty v)
+```
+
+### returned_values_fit_parameter_types
+
+A value one call hands back is a value the next call takes. The `.d.ts` prints a narrower type for a
+return than for a parameter, so the two directions only meet if the narrower reading implies the wider
+one — which is what this says, and what lets `encoded_values_fit_dts` be handed to
+`dts_fits_entry_check`.
+
+```lean
+theorem returned_values_fit_parameter_types (ty : Ty) (jv : Js.JsValue) (h : Dts.TsSatOut program ty jv) :
+  Dts.TsSat program ty jv
 ```
 
 ### steps_agree

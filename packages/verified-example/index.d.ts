@@ -319,14 +319,14 @@ export declare function objIsListed(prices: ReadonlyMap<string, number> | { read
  *
  * @throws {TrapError<"typeError">}
  */
-export declare function objRepriced(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string, amount: number): ReadonlyMap<string, number> | { readonly [key: string]: number };
+export declare function objRepriced(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string, amount: number): { readonly [key: string]: number };
 
 /**
  * The price book after a sku is withdrawn, handed back as an object.
  *
  * @throws {TrapError<"typeError">}
  */
-export declare function objWithdrawn(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): ReadonlyMap<string, number> | { readonly [key: string]: number };
+export declare function objWithdrawn(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }, sku: string): { readonly [key: string]: number };
 
 /**
  * @throws {TrapError<"typeError">}

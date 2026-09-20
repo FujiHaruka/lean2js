@@ -94,6 +94,58 @@ theorem lookup_key (key ctor : String) (rest : List (String × Js.JsValue)) :
     Js.lookupField ((key, .str ctor) :: rest) key = some (.str ctor) :=
   Js.lookupField_head _ _ _
 
+/-- The reading of the text `Js.tsTypeOut` writes: what the `.d.ts` says about a value on its way back
+out. `TsSat` with the `dictObjMap` arm gone, because a dictionary that crosses as a plain object comes
+back as one, and delegating to `TsSat` at a declared type, where one printed interface answers for both
+directions. -/
+inductive TsSatOut (p : Program) : Ty → Js.JsValue → Prop where
+  | bool (b : Bool) : TsSatOut p .bool (.bool b)
+  | int53 (i : Int) : TsSatOut p .int53 (.num i)
+  | uint32 (i : Int) : TsSatOut p .uint32 (.num i)
+  | string (s : String) : TsSatOut p .string (.str s)
+  | bigint (i : Int) : TsSatOut p .bigint (.bigint i)
+  | fn (ps : List Ty) (r : Ty) (name : String) : TsSatOut p (.fn ps r) (.fn name)
+  | array {t : Ty} {xs : List Js.JsValue} :
+      (∀ x ∈ xs, TsSatOut p t x) → TsSatOut p (.array t) (.arr xs)
+  | dict {t : Ty} {es : List (String × Js.JsValue)} :
+      (∀ e ∈ es, TsSatOut p t e.2) → TsSatOut p (.dict t) (.dict es)
+  | dictObjLit {t : Ty} {fs : List (String × Js.JsValue)} :
+      (∀ e ∈ fs, TsSatOut p t e.2) → TsSatOut p (.dictObj t) (.obj fs)
+  | none {t : Ty} {jfs : List (String × Js.JsValue)} :
+      Js.lookupField jfs "tag" = some (.str "none") → TsSatOut p (.option t) (.obj jfs)
+  | some {t : Ty} {jfs : List (String × Js.JsValue)} {x : Js.JsValue} :
+      Js.lookupField jfs "tag" = some (.str "some") → Js.lookupField jfs "value" = some x →
+      TsSatOut p t x → TsSatOut p (.option t) (.obj jfs)
+  | ok {a e : Ty} {jfs : List (String × Js.JsValue)} {x : Js.JsValue} :
+      Js.lookupField jfs "tag" = some (.str "ok") → Js.lookupField jfs "value" = some x →
+      TsSatOut p a x → TsSatOut p (.result a e) (.obj jfs)
+  | error {a e : Ty} {jfs : List (String × Js.JsValue)} {x : Js.JsValue} :
+      Js.lookupField jfs "tag" = some (.str "error") → Js.lookupField jfs "error" = some x →
+      TsSatOut p e x → TsSatOut p (.result a e) (.obj jfs)
+  | named {n : String} {args : List Ty} {jv : Js.JsValue} :
+      TsSat p (.named n args) jv → TsSatOut p (.named n args) jv
+
+omit [Discriminators] in
+/-- What the returning side admits, the argument side admits as well, so a value a consumer got back
+from one call is one the next call's parameter type takes. -/
+theorem TsSatOut.toTsSat {p : Program} {ty : Ty} {jv : Js.JsValue} (h : TsSatOut p ty jv) :
+    TsSat p ty jv := by
+  induction h with
+  | bool b => exact .bool b
+  | int53 i => exact .int53 i
+  | uint32 i => exact .uint32 i
+  | string s => exact .string s
+  | bigint i => exact .bigint i
+  | fn ps r name => exact .fn ps r name
+  | array _ ih => exact .array ih
+  | dict _ ih => exact .dict ih
+  | dictObjLit _ ih => exact .dictObjLit ih
+  | none hk => exact .none hk
+  | some hk hv _ ih => exact .some hk hv ih
+  | ok hk hv _ ih => exact .ok hk hv ih
+  | error hk hv _ ih => exact .error hk hv ih
+  | named h => exact h
+
 mutual
 
 /-- What a declaration hands back fits the published `.d.ts`. The reading is `encodeAt` — the value read
@@ -219,6 +271,102 @@ theorem tsSatFields_encodeFieldsAt (p : Program) (hn : Decl.TypesNamesOk p) :
     · exact (tsSatFields_encodeFieldsAt p hn rest fs' hnd.2 hrest).weaken _
         (fun g hg heq => hnd.1 ⟨g, hg, (hk ▸ heq).symm⟩)
 termination_by _ fs => sizeOf fs
+
+end
+
+mutual
+
+/-- What a declaration hands back fits the narrower type the `.d.ts` prints for a return. The only place
+it says more than `hasTy_tsSat` is a `dictObj`, where the entry has already walked the `Map` out into a
+plain object and so the union the argument side prints is not needed. -/
+theorem hasTy_tsSatOut (p : Program) (hn : Decl.TypesNamesOk p) :
+    ∀ (v : Value) (ty : Ty), Value.hasTy p v ty = true → TsSatOut p ty (encodeAt p ty v)
+  | v, .bool, hv => by
+    obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
+    rw [encodeAt_bool (p := p) x]
+    exact .bool x
+  | v, .int53, hv => by
+    obtain ⟨i, rfl⟩ := hasTy_int53_inv hv
+    rw [encodeAt_int53 (p := p) i]
+    exact .int53 i
+  | v, .uint32, hv => by
+    obtain ⟨n, rfl⟩ := hasTy_uint32_inv hv
+    rw [encodeAt_uint32 (p := p) n]
+    exact .uint32 _
+  | v, .string, hv => by
+    obtain ⟨s, rfl⟩ := hasTy_string_inv hv
+    rw [encodeAt_string (p := p) s]
+    exact .string s
+  | v, .bigint, hv => by
+    obtain ⟨i, rfl⟩ := hasTy_bigint_inv hv
+    rw [encodeAt_bigint (p := p) i]
+    exact .bigint i
+  | _, .var _, hv => (hasTy_var_inv hv).elim
+  | v, .fn ps r, hv => by
+    obtain ⟨name, rfl⟩ := hasTy_fn_inv hv
+    rw [encodeAt_fn (p := p) ps r name]
+    exact .fn ps r name
+  | v, .option elem, hv => by
+    obtain ⟨ctor, fields, rfl⟩ := hasTy_option_inv hv
+    rcases hasTy_option_fields hv with ⟨rfl, rfl⟩ | ⟨rfl, hfs⟩
+    · rw [encodeAt_none (p := p) elem]
+      exact .none (lookup_key _ _ _)
+    · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
+      rw [encodeAt_some (p := p) [("value", x)] elem]
+      simp only [encodeFieldsAt]
+      exact .some (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSatOut p hn x elem hx)
+  | v, .result ok err, hv => by
+    obtain ⟨ctor, fields, rfl⟩ := hasTy_result_inv hv
+    rcases hasTy_result_fields hv with ⟨rfl, hfs⟩ | ⟨rfl, hfs⟩
+    · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
+      rw [encodeAt_ok (p := p) [("value", x)] ok err]
+      simp only [encodeFieldsAt]
+      exact .ok (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSatOut p hn x ok hx)
+    · obtain ⟨x, rfl, hx⟩ := Decl.hasFieldTys_singleton_inv hfs
+      rw [encodeAt_error (p := p) [("error", x)] ok err]
+      simp only [encodeFieldsAt]
+      exact .error (lookup_key _ _ _) (by simp [Js.lookupField]) (hasTy_tsSatOut p hn x err hx)
+  | v, .array elem, hv => by
+    obtain ⟨xs, rfl⟩ := hasTy_array_inv hv
+    rw [hasTy_array] at hv
+    rw [encodeAt_array (p := p) xs elem]
+    exact .array (tsSatOutList_encodeListAt p hn xs elem hv)
+  | v, .dict elem, hv => by
+    obtain ⟨es, rfl⟩ := hasTy_dict_inv hv
+    rw [hasTy_dict, Bool.and_eq_true] at hv
+    rw [encodeAt_dict (p := p) es elem]
+    exact .dict (tsSatOutEntries_encodeEntriesAt p hn es elem hv.2)
+  | v, .dictObj elem, hv => by
+    obtain ⟨es, rfl⟩ := hasTy_dictObj_inv hv
+    rw [hasTy_dictObj, Bool.and_eq_true] at hv
+    rw [encodeAt_dictObj (p := p) es elem]
+    exact .dictObjLit (tsSatOutEntries_encodeEntriesAt p hn es elem hv.2)
+  | v, .named n args, hv => .named (hasTy_tsSat p hn v (.named n args) hv)
+termination_by v => sizeOf v
+
+theorem tsSatOutList_encodeListAt (p : Program) (hn : Decl.TypesNamesOk p) :
+    ∀ (xs : List Value) (elem : Ty), Value.hasElemTy p xs elem = true →
+      ∀ y ∈ encodeListAt p xs elem, TsSatOut p elem y
+  | [], _, _, y, hy => by rw [encodeListAt] at hy; simp at hy
+  | x :: rest, elem, h, y, hy => by
+    rw [Value.hasElemTy, Bool.and_eq_true] at h
+    rw [encodeListAt] at hy
+    rcases List.mem_cons.mp hy with rfl | hm
+    · exact hasTy_tsSatOut p hn x elem h.1
+    · exact tsSatOutList_encodeListAt p hn rest elem h.2 y hm
+termination_by xs => sizeOf xs
+
+theorem tsSatOutEntries_encodeEntriesAt (p : Program) (hn : Decl.TypesNamesOk p) :
+    ∀ (es : List (String × Value)) (elem : Ty), Value.hasEntryTys p es elem = true →
+      ∀ e ∈ encodeEntriesAt p es elem, TsSatOut p elem e.2
+  | [], _, _, e, he => by rw [encodeEntriesAt] at he; simp at he
+  | (k, v) :: rest, elem, h, e, he => by
+    rw [Value.hasEntryTys, Bool.and_eq_true] at h
+    rw [encodeEntriesAt] at he
+    rcases List.mem_cons.mp he with rfl | hm
+    · exact hasTy_tsSatOut p hn v elem h.1
+    · exact tsSatOutEntries_encodeEntriesAt p hn rest elem h.2 e hm
+termination_by es => sizeOf es
 
 end
 

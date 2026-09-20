@@ -136,9 +136,17 @@ only from another helper, and are unfolded inside its proof.
 
 An argument the entry check accepts satisfies the `.d.ts` type ([`entry_check_fits_dts`]), and an argument
 satisfying the `.d.ts` type passes the entry check, with the range caveat below
-([`dts_fits_entry_check`]). The returning side is the same ([`encoded_values_fit_dts`]). The `.d.ts` is
-the only type a consumer actually reads, so **both directions are in the manifest**. What those three call
-the `.d.ts` side is `Dts.TsSat` — the declared type read as a predicate in Lean. How TypeScript reads the
+([`dts_fits_entry_check`]). What comes back satisfies the type printed for a return
+([`encoded_values_fit_dts`]), which is the narrower of the two: a `Dict.Obj V` parameter is printed as
+the union of a `ReadonlyMap` and a plain object because the entry takes either, while a `Dict.Obj V`
+return is printed as the object alone, because the entry walked it out to one and nothing else can come
+back. A value satisfying the returning type satisfies the argument type
+([`returned_values_fit_parameter_types`]), so what one call hands back is what the next one takes. The
+narrowing stops at a declared type: its interface is printed once and serves both directions, so a
+`Dict.Obj` **field** keeps the union wherever it appears. The `.d.ts` is
+the only type a consumer actually reads, so **both directions are in the manifest**. What those four call
+the `.d.ts` side is `Dts.TsSat`, and its returning twin `Dts.TsSatOut` — the declared type read as a
+predicate in Lean. How TypeScript reads the
 printed `.d.ts` text is the one thing trusted here, and it is checked rather than proved: tsc is run over
 the generated file on its own terms, and over calls into it that the entry check accepts and refuses.
 
@@ -209,6 +217,7 @@ real JavaScript answer alike, not the range of spellings.
 [`entry_check_fits_dts`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.entry_check_fits_dts
 [`dts_fits_entry_check`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.dts_fits_entry_check
 [`encoded_values_fit_dts`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.encoded_values_fit_dts
+[`returned_values_fit_parameter_types`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.returned_values_fit_parameter_types
 [`checkAgreement`]: https://fujiharuka.github.io/lean2js/Lean2Js/Agree.html#Lean2Js.checkAgreement
 [`calls_ck_checkTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_ck_checkTy
 [`calls_out_outTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_out_outTy

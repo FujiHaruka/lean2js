@@ -1089,15 +1089,25 @@ theorem dts_fits_entry_check (m : Js.Module) (hm : Compile.compileProgram progra
   Dts.tsSat_checkTy program (Decl.typesNamesOk_of_compileProgram hm) jv ty [] [] b d hd .nil hts hr
 
 /-- What comes back, rather than what goes in: a value the reference semantics gives a declared type to,
-read out through that type, is one the published `.d.ts` admits. `typeSound` gives the type to whatever a
-declaration returns, and `decl_correct` says the generated function returns exactly that reading — so
-this is the value a consumer meets, at every return type including one that hands a dictionary across as
-a plain object. Where the type reaches no such dictionary the reading is the encoding itself
-(`encodeAt_eq_encodeValue`, `program_typesNoDictObj`). -/
+read out through that type, is one the published `.d.ts` admits at the type it prints for a *return*,
+which is the narrower of the two where the type reaches a dictionary crossing as a plain object.
+`typeSound` gives the type to whatever a declaration returns, and `decl_correct` says the generated
+function returns exactly that reading — so this is the value a consumer meets. Where the type reaches no
+such dictionary the reading is the encoding itself (`encodeAt_eq_encodeValue`,
+`program_typesNoDictObj`). -/
 theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram program = .ok m)
     (v : Value) (ty : Ty) (hv : Value.hasTy program v ty = true) :
-    Dts.TsSat program ty (encodeAt program ty v) :=
-  Dts.hasTy_tsSat program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
+    Dts.TsSatOut program ty (encodeAt program ty v) :=
+  Dts.hasTy_tsSatOut program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
+
+omit [Discriminators] in
+/-- A value one call hands back is a value the next call takes. The `.d.ts` prints a narrower type for a
+return than for a parameter, so the two directions only meet if the narrower reading implies the wider
+one — which is what this says, and what lets `encoded_values_fit_dts` be handed to
+`dts_fits_entry_check`. -/
+theorem returned_values_fit_parameter_types (ty : Ty) (jv : Js.JsValue)
+    (h : Dts.TsSatOut program ty jv) : Dts.TsSat program ty jv :=
+  h.toTsSat
 
 omit [Discriminators] in
 /-- The small-step machine, given enough steps, answers exactly as `eval` does every call whose arguments

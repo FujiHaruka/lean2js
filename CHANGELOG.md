@@ -20,6 +20,11 @@ what decides which compiler your artifact was built by.
   on — so `Sound` and `Correct` keep a single case per operation and nothing about the `Map` spelling
   moved.
 
+  The `.d.ts` prints the union for a parameter and `{ readonly [key: string]: V }` for a return, so a
+  consumer never narrows a value they were handed. Both directions are proved:
+  `encoded_values_fit_dts` is stated at the returning reading, and
+  `returned_values_fit_parameter_types` carries that reading to the argument one.
+
 - **A call through a function value is read back in.** A declaration's entry hands its result back
   through the type it was declared at, so the one call inside a package that goes to an entry — a call
   through a function-typed parameter — now reads that result back the way it reads an argument. The

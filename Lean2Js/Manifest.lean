@@ -75,7 +75,7 @@ def thrownCodes : List (String × String) :=
 spellings: those are what `index.d.ts` says and the only ones a caller can act on. -/
 def Artifact.tsSignature (d : Core.Decl) : String :=
   let params := String.intercalate ", " (d.params.map fun p => s!"{p.name}: {Js.tsType p.ty}")
-  s!"{d.name}({params}): {Js.tsType d.ret}"
+  s!"{d.name}({params}): {Js.tsTypeOut d.ret}"
 
 /-- `artifacts` is the SHA-256 of every other file the package ships, paired with its name. The manifest
 is what carries the theorems, so a reader who has the manifest and the files can ask whether the two

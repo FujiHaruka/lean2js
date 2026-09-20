@@ -221,9 +221,17 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.encoded_values_fit_dts
 
+/-- info: 'Lean2Js.Example.returned_values_fit_parameter_types' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.returned_values_fit_parameter_types
+
 /-- info: 'Lean2Js.Dts.hasTy_tsSat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Dts.hasTy_tsSat
+
+/-- info: 'Lean2Js.Dts.hasTy_tsSatOut' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Dts.hasTy_tsSatOut
 
 /-- info: 'Lean2Js.Decl.decl_traps_at_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

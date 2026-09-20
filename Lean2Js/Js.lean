@@ -320,6 +320,20 @@ termination_by ts => sizeOf ts
 
 end
 
+/-- The type the `.d.ts` gives a value of this type where it is being handed back. A `Dict.Obj V`
+parameter is printed as the union above because the entry takes either spelling; a `Dict.Obj V` return
+is the plain object alone, because the entry walked it out to one and nothing else can come back.
+Stops at a declared type: one interface is printed for both directions, so a `Dict.Obj` field there
+keeps the union. -/
+def tsTypeOut : Core.Ty → String
+  | .option t => "Option<" ++ tsTypeOut t ++ ">"
+  | .result ok err => "Result<" ++ tsTypeOut ok ++ ", " ++ tsTypeOut err ++ ">"
+  | .array t => "readonly " ++ parenElem t (tsTypeOut t) ++ "[]"
+  | .dict v => "ReadonlyMap<string, " ++ tsTypeOut v ++ ">"
+  | .dictObj v => "{ readonly [key: string]: " ++ tsTypeOut v ++ " }"
+  | ty => tsType ty
+termination_by ty => sizeOf ty
+
 private def renderCtor (key : String) (c : Core.CtorDef) : String :=
   let fields := c.fields.map fun f => s!"; readonly {f.name}: {tsType f.ty}"
   "{ readonly " ++ key ++ ": \"" ++ c.name ++ "\"" ++ String.join fields ++ " }"
@@ -339,7 +353,7 @@ def declareFunc (d : Core.Decl) (codes : List String) (doc : Option String := no
   let params := d.params.map fun p => p.name ++ ": " ++ tsType p.ty
   let signature :=
     "export declare function " ++ d.name ++ "(" ++ String.intercalate ", " params ++ "): "
-      ++ tsType d.ret ++ ";"
+      ++ tsTypeOut d.ret ++ ";"
   let written := match doc with
     | none => []
     | some text => (text.splitOn "\n").map (fun line => " * " ++ line) ++ [" *"]
