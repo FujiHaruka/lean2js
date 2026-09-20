@@ -1,0 +1,94 @@
+# Telling a shipped theorem nothing can satisfy from one that says something
+
+A plan for item **F**: `emit` looks for an argument that meets each shipped theorem's hypotheses, and
+says so where it finds none. The one defect no gate catches, made cheaper to catch.
+
+## Context
+
+`proving.md` already tells an author to do this by hand:
+
+> **Can the hypotheses be met?** A hypothesis nothing satisfies makes the theorem true and empty, and no
+> gate catches it: it compiles, it reaches no forbidden axiom, and it ships looking like a guarantee. If
+> a hypothesis names a dictionary key or a constructor, check with `#eval` that some argument reaches it.
+
+`/proof-audit` is the other half, and it costs a judgment call per theorem. Neither runs on a user's
+build. Meanwhile `emit` already generates values for every declared type and already has the
+environment: `readArtifact` (`Main.lean:105`) runs in `MetaM` with the user's module imported, and
+`Vectors.edgeCases p depth width ty` (`Lean2Js/Vectors.lean:70`) hands back a `List Value` for any `Ty`.
+
+## Approach
+
+**Sample, do not decide.** Satisfiability of an arbitrary `Prop` is not decidable and must not be
+treated as if it were: a theorem whose witness lies outside the sample is honest, and refusing it would
+be the compiler lying in the other direction. So this reports rather than refuses, and what it reports
+is what it did — *no argument among the ones tried meets these hypotheses* — never *these hypotheses
+cannot be met*. That is the same sentence `docs/guarantees.md` already writes for everything under
+**What is checked rather than proved**, and this belongs in that section beside the vectors.
+
+**The probe, per shipped claim.** Take the theorem's type and walk its telescope:
+
+- instance-implicit binders → skip;
+- explicit or implicit binders whose type carries an `Enc` instance → *data*, and samplable;
+- binders whose type is a `Prop` → *hypotheses*;
+- a binder that is neither (a `Type`, a function, a type with no `Enc`) → **not probed**, and the claim
+  is reported as such rather than as unwitnessed. There is a real difference and the message keeps it.
+
+A claim with no hypotheses is not probed either: it cannot be vacuous this way, which is the only way
+this looks for.
+
+**Sampling a binder.** `Enc.ty (α := T)` is the `Ty`, `Vectors.edgeCases` gives the values, and
+`Enc.ofValue : Value → Option T` (`Lean2Js/Enc.lean:31`) maps one back into the Lean type the binder
+wants. The product over binders is cut off — a few hundred tuples, the way `edgeLimit` already cuts off
+the vectors — and the cheap cases are tried first, since a hypothesis that nothing satisfies is usually
+false at the first value tried.
+
+**Evaluating a hypothesis.** Build `decide h` at the sampled arguments and run `evalExpr Bool` on it,
+the way `readArtifact` already evaluates a `Core.Decl` out of a constant. A hypothesis with no
+`Decidable` instance is *not probed*, and lands in the same bucket as an unsamplable binder.
+
+**The open question, and the only one.** A sampled `Value` has to reach the elaborator as an `Expr`, and
+this repository has no `ToExpr Value` (`rg ToExpr` finds nothing). Two ways, and the first is likely
+cheaper: derive `ToExpr` for `Core.Value` and build the application directly; or go the way `Reify`
+already goes and build syntax, elaborating it. Settle this first — it decides how much of the rest is
+plumbing.
+
+## What it says
+
+One line per claim it could not witness, on stderr, after the vector count and before the write:
+
+```
+no argument among 240 tried meets the hypotheses of `unlisted_is_free` (prices, sku)
+```
+
+and, so that a clean run is not silence that could also mean "the check did not run":
+
+```
+witnessed 6 of 6 theorems that carry hypotheses; 2 carry none and 1 was not probed
+```
+
+Nothing is written into `proof-manifest.json`. What is published is the claim and its proof; that a
+witness was found for it on this machine is not a property of the claim, and a reader who has the
+package cannot re-run the search.
+
+## Files
+
+| File | What moves |
+| --- | --- |
+| `Lean2Js/Value.lean` or a new `Lean2Js/Reflect.lean` | `ToExpr` for `Value`, if that is the route taken |
+| `Main.lean` | the telescope walk, the sampling, the report; beside `readArtifact`, which already has the environment and the `MetaM` |
+| `Lean2Js/Vectors.lean` | nothing, if `edgeCases` is enough; a cap on the tuple count if it is not |
+| `docs/guarantees.md` | a bullet under **What is checked rather than proved** |
+| `templates/verified-package/reference/proving.md` | the by-hand `#eval` instruction gains "and the emit says so too" |
+| `scripts/check-template.sh` | a theorem with a hypothesis nothing meets, asserted by the line it prints |
+| `CHANGELOG.md` | the entry |
+
+## Risks
+
+- **A false alarm is worse than silence.** A theorem whose witness the sample misses gets a line that
+  reads like a defect. The wording carries the whole weight: it says what was tried, not what is true.
+  If that cannot be made to read right, the feature is not worth having.
+- **Emit time.** The vectors already take seconds; a few hundred tuples per theorem with hypotheses is
+  the same order, but it is per theorem rather than per declaration. Measure before and after, and cap.
+- **`evalExpr` on a user's term.** `readArtifact` is already `unsafe` and already evaluates constants
+  out of the user's module, so this adds no trust that was not there — but it does run more of the
+  user's code, and a hypothesis that loops would hang the emit where today it cannot.
