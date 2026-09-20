@@ -151,6 +151,15 @@ def isScalar : Ty → Bool
   | .bool | .int53 | .uint32 | .string | .bigint => true
   | _ => false
 
+/-- The value type of a dictionary receiver, at whichever of the two spellings it was declared. A
+dictionary operation reads this rather than matching on `.dict`, because the two spellings differ only in
+the shape the boundary writes: inside the module both run on the same `Map`, so both take the same
+generated call. -/
+def dictValueTy : Ty → Option Ty
+  | .dict value => some value
+  | .dictObj value => some value
+  | _ => none
+
 /-- What a value's shape can be tested against at one position: a constructor's tag, or a literal it may
 equal. -/
 inductive Head where
@@ -636,7 +645,7 @@ def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except S
     match tarr with
     | .array _ => .ok (.call "__i53" [.member jarr "length"], .int53)
     | .string => .ok (.call "__i53" [.call "__strlen" [jarr]], .int53)
-    | .dict _ => .ok (.call "__i53" [.member jarr "size"], .int53)
+    | .dict _ | .dictObj _ => .ok (.call "__i53" [.member jarr "size"], .int53)
     | ty => .error s!"length expects an Array, a String or a Dict, not {ty.render}"
   | .arraySlice arr lo hi => do
     let (jarr, tarr) ← compileExpr p ctx arr
@@ -721,48 +730,48 @@ def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except S
   | .dictGet d key => do
     let (jd, td) ← compileExpr p ctx d
     let (jk, tk) ← compileExpr p ctx key
-    match td with
-    | .dict value =>
+    match dictValueTy td with
+    | some value =>
       if tk != .string then .error "a dictionary key must be a String"
       else .ok (.call "__dget" [jd, jk], .option value)
-    | ty => .error s!"get expects a Dict, not {ty.render}"
+    | none => .error s!"get expects a Dict, not {td.render}"
   | .dictHas d key => do
     let (jd, td) ← compileExpr p ctx d
     let (jk, tk) ← compileExpr p ctx key
-    match td with
-    | .dict _ =>
+    match dictValueTy td with
+    | some _ =>
       if tk != .string then .error "a dictionary key must be a String"
       else .ok (.call "__dhas" [jd, jk], .bool)
-    | ty => .error s!"has expects a Dict, not {ty.render}"
+    | none => .error s!"has expects a Dict, not {td.render}"
   | .dictSet d key val => do
     let (jd, td) ← compileExpr p ctx d
     let (jk, tk) ← compileExpr p ctx key
     let (jv, tv) ← compileExpr p ctx val
-    match td with
-    | .dict value =>
+    match dictValueTy td with
+    | some value =>
       if tk != .string then .error "a dictionary key must be a String"
       else if tv != value then
         .error s!"set stores {tv.render} into a Dict {value.render}"
-      else .ok (.call "__dset" [jd, jk, jv], .dict value)
-    | ty => .error s!"set expects a Dict, not {ty.render}"
+      else .ok (.call "__dset" [jd, jk, jv], td)
+    | none => .error s!"set expects a Dict, not {td.render}"
   | .dictKeys d => do
     let (jd, td) ← compileExpr p ctx d
-    match td with
-    | .dict _ => .ok (.call "__dkeys" [jd], .array .string)
-    | ty => .error s!"keys expects a Dict, not {ty.render}"
+    match dictValueTy td with
+    | some _ => .ok (.call "__dkeys" [jd], .array .string)
+    | none => .error s!"keys expects a Dict, not {td.render}"
   | .dictValues d => do
     let (jd, td) ← compileExpr p ctx d
-    match td with
-    | .dict value => .ok (.call "__dvalues" [jd], .array value)
-    | ty => .error s!"values expects a Dict, not {ty.render}"
+    match dictValueTy td with
+    | some value => .ok (.call "__dvalues" [jd], .array value)
+    | none => .error s!"values expects a Dict, not {td.render}"
   | .dictDelete d key => do
     let (jd, td) ← compileExpr p ctx d
     let (jk, tk) ← compileExpr p ctx key
-    match td with
-    | .dict value =>
+    match dictValueTy td with
+    | some _ =>
       if tk != .string then .error "a dictionary key must be a String"
-      else .ok (.call "__ddelete" [jd, jk], .dict value)
-    | ty => .error s!"delete expects a Dict, not {ty.render}"
+      else .ok (.call "__ddelete" [jd, jk], td)
+    | none => .error s!"delete expects a Dict, not {td.render}"
   | .strUn op e => do
     let (je, te) ← compileExpr p ctx e
     if te != .string then .error s!"{op.name} expects a String, not {te.render}"

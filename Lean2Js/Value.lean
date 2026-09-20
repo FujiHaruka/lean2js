@@ -318,6 +318,13 @@ theorem hasTy_dictObj (p : Program) (entries : List (String × Value)) (elem : T
       = (keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem) := by
   rw [Value.hasTy.eq_def]
 
+/-- The two spellings of a dictionary ask a value for exactly the same thing. This is what lets one
+operation read a receiver at either of them: what the constructor decides is the shape the boundary
+writes, and inside the module there is one predicate, not two. -/
+theorem hasTy_dictObj_eq_dict (p : Program) (v : Value) (elem : Ty) :
+    Value.hasTy p v (.dictObj elem) = Value.hasTy p v (.dict elem) := by
+  cases v <;> rw [Value.hasTy.eq_def, Value.hasTy.eq_def]
+
 theorem hasTy_fn (p : Program) (name : String) (params : List Ty) (ret : Ty) :
     Value.hasTy p (.fn name) (.fn params ret)
       = (match p.find? name with

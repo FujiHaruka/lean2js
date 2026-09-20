@@ -316,6 +316,16 @@ theorem hasTy_dictObj_inv {p : Program} {v : Value} {elem : Ty}
     (h : Value.hasTy p v (.dictObj elem) = true) : ∃ entries, v = .dict entries := by
   cases v <;> simp_all [Value.hasTy]
 
+/-- A receiver a dictionary operation accepted holds exactly what the `Map` spelling asks for, whichever
+of the two the author declared. This is what lets the four cases below read either receiver through the
+`.dict` lemmas rather than through two copies of each. -/
+theorem hasTy_of_dictValueTy {p : Program} {v : Value} {td value : Ty}
+    (h : Compile.dictValueTy td = some value) :
+    Value.hasTy p v td = Value.hasTy p v (.dict value) := by
+  cases td <;> simp only [Compile.dictValueTy, Option.some.injEq, reduceCtorEq] at h
+  case dict a => subst h; rfl
+  case dictObj a => subst h; exact hasTy_dictObj_eq_dict p v a
+
 theorem hasTy_fn_inv {p : Program} {v : Value} {params : List Ty} {ret : Ty}
     (h : Value.hasTy p v (.fn params ret) = true) : ∃ name, v = .fn name := by
   cases v <;> simp_all [Value.hasTy]
@@ -1469,7 +1479,8 @@ private theorem compileExpr_dictLit_inv {p : Program} {ctx : Compile.Ctx} {value
 /-- The dictionary operations: the operand the compiler read as a `Dict`, and the type it gave back. -/
 private theorem compileExpr_dictGet_inv {p : Program} {ctx : Compile.Ctx} {d key : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictGet d key) = .ok (je, ty)) :
-    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value) ∧ ty = .option value := by
+    ∃ jd td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value ∧ ty = .option value := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1482,13 +1493,14 @@ private theorem compileExpr_dictGet_inv {p : Program} {ctx : Compile.Ctx} {d key
     split at hc
     · simp at hc
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, value, htd ▸ hcd, hc.2.symm⟩
+    exact ⟨jd, td, value, hcd, htd, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictSet_inv {p : Program} {ctx : Compile.Ctx} {d key val : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictSet d key val) = .ok (je, ty)) :
-    ∃ jd jv value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
-      ∧ Compile.compileExpr p ctx val = .ok (jv, value) ∧ ty = .dict value := by
+    ∃ jd jv td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value
+      ∧ Compile.compileExpr p ctx val = .ok (jv, value) ∧ ty = td := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1508,12 +1520,13 @@ private theorem compileExpr_dictSet_inv {p : Program} {ctx : Compile.Ctx} {d key
     · simp at hc
     rename_i htv
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, jv, value, htd ▸ hcd, Ty.eq_of_not_bne htv ▸ hcv, hc.2.symm⟩
+    exact ⟨jd, jv, td, value, hcd, htd, Ty.eq_of_not_bne htv ▸ hcv, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictValues_inv {p : Program} {ctx : Compile.Ctx} {d : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictValues d) = .ok (je, ty)) :
-    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value) ∧ ty = .array value := by
+    ∃ jd td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value ∧ ty = .array value := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1522,12 +1535,13 @@ private theorem compileExpr_dictValues_inv {p : Program} {ctx : Compile.Ctx} {d 
   split at hc
   · rename_i value htd
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, value, htd ▸ hcd, hc.2.symm⟩
+    exact ⟨jd, td, value, hcd, htd, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictDelete_inv {p : Program} {ctx : Compile.Ctx} {d key : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictDelete d key) = .ok (je, ty)) :
-    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value) ∧ ty = .dict value := by
+    ∃ jd td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value ∧ ty = td := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1540,7 +1554,7 @@ private theorem compileExpr_dictDelete_inv {p : Program} {ctx : Compile.Ctx} {d 
     split at hc
     · simp at hc
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, value, htd ▸ hcd, hc.2.symm⟩
+    exact ⟨jd, td, value, hcd, htd, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictHas_inv {p : Program} {ctx : Compile.Ctx} {d key : Expr}
@@ -2646,7 +2660,7 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       exact ⟨by rw [hkeys]; exact hkd, htys⟩
     | dictGet hd hkey =>
       rename_i dE keyE
-      obtain ⟨jd, value, hcd, hty⟩ := compileExpr_dictGet_inv hc
+      obtain ⟨jd, td, value, hcd, hdv', hty⟩ := compileExpr_dictGet_inv hc
       subst hty
       rw [evalExpr_dictGet] at he
       simp only [bind, Except.bind] at he
@@ -2655,7 +2669,8 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       rename_i dv hdv
       split at he
       · simp at he
-      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      have hdt : Value.hasTy p dv (.dict value) = true :=
+        hasTy_of_dictValueTy hdv' ▸ ih ctx env dE jd td dv hd henv hcd hdv
       obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
       rw [hasTy_dict, Bool.and_eq_true] at hdt
       split at he
@@ -2678,7 +2693,7 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       · simp at he
     | dictSet hd hkey hval =>
       rename_i dE keyE valE
-      obtain ⟨jd, jv, value, hcd, hcv, hty⟩ := compileExpr_dictSet_inv hc
+      obtain ⟨jd, jv, td, value, hcd, hdv', hcv, hty⟩ := compileExpr_dictSet_inv hc
       subst hty
       rw [evalExpr_dictSet] at he
       simp only [bind, Except.bind] at he
@@ -2690,14 +2705,16 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       split at he
       · simp at he
       rename_i vv hvv
-      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      have hdt : Value.hasTy p dv (.dict value) = true :=
+        hasTy_of_dictValueTy hdv' ▸ ih ctx env dE jd ty dv hd henv hcd hdv
       obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
       split at he
       · rename_i entries' _ hdict _
         injection hdict with hdict
         subst hdict
         simp only [Except.ok.injEq] at he
-        exact he ▸ hasTy_dict_with hdt (ih ctx env valE jv value vv hval henv hcv hvv)
+        exact he ▸ hasTy_of_dictValueTy hdv' ▸
+          hasTy_dict_with hdt (ih ctx env valE jv value vv hval henv hcv hvv)
       · simp at he
     | dictKeys _ =>
       rw [compileExpr_dictKeys_inv hc, evalExpr_dictKeys] at *
@@ -2711,14 +2728,15 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       · simp at he
     | dictValues hd =>
       rename_i dE
-      obtain ⟨jd, value, hcd, hty⟩ := compileExpr_dictValues_inv hc
+      obtain ⟨jd, td, value, hcd, hdv', hty⟩ := compileExpr_dictValues_inv hc
       subst hty
       rw [evalExpr_dictValues] at he
       simp only [bind, Except.bind] at he
       split at he
       · simp at he
       rename_i dv hdv
-      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      have hdt : Value.hasTy p dv (.dict value) = true :=
+        hasTy_of_dictValueTy hdv' ▸ ih ctx env dE jd td dv hd henv hcd hdv
       obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
       rw [hasTy_dict, Bool.and_eq_true] at hdt
       split at he
@@ -2732,7 +2750,7 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
         exact (hne entries rfl).elim
     | dictDelete hd hkey =>
       rename_i dE keyE
-      obtain ⟨jd, value, hcd, hty⟩ := compileExpr_dictDelete_inv hc
+      obtain ⟨jd, td, value, hcd, hdv', hty⟩ := compileExpr_dictDelete_inv hc
       subst hty
       rw [evalExpr_dictDelete] at he
       simp only [bind, Except.bind] at he
@@ -2741,14 +2759,15 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       rename_i dv hdv
       split at he
       · simp at he
-      have hdt := ih ctx env dE jd (.dict value) dv hd henv hcd hdv
+      have hdt : Value.hasTy p dv (.dict value) = true :=
+        hasTy_of_dictValueTy hdv' ▸ ih ctx env dE jd ty dv hd henv hcd hdv
       obtain ⟨entries, rfl⟩ := hasTy_dict_inv hdt
       split at he
       · rename_i entries' _ hdict _
         injection hdict with hdict
         subst hdict
         simp only [Except.ok.injEq] at he
-        exact he ▸ hasTy_dict_filter hdt
+        exact he ▸ hasTy_of_dictValueTy hdv' ▸ hasTy_dict_filter hdt
       · simp at he
     | arrayReverse harr =>
       rename_i arrE

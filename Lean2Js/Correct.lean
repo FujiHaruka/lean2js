@@ -1997,7 +1997,8 @@ private theorem compileExpr_length_parts {p : Program} {ctx : Compile.Ctx} {arr 
           ∧ je = .call "__i53" [.member jarr "length"])
         ∨ (Compile.compileExpr p ctx arr = .ok (jarr, .string)
           ∧ je = .call "__i53" [.call "__strlen" [jarr]])
-        ∨ (∃ value, Compile.compileExpr p ctx arr = .ok (jarr, .dict value)
+        ∨ (∃ td value, Compile.compileExpr p ctx arr = .ok (jarr, td)
+          ∧ Compile.dictValueTy td = some value
           ∧ je = .call "__i53" [.member jarr "size"])) := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
@@ -2013,7 +2014,12 @@ private theorem compileExpr_length_parts {p : Program} {ctx : Compile.Ctx} {arr 
     exact ⟨hc.2.symm, jarr, Or.inr (Or.inl ⟨hta ▸ hca, hc.1.symm⟩)⟩
   · rename_i value hta
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨hc.2.symm, jarr, Or.inr (Or.inr ⟨value, hta ▸ hca, hc.1.symm⟩)⟩
+    exact ⟨hc.2.symm, jarr, Or.inr (Or.inr ⟨tarr, value, hca,
+      by rw [show tarr = Ty.dict value from hta]; rfl, hc.1.symm⟩)⟩
+  · rename_i value hta
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+    exact ⟨hc.2.symm, jarr, Or.inr (Or.inr ⟨tarr, value, hca,
+      by rw [show tarr = Ty.dictObj value from hta]; rfl, hc.1.symm⟩)⟩
   · simp at hc
 
 /-- The dictionary operations: the operand the compiler read as a `Dict`, the expression it emitted, and
@@ -2249,7 +2255,8 @@ private theorem compileExpr_proj_parts {p : Program} {ctx : Compile.Ctx} {e : Ex
 
 private theorem compileExpr_dictGet_parts {p : Program} {ctx : Compile.Ctx} {d key : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictGet d key) = .ok (je, ty)) :
-    ∃ jd jk value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+    ∃ jd jk td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value
       ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
       ∧ je = .call "__dget" [jd, jk] ∧ ty = .option value := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -2267,12 +2274,13 @@ private theorem compileExpr_dictGet_parts {p : Program} {ctx : Compile.Ctx} {d k
     · simp at hc
     rename_i htk
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, jk, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
+    exact ⟨jd, jk, td, value, hcd, htd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictHas_parts {p : Program} {ctx : Compile.Ctx} {d key : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictHas d key) = .ok (je, ty)) :
-    ∃ jd jk value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+    ∃ jd jk td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value
       ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
       ∧ je = .call "__dhas" [jd, jk] ∧ ty = .bool := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -2290,15 +2298,16 @@ private theorem compileExpr_dictHas_parts {p : Program} {ctx : Compile.Ctx} {d k
     · simp at hc
     rename_i htk
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, jk, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
+    exact ⟨jd, jk, td, value, hcd, htd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictSet_parts {p : Program} {ctx : Compile.Ctx} {d key val : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictSet d key val) = .ok (je, ty)) :
-    ∃ jd jk jv value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+    ∃ jd jk jv td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value
       ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
       ∧ Compile.compileExpr p ctx val = .ok (jv, value)
-      ∧ je = .call "__dset" [jd, jk, jv] ∧ ty = .dict value := by
+      ∧ je = .call "__dset" [jd, jk, jv] ∧ ty = td := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -2321,13 +2330,14 @@ private theorem compileExpr_dictSet_parts {p : Program} {ctx : Compile.Ctx} {d k
     · simp at hc
     rename_i htv
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, jk, jv, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck,
+    exact ⟨jd, jk, jv, td, value, hcd, htd, Ty.eq_of_not_bne htk ▸ hck,
       Ty.eq_of_not_bne htv ▸ hcv, hc.1.symm, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictKeys_parts {p : Program} {ctx : Compile.Ctx} {d : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictKeys d) = .ok (je, ty)) :
-    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+    ∃ jd td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value
       ∧ je = .call "__dkeys" [jd] ∧ ty = .array .string := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
@@ -2337,12 +2347,13 @@ private theorem compileExpr_dictKeys_parts {p : Program} {ctx : Compile.Ctx} {d 
   split at hc
   · rename_i value htd
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, value, htd ▸ hcd, hc.1.symm, hc.2.symm⟩
+    exact ⟨jd, td, value, hcd, htd, hc.1.symm, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictValues_parts {p : Program} {ctx : Compile.Ctx} {d : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictValues d) = .ok (je, ty)) :
-    ∃ jd value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+    ∃ jd td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value
       ∧ je = .call "__dvalues" [jd] ∧ ty = .array value := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
@@ -2352,14 +2363,15 @@ private theorem compileExpr_dictValues_parts {p : Program} {ctx : Compile.Ctx} {
   split at hc
   · rename_i value htd
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, value, htd ▸ hcd, hc.1.symm, hc.2.symm⟩
+    exact ⟨jd, td, value, hcd, htd, hc.1.symm, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_dictDelete_parts {p : Program} {ctx : Compile.Ctx} {d key : Expr}
     {je : Js.Expr} {ty : Ty} (hc : Compile.compileExpr p ctx (.dictDelete d key) = .ok (je, ty)) :
-    ∃ jd jk value, Compile.compileExpr p ctx d = .ok (jd, .dict value)
+    ∃ jd jk td value, Compile.compileExpr p ctx d = .ok (jd, td)
+      ∧ Compile.dictValueTy td = some value
       ∧ Compile.compileExpr p ctx key = .ok (jk, .string)
-      ∧ je = .call "__ddelete" [jd, jk] ∧ ty = .dict value := by
+      ∧ je = .call "__ddelete" [jd, jk] ∧ ty = td := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -2375,7 +2387,7 @@ private theorem compileExpr_dictDelete_parts {p : Program} {ctx : Compile.Ctx} {
     · simp at hc
     rename_i htk
     simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-    exact ⟨jd, jk, value, htd ▸ hcd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
+    exact ⟨jd, jk, td, value, hcd, htd, Ty.eq_of_not_bne htk ▸ hck, hc.1.symm, hc.2.symm⟩
   · simp at hc
 
 private theorem compileExpr_index_parts {p : Program} {ctx : Compile.Ctx} {arr idx : Expr}
@@ -5632,7 +5644,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     split at he
     · simp at he
     rename_i av hav
-    rcases hshape with ⟨elem, hca, rfl⟩ | ⟨hca, rfl⟩ | ⟨value, hca, rfl⟩
+    rcases hshape with ⟨elem, hca, rfl⟩ | ⟨hca, rfl⟩ | ⟨td, value, hca, hdt, rfl⟩
     · obtain ⟨xs, rfl⟩ := hasTy_array_inv
         (typeSound p hprog f ctx env arrE jarr (.array elem) av harr.typeChecked henv hca hav)
       split at he
@@ -5656,7 +5668,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         exact (helper_i53 _).trans (congrArg some (i53_of_mkInt53 he))
       all_goals simp_all
     · obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-        (typeSound p hprog f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
+        (show Value.hasTy p av (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+          typeSound p hprog f ctx env arrE jarr td av harr.typeChecked henv hca hav)
       split at he
       · simp_all
       · simp_all
@@ -5674,7 +5687,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     have ihd := ih hd
     have ihk := ih hk
     intro ctx env jenv je ty v henv hjenv hc he
-    obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictGet_parts hc
+    obtain ⟨jd, jk, td, value, hcd, hdt, hck, rfl, -⟩ := compileExpr_dictGet_parts hc
     rw [evalExpr_dictGet] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -5684,7 +5697,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i kv hkv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
       (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
@@ -5705,7 +5719,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     have ihd := ih hd
     have ihk := ih hk
     intro ctx env jenv je ty v henv hjenv hc he
-    obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictHas_parts hc
+    obtain ⟨jd, jk, td, value, hcd, hdt, hck, rfl, -⟩ := compileExpr_dictHas_parts hc
     rw [evalExpr_dictHas] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -5715,7 +5729,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i kv hkv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
       (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
@@ -5738,7 +5753,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     have ihk := ih hk
     have ihv := ih hv
     intro ctx env jenv je ty v henv hjenv hc he
-    obtain ⟨jd, jk, jv, value, hcd, hck, hcv, rfl, -⟩ := compileExpr_dictSet_parts hc
+    obtain ⟨jd, jk, jv, td, value, hcd, hdt, hck, hcv, rfl, -⟩ := compileExpr_dictSet_parts hc
     rw [evalExpr_dictSet] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -5751,7 +5766,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i vv hvv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
       (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
@@ -5773,14 +5789,15 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rename_i dE
     have ihd := ih hd
     intro ctx env jenv je ty v henv hjenv hc he
-    obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictKeys_parts hc
+    obtain ⟨jd, td, value, hcd, hdt, rfl, -⟩ := compileExpr_dictKeys_parts hc
     rw [evalExpr_dictKeys] at he
     simp only [bind, Except.bind] at he
     split at he
     · simp at he
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     split at he
     · rename_i entries' hdict
       injection hdict with hdict
@@ -5796,14 +5813,15 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rename_i dE
     have ihd := ih hd
     intro ctx env jenv je ty v henv hjenv hc he
-    obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictValues_parts hc
+    obtain ⟨jd, td, value, hcd, hdt, rfl, -⟩ := compileExpr_dictValues_parts hc
     rw [evalExpr_dictValues] at he
     simp only [bind, Except.bind] at he
     split at he
     · simp at he
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     split at he
     · rename_i entries' hdict
       injection hdict with hdict
@@ -5820,7 +5838,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     have ihd := ih hd
     have ihk := ih hk
     intro ctx env jenv je ty v henv hjenv hc he
-    obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictDelete_parts hc
+    obtain ⟨jd, jk, td, value, hcd, hdt, hck, rfl, -⟩ := compileExpr_dictDelete_parts hc
     rw [evalExpr_dictDelete] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -5830,7 +5848,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     · simp at he
     rename_i kv hkv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     obtain ⟨t, rfl⟩ := hasTy_string_inv
       (typeSound p hprog f ctx env keyE jk .string kv hk.typeChecked henv hck hkv)
     split at he
@@ -7876,7 +7895,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     obtain ⟨rfl, jarr, hshape⟩ := compileExpr_length_parts hc
     rw [evalExpr_length] at he
     simp only [bind, Except.bind] at he
-    rcases hshape with ⟨elem, hca, rfl⟩ | ⟨hca, rfl⟩ | ⟨value, hca, rfl⟩
+    rcases hshape with ⟨elem, hca, rfl⟩ | ⟨hca, rfl⟩ | ⟨td, value, hca, hdt, rfl⟩
     · split at he
       · rename_i e0 hae
         obtain rfl : err = e0 := (Except.error.inj he).symm
@@ -7919,7 +7938,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         exact eventuallyErr_call1 (eventuallyErr_member (iharr henv hcov hjenv hca hae hne))
       rename_i av hav
       obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-        (typeSound p hprog f ctx env arrE jarr (.dict value) av harr.typeChecked henv hca hav)
+        (show Value.hasTy p av (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+          typeSound p hprog f ctx env arrE jarr td av harr.typeChecked henv hca hav)
       split at he
       · simp_all
       · simp_all
@@ -7939,7 +7959,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     have ihd := ih hd
     have ihk := ih hk
     intro ctx env jenv je ty err henv hcov hjenv hc he hne
-    obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictGet_parts hc
+    obtain ⟨jd, jk, td, value, hcd, hdt, hck, rfl, -⟩ := compileExpr_dictGet_parts hc
     rw [evalExpr_dictGet] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -7948,7 +7968,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
       simpa [encodeValue] using iha hd henv hjenv hcd hdv
     split at he
@@ -7967,7 +7988,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     have ihd := ih hd
     have ihk := ih hk
     intro ctx env jenv je ty err henv hcov hjenv hc he hne
-    obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictHas_parts hc
+    obtain ⟨jd, jk, td, value, hcd, hdt, hck, rfl, -⟩ := compileExpr_dictHas_parts hc
     rw [evalExpr_dictHas] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -7976,7 +7997,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
       simpa [encodeValue] using iha hd henv hjenv hcd hdv
     split at he
@@ -7995,7 +8017,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     have ihd := ih hd
     have ihk := ih hk
     intro ctx env jenv je ty err henv hcov hjenv hc he hne
-    obtain ⟨jd, jk, value, hcd, hck, rfl, -⟩ := compileExpr_dictDelete_parts hc
+    obtain ⟨jd, jk, td, value, hcd, hdt, hck, rfl, -⟩ := compileExpr_dictDelete_parts hc
     rw [evalExpr_dictDelete] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -8004,7 +8026,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call2L (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
       simpa [encodeValue] using iha hd henv hjenv hcd hdv
     split at he
@@ -8024,7 +8047,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     have ihk := ih hk
     have ihv := ih hv
     intro ctx env jenv je ty err henv hcov hjenv hc he hne
-    obtain ⟨jd, jk, jv, value, hcd, hck, hcv, rfl, -⟩ := compileExpr_dictSet_parts hc
+    obtain ⟨jd, jk, jv, td, value, hcd, hdt, hck, hcv, rfl, -⟩ := compileExpr_dictSet_parts hc
     rw [evalExpr_dictSet] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -8033,7 +8056,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call3_1 (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     have hdvj : Eventually m jenv jd (.dict (encodeFields entries)) := by
       simpa [encodeValue] using iha hd henv hjenv hcd hdv
     split at he
@@ -8058,7 +8082,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     rename_i dE
     have ihd := ih hd
     intro ctx env jenv je ty err henv hcov hjenv hc he hne
-    obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictKeys_parts hc
+    obtain ⟨jd, td, value, hcd, hdt, rfl, -⟩ := compileExpr_dictKeys_parts hc
     rw [evalExpr_dictKeys] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -8067,7 +8091,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call1 (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     split at he
     · simp at he
     · rename_i hno
@@ -8076,7 +8101,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     rename_i dE
     have ihd := ih hd
     intro ctx env jenv je ty err henv hcov hjenv hc he hne
-    obtain ⟨jd, value, hcd, rfl, -⟩ := compileExpr_dictValues_parts hc
+    obtain ⟨jd, td, value, hcd, hdt, rfl, -⟩ := compileExpr_dictValues_parts hc
     rw [evalExpr_dictValues] at he
     simp only [bind, Except.bind] at he
     split at he
@@ -8085,7 +8110,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_call1 (ihd henv hcov hjenv hcd hde hne)
     rename_i dv hdv
     obtain ⟨entries, rfl⟩ := hasTy_dict_inv
-      (typeSound p hprog f ctx env dE jd (.dict value) dv hd.typeChecked henv hcd hdv)
+      (show Value.hasTy p dv (.dict value) = true from hasTy_of_dictValueTy hdt ▸
+        typeSound p hprog f ctx env dE jd td dv hd.typeChecked henv hcd hdv)
     split at he
     · simp at he
     · rename_i hno

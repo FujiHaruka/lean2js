@@ -120,9 +120,16 @@ Three shapes, cheapest first:
 | **A conversion form** in `Core.Expr` | `Sound` and `Correct` each gain a case — what `extending-the-subset.md` calls the expensive layer | nothing, but it is the most expensive layer for the least new meaning |
 | **Boundary-only** — `Dict.Obj` may be a parameter or a return and nothing else | almost nothing | an author cannot read a `Dict.Obj` argument without a conversion that does not exist |
 
-The twin structure is the one that fits the machinery that is already there, and widening
-`compileExpr`'s receiver match is the only place it touches the compiler proper. **Write that down as
-settled, or settle it otherwise, before any of it is written.**
+**Settled on 2026-09-20: the twin structure.** It is the one that fits the machinery that is already
+there, and widening `compileExpr`'s receiver match is the only place it touches the compiler proper.
+
+The widening turned out to be one function rather than six arms. `Compile.dictValueTy` reads the value
+type off either spelling, each dictionary arm matches on that instead of on `.dict`, and `set` and
+`delete` give back the receiver's own type rather than a fixed `.dict`. Downstream the two spellings
+collapse to one through `Value.hasTy_dictObj_eq_dict` and `Sound.hasTy_of_dictValueTy`: every receiver is
+read at its own type and bridged to the `Map` one, so `Sound` and `Correct` keep a single case per
+operation. The cost was the seven `_parts` / `_inv` lemmas restated to carry the receiver's type and its
+`dictValueTy` equation, and their fourteen use sites — no new case anywhere.
 
 ## What step 3 turned out to cost: the entry is not only the consumer's door
 
