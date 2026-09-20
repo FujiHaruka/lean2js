@@ -210,7 +210,9 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
   What the sign on a statement line means.
 - `categoryName(category: Category): string`
 - `directChildren(category: Category): number`
-  How many categories sit directly under this one. What sits under *those* is a walk, and the subset has no recursion to walk with.
+  How many categories sit directly under this one. What sits under *those* is a walk, which is what `categoryProducts` takes.
+- `categoryProducts(category: Category): number`
+  How many products the catalogue holds, however deep the groups go. A group answers for everything under it, so this walks the whole tree rather than reading one level of it.
 
 ## Errors
 
@@ -268,6 +270,42 @@ A group counts what sits directly under it, however deep those categories go the
 ```lean
 theorem a_group_counts_what_is_directly_under_it (name : String) (children : List Category) :
   directChildren (Category.group name children) = Arr.length children
+```
+
+### a_leaf_holds_one_product
+
+A leaf holds one product, whatever it is called.
+
+```lean
+theorem a_leaf_holds_one_product (name : String) : categoryProducts (Category.leaf name) = 1
+```
+
+### an_empty_group_holds_no_product
+
+A group is not itself a product: a group with nothing under it holds none.
+
+```lean
+theorem an_empty_group_holds_no_product (name : String) : categoryProducts (Category.group name []) = 0
+```
+
+### nesting_keeps_the_product
+
+The walk goes past the first level, which is the whole difference from `directChildren`: a group
+whose only child is a group holding one leaf holds that one product.
+
+```lean
+theorem nesting_keeps_the_product (outer inner product : String) :
+  categoryProducts (Category.group outer [Category.group inner [Category.leaf product]]) = 1
+```
+
+### a_group_holds_what_its_children_hold
+
+A group holds what its children hold and nothing besides: the count distributes over the children,
+however deep each of them goes.
+
+```lean
+theorem a_group_holds_what_its_children_hold (name : String) (children : List Category) :
+  categoryProducts (Category.group name children) = Arr.sum (List.map categoryProducts children)
 ```
 
 ### failed_settlement_has_no_order_id

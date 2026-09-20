@@ -675,13 +675,19 @@ def categoryName (category : Category) : String :=
   | .leaf name => name
   | .group name _ => name
 
-/-- How many categories sit directly under this one. What sits under *those* is a walk, and the subset
-has no recursion to walk with. -/
+/-- How many categories sit directly under this one. What sits under *those* is a walk, which is what
+`categoryProducts` takes. -/
 @[ship]
 def directChildren (category : Category) : Int :=
   match category with
   | .leaf _ => 0
   | .group _ children => Arr.length children
+
+/-- How many products the catalogue holds, however deep the groups go. A group answers for everything
+under it, so this walks the whole tree rather than reading one level of it. -/
+@[ship]
+def categoryProducts (category : Category) : Int :=
+  Category.fold (fun _ => 1) (fun _ counts => Arr.sum counts) category
 
 ship_package
 
@@ -709,6 +715,31 @@ theorem nothing_under_it_counts_none (name : String) :
 /-- A group counts what sits directly under it, however deep those categories go themselves. -/
 theorem a_group_counts_what_is_directly_under_it (name : String) (children : List Category) :
     directChildren (.group name children) = Arr.length children := rfl
+
+private theorem foldList_eq_map (f0 : String → Int) (f1 : String → List Int → Int) :
+    ∀ children : List Category,
+      Category.foldList f0 f1 children = children.map (Category.fold f0 f1)
+  | [] => rfl
+  | _ :: rest => by rw [Category.foldList, List.map_cons, foldList_eq_map f0 f1 rest]
+
+/-- A leaf holds one product, whatever it is called. -/
+theorem a_leaf_holds_one_product (name : String) : categoryProducts (.leaf name) = 1 := rfl
+
+/-- A group is not itself a product: a group with nothing under it holds none. -/
+theorem an_empty_group_holds_no_product (name : String) :
+    categoryProducts (.group name []) = 0 := rfl
+
+/-- The walk goes past the first level, which is the whole difference from `directChildren`: a group
+whose only child is a group holding one leaf holds that one product. -/
+theorem nesting_keeps_the_product (outer inner product : String) :
+    categoryProducts (.group outer [.group inner [.leaf product]]) = 1 := rfl
+
+/-- A group holds what its children hold and nothing besides: the count distributes over the children,
+however deep each of them goes. -/
+theorem a_group_holds_what_its_children_hold (name : String) (children : List Category) :
+    categoryProducts (.group name children) = Arr.sum (children.map categoryProducts) := by
+  rw [categoryProducts, Category.fold, foldList_eq_map]
+  rfl
 
 /-- A settlement that failed carries no order id, whatever it failed with. -/
 theorem failed_settlement_has_no_order_id (message : String) :

@@ -2052,3 +2052,13 @@ function __b_directChildren(category) {
   return ((__s) => ((((__s).tag === "leaf") ? 0 : ((children) => (__i53((children).length)))((__s).children))))(category);
 }
 
+/** categoryProducts : (category : Category) → Int53 */
+export function categoryProducts(__p0) {
+  const category = __ck(__p0, ["mu", "tag", [["leaf", [["name", ["string"]]]], ["group", [["name", ["string"]], ["children", ["array", ["ref", 0]]]]]]]);
+  return __b_categoryProducts(category);
+}
+
+function __b_categoryProducts(category) {
+  return __fold(category, "tag", { "leaf": [["name", "plain"]], "group": [["name", "plain"], ["children", "list"]] }, (__s) => ((((__s).tag === "leaf") ? ((name) => (1))((__s).name) : ((name, children) => (__reduce(children, 0, (running, y) => (__i53((running + y))))))((__s).name, (__s).children))));
+}
+

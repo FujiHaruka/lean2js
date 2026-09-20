@@ -434,6 +434,8 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     return (← `(Lean2Js.Core.Expr.cond $ce $te $fe),
             ← `(Lean2Js.Denote.denotes_ite _ _ _ _ _ _ _ _ $cp $tp $fp))
   | (c, callArgs) =>
+    if let some tn := Lean2Js.Enc.foldOf? (← getEnv) c then
+      return ← folded c tn callArgs
     if expandAttr.hasTag (← getEnv) c then
       return ← expanded c
     if let some (.ctorInfo ci) := (← getEnv).find? c then
@@ -649,6 +651,60 @@ where
     let cLit : Term := ⟨Syntax.mkStrLit ci.name.getString!⟩
     return (← `(Lean2Js.Core.Expr.ctor $tLit [$tyArgs,*] $cLit [$(items.reverse),*]),
             ← `(Lean2Js.Denote.denotes_ctor _ _ $tLit $cLit _ _ _ _ _ _ rfl rfl rfl $proof rfl))
+  /-- A call of the fold `deriving Enc` wrote for a type that names itself. The subset repeats through no
+  recursion of its own, so walking such a value is a form rather than a rule, and the alternatives that
+  form carries are not the author's: a fold spells no `match`, so there is no matcher to read them off.
+  One alternative per constructor, every field bound — which is the list the type's own certificate was
+  proved about, so what runs and what was proved cannot come apart.
+
+  The patterns bind the field names the type declared rather than the names the author's lambda used,
+  because those are the names the certificate fixed. -/
+  folded (c : Name) (tn : String) (callArgs : Array Lean.Expr) : TermElabM (Term × Term) := do
+    let t := c.getPrefix
+    let indVal ← getConstInfoInduct t
+    let ctors := indVal.ctors.toArray
+    unless callArgs.size == ctors.size + 2 do
+      throwError "reify: {c} walks {t} through one function per constructor, and a call that is not \
+        applied to all of them and to a value has no form in the subset"
+    let resultTy ← encTy callArgs[0]!
+    let (se, sp) ← walk citing ns names xs callArgs[ctors.size + 1]!
+    let mut bodies : Array Term := #[]
+    let mut hyps : Array Term := #[]
+    for i in [0:ctors.size] do
+      let fieldNames ← forallTelescopeReducing (← getConstInfoCtor ctors[i]!).type fun args _ =>
+        (args.extract indVal.numParams args.size).mapM fun a => do
+          let nm ← a.fvarId!.getUserName
+          if nm.hasMacroScopes then
+            throwError "reify: a field of {ctors[i]!} has no name, and the alternative the fold is \
+              read as binds one per field"
+          return nm.toString
+      let k := fieldNames.size
+      let f := callArgs[i + 1]!
+      if k == 0 then
+        let (be, bp) ← walk citing ns names xs f
+        bodies := bodies.push be
+        hyps := hyps.push bp
+      else
+        -- eta-expanding leaves the author's lambda applied to the new binders, and `expanded` reads
+        -- the term `walk` was handed rather than the one it beta-reduced for the dispatch, so an
+        -- `@[expand]` call under the redex would not unfold
+        let (be, bp) ← lambdaBoundedTelescope (← etaExpand f) k fun ys body =>
+          walk citing ns (names ++ fieldNames) (xs ++ ys) body.headBeta
+        let holes : Array (TSyntax ``Lean.Parser.Term.funBinder) ←
+          (Array.range k).mapM fun _ => `(Lean.Parser.Term.funBinder| _)
+        bodies := bodies.push be
+        hyps := hyps.push (← `(fun $holes* => $bp))
+    let tnLit : Term := ⟨Syntax.mkStrLit tn⟩
+    let altsStx ← `($(mkIdent (t ++ `foldAlts)) $bodies*)
+    let algebra : Array Term ← (Array.range ctors.size).mapM fun i => closedOver callArgs[i + 1]!
+    let valueStx ← closedOver callArgs[ctors.size + 1]!
+    let hle := mkIdent `hle
+    let w := mkIdent `w
+    let hres := mkIdent `hres
+    return (← `(Lean2Js.Core.Expr.foldE $se $tnLit [] $resultTy $altsStx),
+            ← `(Lean2Js.Denote.denotes_foldE _ _ $se $tnLit [] $resultTy $altsStx _ _ $sp
+                  (fun $hle $w $hres => $(mkIdent (t ++ `denotes_fold)) _ _ $algebra* $bodies* rfl
+                    $hyps* $valueStx $hle $w $hres)))
   /-- Reading a field asks nothing of the program: the encoding of the value already carries it. -/
   projection (field : String) (recv : Lean.Expr) : TermElabM (Term × Term) := do
     let (re, rp) ← walk citing ns names xs recv

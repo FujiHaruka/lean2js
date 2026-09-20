@@ -13,15 +13,15 @@
   "artifacts": [
     {
       "file": "index.js",
-      "sha256": "0cfcee8d6a2989f9c888318495ff3098dd6ff64539c52df3ec0d3393cbc050e9"
+      "sha256": "5237f2e5fb95d711b72cedcb92e42fa5d3c180e15a22ff7c738e478aedc5887a"
     },
     {
       "file": "index.d.ts",
-      "sha256": "d3eda2fc96924471661560335db6c163d5e5ab6745489dc529b9c56b1d897b53"
+      "sha256": "c6e38f334126950a9c23b17a4e47bf9bb28f7a8f7ca39eb45ba6df40a8db07d1"
     },
     {
       "file": "README.md",
-      "sha256": "e7306d8551cc2addf2b3e33af738a65fb133a05378612e647bfefb5b87511887"
+      "sha256": "631e5462d6f6d528566f69caa64a6d29704b4368bfd3ccab225789ceb4fe6ad0"
     },
     {
       "file": "package.json",
@@ -740,7 +740,13 @@
       "name": "directChildren",
       "signature": "(category : Category) → Int53",
       "declaration": "directChildren(category: Category): number",
-      "doc": "How many categories sit directly under this one. What sits under *those* is a walk, and the subset\nhas no recursion to walk with."
+      "doc": "How many categories sit directly under this one. What sits under *those* is a walk, which is what\n`categoryProducts` takes."
+    },
+    {
+      "name": "categoryProducts",
+      "signature": "(category : Category) → Int53",
+      "declaration": "categoryProducts(category: Category): number",
+      "doc": "How many products the catalogue holds, however deep the groups go. A group answers for everything\nunder it, so this walks the whole tree rather than reading one level of it."
     }
   ],
   "theorems": [
@@ -768,6 +774,26 @@
       "name": "a_group_counts_what_is_directly_under_it",
       "statement": "a_group_counts_what_is_directly_under_it (name : String) (children : List Category) :\n  directChildren (Category.group name children) = Arr.length children",
       "doc": "A group counts what sits directly under it, however deep those categories go themselves."
+    },
+    {
+      "name": "a_leaf_holds_one_product",
+      "statement": "a_leaf_holds_one_product (name : String) : categoryProducts (Category.leaf name) = 1",
+      "doc": "A leaf holds one product, whatever it is called."
+    },
+    {
+      "name": "an_empty_group_holds_no_product",
+      "statement": "an_empty_group_holds_no_product (name : String) : categoryProducts (Category.group name []) = 0",
+      "doc": "A group is not itself a product: a group with nothing under it holds none."
+    },
+    {
+      "name": "nesting_keeps_the_product",
+      "statement": "nesting_keeps_the_product (outer inner product : String) :\n  categoryProducts (Category.group outer [Category.group inner [Category.leaf product]]) = 1",
+      "doc": "The walk goes past the first level, which is the whole difference from `directChildren`: a group\nwhose only child is a group holding one leaf holds that one product."
+    },
+    {
+      "name": "a_group_holds_what_its_children_hold",
+      "statement": "a_group_holds_what_its_children_hold (name : String) (children : List Category) :\n  categoryProducts (Category.group name children) = Arr.sum (List.map categoryProducts children)",
+      "doc": "A group holds what its children hold and nothing besides: the count distributes over the children,\nhowever deep each of them goes."
     },
     {
       "name": "failed_settlement_has_no_order_id",

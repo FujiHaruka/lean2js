@@ -103,8 +103,8 @@ def labelOrBlank (labels : List String) : String := firstOr labels ""
   levels; past that the call throws a `RangeError` rather than a trap, so bound the depth yourself if a
   consumer can send an unbounded one. Refused: a type that
   reaches itself through anything but a `List` of itself, and a type that names itself *and* takes type
-  parameters. **A shipped `def` still cannot walk one** — it reads the constructor it was handed and the
-  fields directly under it.
+  parameters. A shipped `def` walks one with the fold `deriving Enc` writes beside the encoding, since
+  the `def` itself cannot recurse: [`expressions.md`](expressions.md).
 - **A type parameter is a `Type`.** `structure Paginated (T : Type)` is fine; `Type 1` and class
   constraints are not.
 - **A name JavaScript has taken is refused**, for declarations, parameters, fields and constructors

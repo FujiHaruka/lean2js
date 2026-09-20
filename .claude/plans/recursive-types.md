@@ -1074,3 +1074,52 @@ example (env : Env) (f : Nat) (hf : f ≤ defaultFuel) (v : Value) (n : String)
 `evalFoldListAt` and `evalFoldList`, so that case needs the `List T` half of the `mutual` block, and the
 induction hypothesis arrives there rather than at the node. `eventuallyFold_of_fold`'s second and third
 walkers are the shape to copy, without the fuel existential.
+
+### Phase 5 complete, 2026-09-21: what landed and what it cost
+
+**An author's `def` walks a value of a type that names itself, and the example ships one.**
+`Example.categoryProducts` counts the products under a catalogue however deep the groups go, reified as
+`Core.Expr.foldE`, compiled to `__fold(...)`, and checked on Node with every other vector. The numbers
+moved with it: **45626 vectors, 2243 of 10000 fuel, 129 exports, 47 theorems** (from 45402 / 2226 / 128 /
+43).
+
+**`deriving Enc` writes three things beside the encoding**, in one `mutual` block each:
+
+| | |
+| --- | --- |
+| `T.fold` / `T.foldList` | the catamorphism, marked `@[foldOf "T"]`, landed in `aad02ce` |
+| `T.foldAlts b₀ … bₙ` | the alternatives a fold is reified to: one per constructor, every field bound |
+| `T.denotes_fold` / `T.denotes_foldList` | that `evalFold` over `T.foldAlts` computes `T.fold`, by induction over the type with the `List T` half beside it |
+
+**The certificate's recipe, as generated.** One constructor's case is: the node
+(`rw [T.toValue, evalFold_obj]`, then `rw [Program.findType?] at htd; rw [htd]`, then `simp only` over
+`Option.bind` and `show T.typeDef.findAt? [] "Cᵢ" = … from rfl`), then each field left to right
+(`evalFoldFields_cons_some` at a `lookupFieldV … = some … from rfl`, then `simp only` over
+`show foldKindOf "T" [] <ty> = … from rfl`), then the arm (`rw [T.foldAlts, firstMatch, matchPat.eq_def]`,
+`simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]`, `rw [if_neg (by simp), firstMatch,
+matchPat.eq_def]` once per earlier constructor, then `matchPats_binds`), then the induction hypothesis per
+field that came round, then `rw [T.fold]` and the constructor's own `Denotes` hypothesis. A field that
+came round splits on whether its walk answered, so **the case is assembled from its last field back** —
+which is the only reason the generator is not a flat list of tactics.
+
+**Three shapes the repository did not declare are pinned in `Lean2Js/Tests.lean`**: a constructor with no
+fields, a field that is the type itself, and both in one constructor. `Example.Category` exercises only
+the plain-field-and-list shape, so without them the generator's other three branches had nothing
+checking them.
+
+**`Reify`'s branch is the cheap half, as priced.** `foldOf? env c` at the top of the call arm; the type is
+`c.getPrefix`; each algebra argument is read with `etaExpand` + `lambdaBoundedTelescope` at the
+constructor's field count, and the patterns bind **the field names the type declared**, not the author's
+lambda binder names, because those are the names `T.denotes_fold` fixed.
+
+**One trap that cost the most time.** `walk`'s `where` helpers close over the **parameter** `e`, not over
+the `let e := e.headBeta` at the top of its body. So handing `walk` a beta-redex — which `etaExpand`
+always makes — leaves `expanded` calling `unfoldDefinition?` on a term whose head is a lambda, and every
+`@[expand]` call under the redex fails with "its definition did not unfold". Beta-reduce the body before
+handing it over.
+
+**What is not here.** Nothing ties `JsSem`'s `foldJs` rule to `HelperProof.calls_fold`; that is the same
+position the seven traversal helpers are in, and `docs/guarantees.md` states it as they do. A fold whose
+algebra argument is the name of a shipped declaration rather than a lambda is not measured — `etaExpand`
+would turn it into a call, which the walk reads, but no test says so and the reference documents the
+lambda form only.

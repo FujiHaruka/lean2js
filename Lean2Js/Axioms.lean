@@ -65,6 +65,22 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.a_group_counts_what_is_directly_under_it
 
+/-- info: 'Lean2Js.Example.a_leaf_holds_one_product' does not depend on any axioms -/
+#guard_msgs in
+#print axioms Lean2Js.Example.a_leaf_holds_one_product
+
+/-- info: 'Lean2Js.Example.an_empty_group_holds_no_product' does not depend on any axioms -/
+#guard_msgs in
+#print axioms Lean2Js.Example.an_empty_group_holds_no_product
+
+/-- info: 'Lean2Js.Example.nesting_keeps_the_product' does not depend on any axioms -/
+#guard_msgs in
+#print axioms Lean2Js.Example.nesting_keeps_the_product
+
+/-- info: 'Lean2Js.Example.a_group_holds_what_its_children_hold' does not depend on any axioms -/
+#guard_msgs in
+#print axioms Lean2Js.Example.a_group_holds_what_its_children_hold
+
 /-- info: 'Lean2Js.Example.failed_settlement_has_no_order_id' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.failed_settlement_has_no_order_id

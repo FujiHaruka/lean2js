@@ -88,10 +88,12 @@ every call a consumer can make. The other two cover every declaration, exported 
 - Running out of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on
   the fuel needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against
   the ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
-  <!--n:fuelNeeded-->2226<!--/n-->).
+  <!--n:fuelNeeded-->2243<!--/n-->).
 - **What that rests on**: the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
-  exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
+  exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check; a fold's last
+  alternative rests on [`foldFirstMatch_isSome`], the same check run at the node the walk rebuilds
+  rather than at the declared type). The small-step
   semantics, which makes evaluation order and short-circuiting explicit as continuations, reaches the same
   answer as `eval` for every call to a public function ([`stepCall_agrees`]).
 
@@ -146,13 +148,13 @@ evaluation rules rather than as table rows — `__ck` ([`calls_ck_checkTy`]), `_
 ([`calls_fold`]). `__ck` and `__out` are the two an entry calls directly, one at each side of it. The
 helpers none of those name are reached only from another helper, and are unfolded inside its proof.
 
-**`__fold` is in the file and nothing calls it.** It is the walk a fold over a type that names itself
-takes, and `calls_fold` says it computes what the model says. The form the generated code would write
-the call as is in the compiler's AST too: `Js.Expr.foldJs` prints as `__fold(...)`, reads back as itself
-under [`parseModule_render`] the way every other form does, and `JsSem` walks it as a rule of its own.
-Neither is reached — the form in the subset that would build one is not there, and what ties `JsSem`'s
-walk to `calls_fold` is the work after that. Both ship ahead of their use because what this repository
-ships is what a theorem covers.
+**The walk a fold takes is in the runtime rather than in the emitted code.** `__fold` rebuilds each node
+with every field that came round replaced by the answer for it and hands the node to the one callback the
+compiler passes, which dispatches on the tag the way a `match` does. A fold is therefore one expression
+however deep the value is, and what it costs is read off the program text like every other form.
+`Js.Expr.foldJs` is the form that prints the call: it reads back as itself under [`parseModule_render`]
+the way every other form does, and `JsSem` walks it as a rule of its own rather than as a call, because
+nothing in the model is a closure.
 
 An argument the entry check accepts satisfies the type the `.d.ts` prints for that parameter
 ([`entry_check_fits_dts`]), and an argument satisfying it passes the entry check, with the range caveat
@@ -190,7 +192,7 @@ range of spellings.
 
 ## What is checked rather than proved
 
-- **Every vector generated for the artifact** (<!--n:vectors-->45402<!--/n--> of them for this example) is
+- **Every vector generated for the artifact** (<!--n:vectors-->45626<!--/n--> of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
   real JavaScript. One disagreement and nothing is written to the output directory. What a vector is
@@ -243,6 +245,7 @@ range of spellings.
 [`progOk`]: https://fujiharuka.github.io/lean2js/Lean2Js/Cost.html#Lean2Js.Cost.progOk
 [`typeSound`]: https://fujiharuka.github.io/lean2js/Lean2Js/Sound.html#Lean2Js.typeSound
 [`firstMatch_isSome`]: https://fujiharuka.github.io/lean2js/Lean2Js/Exhaustive.html#Lean2Js.Exhaustive.firstMatch_isSome
+[`foldFirstMatch_isSome`]: https://fujiharuka.github.io/lean2js/Lean2Js/Exhaustive.html#Lean2Js.Exhaustive.foldFirstMatch_isSome
 [`stepCall_agrees`]: https://fujiharuka.github.io/lean2js/Lean2Js/StepAgree.html#Lean2Js.StepAgree.stepCall_agrees
 [`parseModule_render_of_compileProgram`]: https://fujiharuka.github.io/lean2js/Lean2Js/Renderable.html#Lean2Js.Compile.parseModule_render_of_compileProgram
 [`parseModule_render`]: https://fujiharuka.github.io/lean2js/Lean2Js/Roundtrip.html#Lean2Js.Parse.parseModule_render

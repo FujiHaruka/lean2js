@@ -44,11 +44,9 @@ what decides which compiler your artifact was built by.
   reads a node of the shape the type declares and dispatches on the tag, which is what a `match` does.
   `calls_fold` says it computes what the model says, at every value and every callback.
 
-  **Nothing calls it yet.** The `Core.Expr` form that will is the next piece of work, so the helper
-  ships proved and unreached; the proof comes first because a helper this repository ships is one a
-  theorem covers. One callback rather than one per constructor is what keeps the helper's `apply` at
-  the arity it has: a constructor's field count varies, and a helper cannot apply a callback to an
-  argument list it only has at run time.
+  **One callback rather than one per constructor** is what keeps the helper's `apply` at the arity it
+  has: a constructor's field count varies, and a helper cannot apply a callback to an argument list it
+  only has at run time.
 
 - **The form the generated code writes that call as is in.** `Js.Expr.foldJs` carries the scrutinee, the
   key a value's constructor name is read under, the spec of which of a constructor's fields come round,
@@ -62,8 +60,32 @@ what decides which compiler your artifact was built by.
   does. The form carries the discriminator key rather than writing `"tag"`: a declared type tells its
   constructors apart by whatever `@[discriminator "..."]` named, and the helper reads that field.
 
-  **Still nothing builds one.** The `Core.Expr` form is the next piece of work, and what ties the
-  model's walk to `calls_fold` goes with it.
+- **A shipped `def` can walk a value of a type that names itself.** The walk is the fold `deriving Enc`
+  writes beside the encoding — one function per constructor, in declaration order, each reading that
+  constructor's own fields with every field that came round already replaced by the answer for it. The
+  subset reads a call of it as `Core.Expr.foldE`, and the example ships one: `categoryProducts` counts
+  the products under a catalogue however deep the groups go, where `directChildren` reads one level.
+
+  The recursion is on the value and not on the fuel, the way a traversal walks its list at the fuel it
+  was handed, so a fold is one expression node however deep the value is and `Cost.cost` stays readable
+  off the syntax. Each node is rebuilt from the leaves up and the alternatives then read the rebuilt node
+  exactly as a `match`'s do, which is what keeps the walk in the semantics rather than in the subset.
+
+  **The alternatives are not the author's.** A fold spells no `match`, so there is no matcher to read them
+  off: the walk writes one alternative per constructor with every field bound, and `deriving Enc` proves,
+  per type, that the subset's walk over exactly that list computes the fold. That per-type theorem is the
+  one step of a fold's descent that cannot be proved once for every program — `Denotes.denotes_foldE`,
+  which takes the scrutinee and that walk, is.
+
+  **Exhaustiveness is checked at the rebuilt node, not at the declared type.** Two types may declare
+  constructors of the same name, so alternatives that name every head the declared type has can still
+  leave a rebuilt node uncovered: `Tree = leaf | node (kid : Tree)` folded to
+  `Twig = leaf | node (kid : Int53) | stub` is the pair, and the arm for `node(kid: stub)` is the one
+  missing. Read at the declared type that fold was accepted and `evalFold` then reached
+  `noMatchingAlternative` — a failure every trap theorem covers but which the chain takes without a test,
+  so it would have shipped as a false theorem rather than as a refused program. `Compile.usefulFold` is
+  Maranget's own step run at the fold's signature instead, and `Exhaustive.foldFirstMatch_isSome` is what
+  says the last alternative may be taken without a test. `Lean2Js/Tests.lean` holds the counterexample.
 
 - **An argument written as a plain object is in the vectors.** A `Dict.Obj V` parameter accepts either
   a `Map` or a plain object, and every vector used to offer it a `Map`: the half a consumer of a

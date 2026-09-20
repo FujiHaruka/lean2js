@@ -92,3 +92,33 @@ Arr.count amounts (fun amount => amount < 0)
 ```
 
 The name of a shipped declaration works in every one of those places too (`quantities.map clampToTen`).
+
+## Walking a value of a type that names itself
+
+A `def` cannot recurse, so a value of a type that names itself is walked with the fold `deriving Enc`
+writes beside the encoding. It takes one function per constructor, in declaration order, and the walk
+runs from the leaves up: by the time a constructor's function is called, every field that came round has
+already been replaced by the answer for it.
+
+```lean
+inductive Category where
+  | leaf (name : String)
+  | group (name : String) (children : List Category)
+  deriving Enc
+
+@[ship]
+def categoryProducts (category : Category) : Int :=
+  Category.fold (fun _ => 1) (fun _ counts => Arr.sum counts) category
+```
+
+- You do not declare `Category.fold`; `deriving Enc` writes it, and its type is read off the
+  constructors. `leaf`'s function takes the `String` that constructor carries. `group`'s takes the
+  `String` and, in place of its `List Category`, the `List Int` of answers for those categories.
+- A field that is the type itself arrives as the answer for it, a field that is a `List` of the type
+  arrives as a `List` of the answers, and every other field arrives as itself.
+- **Every function is written where the fold is called**, as a lambda, the way a traversal's is. A
+  constructor with no fields takes a plain expression rather than a lambda.
+- The answers all have the same type, which is the fold's own — `Int` above. A walk that has to hand back
+  two things hands back one declared type holding both.
+- It is one expression in the generated code however deep the value is, so what it costs is read off the
+  program text like every other form.

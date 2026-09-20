@@ -846,9 +846,17 @@ export declare function directionLabel(sign: number): string;
 export declare function categoryName(category: Category): string;
 
 /**
- * How many categories sit directly under this one. What sits under *those* is a walk, and the subset
- * has no recursion to walk with.
+ * How many categories sit directly under this one. What sits under *those* is a walk, which is what
+ * `categoryProducts` takes.
  *
  * @throws {TrapError<"typeError" | "int53Overflow">}
  */
 export declare function directChildren(category: Category): number;
+
+/**
+ * How many products the catalogue holds, however deep the groups go. A group answers for everything
+ * under it, so this walks the whole tree rather than reading one level of it.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow">}
+ */
+export declare function categoryProducts(category: Category): number;

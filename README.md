@@ -161,7 +161,7 @@ def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String
 | In | Out |
 | --- | --- |
 | `Bool` / `Int53` / `UInt32` / `String` / `BigInt` | `IO` / ambient state |
-| `inductive` and `structure` with `deriving Enc`, including one that names itself, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
+| `inductive` and `structure` with `deriving Enc`, including one that names itself and the fold `deriving Enc` writes to walk it, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
 | List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`), `Arr.range n` for a body that runs a number of times, and `match` (nested, wildcard, literal) | Metaprogramming |
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
 | Pure `def`s marked `@[ship]`, and `@[ship internal]` for one the API should not name | Recursion in a `def` / non-termination / DOM access |
