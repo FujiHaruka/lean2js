@@ -4,7 +4,7 @@ Versions follow the `version` in `lakefile.toml`, which is also the `compiler.ve
 `proof-manifest.json`. Pin a package to a tag rather than to `main`: the `rev` in your `lakefile.toml` is
 what decides which compiler your artifact was built by.
 
-## Unreleased
+## 0.3.0
 
 - **A dictionary can cross the boundary as a plain object.** `Dict.Obj V` is the same dictionary as
   `Dict V` — the same seven operations, the same `Map` inside the module — declared to be handed across

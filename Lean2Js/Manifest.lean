@@ -55,7 +55,7 @@ structure Artifact where
   docs : List (String × String) := []
 
 /-- Kept alongside the lakefile's `version`; `scripts/check-template.sh` fails when the two drift. -/
-def compilerVersion : String := "0.2.0"
+def compilerVersion : String := "0.3.0"
 
 /-- The codes an export throws instead of returning a value JavaScript would have to guess at. The rest of
 `Value.Err` cannot be reached from a shipped program: the cost bound rules out `outOfFuel`, exhaustiveness

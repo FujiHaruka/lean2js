@@ -74,7 +74,7 @@ package on Node before anything is written.
 [[require]]
 name = "Lean2Js"
 git = "https://github.com/FujiHaruka/lean2js"
-rev = "v0.2.0"
+rev = "v0.3.0"
 ```
 
 ```lean
