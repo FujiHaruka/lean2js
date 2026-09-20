@@ -1,7 +1,7 @@
 # Carrying recursive types
 
 A plan for letting a package declare a type that names itself — JSON, a tree, an expression — and for
-letting a shipped `def` walk one. **Progress is at the end, under "Result".**
+letting a shipped declaration compute over one. **Progress is at the end, under "Result".**
 
 ## Context
 
@@ -33,8 +33,8 @@ TypeScript.
 - A package declares `inductive Json` / `inductive Tree` with `deriving Enc`, a public function takes or
   returns one, and the entry check the generated code runs accepts exactly the values `Value.hasTy`
   accepts — at any depth, with no ceiling written into the artifact.
-- A shipped `def` walks one by structural recursion, and the certificate says the declaration computes
-  that `def`.
+- The subset computes over one — by a fold in the vocabulary, or by a `def` that calls itself — and the
+  certificate still says the declaration computes the `def` it was read from.
 - No guarantee moves except where `docs/guarantees.md` says so in the same commit.
 
 ## Non-goals
@@ -45,7 +45,7 @@ TypeScript.
 | A type that names itself and takes type parameters | the declaration a program carries substitutes its parameters away where the type is used, so a name coming round at other arguments has no expansion to come round to |
 | General recursion / `partial` | Lean's own `def` has to be total; the subset carries the termination argument, it does not invent one |
 | A built-in `Json` value form in `Value` | a declared type is what this repository already has a boundary, a `.d.ts` and an encoding for; adding a value kind would double the semantics |
-| Tail-call flattening of the generated JS | a deep tree can overflow V8's stack; that is a separate bound, named in the documents rather than fixed here |
+| Tail-call flattening of the generated JS | a deep tree can overflow V8's stack, but flattening is not the answer to that: bounding the depth the entry check accepts is, and it is the same bound that keeps `Cost.cost` syntactic — see phase 5 |
 
 ## Approach
 
@@ -136,20 +136,59 @@ written. So the handler writes that field's half itself, and the halves that wal
 (`ofValues`, `acceptsVs`, `ofValues_map`, `toValues_hasTy`) come in a `mutual` block with the ones that
 walk the type.
 
-### Recursion in a shipped `def`
+### Walking a value of a recursive type
 
-Separate, and larger. `eval` already spends fuel per call, so the reference semantics carries a
-self-call as it stands; what does not carry is
+Phases 1 to 4 let a value of a recursive type in and gave it a `.d.ts`; nothing in the subset computes
+over one. Closing that is phase 5. **It is not started, and the question was never which files to open
+but which shape to take** — what follows is what reading `Eval` and `Cost` decides about that, and the
+three shapes that survive the reading, in the order they should be tried.
 
-- `Gather.placeAfterPrerequisites` and `Compile.callsPrecede`, which keep the call graph acyclic;
-- `Cost`, which reads an upper bound on the fuel off the syntax — with recursion the bound depends on
-  the argument, and `docs/guarantees.md` says today that running out of fuel is in none of the
-  directions *because* the bound is syntactic;
-- `Reify`, which assembles the certificate compositionally — a recursive `def` needs the induction
-  hypothesis available while its body is walked, and discharged by the same well-founded recursion Lean
-  used to accept the `def`.
+**What fuel measures decides the whole question.** `Eval.evalExpr` spends one fuel per expression node
+*along a path*: siblings are evaluated at the same `f`, and `evalMapItems`, `evalReduceItems` and the
+rest walk their list at the fuel they were handed (`termination_by (fuel, 1, xs.length)`). Fuel is
+nesting depth, not work — a `.map` over a million elements costs what a `.map` over one costs. That is
+the whole reason `cost p = maxBodyDepth + decls.length * callStep p` can be read off the syntax: the
+`.call` arm evaluates the callee's body at `f`, and `progOk` keeps calls reaching backwards, so a call
+chain is at most `decls.length` long.
 
-That is phase 2, and it is where the guarantee boundary actually moves.
+A self-call makes that chain as long as the recursion is deep, which is a property of the argument and
+of nothing in the text. So the fuel bound stops being syntactic **exactly and only where the depth of
+the incoming value is unbounded** — and that is one lever rather than two, because the same depth is
+what overflows V8's stack.
+
+| Shape | What it costs | What it claims |
+| --- | --- | --- |
+| **A fold over the type, as vocabulary** | one `Core.Expr` form and one run-time helper, proved once; `Reify` stays compositional | what phases 1 to 4 claim, unchanged |
+| **A `def` that calls itself, at a depth the entry check bounds** | the certificate by induction, plus a depth on the declared type | unchanged, with one more rule in the family the text already has three of |
+| **A `def` that calls itself, unbounded** | the same induction, plus `Cost` rebuilt around a bound that is no longer syntactic | the trapping direction regains a fuel caveat |
+
+**The first, then the second where the first is not enough. The third is refused for now.**
+
+- **The subset's own idiom is that iteration is vocabulary, not recursion.** `.map`, `.filter` and
+  `.foldl` are forms proved once, not self-calls. A catamorphism over a declared type is that same idea
+  one type-former further out, and the descriptor already knows which fields come round again — `mu` and
+  `ref` are what phase 1 put there. It never reaches `Reify` or `Cost`'s acyclicity at all.
+- **The second keeps the sentence.** The entry check already walks a value to its bottom, so refusing
+  one deeper than the type declares is `Str.repeat`, `Str.padStart` and `Arr.range`'s rule — the text
+  bounds the size — applied to depth instead of to length. The ceiling has room: the example needs 1007
+  of the 10000 fuel the artifact runs at, so a declared depth in the hundreds fits without the ceiling
+  moving. **And it is the same one lever**, so V8's stack is bounded by the same rule rather than by a
+  sentence in the documents.
+- **The third pays the most and claims the least.** `decl_traps_at_cost` (`Lean2Js/Decl.lean:2764`,
+  pinned in `Axioms.lean`) takes `Cost.cost p ≤ defaultFuel` as a hypothesis, and it is what
+  `docs/guarantees.md` cites for "running out of fuel on the `eval` side is in none of the directions";
+  `Manifest.lean` reads the same bound for why `outOfFuel` cannot reach a shipped program. Unbounded
+  recursion makes that hypothesis unprovable, so the trapping direction gains a caveat — while the
+  expensive half of the work, the certificate by induction, is paid in the second shape too.
+- **`Core.Program` has nowhere to carry a termination measure.** Lean's own termination proof lives in
+  the elaborator, not in the AST `Gather` reads, so any shape where a `def` calls itself needs a
+  structural-recursion check on `Core.Expr` and that check's soundness — new work, not a generalisation
+  of existing work. `Gather.placeAfterPrerequisites` and `Compile.callsPrecede`, which keep the call
+  graph acyclic, come apart at the same time.
+- **Deep recursion on Node has an exit the model does not have.** V8 throws
+  `RangeError: Maximum call stack size exceeded`, which is not one of the trap codes `decl_traps` speaks
+  about. The vectors are shallow, so the differential run does not reach it. Bounding depth closes this;
+  documenting it does not.
 
 ## Phases
 
@@ -169,8 +208,10 @@ Each phase leaves every gate green and the artifact regenerated.
    `Lean2Js/Example.lean`, its theorems, its `#print axioms` lines, and the sentences in `README.md`,
    `docs/guarantees.md`, `CHANGELOG.md` and `templates/verified-package/reference/` that say a type may
    not name itself.
-5. **Recursion in a `def`.** The structural-recursion guard, the certificate by induction, the fuel
-   bound that is no longer syntactic, and the sentence in `docs/guarantees.md` that says so.
+5. **Walking one.** Not started. The fold in the vocabulary first — it touches neither `Cost` nor
+   `Reify` — and a `def` that calls itself only where that is not enough, at a depth the entry check
+   bounds. What decides either is the one fact above: a bounded depth is what keeps `Cost.cost`
+   syntactic and what keeps V8's stack out of the picture.
 
 ## Files
 
@@ -189,16 +230,23 @@ Each phase leaves every gate green and the artifact regenerated.
 | `Lean2Js/Vectors.lean` | 3 | the depth in `edgeCases` |
 | `Lean2Js/EncDeriving.lean` | 3 | recursive `toValue` / `ofValue` / `accepts` and the two proofs |
 | `Lean2Js/Example.lean`, `Lean2Js/Axioms.lean` | 4 | the example type, its functions, its theorems |
-| `README.md`, `docs/guarantees.md`, `CHANGELOG.md`, `templates/verified-package/reference/` | 4, 5 | what is no longer refused |
+| `Lean2Js/Core.lean`, `Lean2Js/Eval.lean` | 5 | the fold form and what it spends, or the depth a declared type carries |
+| `Lean2Js/Helper.lean`, `Lean2Js/HelperProof.lean` | 5 | the fold helper and its agreement proof — the `mu` / `ref` environment phase 1 built is what it walks by |
+| `Lean2Js/Cost.lean` | 5 | untouched by the fold; rebuilt only where a `def` may call itself |
+| `Lean2Js/Reify.lean`, `Lean2Js/Gather.lean` | 5 | only where a `def` may call itself: the certificate by induction, and the acyclicity that comes apart |
+| `README.md`, `docs/guarantees.md`, `CHANGELOG.md`, `templates/verified-package/reference/` | 4, 5 | what is no longer refused — and, whichever shape phase 5 takes, the stack bound below |
 
 ## Risks
 
 - **`HelperProof` is 5000 lines and `calls_has_aux` alone is 370.** The parameter was mechanical; the two
   new branches were not, and `calls_has_aux` had to gain an induction on the descriptor's rank beside the
   one on the value.
-- **Stack depth in the generated JS.** `__has` recurses as deep as the value, and so does a recursive
-  shipped function. V8 gives up around a few tens of thousands of frames. This is a real bound on what a
-  package can carry and belongs in the documents, measured, not estimated.
+- **Stack depth in the generated JS — outstanding, and it is phases 1 to 4's, not phase 5's.** `__has`
+  has recursed as deep as the value since phase 1, and V8 gives up around a few tens of thousands of
+  frames, where `decl_refuses` says an argument `eval` would not take becomes a `typeError` before the
+  body runs. `docs/guarantees.md` names no such bound today — `grep -i stack` finds nothing in `docs/`.
+  It belongs there, measured rather than estimated, whether or not phase 5 is ever started; a declared
+  depth on the type would retire it instead.
 - **Vector count.** A recursive type multiplies the tuples; `edgeLimit` may need to come down for the
   example so that emission stays in seconds.
 
@@ -232,7 +280,16 @@ Measured on the way: the generated `__has` accepts a value 500 levels deep on No
 does not declare at every level, and refuses a bad constructor or an out-of-range number arbitrarily far
 inside.
 
-**Phase 5 is not started.** A shipped `def` still reads the constructor it was handed and the fields
-directly under it. What that phase has to move is named in "Recursion in a shipped `def`" above, and the
-guarantee sentence it moves is the one in `docs/guarantees.md` that says running out of fuel is in none
-of the directions *because* `cost` reads the bound off the syntax.
+**Phase 5 is not started, and its shape is now chosen rather than open.** A shipped `def` still reads
+the constructor it was handed and the fields directly under it. What reading `Eval` and `Cost` settled is
+written out under "Walking a value of a recursive type" above: fuel measures nesting depth rather than
+work, so the syntactic bound survives exactly as long as the depth of the incoming value is bounded — and
+that same depth is what V8's stack cares about. A fold in the vocabulary is the shape to take first
+because it touches neither `Cost` nor `Reify`; a `def` that calls itself at a bounded depth is the next
+one; a `def` that calls itself unbounded is refused for now, because it pays the expensive half of the
+work anyway and spends the sentence in `docs/guarantees.md` that says running out of fuel is in none of
+the directions.
+
+Nothing here is urgent: `.map`, `.filter`, `.foldl`, `.find?`, `.all`, `.any` and `Arr.range` already
+cover everything a body has to repeat over, so the gap phase 5 closes is exactly one — a value of a type
+that names itself can be handed in and handed back, but not walked.
