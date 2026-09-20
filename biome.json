@@ -6,13 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": [
-      "**",
-      "!**/dist",
-      "!docs/proposal.html",
-      "!lake-manifest.json",
-      "!packages/verified-example"
-    ]
+    "includes": ["**", "!**/dist", "!lake-manifest.json", "!packages/verified-example"]
   },
   "formatter": {
     "enabled": true,

@@ -50,6 +50,5 @@ rather than asking each time. Commit messages are one line of English.
 ## Language
 
 Everything is English: identifiers, comments, docstrings, `describe` / `it` names, error messages,
-comments in the generated JS, commit messages, and every document. Two exceptions, both deliberate: the
-`"日本語"` / `"日本"` strings in `Lean2Js/Vectors.lean`, which are non-ASCII test data rather than prose,
-and `docs/proposal.html`, a pitch written for a Japanese audience.
+comments in the generated JS, commit messages, and every document. The one exception is deliberate:
+the `"日本語"` / `"日本"` strings in `Lean2Js/Vectors.lean` are non-ASCII test data rather than prose.
