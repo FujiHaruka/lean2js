@@ -65,6 +65,33 @@ the binder's own value is `Enc.ofValue v |>.get!` applied at the binder's type, 
 decided by synthesising `Decidable` for it and `whnf`-ing `decide h` — no tactic framework needed,
 since `readArtifact` is already in `MetaM`.
 
+## What the walk finds on this repository's own example
+
+The telescope walk is the other thing worth settling before writing any of it, and it runs as sketched:
+`forallTelescopeReducing` over the theorem's type, `x.fvarId!.getBinderInfo == .instImplicit` for the
+instances, `Meta.isProp (← inferType x)` for the hypotheses, and `synthInstance (← mkAppM ``Enc #[t])`
+for the rest. Run over every public theorem of `Lean2Js.Example` (scratch file, `lake env lean`,
+2026-09-20), **almost nothing there is probeable, and that is the honest answer rather than a defect**:
+
+- the certificates are excluded from the claims already, and each carries `f : Nat` and `v : Value`;
+- most of the remaining claims are compiler-level — `m : Js.Module`, `jargs : List Js.JsValue`,
+  `ty : Core.Ty`, `err : Err` — none of which has an `Enc`, so they land in *not probed*;
+- `clamped_quantity_in_range` is the one claim of the shape this feature is for: `data=1 hyps=2
+  opaque=[]`, the binder being `quantity : Int` and the hypotheses `int53Min ≤ quantity` and
+  `quantity ≤ int53Max`, both `Decidable`.
+
+So the example is a poor demonstration and the template is the right one: the case
+`scripts/check-template.sh` pins has to be a theorem of a user's shape — an `Int` or a `String` binder
+and a hypothesis nothing meets — and the summary line is what keeps the near-silence on this repository
+from reading as "the check did not run".
+
+**A wrinkle the sampling has to answer.** A sampled `Value` becomes the binder's own value through
+`Enc.ofValue`, which returns an `Option`. There is no `Inhabited α` to `get!` through, so either the
+sample is filtered by evaluating `(Enc.ofValue v).isSome` before the proposition is built, or the
+proposition is `(Enc.ofValue v).elim False (fun a => hyp a)` and a failed decode counts as unmet — which
+is the direction that produces a false alarm, and **A false alarm is worse than silence** below says
+which way to go. Filter first.
+
 ## What it says
 
 One line per claim it could not witness, on stderr, after the vector count and before the write:
