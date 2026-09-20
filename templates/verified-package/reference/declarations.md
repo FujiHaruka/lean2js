@@ -98,7 +98,10 @@ def labelOrBlank (labels : List String) : String := firstOr labels ""
 - **A `structure` has to name its constructor** (`Money ::`). That name is what a consumer reads in the
   generated TypeScript; `mk` says nothing to them.
 - **A type may name itself**, directly or through a `List` of itself, and the TypeScript type names
-  itself the same way. The entry check follows a value of one as deep as it goes. Refused: a type that
+  itself the same way. The entry check follows a value of one as deep as it goes — as deep as the
+  JavaScript engine's stack allows, which on Node 24 at its default stack size is several hundred
+  levels; past that the call throws a `RangeError` rather than a trap, so bound the depth yourself if a
+  consumer can send an unbounded one. Refused: a type that
   reaches itself through anything but a `List` of itself, and a type that names itself *and* takes type
   parameters. **A shipped `def` still cannot walk one** — it reads the constructor it was handed and the
   fields directly under it.

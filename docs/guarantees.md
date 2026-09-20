@@ -113,6 +113,18 @@ number of declared types down, so what the differential run compares on a type t
 shallow. That every deeper value is accepted, refused and normalised the same way is what the three
 directions say, at every environment a `mu` puts the walk in.
 
+**Past the engine's stack the call throws a `RangeError`, and that is in none of the three directions.**
+`__has` recurses as deep as the value, so a value nested deeper than V8's stack allows leaves the call
+with `RangeError: Maximum call stack size exceeded` rather than returning, rather than throwing one of
+the four trap codes, and rather than refusing with `typeError`. Measured on Node 24 at its default stack
+size: one level of a value of a type that names itself spends six frames, and `categoryName` on a
+`Category` nested one child per level is accepted to about 770 levels in a process that has just started
+and to past 1400 in one V8 has optimised — **the engine's number rather than this compiler's**, moving
+with `--stack-size`, with the Node version and with how warm the code is. A package whose consumers can
+send a value of unbounded depth is the one that has to bound it; nothing else the entry check walks can
+reach this, because a type that does not name itself is only as deep as the declaration writes it down,
+and the helpers walk a long array as a loop rather than as a recursion.
+
 **A value the model can name may be bigger than an engine will build.** Strings and arrays in the model
 are mathematical, and the only bound on a length is the `Int53` one that `Str.length` traps past; a
 JavaScript engine gives up long before. The three operations that take a size as a number — `Str.repeat`,
