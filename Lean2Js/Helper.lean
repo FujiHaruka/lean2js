@@ -945,6 +945,99 @@ def norm : Def :=
       .ifThen (.bin "===" (.var "k") (.str "dictObj")) normDictObj ::
       [.ret (.var "x")])) }
 
+/-! `__out` is `__norm` walked the other way: what the entry reads its result through on the way back
+out. Every branch is `__norm`'s, save the one this helper exists for — a dictionary declared to cross as
+a plain object leaves as one, where `__norm` on the way in made the `Map` the body ran on. Branches are
+named for the reason `__has`'s are. -/
+
+def outFields : Def :=
+
+  { name := "__outFields", params := ["x", "key", "fields", "e"]
+    body := .block [
+      .const "out" (.arrayLit [.arrayLit [.var "key", .index (.var "x") (.var "key")]]),
+      .forOf "f" (.var "fields") [
+        .ifThen (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)]) [
+          .push "out" (.arrayLit [.index (.var "f") (.num 0),
+            .call "__out" [.index (.var "x") (.index (.var "f") (.num 0)),
+              .index (.var "f") (.num 1), (.var "e")]])]],
+      .ret (.prim "Object.fromEntries" [(.var "out")]) ] }
+
+def outArray : List Stmt := [
+  .const "out" (.arrayLit []),
+  .forOf "y" (.var "x") [
+    .push "out" (.call "__out" [.var "y", .index (.var "t") (.num 1), (.var "e")])],
+  .ret (.var "out")]
+
+def outDict : List Stmt := [
+  .const "out" (.new_ "Map" []),
+  .forOf "key" (.call "__dkeys" [(.var "x")]) [
+    .setKey "out" (.var "key")
+      (.call "__out" [.method (.var "x") "get" [.var "key"], .index (.var "t") (.num 1),
+        (.var "e")])],
+  .ret (.var "out")]
+
+/-- The branch the helper exists for: a dictionary handed back as the plain object a consumer can
+stringify. Inside the module a dictionary is a `Map` whatever it crosses as, so the guard answers for
+every other shape by handing it back untouched rather than by having a second arm to walk. -/
+def outDictObj : List Stmt := [
+  .ifThen (.not (.isMap (.var "x"))) [.ret (.var "x")],
+  .const "out" (.arrayLit []),
+  .forOf "en" (.prim "Array.from" [(.var "x")]) [
+    .push "out" (.arrayLit [.index (.var "en") (.num 0),
+      .call "__out" [.index (.var "en") (.num 1), .index (.var "t") (.num 1), (.var "e")]])],
+  .ret (.prim "Object.fromEntries" [(.var "out")])]
+
+def outOption : List Stmt := [
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
+    [.ret (.call "__outFields" [(.var "x"), .str "tag", .arrayLit [], (.var "e")])],
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "some"))
+    [.ret (.call "__outFields" [(.var "x"), .str "tag",
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]], (.var "e")])],
+  .ret (.var "x")]
+
+def outResult : List Stmt := [
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "ok"))
+    [.ret (.call "__outFields" [(.var "x"), .str "tag",
+      .arrayLit [.arrayLit [.str "value", .index (.var "t") (.num 1)]], (.var "e")])],
+  .ifThen (.bin "===" (.field (.var "x") "tag") (.str "error"))
+    [.ret (.call "__outFields" [(.var "x"), .str "tag",
+      .arrayLit [.arrayLit [.str "error", .index (.var "t") (.num 2)]], (.var "e")])],
+  .ret (.var "x")]
+
+def outCtors : List Stmt := [
+  .const "alt" (.call "__find" [.index (.var "t") (.num 2),
+    .lam ["c"] (.bin "===" (.index (.var "c") (.num 0))
+      (.index (.var "x") (.index (.var "t") (.num 1))))]),
+  .ifThen (.bin "===" (.field (.var "alt") "tag") (.str "some"))
+    [.ret (.call "__outFields" [(.var "x"), .index (.var "t") (.num 1),
+      .index (.field (.var "alt") "value") (.num 1), (.var "e")])],
+  .ret (.var "x")]
+
+def outMu : List Stmt :=
+  [.ret (.call "__out" [(.var "x"),
+    .arrayLit [.str "ctors", .index (.var "t") (.num 1), .index (.var "t") (.num 2)], pushed])]
+
+def outRef : List Stmt := [
+  .ifThen (.bin ">=" (.index (.var "t") (.num 1)) (lengthOf (.var "e"))) [.ret (.var "x")],
+  bound,
+  .ret (.call "__out" [(.var "x"), asBoundCtors, outer])]
+
+def outBinders : List Stmt → List Stmt := fun rest =>
+  .ifThen (.bin "===" (.var "k") (.str "mu")) outMu ::
+  .ifThen (.bin "===" (.var "k") (.str "ref")) outRef :: rest
+
+def out : Def :=
+
+  { name := "__out", params := ["x", "t", "e"], body := .block (
+      .const "k" (.index (.var "t") (.num 0)) :: outBinders (
+      .ifThen (.bin "===" (.var "k") (.str "array")) outArray ::
+      .ifThen (.bin "===" (.var "k") (.str "dict")) outDict ::
+      .ifThen (.bin "===" (.var "k") (.str "option")) outOption ::
+      .ifThen (.bin "===" (.var "k") (.str "result")) outResult ::
+      .ifThen (.bin "===" (.var "k") (.str "ctors")) outCtors ::
+      .ifThen (.bin "===" (.var "k") (.str "dictObj")) outDictObj ::
+      [.ret (.var "x")])) }
+
 def ck : Def :=
 
   { name := "__ck", params := ["x", "t"]
@@ -962,7 +1055,7 @@ def defs : List Def := [
   str, toInt, strlen, strcmp, ws, lead, trim, upper, lower, startsWith, endsWith, includes, split,
   startsAt, indexOf, join, «repeat», rep, range, substring, aslice, aconcat, areverse, atIdx,
   dget, dhas, dset, dkeys, dvalues, ddelete, eq, map, filter, find, all, any, reduce, keyle,
-  merge, msort, sortBy, isObj, hasFields, has, normFields, norm, ck
+  merge, msort, sortBy, isObj, hasFields, has, normFields, norm, outFields, out, ck
 ]
 
 def runtime : String := renderAll defs

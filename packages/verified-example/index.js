@@ -565,6 +565,80 @@ const __norm = (x, t, e) => {
   return x;
 };
 
+const __outFields = (x, key, fields, e) => {
+  const out = [[key, (x)[key]]];
+  for (const f of fields) {
+    if (Object.hasOwn(x, (f)[0])) {
+      out.push([(f)[0], __out((x)[(f)[0]], (f)[1], e)]);
+    }
+  }
+  return Object.fromEntries(out);
+};
+
+const __out = (x, t, e) => {
+  const k = (t)[0];
+  if ((k === "mu")) {
+    return __out(x, ["ctors", (t)[1], (t)[2]], __aconcat([[(t)[1], (t)[2]]], e));
+  }
+  if ((k === "ref")) {
+    if (((t)[1] >= (e).length)) {
+      return x;
+    }
+    const b = (e)[(t)[1]];
+    return __out(x, ["ctors", (b)[0], (b)[1]], (e).slice((t)[1], (e).length));
+  }
+  if ((k === "array")) {
+    const out = [];
+    for (const y of x) {
+      out.push(__out(y, (t)[1], e));
+    }
+    return out;
+  }
+  if ((k === "dict")) {
+    const out = new Map();
+    for (const key of __dkeys(x)) {
+      out.set(key, __out((x).get(key), (t)[1], e));
+    }
+    return out;
+  }
+  if ((k === "option")) {
+    if (((x).tag === "none")) {
+      return __outFields(x, "tag", [], e);
+    }
+    if (((x).tag === "some")) {
+      return __outFields(x, "tag", [["value", (t)[1]]], e);
+    }
+    return x;
+  }
+  if ((k === "result")) {
+    if (((x).tag === "ok")) {
+      return __outFields(x, "tag", [["value", (t)[1]]], e);
+    }
+    if (((x).tag === "error")) {
+      return __outFields(x, "tag", [["error", (t)[2]]], e);
+    }
+    return x;
+  }
+  if ((k === "ctors")) {
+    const alt = __find((t)[2], ((c) => ((c)[0] === (x)[(t)[1]])));
+    if (((alt).tag === "some")) {
+      return __outFields(x, (t)[1], ((alt).value)[1], e);
+    }
+    return x;
+  }
+  if ((k === "dictObj")) {
+    if ((!(x instanceof Map))) {
+      return x;
+    }
+    const out = [];
+    for (const en of Array.from(x)) {
+      out.push([(en)[0], __out((en)[1], (t)[1], e)]);
+    }
+    return Object.fromEntries(out);
+  }
+  return x;
+};
+
 // Numbers are handed back as they came, unlike __i53: a -0 argument is a safe integer, and
 // every answer built from it passes through __i53 or a comparison that already treats -0
 // and 0 alike, so normalising one here would change nothing a caller can observe.

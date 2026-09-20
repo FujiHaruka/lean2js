@@ -5335,6 +5335,967 @@ theorem calls_ck (ext : Ext) (v : Val) (t : TyDesc) (hd : descOk 0 t = true)
       calls_norm (tenv := []) ext v t hd rfl hmo hv]
 
 
+/-! ### The walk back out
+
+`__out` is `__norm` read the other way, and so is everything below: the same recursion, the same fuel
+arithmetic, the same branch-by-branch proof. The one node they disagree at is the one the helper exists
+for — a dictionary declared to cross as a plain object leaves as one, where `__norm` on the way in made
+the `Map` the body ran on. Nothing here calls `__out` yet; what it is here to say is that the JavaScript
+`Helper.out` writes out is the walk `Js.outTy` describes. -/
+
+theorem find_out : Helper.defs.find? (·.name == "__out") = some Helper.out := rfl
+theorem find_outFields : Helper.defs.find? (·.name == "__outFields") = some Helper.outFields :=
+  rfl
+
+mutual
+
+/-- What `__out` builds. The tag keeps the slot the object handed it; the constructor's fields follow in
+the order the descriptor names them, and a name the object does not carry is dropped. -/
+def outV (tenv : TyEnv) : Val → TyDesc → Val
+  | .arr xs, .array t => .arr (outVList tenv xs t)
+  | .dict es, .dict t => .dict (outVEntries tenv es t)
+  | .obj es, .option t =>
+    if strictEq (lookupV es "tag") (.str "none") then .obj [("tag", lookupV es "tag")]
+    else if strictEq (lookupV es "tag") (.str "some") then
+      .obj (("tag", lookupV es "tag") :: outVFields tenv es [("value", t)])
+    else .obj es
+  | .obj es, .result ok err =>
+    if strictEq (lookupV es "tag") (.str "ok") then
+      .obj (("tag", lookupV es "tag") :: outVFields tenv es [("value", ok)])
+    else if strictEq (lookupV es "tag") (.str "error") then
+      .obj (("tag", lookupV es "tag") :: outVFields tenv es [("error", err)])
+    else .obj es
+  | .obj es, .ctors key alts =>
+    match alts.find? (fun c => strictEq (.str c.1) (lookupV es key)) with
+    | some alt => .obj ((key, lookupV es key) :: outVFields tenv es alt.2)
+    | none => .obj es
+  | .dict es, .dictObj t => .obj (outVEntries tenv es t)
+  | v, .mu key alts => outV ((key, alts) :: tenv) v (.ctors key alts)
+  | v, .ref up =>
+    match tenv[up]? with
+    | some b => outV (tenv.drop up) v (.ctors b.1 b.2)
+    | none => v
+  | v, _ => v
+termination_by v t => (sizeOf v, descRank t + 2, 0)
+
+def outVList (tenv : TyEnv) : List Val → TyDesc → List Val
+  | [], _ => []
+  | x :: rest, t => outV tenv x t :: outVList tenv rest t
+termination_by xs => (sizeOf xs, 4, 0)
+
+def outVEntries (tenv : TyEnv) : List (String × Val) → TyDesc → List (String × Val)
+  | [], _ => []
+  | (k, v) :: rest, t => (k, outV tenv v t) :: outVEntries tenv rest t
+termination_by es => (sizeOf es, 4, 0)
+
+def outVFields (tenv : TyEnv) (es : List (String × Val)) : List (String × TyDesc) → List (String × Val)
+  | [] => []
+  | (n, d) :: rest =>
+    have := sizeOf_lookupV_lt es n
+    if es.any (·.1 == n) then (n, outV tenv (lookupV es n) d) :: outVFields tenv es rest
+    else outVFields tenv es rest
+termination_by fields => (sizeOf (Val.obj es), 0, sizeOf fields)
+
+end
+
+
+mutual
+
+/-- Enough fuel for `__out`, by the same recursion as `outV` and for the reason `hasFuel` is generous:
+the claims are stated for every larger amount. -/
+def outFuel (tenv : TyEnv) : Val → TyDesc → Nat
+  | .arr xs, .array t => outFuelList tenv xs t + 4 * xs.length + 66
+  | .dict es, .dict t => outFuelEntries tenv es t + 8 * es.length + 66
+  | .dict es, .dictObj t => outFuelEntries tenv es t + 8 * es.length + 66
+  | .obj es, .option t => outFuelFields tenv es [("value", t)] + 66
+  | .obj es, .result ok err =>
+    outFuelFields tenv es [("value", ok)] + outFuelFields tenv es [("error", err)] + 66
+  | .obj es, .ctors _ alts => outFuelAlts tenv es alts + 5 * alts.length + 66
+  | _, .ctors _ alts => 5 * alts.length + 66
+  | v, .mu key alts =>
+    outFuel ((key, alts) :: tenv) v (.ctors key alts) + 2 * tenv.length + 200
+  | v, .ref up =>
+    match tenv[up]? with
+    | some b => outFuel (tenv.drop up) v (.ctors b.1 b.2) + 200
+    | none => 200
+  | _, _ => 66
+termination_by v t => (sizeOf v, descRank t + 2, 0)
+
+def outFuelList (tenv : TyEnv) : List Val → TyDesc → Nat
+  | [], _ => 0
+  | x :: rest, t => outFuel tenv x t + outFuelList tenv rest t + 8
+termination_by xs => (sizeOf xs, 4, 0)
+
+def outFuelEntries (tenv : TyEnv) : List (String × Val) → TyDesc → Nat
+  | [], _ => 0
+  | (_, v) :: rest, t => outFuel tenv v t + outFuelEntries tenv rest t + 8
+termination_by es => (sizeOf es, 4, 0)
+
+def outFuelAlts (tenv : TyEnv) (es : List (String × Val)) :
+    List (String × List (String × TyDesc)) → Nat
+  | [] => 0
+  | (_, fields) :: rest => outFuelFields tenv es fields + outFuelAlts tenv es rest + 8
+termination_by alts => (sizeOf (Val.obj es), 1, sizeOf alts)
+
+def outFuelFields (tenv : TyEnv) (es : List (String × Val)) : List (String × TyDesc) → Nat
+  | [] => 0
+  | (name, d) :: rest =>
+    have := sizeOf_lookupV_lt es name
+    outFuel tenv (lookupV es name) d + outFuelFields tenv es rest + 16
+termination_by fields => (sizeOf (Val.obj es), 0, sizeOf fields)
+
+end
+
+/-- The pairs `__outFields` pushes, in the order it pushes them. -/
+def outPairs (tenv : TyEnv) (es : List (String × Val)) : List (String × TyDesc) → List Val
+  | [] => []
+  | (n, d) :: rest =>
+    if es.any (·.1 == n) then .arr [.str n, outV tenv (lookupV es n) d] :: outPairs tenv es rest
+    else outPairs tenv es rest
+
+/-- `Object.fromEntries` over what the loop pushed. It appends rather than replaces because the names are
+distinct and none of them is the tag the accumulator already carries. -/
+theorem fromPairs_outPairs (es : List (String × Val)) {key : String} :
+    ∀ (fields : List (String × TyDesc)) (acc : List (String × Val)),
+    namesOk key fields = true →
+    (∀ n ∈ fields.map (·.1), acc.any (·.1 == n) = false) →
+    fromPairs acc (outPairs tenv es fields) = acc ++ outVFields tenv es fields := by
+  intro fields
+  induction fields with
+  | nil => intro acc _ _; simp [outPairs, fromPairs, outVFields]
+  | cons fd rest ih =>
+    obtain ⟨n, d⟩ := fd
+    intro acc hnames hacc
+    obtain ⟨hnotin, hrest⟩ := Js.namesOk_head hnames
+    rw [outPairs, outVFields]
+    by_cases hhas : es.any (·.1 == n) = true
+    · simp only [hhas, if_true, fromPairs]
+      have hfresh : acc.any (·.1 == n) = false := hacc n (by simp)
+      have hset : mapSet acc n (outV tenv (lookupV es n) d) = acc ++ [(n, outV tenv (lookupV es n) d)] := by
+        rw [mapSet, if_neg (by simp [hfresh])]
+      rw [hset, ih (acc ++ [(n, outV tenv (lookupV es n) d)]) hrest ?_]
+      · simp
+      · intro m hm
+        simp only [List.any_append, Bool.or_eq_false_iff]
+        refine ⟨hacc m (by simp [hm]), ?_⟩
+        simp only [List.any_cons, List.any_nil, Bool.or_false, beq_eq_false_iff_ne, ne_eq]
+        exact fun hcontra => hnotin m hm hcontra.symm
+    · simp only [Bool.not_eq_true] at hhas
+      simp only [hhas, Bool.false_eq_true, if_false]
+      exact ih acc hrest (fun m hm => hacc m (by simp [hm]))
+
+theorem outFields_loop (ext : Ext) (es : List (String × Val)) (K F : Val) :
+    ∀ (fields : List (String × TyDesc)) (acc : List Val) (f : Nat),
+    (∀ (name : String) (d : TyDesc), (name, d) ∈ fields → ∀ (g : Nat),
+      callDef ext (g + outFuel tenv (lookupV es name) d) "__out"
+        [lookupV es name, tyVal d, envVal tenv] = .ok (outV tenv (lookupV es name) d)) →
+    evalFor ext (f + outFuelFields tenv es fields + 8)
+      [("out", .arr acc), ("x", Val.obj es), ("key", K), ("fields", F), ("e", envVal tenv)] "f"
+      (tyValFields fields)
+      [.ifThen (.prim "Object.hasOwn" [(.var "x"), .index (.var "f") (.num 0)])
+        [.push "out" (.arrayLit [.index (.var "f") (.num 0),
+          .call "__out" [.index (.var "x") (.index (.var "f") (.num 0)),
+            .index (.var "f") (.num 1), (.var "e")]])]]
+      = .ok (.next [("out", .arr (acc ++ outPairs tenv es fields)), ("x", Val.obj es), ("key", K),
+        ("fields", F), ("e", envVal tenv)]) := by
+  intro fields
+  induction fields with
+  | nil => intro acc f _; simp only [tyValFields, outFuelFields]; walk; simp [outPairs]
+  | cons fd rest ih =>
+    obtain ⟨n, d⟩ := fd
+    intro acc f hsub
+    simp only [tyValFields, outFuelFields]
+    rw [show f + (outFuel tenv (lookupV es n) d + outFuelFields tenv es rest + 16) + 8
+      = (f + outFuel tenv (lookupV es n) d + outFuelFields tenv es rest + 23) + 1 from by omega]
+    walk
+    simp only [show ((0:Int).toNat) = 0 from rfl, show ((1:Int).toNat) = 1 from rfl,
+      List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD]
+    rw [outPairs]
+    by_cases hhas : es.any (·.1 == n) = true
+    · simp only [hhas, if_true]
+      walk
+      rw [show f + outFuel tenv (lookupV es n) d + outFuelFields tenv es rest + 17
+        = (f + outFuelFields tenv es rest + 17) + outFuel tenv (lookupV es n) d from by omega,
+        hsub n d (by simp)]
+      walk
+      rw [show f + outFuel tenv (lookupV es n) d + outFuelFields tenv es rest + 23
+        = (f + outFuel tenv (lookupV es n) d + 15) + outFuelFields tenv es rest + 8 from by omega,
+        ih _ _ (fun m e hmem g => hsub m e (by simp [hmem]) g)]
+      simp
+    · simp only [Bool.not_eq_true] at hhas
+      simp only [hhas, Bool.false_eq_true, if_false]
+      walk
+      rw [show f + outFuel tenv (lookupV es n) d + outFuelFields tenv es rest + 23
+        = (f + outFuel tenv (lookupV es n) d + 15) + outFuelFields tenv es rest + 8 from by omega,
+        ih _ _ (fun m e hmem g => hsub m e (by simp [hmem]) g)]
+
+theorem calls_outFields (ext : Ext) (es : List (String × Val)) (key : String)
+    (fields : List (String × TyDesc))
+    (hsub : ∀ (name : String) (d : TyDesc), (name, d) ∈ fields → ∀ (g : Nat),
+      callDef ext (g + outFuel tenv (lookupV es name) d) "__out"
+        [lookupV es name, tyVal d, envVal tenv] = .ok (outV tenv (lookupV es name) d))
+    (hnames : namesOk key fields = true) (f : Nat) :
+    callDef ext (f + outFuelFields tenv es fields + 16) "__outFields"
+      [.obj es, .str key, .arr (tyValFields fields), envVal tenv]
+      = .ok (.obj ((key, lookupV es key) :: outVFields tenv es fields)) := by
+  rw [show f + outFuelFields tenv es fields + 16 = (f + outFuelFields tenv es fields + 15) + 1 from by omega,
+    callDef_block find_outFields rfl rfl]
+  simp only [Helper.outFields]
+  walk
+  rw [show f + outFuelFields tenv es fields + 13 = (f + 5) + outFuelFields tenv es fields + 8 from by omega,
+    outFields_loop ext es (Val.str key) (Val.arr (tyValFields fields)) fields
+      [Val.arr [Val.str key, lookupV es key]] _ hsub]
+  walk
+  rw [List.cons_append, List.nil_append, fromPairs, mapSet]
+  simp only [List.any_nil, Bool.false_eq_true, if_false, List.nil_append]
+  rw [fromPairs_outPairs es fields [(key, lookupV es key)] hnames ?_]
+  · simp
+  · intro n hn
+    simp only [List.any_cons, List.any_nil, Bool.or_false, beq_eq_false_iff_ne, ne_eq]
+    exact fun heq => Js.namesOk_not_key hnames n hn heq.symm
+
+theorem outArray_loop (ext : Ext) (te : TyDesc) (K : Val) :
+    ∀ (xs : List Val) (X : Val) (acc : List Val) (f : Nat),
+    (∀ y ∈ xs, ∀ (g : Nat),
+      callDef ext (g + outFuel tenv y te) "__out" [y, tyVal te, envVal tenv]
+        = .ok (outV tenv y te)) →
+    evalFor ext (f + outFuelList tenv xs te + 8)
+      [("out", .arr acc), ("k", K), ("x", X), ("t", Val.arr [Val.str "array", tyVal te]),
+        ("e", envVal tenv)] "y" xs
+      [.push "out" (.call "__out" [.var "y", .index (.var "t") (.num 1), (.var "e")])]
+      = .ok (.next [("out", .arr (acc ++ outVList tenv xs te)), ("k", K), ("x", X),
+        ("t", Val.arr [Val.str "array", tyVal te]), ("e", envVal tenv)]) := by
+  intro xs
+  induction xs with
+  | nil => intro X acc f _; simp only [outFuelList]; walk; simp [outVList]
+  | cons y rest ih =>
+    intro X acc f hsub
+    simp only [outFuelList]
+    rw [show f + (outFuel tenv y te + outFuelList tenv rest te + 8) + 8
+      = (f + outFuel tenv y te + outFuelList tenv rest te + 15) + 1 from by omega]
+    walk
+    simp only [show ((1:Int).toNat) = 1 from rfl, List.getElem?_cons_zero,
+      List.getElem?_cons_succ, Option.getD]
+    rw [show f + outFuel tenv y te + outFuelList tenv rest te + 13
+      = (f + outFuelList tenv rest te + 13) + outFuel tenv y te from by omega, hsub y (by simp)]
+    walk
+    rw [show f + outFuel tenv y te + outFuelList tenv rest te + 15
+      = (f + outFuel tenv y te + 7) + outFuelList tenv rest te + 8 from by omega,
+      ih _ _ _ (fun z hz g => hsub z (by simp [hz]) g)]
+    simp [outVList]
+/-- What the dictionary loop leaves in `out`: each key set, in the order `__dkeys` hands them over. -/
+def outSet (tenv : TyEnv) (es : List (String × Val)) (t : TyDesc) :
+    List (String × Val) → List String → List (String × Val)
+  | acc, [] => acc
+  | acc, k :: ks => outSet tenv es t (mapSet acc k (outV tenv (lookupV es k) t)) ks
+
+def outFuelKeys (tenv : TyEnv) (es : List (String × Val)) (t : TyDesc) : List String → Nat
+  | [] => 0
+  | k :: ks =>
+    have := sizeOf_lookupV_lt es k
+    outFuel tenv (lookupV es k) t + outFuelKeys tenv es t ks + 12
+theorem outVEntries_keys : ∀ (es : List (String × Val)) (t : TyDesc),
+    (outVEntries tenv es t).map (·.1) = es.map (·.1)
+  | [], _ => by simp [outVEntries]
+  | (k, v) :: rest, t => by
+    rw [outVEntries, List.map_cons, List.map_cons, outVEntries_keys rest t]
+/-- The pairs `__out` pushes for a dictionary leaving as a plain object, in the order the `Map`'s
+iterator hands them over. -/
+def outEntryPairs (tenv : TyEnv) (t : TyDesc) : List (String × Val) → List Val
+  | [] => []
+  | (k, v) :: rest => .arr [.str k, outV tenv v t] :: outEntryPairs tenv t rest
+
+/-- `Object.fromEntries` over what that loop pushed. It appends rather than replaces because a `Map`
+cannot have handed the same key over twice. -/
+theorem fromPairs_outEntryPairs (t : TyDesc) :
+    ∀ (es : List (String × Val)) (acc : List (String × Val)),
+    keysDistinctV (es.map (·.1)) = true →
+    (∀ k ∈ es.map (·.1), acc.any (·.1 == k) = false) →
+    fromPairs acc (outEntryPairs tenv t es) = some (acc ++ outVEntries tenv es t)
+  | [], acc, _, _ => by rw [outEntryPairs, fromPairs, outVEntries, List.append_nil]
+  | (k, v) :: rest, acc, hd, hacc => by
+    rw [List.map_cons, keysDistinctV, Bool.and_eq_true] at hd
+    have hfresh : acc.any (·.1 == k) = false := hacc k (by simp)
+    have hnext : ∀ j ∈ rest.map (·.1), (acc ++ [(k, outV tenv v t)]).any (·.1 == j) = false := by
+      intro j hj
+      have hjk : (k == j) = false := by
+        cases hc : k == j with
+        | false => rfl
+        | true => simp_all
+      have hj' : j ∈ ((k, v) :: rest).map (·.1) := by simp [hj]
+      simp [List.any_append, hacc j hj', hjk]
+    have hset : mapSet acc k (outV tenv v t) = acc ++ [(k, outV tenv v t)] := by
+      rw [mapSet, if_neg (by simp [hfresh])]
+    rw [outEntryPairs, fromPairs, hset,
+      fromPairs_outEntryPairs t rest (acc ++ [(k, outV tenv v t)]) hd.2 hnext, outVEntries]
+    simp
+
+/-- The loop `__out` runs over a dictionary leaving as a plain object. It walks the entries the `Map`'s
+iterator hands over and pushes each one, so the object is built in the order the dictionary held. -/
+theorem outDictObj_loop (ext : Ext) (te : TyDesc) (K X : Val) :
+    ∀ (es : List (String × Val)) (acc : List Val) (f : Nat),
+    (∀ w ∈ es.map (·.2), ∀ (g : Nat), callDef ext (g + outFuel tenv w te) "__out"
+      [w, tyVal te, envVal tenv] = .ok (outV tenv w te)) →
+    evalFor ext (f + outFuelEntries tenv es te + 8 * es.length + 8)
+      [("out", .arr acc), ("k", K), ("x", X), ("t", Val.arr [Val.str "dictObj", tyVal te]),
+        ("e", envVal tenv)]
+      "en" (es.map fun e => Val.arr [Val.str e.1, e.2])
+      [.push "out" (.arrayLit [.index (.var "en") (.num 0),
+        .call "__out" [.index (.var "en") (.num 1), .index (.var "t") (.num 1), (.var "e")]])]
+      = .ok (.next [("out", .arr (acc ++ outEntryPairs tenv te es)), ("k", K), ("x", X),
+        ("t", Val.arr [Val.str "dictObj", tyVal te]), ("e", envVal tenv)]) := by
+  intro es
+  induction es with
+  | nil => intro acc f _; simp only [outFuelEntries]; walk; simp [outEntryPairs]
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro acc f hsub
+    simp only [outFuelEntries, List.length_cons]
+    rw [show f + (outFuel tenv v te + outFuelEntries tenv rest te + 8) + 8 * (rest.length + 1) + 8
+      = (f + outFuel tenv v te + outFuelEntries tenv rest te + 8 * rest.length + 23) + 1 from by
+        omega]
+    walk
+    simp only [show ((1:Int).toNat) = 1 from rfl, show ((0:Int).toNat) = 0 from rfl,
+      List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD]
+    rw [show f + outFuel tenv v te + outFuelEntries tenv rest te + 8 * rest.length + 18
+      = (f + outFuelEntries tenv rest te + 8 * rest.length + 18) + outFuel tenv v te from by omega,
+      hsub v (by simp)]
+    walk
+    rw [show f + outFuel tenv v te + outFuelEntries tenv rest te + 8 * rest.length + 23
+      = (f + outFuel tenv v te + 15) + outFuelEntries tenv rest te + 8 * rest.length + 8 from by
+        omega,
+      ih _ _ (fun w hw g => hsub w (by simp [hw]) g)]
+    simp [outEntryPairs]
+
+theorem outDict_loop (ext : Ext) (te : TyDesc) (es : List (String × Val)) (K : Val) :
+    ∀ (ks : List String) (acc : List (String × Val)) (f : Nat),
+    (∀ k ∈ ks, ∀ (g : Nat), callDef ext (g + outFuel tenv (lookupV es k) te) "__out"
+      [lookupV es k, tyVal te, envVal tenv] = .ok (outV tenv (lookupV es k) te)) →
+    evalFor ext (f + outFuelKeys tenv es te ks + 8)
+      [("out", .dict acc), ("k", K), ("x", .dict es), ("t", Val.arr [Val.str "dict", tyVal te]),
+        ("e", envVal tenv)]
+      "key" (ks.map Val.str)
+      [.setKey "out" (.var "key")
+        (.call "__out" [.method (.var "x") "get" [.var "key"], .index (.var "t") (.num 1),
+          (.var "e")])]
+      = .ok (.next [("out", .dict (outSet tenv es te acc ks)), ("k", K), ("x", .dict es),
+        ("t", Val.arr [Val.str "dict", tyVal te]), ("e", envVal tenv)]) := by
+  intro ks
+  induction ks with
+  | nil => intro acc f _; simp only [outFuelKeys]; walk; simp [outSet]
+  | cons k rest ih =>
+    intro acc f hsub
+    simp only [outFuelKeys]
+    rw [show f + (outFuel tenv (lookupV es k) te + outFuelKeys tenv es te rest + 12) + 8
+      = (f + outFuel tenv (lookupV es k) te + outFuelKeys tenv es te rest + 19) + 1 from by omega]
+    walk
+    simp only [show ((1:Int).toNat) = 1 from rfl, List.getElem?_cons_zero,
+      List.getElem?_cons_succ, Option.getD]
+    rw [show f + outFuel tenv (lookupV es k) te + outFuelKeys tenv es te rest + 17
+      = (f + outFuelKeys tenv es te rest + 17) + outFuel tenv (lookupV es k) te from by omega,
+      hsub k (by simp)]
+    walk
+    rw [show f + outFuel tenv (lookupV es k) te + outFuelKeys tenv es te rest + 19
+      = (f + outFuel tenv (lookupV es k) te + 11) + outFuelKeys tenv es te rest + 8 from by omega,
+      ih _ _ (fun j hj g => hsub j (by simp [hj]) g)]
+    simp [outSet, mapSet]
+/-- Walking a dictionary's keys and looking each one up hands back the entries in order, because a `Map`
+cannot carry the same key twice. -/
+theorem outSet_split (full : List (String × Val)) (t : TyDesc) :
+    ∀ (pre suf : List (String × Val)) (acc : List (String × Val)),
+    full = pre ++ suf → keysDistinctV (full.map (·.1)) = true →
+    (∀ k ∈ suf.map (·.1), acc.any (·.1 == k) = false) →
+    outSet tenv full t acc (suf.map (·.1)) = acc ++ outVEntries tenv suf t := by
+  intro pre suf
+  induction suf generalizing pre with
+  | nil => intro acc _ _ _; simp [outSet, outVEntries]
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro acc hfull hdist hacc
+    subst hfull
+    obtain ⟨hpre, hdist'⟩ := keysDistinctV_append hdist
+    have hlook : lookupV (pre ++ (k, v) :: rest) k = v := by
+      rw [lookupV_skipV pre _ k (fun x hx => hpre k (by simp) x hx)]
+      simp [lookupV, List.find?]
+    have hfresh : acc.any (·.1 == k) = false := hacc k (by simp)
+    have hset : mapSet acc k (outV tenv v t) = acc ++ [(k, outV tenv v t)] := by
+      rw [mapSet, if_neg (by simp [hfresh])]
+    simp only [List.map_cons, outSet, hlook, hset]
+    rw [ih (pre ++ [(k, v)]) (acc ++ [(k, outV tenv v t)]) (by simp) (by simpa using hdist) ?_]
+    · simp [outVEntries]
+    · intro n hn
+      simp only [List.any_append, Bool.or_eq_false_iff]
+      refine ⟨hacc n (by simp [hn]), ?_⟩
+      simp only [List.any_cons, List.any_nil, Bool.or_false, beq_eq_false_iff_ne, ne_eq]
+      simp only [List.map_cons, keysDistinctV, Bool.and_eq_true, Bool.not_eq_true',
+        List.contains_eq_mem, decide_eq_false_iff_not] at hdist'
+      exact fun hcontra => hdist'.1 (hcontra ▸ hn)
+
+theorem outFuelKeys_split (full : List (String × Val)) (t : TyDesc) :
+    ∀ (pre suf : List (String × Val)),
+    full = pre ++ suf → keysDistinctV (full.map (·.1)) = true →
+    outFuelKeys tenv full t (suf.map (·.1)) = outFuelEntries tenv suf t + 4 * suf.length := by
+  intro pre suf
+  induction suf generalizing pre with
+  | nil => intro _ _; simp [outFuelKeys, outFuelEntries]
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro hfull hdist
+    subst hfull
+    obtain ⟨hpre, hdist'⟩ := keysDistinctV_append hdist
+    have hlook : lookupV (pre ++ (k, v) :: rest) k = v := by
+      rw [lookupV_skipV pre _ k (fun x hx => hpre k (by simp) x hx)]
+      simp [lookupV, List.find?]
+    simp only [List.map_cons, outFuelKeys, hlook, outFuelEntries, List.length_cons]
+    rw [ih (pre ++ [(k, v)]) (by simp) (by simpa using hdist)]
+    omega
+theorem outFuelFields_le_alts (es : List (String × Val))
+    (alts : List (String × List (String × TyDesc)))
+    (alt : String × List (String × TyDesc)) (h : alt ∈ alts) :
+    outFuelFields tenv es alt.2 ≤ outFuelAlts tenv es alts := by
+  induction alts with
+  | nil => cases h
+  | cons a rest ih =>
+    obtain ⟨c, fields⟩ := a
+    simp only [outFuelAlts]
+    rcases List.mem_cons.mp h with rfl | hrest
+    · simp only; omega
+    · have := ih hrest; omega
+private theorem outFuel_split (v : Val) (t : TyDesc) : ∃ m, outFuel tenv v t = m + 66 := by
+  refine ⟨outFuel tenv v t - 66, ?_⟩
+  have h : 66 ≤ outFuel tenv v t := by
+    rw [outFuel.eq_def]; split <;> first | omega | (split <;> omega)
+  omega
+
+/-- The state `__out` is in once it has read the head: the guards still to try, and an environment that
+answers `k`, `x` and `t`. Every branch proof starts here. -/
+private theorem out_entered (ext : Ext) (v : Val) (t : TyDesc) (f m : Nat) (r : Val)
+    (h : evalStmts ext (f + m + 64)
+      [("k", .str (headName t)), ("x", v), ("t", tyVal t), ("e", envVal tenv)]
+      (Helper.outBinders (
+       .ifThen (.bin "===" (.var "k") (.str "array")) Helper.outArray ::
+       .ifThen (.bin "===" (.var "k") (.str "dict")) Helper.outDict ::
+       .ifThen (.bin "===" (.var "k") (.str "option")) Helper.outOption ::
+       .ifThen (.bin "===" (.var "k") (.str "result")) Helper.outResult ::
+       .ifThen (.bin "===" (.var "k") (.str "ctors")) Helper.outCtors ::
+       .ifThen (.bin "===" (.var "k") (.str "dictObj")) Helper.outDictObj ::
+       [.ret (.var "x")])) = .ok (.ret r))
+    (hm : outFuel tenv v t = m + 66) :
+    callDef ext (f + outFuel tenv v t) "__out" [v, tyVal t, envVal tenv] = .ok r := by
+  rw [hm, show f + (m + 66) = ((f + m + 64) + 1) + 1 from by omega, callDef_block find_out rfl rfl]
+  simp only [Helper.out, bindAll]
+  have hhead : evalExpr ext (f + m + 64) [("x", v), ("t", tyVal t), ("e", envVal tenv)]
+      (.index (.var "t") (.num 0)) = .ok (.str (headName t)) := by
+    rw [show f + m + 64 = (f + m + 61) + 3 from by omega]
+    exact has_head ext (f + m + 61) v t
+  rw [evalStmts_const ext (f + m + 64) _ _ _ _ _ hhead, h]
+
+/-- Past the two guards that answer for a type naming itself, the way `has_past_binders` is. -/
+private theorem out_past_binders (ext : Ext) (f : Nat) (cenv : Env) (k : String)
+    (rest : List Helper.Stmt) (hk : lookup cenv "k" = some (.str k))
+    (hmu : (k == "mu") = false) (href : (k == "ref") = false) :
+    evalStmts ext (f + 4) cenv (Helper.outBinders rest) = evalStmts ext (f + 2) cenv rest := by
+  rw [Helper.outBinders, show f + 4 = (f + 1) + 3 from by omega,
+    has_skip _ _ _ _ _ _ _ hk hmu, show f + 1 + 2 = f + 3 from by omega,
+    has_skip _ _ _ _ _ _ _ hk href]
+
+theorem lookup_k_out (t : TyDesc) (v : Val) :
+    lookup [("k", Val.str (headName t)), ("x", v), ("t", tyVal t),
+      ("e", envVal tenv)] "k"
+      = some (.str (headName t)) := rfl
+
+theorem outV_scalar (v : Val) (t : TyDesc) (h : headName t = "bool" ∨ headName t = "int53" ∨
+    headName t = "uint32" ∨ headName t = "string" ∨ headName t = "bigint") : outV tenv v t = v := by
+  cases t <;> simp only [headName] at h <;> first
+    | (rw [outV.eq_def]; cases v <;> rfl)
+    | simp at h
+
+/-- The step a `mu` takes on the way out, the one `has_mu_step` takes on the way in. -/
+private theorem out_mu_step (ext : Ext) (v : Val) (key : String) (alts : TyAlts) (tenv : TyEnv)
+    (f m : Nat) (hm : outFuel tenv v (.mu key alts) = m + 66)
+    (hrec : ∀ g, callDef ext (g + outFuel ((key, alts) :: tenv) v (.ctors key alts)) "__out"
+      [v, tyVal (.ctors key alts), envVal ((key, alts) :: tenv)]
+      = .ok (outV ((key, alts) :: tenv) v (.ctors key alts))) :
+    evalStmts ext (f + m + 61 + 2)
+      [("k", Val.str "mu"), ("x", v), ("t", tyVal (.mu key alts)), ("e", envVal tenv)]
+      Helper.outMu = .ok (.ret (outV tenv v (.mu key alts))) := by
+  have hml : m = outFuel ((key, alts) :: tenv) v (.ctors key alts) + 2 * tenv.length + 134 := by
+    simp only [outFuel] at hm; omega
+  simp only [Helper.outMu, Helper.pushed, tyVal, envVal]
+  walk
+  rw [show ([Val.str "mu", Val.str key, Val.arr (tyValAlts alts)][Int.toNat 1]?).getD Val.undef
+        = Val.str key from rfl,
+    show ([Val.str "mu", Val.str key, Val.arr (tyValAlts alts)][Int.toNat 2]?).getD Val.undef
+        = Val.arr (tyValAlts alts) from rfl,
+    show f + m + 57 = (f + m + 48 - tenv.length)
+        + ([Val.arr [Val.str key, Val.arr (tyValAlts alts)]] : List Val).length
+        + (envVals tenv).length + 8 from by
+      simp only [List.length_cons, List.length_nil, envVals_length]; omega,
+    calls_aconcat]
+  walk
+  rw [show Val.arr ([Val.arr [Val.str key, Val.arr (tyValAlts alts)]] ++ envVals tenv)
+        = envVal ((key, alts) :: tenv) from rfl,
+    show Val.arr [Val.str "ctors", Val.str key, Val.arr (tyValAlts alts)]
+        = tyVal (.ctors key alts) from by rw [tyVal],
+    show f + m + 61 = (f + m + 61 - outFuel ((key, alts) :: tenv) v (.ctors key alts))
+        + outFuel ((key, alts) :: tenv) v (.ctors key alts) from by omega,
+    hrec]
+  simp [outV]
+
+/-- The step a `ref` takes on the way out, the one `has_ref_step` takes on the way in. -/
+private theorem out_ref_step (ext : Ext) (v : Val) (up : Nat) (tenv : TyEnv) (f m : Nat)
+    (hm : outFuel tenv v (.ref up) = m + 66)
+    (hrec : ∀ (b : String × TyAlts), tenv[up]? = some b → ∀ g,
+      callDef ext (g + outFuel (tenv.drop up) v (.ctors b.1 b.2)) "__out"
+        [v, tyVal (.ctors b.1 b.2), envVal (tenv.drop up)]
+        = .ok (outV (tenv.drop up) v (.ctors b.1 b.2))) :
+    evalStmts ext (f + m + 60 + 2)
+      [("k", Val.str "ref"), ("x", v), ("t", tyVal (.ref up)), ("e", envVal tenv)]
+      Helper.outRef = .ok (.ret (outV tenv v (.ref up))) := by
+  simp only [Helper.outRef, Helper.bound, Helper.asBoundCtors, Helper.outer, tyVal, envVal]
+  walk
+  rw [show ([Val.str "ref", Val.num (up : Int)][Int.toNat 1]?).getD Val.undef
+        = Val.num (up : Int) from rfl]
+  walk
+  rw [cmp_int_ge, envVals_length]
+  cases hup : tenv[up]? with
+  | none =>
+    have hlen : tenv.length ≤ up := by
+      rcases Nat.lt_or_ge up tenv.length with h | h
+      · rw [List.getElem?_eq_getElem h] at hup; exact absurd hup (by simp)
+      · exact h
+    rw [show decide ((tenv.length : Int) ≤ (up : Int)) = true from by simp; omega]
+    walk
+    rw [outV, hup]
+  | some b =>
+    have hlen : up < tenv.length := by
+      rcases Nat.lt_or_ge up tenv.length with h | h
+      · exact h
+      · rw [List.getElem?_eq_none h] at hup; exact absurd hup (by simp)
+    rw [show decide ((tenv.length : Int) ≤ (up : Int)) = false from by simp; omega]
+    walk
+    rw [if_pos (show (0 : Int) ≤ (up : Int) from by omega),
+      show ((up : Int)).toNat = up from by omega, envVals_getElem?, hup]
+    simp only [Option.map_some, Option.getD_some]
+    walk
+    have hmf : m = outFuel (tenv.drop up) v (.ctors b.1 b.2) + 134 := by
+      simp only [outFuel, hup] at hm; omega
+    rw [if_neg (by simp), ← envVals_length tenv, drop_take_all]
+    walk
+    rw [show ([Val.str b.1, Val.arr (tyValAlts b.2)][Int.toNat 0]?).getD Val.undef
+          = Val.str b.1 from rfl,
+      show ([Val.str b.1, Val.arr (tyValAlts b.2)][Int.toNat 1]?).getD Val.undef
+          = Val.arr (tyValAlts b.2) from rfl,
+      show Val.arr [Val.str "ctors", Val.str b.1, Val.arr (tyValAlts b.2)]
+          = tyVal (.ctors b.1 b.2) from by rw [tyVal],
+      ← envVals_drop,
+      show Val.arr (envVals (tenv.drop up)) = envVal (tenv.drop up) from rfl,
+      show f + m + 58 = (f + m + 58 - outFuel (tenv.drop up) v (.ctors b.1 b.2))
+          + outFuel (tenv.drop up) v (.ctors b.1 b.2) from by omega,
+      hrec b hup]
+    simp [outV, hup]
+
+private theorem calls_out_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc) (tenv : TyEnv),
+    sizeOf v < n → descOk tenv.length t = true → envOk tenv = true → mapsOk v = true →
+    hasV tenv v t = true →
+    ∀ (f : Nat), callDef ext (f + outFuel tenv v t) "__out" [v, tyVal t, envVal tenv]
+      = .ok (outV tenv v t) := by
+  intro n
+  induction n with
+  | zero => intro v t tenv h; exact absurd h (by omega)
+  | succ n ih =>
+    suffices hrank : ∀ (r : Nat) (v : Val) (t : TyDesc) (tenv : TyEnv), descRank t ≤ r →
+        sizeOf v < n + 1 → descOk tenv.length t = true → envOk tenv = true → mapsOk v = true →
+        hasV tenv v t = true →
+        ∀ (f : Nat), callDef ext (f + outFuel tenv v t) "__out" [v, tyVal t, envVal tenv]
+          = .ok (outV tenv v t) from
+      fun v t tenv hlt hd he hmo hh f =>
+        hrank (descRank t) v t tenv (Nat.le_refl _) hlt hd he hmo hh f
+    intro r
+    induction r with
+    | zero => intro v t tenv hdr; exact absurd hdr (by cases t <;> simp [descRank])
+    | succ r ihr =>
+    intro v t tenv _hdr hlt hd he hmo hh f
+    obtain ⟨m, hm⟩ := outFuel_split v t
+    refine out_entered ext v t f m (outV tenv v t) ?_ hm
+    have hk := lookup_k_out (tenv := tenv) t v
+    cases t with
+    | bool | int53 | uint32 | string | bigint =>
+      simp only [headName] at hk ⊢
+      rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+        out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+        show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 55 + 2 = (f + m + 54) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl]
+      walk
+      rw [outV_scalar v _ (by simp [headName])]
+    | array te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | arr xs =>
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega,
+          has_take _ _ _ _ _ _ (outV tenv (.arr xs) (.array te)) hk ?_]
+        simp only [Helper.outArray]
+        walk
+        have hml : m = outFuelList tenv xs te + 4 * xs.length := by
+          simp only [outFuel] at hm; omega
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        have hsub : ∀ y ∈ xs, ∀ (g : Nat),
+            callDef ext (g + outFuel tenv y te) "__out" [y, tyVal te, envVal tenv] = .ok (outV tenv y te) := by
+          intro y hy g
+          refine ih y te tenv ?_ hd he (mapsOkList_mem hmo hy) (hasList_mem hh hy) g
+          have := List.sizeOf_lt_of_mem hy
+          simp only [Val.arr.sizeOf_spec] at hlt
+          omega
+        rw [show f + m + 59 = (f + 4 * xs.length + 51) + outFuelList tenv xs te + 8 from by omega,
+          outArray_loop ext te (.str "array") xs (.arr xs) [] (f + 4 * xs.length + 51) hsub]
+        walk
+        rw [outV.eq_def]
+        simp
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | dict te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | dict es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        simp only [Bool.and_eq_true] at hmo
+        have hsub : ∀ k ∈ es.map (·.1), ∀ (g : Nat),
+            callDef ext (g + outFuel tenv (lookupV es k) te) "__out" [lookupV es k, tyVal te, envVal tenv]
+              = .ok (outV tenv (lookupV es k) te) := by
+          intro k hk' g
+          have hany : es.any (·.1 == k) = true := by
+            obtain ⟨e, he, rfl⟩ := List.mem_map.mp hk'
+            exact List.any_eq_true.mpr ⟨e, he, by simp⟩
+          have hmem := lookupV_mem hany
+          refine ih _ te tenv ?_ hd he (mapsOkFields_mem hmo.2 hmem) (hasEntries_mem hh hmem) g
+          have hsz := sizeOf_lookupV es k
+          simp only [Val.obj.sizeOf_spec] at hsz
+          simp only [Val.dict.sizeOf_spec] at hlt
+          omega
+        have hml : m = outFuelEntries tenv es te + 8 * es.length := by
+          simp only [outFuel] at hm; omega
+        have hkeys := outFuelKeys_split (tenv := tenv) es te [] es rfl hmo.1
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega,
+          has_take _ _ _ _ _ _ (outV tenv (.dict es) (.dict te)) hk ?_]
+        simp only [Helper.outDict]
+        walk
+        rw [show f + m + 57 = (f + m + 52) + 5 from by omega, calls_dkeys]
+        walk
+        rw [show (es.map fun e => Val.str e.fst) = (es.map (·.1)).map Val.str from by
+              simp only [List.map_map]; rfl,
+          show f + m + 58 = (f + 4 * es.length + 50) + outFuelKeys tenv es te (es.map (·.1)) + 8 from
+            by rw [hkeys]; omega,
+          outDict_loop ext te es (.str "dict") (es.map (·.1)) [] (f + 4 * es.length + 50) hsub,
+          outSet_split es te [] es [] rfl hmo.1 (by simp)]
+        walk
+        rw [outV.eq_def]
+        simp
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | dictObj te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        have hml : m = 0 := by
+          simp only [outFuel] at hm; omega
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 55 + 2 = (f + m + 54) + 3 from by omega,
+          has_take _ _ _ _ _ _ (outV tenv (.obj es) (.dictObj te)) hk ?_]
+        simp only [Helper.outDictObj]
+        walk
+        rw [outV.eq_def]
+      | dict es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        simp only [Bool.and_eq_true] at hmo
+        have hsub : ∀ w ∈ es.map (·.2), ∀ (g : Nat),
+            callDef ext (g + outFuel tenv w te) "__out" [w, tyVal te, envVal tenv]
+              = .ok (outV tenv w te) := by
+          intro w hw g
+          refine ih w te tenv ?_ hd he (mapsOkFields_mem hmo.2 hw) (hasEntries_mem hh hw) g
+          have := sizeOf_snd_mem hw
+          simp only [Val.dict.sizeOf_spec] at hlt
+          omega
+        have hml : m = outFuelEntries tenv es te + 8 * es.length := by
+          simp only [outFuel] at hm; omega
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 55 + 2 = (f + m + 54) + 3 from by omega,
+          has_take _ _ _ _ _ _ (outV tenv (.dict es) (.dictObj te)) hk ?_]
+        simp only [Helper.outDictObj]
+        walk
+        rw [show f + m + 53 = (f + 45) + outFuelEntries tenv es te + 8 * es.length + 8 from by
+              omega,
+          outDictObj_loop ext te (.str "dictObj") (.dict es) es [] (f + 45) hsub]
+        walk
+        rw [List.nil_append, fromPairs_outEntryPairs te es [] hmo.1 (by simp)]
+        walk
+        rw [outV.eq_def]
+        simp
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | option te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        have hgen : ∀ (name : String) (d : TyDesc), descOk tenv.length d = true →
+            hasV tenv (lookupV es name) d = true → ∀ (g : Nat),
+            callDef ext (g + outFuel tenv (lookupV es name) d) "__out" [lookupV es name, tyVal d, envVal tenv]
+              = .ok (outV tenv (lookupV es name) d) := by
+          intro name d hdd hhh g
+          refine ih _ d tenv ?_ hdd he (mapsOk_lookupV' hmo name) hhh g
+          have hsz := sizeOf_lookupV es name
+          simp only [Val.obj.sizeOf_spec] at hsz hlt
+          omega
+        have hml : m = outFuelFields tenv es [("value", te)] := by
+          simp only [outFuel] at hm; omega
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega,
+          has_take _ _ _ _ _ _ (outV tenv (.obj es) (.option te)) hk ?_]
+        simp only [Helper.outOption]
+        walk
+        simp only [← strictEq.eq_def]
+        cases hnone : strictEq (lookupV es "tag") (.str "none") with
+        | true =>
+          walk
+          have hf := calls_outFields (tenv := tenv) ext es "tag" [] (by intro n d hmem; cases hmem) rfl (f + m + 40)
+          simp only [tyValFields, outFuelFields] at hf
+          rw [hf, outV.eq_def]
+          simp [hnone, outVFields]
+        | false =>
+          cases hsome : strictEq (lookupV es "tag") (.str "some") with
+          | false => walk; rw [outV.eq_def]; simp [hnone, hsome]
+          | true =>
+            walk
+            have hvalue : hasV tenv (lookupV es "value") te = true := by
+              simp only [hnone, hsome, Bool.true_and] at hh
+              exact (hasFields_field hh (by simp)).2
+            have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ [("value", te)] →
+                ∀ (g : Nat), callDef ext (g + outFuel tenv (lookupV es name) d) "__out"
+                  [lookupV es name, tyVal d, envVal tenv] = .ok (outV tenv (lookupV es name) d) := by
+              intro n d hmem g
+              obtain ⟨rfl, rfl⟩ : n = "value" ∧ d = te := by simpa [Prod.mk.injEq] using hmem
+              exact hgen "value" _ hd hvalue g
+            have hf := calls_outFields ext es "tag" [("value", te)] hsubv rfl (f + 39)
+            simp only [tyValFields] at hf
+            rw [show (([Val.str "option", tyVal te][Int.toNat 1]?).getD Val.undef) = tyVal te from rfl,
+              show f + m + 55 = (f + 39) + outFuelFields tenv es [("value", te)] + 16 from by omega,
+              hf, outV.eq_def]
+            simp [hnone, hsome]
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | result okd errd =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        simp only [Bool.and_eq_true] at hd
+        rw [mapsOk] at hmo
+        have hgen : ∀ (name : String) (d : TyDesc), descOk tenv.length d = true →
+            hasV tenv (lookupV es name) d = true → ∀ (g : Nat),
+            callDef ext (g + outFuel tenv (lookupV es name) d) "__out" [lookupV es name, tyVal d, envVal tenv]
+              = .ok (outV tenv (lookupV es name) d) := by
+          intro name d hdd hhh g
+          refine ih _ d tenv ?_ hdd he (mapsOk_lookupV' hmo name) hhh g
+          have hsz := sizeOf_lookupV es name
+          simp only [Val.obj.sizeOf_spec] at hsz hlt
+          omega
+        have hml : m = outFuelFields tenv es [("value", okd)] + outFuelFields tenv es [("error", errd)] := by
+          simp only [outFuel] at hm; omega
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega,
+          has_take _ _ _ _ _ _ (outV tenv (.obj es) (.result okd errd)) hk ?_]
+        simp only [Helper.outResult]
+        walk
+        simp only [← strictEq.eq_def]
+        cases hok : strictEq (lookupV es "tag") (.str "ok") with
+        | true =>
+          walk
+          have hvalue : hasV tenv (lookupV es "value") okd = true := by
+            simp only [hok, if_true] at hh
+            exact (hasFields_field hh (by simp)).2
+          have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ [("value", okd)] →
+              ∀ (g : Nat), callDef ext (g + outFuel tenv (lookupV es name) d) "__out"
+                [lookupV es name, tyVal d, envVal tenv] = .ok (outV tenv (lookupV es name) d) := by
+            intro n d hmem g
+            obtain ⟨rfl, rfl⟩ : n = "value" ∧ d = okd := by simpa [Prod.mk.injEq] using hmem
+            exact hgen "value" _ hd.1 hvalue g
+          have hf := calls_outFields ext es "tag" [("value", okd)] hsubv rfl
+            (f + outFuelFields tenv es [("error", errd)] + 39)
+          simp only [tyValFields] at hf
+          rw [show (([Val.str "result", tyVal okd, tyVal errd][Int.toNat 1]?).getD Val.undef)
+                = tyVal okd from rfl,
+            show f + m + 55 = (f + outFuelFields tenv es [("error", errd)] + 39)
+              + outFuelFields tenv es [("value", okd)] + 16 from by omega,
+            hf, outV.eq_def]
+          simp [hok]
+        | false =>
+          cases herr : strictEq (lookupV es "tag") (.str "error") with
+          | false => walk; rw [outV.eq_def]; simp [hok, herr]
+          | true =>
+            walk
+            have hvalue : hasV tenv (lookupV es "error") errd = true := by
+              simp only [hok, herr, Bool.true_and] at hh
+              exact (hasFields_field hh (by simp)).2
+            have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ [("error", errd)] →
+                ∀ (g : Nat), callDef ext (g + outFuel tenv (lookupV es name) d) "__out"
+                  [lookupV es name, tyVal d, envVal tenv] = .ok (outV tenv (lookupV es name) d) := by
+              intro n d hmem g
+              obtain ⟨rfl, rfl⟩ : n = "error" ∧ d = errd := by simpa [Prod.mk.injEq] using hmem
+              exact hgen "error" _ hd.2 hvalue g
+            have hf := calls_outFields ext es "tag" [("error", errd)] hsubv rfl
+              (f + outFuelFields tenv es [("value", okd)] + 38)
+            simp only [tyValFields] at hf
+            rw [show (([Val.str "result", tyVal okd, tyVal errd][Int.toNat 2]?).getD Val.undef)
+                  = tyVal errd from rfl,
+              show f + m + 54 = (f + outFuelFields tenv es [("value", okd)] + 38)
+                + outFuelFields tenv es [("error", errd)] + 16 from by omega,
+              hf, outV.eq_def]
+            simp [hok, herr]
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | ctors key alts =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        have hgen : ∀ (name : String) (d : TyDesc), descOk tenv.length d = true →
+            hasV tenv (lookupV es name) d = true → ∀ (g : Nat),
+            callDef ext (g + outFuel tenv (lookupV es name) d) "__out" [lookupV es name, tyVal d, envVal tenv]
+              = .ok (outV tenv (lookupV es name) d) := by
+          intro name d hdd hhh g
+          refine ih _ d tenv ?_ hdd he (mapsOk_lookupV' hmo name) hhh g
+          have hsz := sizeOf_lookupV es name
+          simp only [Val.obj.sizeOf_spec] at hsz hlt
+          omega
+        have hml : m = outFuelAlts tenv es alts + 5 * alts.length := by
+          simp only [outFuel] at hm; omega
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          out_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 56 + 2 = (f + m + 55) + 3 from by omega,
+          has_take _ _ _ _ _ _ (outV tenv (.obj es) (.ctors key alts)) hk ?_]
+        simp only [Helper.outCtors]
+        walk
+        rw [show ([Val.str "ctors", Val.str key, Val.arr (tyValAlts alts)][Int.toNat 2]?).getD
+              Val.undef = Val.arr (tyValAlts alts) from rfl,
+          tyValAlts_eq,
+          show f + m + 55 = (f + outFuelAlts tenv es alts + 47)
+              + sumCost (fun _ => 4) (alts.map altVal) + 8 from by
+            rw [sumCost_four, List.length_map]; omega,
+          calls_find_gen ext _ _ _ _
+            (answers_alt ext (.obj es) (.str key) (lookupV es key) _ _ _ rfl rfl)
+            (f + outFuelAlts tenv es alts + 47),
+          valFind_alts]
+        walk
+        simp only [← strictEq.eq_def]
+        cases hfind : alts.find? (fun c => strictEq (.str c.1) (lookupV es key)) with
+        | none => simp only [hfind] at hh; exact absurd hh (by simp)
+        | some alt =>
+          walk
+          rw [show lookupV [("tag", Val.str "some"), ("value", altVal alt)] "tag"
+                = Val.str "some" from rfl,
+            show lookupV [("tag", Val.str "some"), ("value", altVal alt)] "value"
+                = altVal alt from rfl]
+          simp only [altVal]
+          walk
+          obtain ⟨hnames, hfields⟩ := altsOk_findV hd hfind
+          have hhf : hasFields tenv es alt.2 = true := by simp only [hfind] at hh; exact hh
+          have hsubv : ∀ (name : String) (d : TyDesc), (name, d) ∈ alt.2 →
+              ∀ (g : Nat), callDef ext (g + outFuel tenv (lookupV es name) d) "__out"
+                [lookupV es name, tyVal d, envVal tenv] = .ok (outV tenv (lookupV es name) d) := by
+            intro n d hmem g
+            exact hgen n d (fieldsOk_mem hfields hmem) (hasFields_field hhf hmem).2 g
+          have hle := outFuelFields_le_alts (tenv := tenv) es alts alt (List.mem_of_find?_eq_some hfind)
+          rw [show ([Val.str alt.1, Val.arr (tyValFields alt.2)][Int.toNat 1]?).getD Val.undef
+                = Val.arr (tyValFields alt.2) from rfl,
+            show ([Val.str "ctors", Val.str key,
+                Val.arr (List.map altVal alts)][Int.toNat 1]?).getD Val.undef
+                  = Val.str key from rfl,
+            show f + m + 53
+                = (f + m + 37 - outFuelFields tenv es alt.2) + outFuelFields tenv es alt.2 + 16 from by
+              omega,
+            calls_outFields ext es key alt.2 hsubv hnames (f + m + 37 - outFuelFields tenv es alt.2),
+            outV.eq_def]
+          simp [hfind]
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | mu key alts =>
+      simp only [headName] at hk ⊢
+      rw [Helper.outBinders, show f + m + 64 = (f + m + 61) + 3 from by omega,
+        has_take _ _ _ _ _ _ (outV tenv v (.mu key alts)) hk
+          (out_mu_step ext v key alts tenv f m hm (fun g =>
+            ihr v (.ctors key alts) ((key, alts) :: tenv)
+              (by have h1 : descRank (TyDesc.mu key alts) = 2 := rfl
+                  have h2 : descRank (TyDesc.ctors key alts) = 1 := rfl
+                  omega) hlt
+              (by rw [descOk] at hd; rw [descOk, List.length_cons]; exact hd)
+              (by rw [envOk, Bool.and_eq_true]
+                  exact ⟨by rw [descOk] at hd; exact hd, he⟩)
+              hmo (by rw [hasV] at hh; exact hh) g))]
+    | ref up =>
+      simp only [headName] at hk ⊢
+      rw [Helper.outBinders, show f + m + 64 = (f + m + 61) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl, show f + m + 61 + 2 = (f + m + 60) + 3 from by omega,
+        has_take _ _ _ _ _ _ (outV tenv v (.ref up)) hk
+          (out_ref_step ext v up tenv f m hm (fun b hb g =>
+            ihr v (.ctors b.1 b.2) (tenv.drop up)
+              (by have h1 : descRank (TyDesc.ref up) = 2 := rfl
+                  have h2 : descRank (TyDesc.ctors b.1 b.2) = 1 := rfl
+                  omega) hlt
+              (by rw [descOk]; exact Js.envOk_getElem he hb)
+              (Js.envOk_drop up he) hmo
+              (by rw [hasV, hb] at hh; exact hh) g))]
+
+/-- What `__out` builds, for every value the entry check accepts and every descriptor the compiler
+renders. -/
+theorem calls_out (ext : Ext) (v : Val) (t : TyDesc) (hd : descOk tenv.length t = true)
+    (he : envOk tenv = true) (hmo : mapsOk v = true) (hh : hasV tenv v t = true) (f : Nat) :
+    callDef ext (f + outFuel tenv v t) "__out" [v, tyVal t, envVal tenv] = .ok (outV tenv v t) :=
+  calls_out_aux ext (sizeOf v + 1) v t tenv (by omega) hd he hmo hh f
+
+
 /-! ### The model of the generated code, read off the source semantics -/
 
 theorem ofJsFields_any (es : List (String × Js.JsValue)) (n : String) :
