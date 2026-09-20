@@ -68,14 +68,20 @@ correctness proof has to discharge the callee's entry check today. Removing the 
 **removes a step from that proof rather than adding one** — the two lemmas move from the call case to
 the wrapper, where they are used once per declaration instead of once per call site.
 
-**`@[ship] private` rather than a new attribute.** `Decl` gains `exported : Bool`, and `isPublic`
+**A mark for "ship it, do not export it".** `Decl` gains `exported : Bool := true`, and `isPublic`
 becomes `d.exported && d.params.all (!·.ty.isFn)` — a declaration that takes a function still cannot
-cross the boundary, and one the author marked private additionally cannot. The refusing direction
+cross the boundary, and one the author marked internal additionally cannot. The refusing direction
 (`decl_refuses`) already carries `hpub : d.isPublic = true`, so it narrows with the definition and needs
-no new hypothesis. A non-exported declaration gets no `.d.ts` line, no `export` keyword and no wrapper —
-only `f__` — which is also what makes the wrapper's cost provably zero for it.
+no new hypothesis. A non-exported declaration gets no `.d.ts` line and no `export` keyword.
 
-**Order.** The wrapper split first, alone, with `exported` still derived; `@[ship] private` second, once
+**The spelling is not `private`.** `Gather.namespaceMembers` already reads a `private def` as "not part
+of the package" — a private name's prefix is not the namespace, so it is never gathered at all. So the
+mark is either a parametric `@[ship internal]` (one mark, one place, but `shipAttr` is a
+`registerTagAttribute` and would have to become parametric) or a second tag attribute read by
+`ship_package`. Not `@[ship, internal]` read at `@[ship]` time: attributes apply left to right, so the
+walk would not yet see the second one.
+
+**Order.** The wrapper split first, alone, with `exported` still derived; the internal mark second, once
 the wrapper is where the boundary lives. Each leaves every gate green and the artifact regenerated.
 
 ## Files
@@ -91,6 +97,48 @@ the wrapper is where the boundary lives. Each leaves every gate green and the ar
 | `Lean2Js/Gather.lean`, `Lean2Js/Reify.lean` | 2 | `@[ship] private` sets it |
 | `Lean2Js/Example.lean`, `Lean2Js/Axioms.lean` | 2 | a private shipped helper, to put the case in the artifact |
 | `README.md`, `docs/guarantees.md`, `CHANGELOG.md`, `reference/declarations.md` | 1, 2 | what a call costs, and what `@[ship] private` does |
+
+## What a first attempt found
+
+The codegen half is small and was written in one sitting: `bodyName`, `compileBodyDecl`, `compileDecls`
+emitting the pair, and the two call sites in `compileExpr` (`.call d.name` and `.fnRef name`) pointing at
+the body. `lake build Lean2Js` passes with that alone. **The proofs are where the work is**, and a build
+of `checks` names it exactly — 14 errors before the failing modules stop their dependents, so `Decl`,
+`Dts`, `Example` and `Axioms` have not yet been heard from.
+
+**The one that decides the shape: `__` is reserved *against being called*.** `Correct.lean:6150` asks for
+`isReserved (bodyName fn) = false`, and `Renderable.lean:1016` for `okCallee (bodyName d.name) = true`.
+Both refuse a `__` prefix, and that is not an accident — it is what keeps a generated call from reaching
+a runtime helper by name. So a compiler-generated callee under that prefix means widening what the
+printer and the JS semantics accept, which is a change to the trusted base and wants deciding on
+purpose. The three ways out:
+
+- **Exempt one shape.** `okCallee` and `isReserved` learn `__b_`, which is then reserved twice over: no
+  author name reaches it (`validateIdent`) and no helper is written with an underscore. Smallest change,
+  but the trusted base grows by a naming rule.
+- **Name bodies out of the reserved space.** Anything not starting `__` risks colliding with an author's
+  own declaration, so it would need `validateDistinct` to range over the generated pair rather than the
+  declared names. No change to the trusted base; a worse error message when it collides.
+- **Keep one function and hoist the check.** Not available: the check is what the entry *is*.
+
+**The rest of the errors, and what each is.** `Renderable.lean:1714/1733/1736/1752` — `compileDecls`
+returns two funcs per declaration, so the list induction and its `simp` set move; mechanical.
+`Correct.lean:6052` — `eventually_fnRef` produces `Js.JsValue.fn name` for `ident (bodyName name)`, so
+either the value carries the body name or `calleeName` resolves it; this is the one place where which
+name a *function value* holds becomes visible, and it decides whether a declaration passed by name is
+called checked or unchecked. `Correct.lean:6154/8407` — the `calleeName jenv fn` rewrite no longer
+matches, downstream of the same choice.
+
+**Not yet reached, and expected:** `decl_agrees_jargs` in `Decl.lean` splitting into the body's agreement
+and the wrapper's, which is where `checkTy_encodeValue` and `normTy_encodeValue` move to; and
+`compileDecls_find` gaining a companion that finds the body.
+
+**A decision already taken.** Every declaration keeps a wrapper under its own name, public or not, even
+though nothing calls a non-public one once calls are redirected. Dropping it would leave
+`callFunctionAt m g fn` unbound for a non-public `fn`, and `decl_correct` and `decl_traps` are stated for
+every declaration rather than only the public ones — narrowing them to match a weaker artifact is what
+`CLAUDE.md` forbids. The cost is a dead function in `index.js` per declaration that takes another by
+name.
 
 ## Risks
 
