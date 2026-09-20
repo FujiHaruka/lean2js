@@ -34,8 +34,7 @@ per declared type but per `Dict` occurrence, and the cleanest place to hang it i
 
 **A second `Ty`, not a flag on the first.** A flag would make `Ty` carry something `Value.hasTy` has to
 read, and every statement quantified over `Ty` would have to say which flag it was at. A second
-constructor is what the proofs already know how to do: `Sound`, `Correct` and `Decl` each gain a case
-that is the `dict` case with a different `JsValue` on the JavaScript side, and `InFragment.all` covers
+constructor is what the proofs already know how to do, and `InFragment.all` covers the expressions over
 it or the boundary has moved.
 
 **The shape is decided at the boundary, and only there.** `encodeValue` takes no `Ty` and cannot be
@@ -93,6 +92,39 @@ helper and `decl_correct`'s new right-hand side last. Each leaves every gate gre
 | `Lean2Js/Vectors.lean` | values of the new type |
 | `Lean2Js/Example.lean`, `Axioms.lean` | a public function over one |
 | the documents | `reference/declarations.md`'s table of what a consumer sees, `vocabulary.md`, `javascript.md`, `README.md`, `CHANGELOG.md` |
+
+## What carrying `Ty.dictObj` costs, measured
+
+Written and then backed out, so that the next attempt starts from the count rather than from a guess
+(2026-09-20). **The constructor itself is cheap and `Js.TyDesc.dictObj` is the whole of the expense.**
+
+`| dictObj (value : Ty)` beside `Ty.dict` costs twenty-one cases in eight files, every one of them the
+`.dict` case written again. Everything else absorbs it through a `| _ => …` fallback, so nothing else
+even has to be found:
+
+| File | The cases |
+| --- | --- |
+| `Core.lean` | `Ty.beq`, `Ty.beq_refl`, `Ty.eq_of_beq`, `Ty.size`, `Ty.render` (`Dict.Obj V`), `Ty.subst` |
+| `Js.lean` | `tsType` (`{ readonly [key: string]: V }`), `tyNames` |
+| `Cost.lean` | `tyFirstOrder`, `tyFirstOrder_subst` |
+| `Compile.lean` | `wfTy`, `tyDescIn` |
+| `Parse.lean` | `descSize`, `parseDesc`, `parseDesc_append` |
+| `JsSem.lean` | `descOk` |
+| `Sound.lean` | its own `Ty.beq_refl` and `Ty.eq_of_beq` |
+| `Renderable.lean` | `noStar_render`, `noStar_render_of_wfParamTy`, `okName_of_signature` |
+
+**`Js.TyDesc.dictObj` is where it stops being mechanical.** The descriptor is read at run time by
+generated JavaScript, and `HelperProof.lean` proves `__has` and `__norm` answer what `hasV` and `normV`
+say — `tyVal` and `headName` gain a line each, and then the two `cases t` at the heart of those proofs
+(`HelperProof.lean:3642` and `:4760`) each want a `dictObj` branch. Those branches are written in
+explicit fuel arithmetic: `f + m + 64`, `has_past_binders`, and a chain of `has_skip` counting the
+guards the helper walks past before the one this branch is. **A new branch in the helper moves the
+arithmetic of the branches after it**, so the first thing to try is putting `dictObj` last in the
+dispatch and seeing whether every earlier branch holds as it stands.
+
+Nothing else on the proof side moved at all: `Correct.lean`, `Decl.lean`, `Eval.lean` and `Step.lean`
+built untouched, because the new constructor carries no new semantics. A full `lake build` is about 110
+seconds from warm, which is the loop this work runs in.
 
 ## Risks
 
