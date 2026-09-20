@@ -57,11 +57,6 @@ structure Artifact where
 /-- Kept alongside the lakefile's `version`; `scripts/check-template.sh` fails when the two drift. -/
 def compilerVersion : String := "0.2.0"
 
-/-- The transcribed source ships under the package's own name rather than a fixed one, so that a stack
-trace through the source map names the package the frame came from. -/
-def Manifest.sourceFileName (m : Manifest) : String :=
-  ((m.package.splitOn "/").getLastD m.package) ++ ".lean2js"
-
 /-- The codes an export throws instead of returning a value JavaScript would have to guess at. The rest of
 `Value.Err` cannot be reached from a shipped program: the cost bound rules out `outOfFuel`, exhaustiveness
 rules out `noMatchingAlternative`, and the remaining three are about a program that does not compile. -/

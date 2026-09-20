@@ -83,7 +83,6 @@ seatCharge({ tag: "team" }, 9007199254740991); // Error: int53Overflow
 | --- | --- |
 | `index.js` | ESM. The runtime helpers it calls are confined to the `__` prefix |
 | `index.d.ts` | The types above. Consumers need nothing else to call the package |
-| `my-logic.lean2js` | The compiled program as text, named after the last segment of the package name |
 | `proof-manifest.json` | Theorems, the axioms they rest on, the compiler and Lean versions, the public API |
 | `README.md` | The public API in TypeScript, what a call throws, the theorems and the axioms — this is the page npm shows |
 | `package.json` | `exports` / `sideEffects` / `engines`, and `"private": true` until you say otherwise |

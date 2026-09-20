@@ -13,6 +13,10 @@ what decides which compiler your artifact was built by.
   `emit`, where every other file a package carries is checked. A bundler folds a dependency's map into
   its own silently, so a map that is off by a line reaches a consumer as a wrong answer they have no way
   to question.
+- A package no longer carries the transcribed `.lean2js` source either. It was there for a reader
+  checking a shipped theorem against the program that theorem quantifies over, but nothing in the
+  package pointed at it, and a constant a theorem names reaches it already written out to its value, so
+  that reader never closed the check from it alone. `index.js` carries the same bodies.
 
 ## 0.2.0
 

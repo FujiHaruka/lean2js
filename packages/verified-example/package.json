@@ -18,7 +18,6 @@
     "README.md",
     "index.js",
     "index.d.ts",
-    "verified-example.lean2js",
     "proof-manifest.json"
   ]
 }

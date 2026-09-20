@@ -28,7 +28,7 @@ Keep that up when adding one. The map:
 | Subset syntax and values | `Core` `Value` `Enc` `EncDeriving` `Ident` `Text` |
 | Reference semantics | `Eval` `Fuel` `Cost` `Bound` `Traps` `Step` `StepAgree` |
 | Lean front end | `Reify` `Denotes` `Denote` `Expand` `Prelude` `Verified` `Gather` |
-| Code generation | `Compile` `Js` `Render` `Builder` `Dts` `Helper` |
+| Code generation | `Compile` `Js` `Builder` `Dts` `Helper` |
 | Generated-JS semantics | `JsSem` `HelperSem` `Norm` `Agree` `Parse` |
 | Proofs | `Sound` `Correct` `Decl` `Exhaustive` `Roundtrip` `Renderable` `HelperProof` `HelperAgree` |
 | Emission | `Manifest` `Emit` `Json` `Vectors` `NodeCheck` |

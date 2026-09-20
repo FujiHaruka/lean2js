@@ -5,7 +5,6 @@ import Lean2Js.Compile
 import Lean2Js.Manifest
 import Lean2Js.NodeCheck
 import Lean2Js.Parse
-import Lean2Js.Render
 import Lean2Js.Vectors
 
 /-!
@@ -38,7 +37,7 @@ private def packageJson (m : Manifest) : Json :=
     ("sideEffects", .bool false),
     ("engines", .obj [("node", .str ">=18")]),
     ("files", .arr [.str "README.md", .str "index.js", .str "index.d.ts",
-                    .str m.sourceFileName, .str "proof-manifest.json"])
+                    .str "proof-manifest.json"])
   ])
 
 /-- Everything `emit` refuses by reading the program alone, and the module it compiles to when it refuses
@@ -92,10 +91,8 @@ def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
     let vectors ← match renderVectors a.program 400 200 with
       | .error e => throw (IO.userError s!"vector generation failed: {e}")
       | .ok vectors => pure vectors
-    let sourceFile := a.manifest.sourceFileName
     let files := [
       ("index.js", text),
-      (sourceFile, a.program.source),
       ("index.d.ts", Js.renderDts a.program a.docs),
       ("README.md", a.toReadme),
       ("proof-manifest.json", a.toJson.renderPretty ++ "\n"),
@@ -103,11 +100,6 @@ def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
     checkOnNode files vectors
     IO.println s!"needs {Cost.cost a.program} of the {defaultFuel} fuel the artifact runs at"
     IO.FS.createDirAll outDir
-    -- the transcribed source is named after the package, so renaming the package would otherwise leave
-    -- the old one behind, next to a manifest that does not mention it
-    for entry in ← outDir.readDir do
-      if entry.fileName.endsWith ".lean2js" && entry.fileName != sourceFile then
-        IO.FS.removeFile entry.path
     for (name, text) in files do
       IO.FS.writeFile (outDir / name) text
     IO.println
