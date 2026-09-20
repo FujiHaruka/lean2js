@@ -11,19 +11,16 @@ README. A lemma you do not want published is `private`.
 ## What you are proving with
 
 - **There is no Mathlib.** The dependency is Lean 4 and this library, so `norm_num`, `ring`, `linarith`
-  and `field_simp` are not there — `norm_num` comes back as `unknown tactic`.
+  and `field_simp` come back as `unknown tactic`.
 - What is there is Lean's own: `rfl`, `decide`, `simp`, `simp_all`, `omega`, `cases`, `induction`,
   `exact`, `constructor`, `split`, `unfold` and `intro`.
-- **Lean's own `List` lemmas are in the default `simp` set**, and there are a lot of them —
-  `List.filter_filter`, `List.length_append`, `List.map_append`, `List.mem_filter` and the rest. A goal
-  about two `filter`s in a row, or a `map` over an append, often closes with a bare `simp`. Try it before
-  reaching for an induction.
-- `String` is the exception: its lemmas are not in the set. `(a ++ b) ++ c = a ++ (b ++ c)` needs
-  `String.append_assoc` named, and a goal that only looks wrong because the two sides bracket the
-  concatenation differently is this and nothing else.
+- **Lean's own `List` lemmas are in the default `simp` set** — `List.filter_filter`,
+  `List.length_append`, `List.map_append`, `List.mem_filter` and many more. A goal about two `filter`s in
+  a row, or a `map` over an append, often closes with a bare `simp`. Try that before an induction.
+- **`String` is the exception**: its lemmas are not in the set. `(a ++ b) ++ c = a ++ (b ++ c)` needs
+  `String.append_assoc` named.
 - `omega` decides linear arithmetic over `Int` and `Nat`, which covers most `min` / `max` / bounds goals.
-- `decide` closes a goal that is decidable and concrete. It does not close one with a variable in it, and
-  see below for what "decidable" does not reach.
+- `decide` closes a goal that is decidable and concrete, not one with a variable in it.
 
 ## The shapes that come up
 
@@ -43,14 +40,14 @@ theorem negative_seats_are_refused (plan : Plan) (discount : Discount) (seats : 
     invoiceFor plan seats discount = .error "a seat count cannot be negative" := by
   simp [invoiceFor, hneg]
 
-/-- An array or a string peeled one element at a time. The prelude's vocabulary carries the empty case
-and the `x :: xs` case as `simp` equations, so nothing here has to name `List.foldl`. -/
+/-- An array peeled one element at a time. The prelude's vocabulary carries the empty case and the
+`x :: xs` case as `simp` equations. -/
 theorem total_of_three (a b c : Int) : Arr.sum [a, b, c] = a + b + c := by
   simp; omega
 ```
 
-**Gates stacked on each other take one `split` per `if`.** A real rule is rarely one conditional deep,
-and `simp` alone will not pick the branch a hypothesis rules in:
+**Gates stacked on each other take one `split` per `if`.** `simp` alone will not pick the branch a
+hypothesis rules in:
 
 ```lean
 @[ship]
@@ -65,8 +62,8 @@ theorem large_orders_are_tier_three (quantity : Int) (hbig : 100 ≤ quantity) :
 
 **`decide` reaches less far than it looks.** It needs a `Decidable` instance for the whole proposition,
 and an equation between two values of your own `structure`, or between two `Except String YourType`, does
-not get one — not even with `deriving DecidableEq` on every part, because the equation is between terms
-that still have to compute. `rfl` is what closes those: it runs both sides.
+not get one — not even with `deriving DecidableEq` on every part. `rfl` is what closes those: it runs
+both sides.
 
 ```lean
 theorem free_plan_invoice : invoiceFor .free 0 .noDiscount = .ok ⟨[⟨"Free seats", 0⟩], 0, 0, 0⟩ := rfl
@@ -74,43 +71,37 @@ theorem free_plan_invoice : invoiceFor .free 0 .noDiscount = .ok ⟨[⟨"Free se
 
 ## Where `simp` goes wrong
 
-- **Naming a definition in `simp` replaces every rule about it with its body.** This is one rule with
-  three faces, and the `simp` hint points the wrong way in all three: it reports the argument that stopped
-  matching as **unused**, which is the one to keep.
+- **Naming a definition in `simp` replaces every rule about it with its body.** The `simp` hint points
+  the wrong way in all three cases below: it reports the argument that stopped matching as *unused*,
+  which is the one to keep.
   - A hypothesis about a call. Where `h : totalOf amounts = 500`, `simp [totalOf, h]` opens
-    `totalOf amounts` into `Arr.sum amounts` before `h` can fire. The hint blames `h`; the one to drop is
-    `totalOf`. `simp [h]` closes it.
-  - A prelude name that already carries equations. `simp` closes
-    `Str.join [a, b] "-" = a ++ "-" ++ b` on its own; `simp [Str.join]` leaves you looking at `joinStr`,
-    because naming it took the equations off the table. The vocabulary in the next section steps by
-    itself — do not ask for it by name.
+    `totalOf amounts` into `Arr.sum amounts` before `h` can fire. Drop `totalOf`: `simp [h]` closes it.
+  - A prelude name that already carries equations. `simp` closes `Str.join [a, b] "-" = a ++ "-" ++ b` on
+    its own; `simp [Str.join]` leaves you looking at `joinStr`. The vocabulary steps by itself — do not
+    ask for it by name.
   - The opposite case, where naming it is right: a hypothesis about something *inside* the body.
     `h : prices.get sku = none` needs `simp [priceOrZero, h]`, because `prices.get sku` does not appear
     until `priceOrZero` is opened.
 - **Spell a numeric literal the way the goal spells it.** `simp` computes `14 * 24 * 60 * 60 * 1000` in
-  the goal but not inside a hypothesis you handed it as a rewrite rule, so a hypothesis written
+  the goal but not inside a hypothesis handed to it as a rewrite rule, so a hypothesis written
   `elapsed > 14 * 24 * 60 * 60 * 1000` will not fire against a goal holding `1209600000`. Pick one
-  spelling and use it in both, or normalise with `omega`.
+  spelling, or normalise with `omega`.
 - **State a hypothesis the way the `def` tests it, and open the helper that tests it.** If the body asks
-  `Str.isEmpty (Str.trim s)`, the hypothesis to carry is `Str.length (Str.trim s) = 0`, not
-  `Str.trim s = ""` — the first is what the body reduces to. `Str.isEmpty` has to be named beside it, or
-  the two never meet: `simp [labelOf, Str.isEmpty, h]`, where `simp [labelOf, h]` stops with `h` reported
-  unused. This is the one place the rule above runs the other way, because `Str.isEmpty` is what stands
-  between the hypothesis and the branch.
+  `Str.isEmpty (Str.trim s)`, the hypothesis to carry is `Str.length (Str.trim s) = 0`, and
+  `Str.isEmpty` has to be named beside it: `simp [labelOf, Str.isEmpty, h]`.
 
 **A claim about the characters of an arbitrary string is out of reach.** The `Str.*` vocabulary answers
-in its own terms — `Str.includes`, `Str.indexOf?`, `Str.substring`, `Str.length` — and nothing in the
-library carries a fact from one of those answers down to `String.toList` and `Char`. So "this string holds
-exactly two hyphens, whatever the parts were" has no route, while "this string holds no hyphen, because
-`Str.includes s "-" = false`" is already stated in the vocabulary and needs no bridge. State the claim in
-the vocabulary the body uses, or prove it of concrete instances with `decide`.
+in its own terms, and nothing carries a fact from one of those answers down to `String.toList` and
+`Char`. "This string holds no hyphen, because `Str.includes s "-" = false`" needs no bridge; "this string
+holds exactly two hyphens, whatever the parts were" has no route. State the claim in the vocabulary the
+body uses, or prove it of concrete instances with `decide`.
 
 ## What the prelude's functions are
 
-The array and string vocabulary carries `simp` equations for the empty case and the `x :: xs` case, so
 `Arr.sum`, `Arr.count`, `Arr.contains`, `Arr.length`, `Arr.isEmpty`, `Arr.head?`, `Arr.flatten`,
-`Arr.flatMap` and `Str.join` step on their own. `Opt` and `Exc` reduce on each constructor the same way.
-The rest are definitions `simp` has to be told to unfold.
+`Arr.flatMap` and `Str.join` carry `simp` equations for the empty case and the `x :: xs` case, so they
+step on their own; `Opt` and `Exc` reduce on each constructor. The rest are definitions `simp` has to be
+told to unfold.
 
 | Written | Is |
 | --- | --- |
@@ -123,7 +114,7 @@ The rest are definitions `simp` has to be told to unfold.
 | `Str.join xs sep` | the strings of `xs` in order with `sep` between them, `""` for an empty `xs` |
 | `Str.replace s pat rep` | `s` with every occurrence of `pat` rewritten to `rep`, `s` itself for an empty `pat` |
 | `Str.repeat s n` | `s` written out `n` times, `""` for a count of zero or less |
-| `Str.padStart s n pad` | `s` widened to `n` code points with `pad` in front, `s` itself when it is already that wide |
+| `Str.padStart s n pad` | `s` widened to `n` code points with `pad` in front, `s` itself when already that wide |
 | `Str.length s` | the number of code points, not UTF-16 units |
 | `Arr.get xs i` | the element, defined where `i` is in range |
 
@@ -133,8 +124,8 @@ So a goal about division opens with `simp [Int53.div]` and lands on `Int.tdiv`, 
 ## Dictionaries
 
 `Dict.get` unfolds to a lookup in an association list, so `simp [Dict.get, Dict.ofList]` leaves you
-reasoning about `List.find?`. That is rarely what you want. **State the theorem about the answer instead
-of the table**: take what the lookup returned as a hypothesis, and prove what the function does with it.
+reasoning about `List.find?`. **State the theorem about the answer instead of the table**: take what the
+lookup returned as a hypothesis, and prove what the function does with it.
 
 ```lean
 @[ship]
@@ -151,36 +142,25 @@ theorem unlisted_is_free (prices : Dict Int) (sku : String) (h : prices.get sku 
 
 A theorem stated this way says something for every catalogue, and it does not break when a price changes.
 
-## Running a definition with `#eval`
+## `#eval`
 
-`#eval` is how you check that a hypothesis can be met at all, and it needs your types to be printable:
-
-```lean
-inductive Plan where
-  | free
-  | team
-  deriving Enc, Repr
-```
-
-Without `Repr`, `#eval invoiceFor .free 3 .noDiscount` fails with
-`Unable to synthesize MonadEval instance` rather than with anything about printing. `deriving Enc, Repr`
-on every type you `#eval` through — including the ones inside an `Except` or an `Option` — is what the
-template does.
+`#eval` checks that a hypothesis can be met at all, and it needs your types to be printable: `deriving
+Enc, Repr` on every type you `#eval` through, including the ones inside an `Except` or an `Option`.
+Without `Repr`, `#eval invoiceFor .free 3 .noDiscount` fails with `Unable to synthesize MonadEval
+instance`.
 
 ## Three things to check before you publish a theorem
 
 - **Can the hypotheses be met?** A hypothesis nothing satisfies makes the theorem true and empty, and no
-  gate catches it: it compiles, it reaches no forbidden axiom, and it ships in the manifest looking like
-  a guarantee. If a hypothesis names a dictionary key or a constructor, check that some argument reaches
-  it — `#eval` is enough.
+  gate catches it: it compiles, it reaches no forbidden axiom, and it ships looking like a guarantee. If
+  a hypothesis names a dictionary key or a constructor, check with `#eval` that some argument reaches it.
 - **Does the docstring say what the signature says?** The docstring is published as the description of
-  the claim, so it is audited like the statement. Prose that promises more than the theorem states is the
-  one defect the compiler cannot see.
+  the claim, so prose that promises more than the theorem states is the one defect the compiler cannot
+  see.
 - **Is the claim the definition written out again, under a name that promises more?** A theorem named
-  `display_joins_with_two_hyphens` whose statement is
-  `display a b c = a ++ "-" ++ b ++ "-" ++ c` has not proved that the answer holds two hyphens — the parts
-  may carry their own. The statement is fine and the name is the lie. Either name it for what it says, or
-  state the thing the name claims: count the hyphens, or add the hypothesis that the parts hold none.
+  `display_joins_with_two_hyphens` whose statement is `display a b c = a ++ "-" ++ b ++ "-" ++ c` has not
+  proved that the answer holds two hyphens — the parts may carry their own. Either name it for what it
+  says, or state the thing the name claims.
 
 ## What you do not have to prove
 

@@ -167,7 +167,7 @@ Each phase leaves every gate green and the artifact regenerated.
    `inductive`.
 4. **The example and the documents.** A recursive type and a public function over it in
    `Lean2Js/Example.lean`, its theorems, its `#print axioms` lines, and the sentences in `README.md`,
-   `docs/guarantees.md`, `CHANGELOG.md` and `templates/verified-package/SYNTAX.md` that say a type may
+   `docs/guarantees.md`, `CHANGELOG.md` and `templates/verified-package/reference/` that say a type may
    not name itself.
 5. **Recursion in a `def`.** The structural-recursion guard, the certificate by induction, the fuel
    bound that is no longer syntactic, and the sentence in `docs/guarantees.md` that says so.
@@ -189,7 +189,7 @@ Each phase leaves every gate green and the artifact regenerated.
 | `Lean2Js/Vectors.lean` | 3 | the depth in `edgeCases` |
 | `Lean2Js/EncDeriving.lean` | 3 | recursive `toValue` / `ofValue` / `accepts` and the two proofs |
 | `Lean2Js/Example.lean`, `Lean2Js/Axioms.lean` | 4 | the example type, its functions, its theorems |
-| `README.md`, `docs/guarantees.md`, `CHANGELOG.md`, `templates/verified-package/SYNTAX.md` | 4, 5 | what is no longer refused |
+| `README.md`, `docs/guarantees.md`, `CHANGELOG.md`, `templates/verified-package/reference/` | 4, 5 | what is no longer refused |
 
 ## Risks
 

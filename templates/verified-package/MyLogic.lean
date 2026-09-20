@@ -8,7 +8,7 @@ The business logic this package ships, and the theorems proved about it.
 The logic is ordinary Lean. `@[ship]` marks a `def` as one the package ships, which reads the
 declaration out of it; `ship_package` gathers them into the program and writes the proof
 that each declaration denotes the `def` it was read from. What may go inside a marked `def` is
-`SYNTAX.md`; a `def` the walk cannot read is refused by name, with the term it stopped at.
+`reference/README.md`; a `def` the walk cannot read is refused by name, with the term it stopped at.
 
 The theorems are about the `def`s themselves. `docs/guarantees.md` in the compiler is what carries them
 to the generated JavaScript, which is checked against the reference semantics, on Node as well as in

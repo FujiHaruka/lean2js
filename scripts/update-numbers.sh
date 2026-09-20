@@ -11,7 +11,7 @@ trap 'rm -rf "$work"' EXIT
 
 lake exe lean2js Lean2Js.Example --out "$work/out" > "$work/emit.log"
 
-python3 - "$work/emit.log" docs/guarantees.md templates/verified-package/SYNTAX.md <<'PY'
+python3 - "$work/emit.log" docs/guarantees.md templates/verified-package/reference/*.md <<'PY'
 import re, sys
 
 log, docs = sys.argv[1], sys.argv[2:]

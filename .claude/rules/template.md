@@ -7,8 +7,8 @@ paths:
 # The user-facing template
 
 `templates/verified-package/` is what an author copies to start: a `lakefile.toml`, a `lean-toolchain`,
-`MyLogic.lean`, and `README.md` / `SYNTAX.md` / `PROVING.md`. It depends on this library **over git at a
-tag**, because that is the dependency a real user writes.
+`MyLogic.lean`, `README.md`, and the `reference/` the author reads while writing the Lean. It depends on
+this library **over git at a tag**, because that is the dependency a real user writes.
 
 `pnpm template:check` (`scripts/check-template.sh`) copies it into a scratch directory, redirects that
 `[[require]]` at the working tree, and builds and emits from empty. So the check tests the template as
@@ -35,5 +35,6 @@ is sold on, each by the message the user would see:
 **Add a case here when a new refusal is documented**, and assert the message, not just the exit code: a
 refusal that fires for another reason is the failure mode this script exists to catch.
 
-Keep `SYNTAX.md` and `PROVING.md` answering the question an author actually asked; `scripts/dogfood/`
-is the harness that measures whether they do, by running a session that may read only the documents.
+Keep `reference/` answering the question an author actually asked, one file per question;
+`scripts/dogfood/` is the harness that measures whether it does, by running a session that may read only
+the documents.

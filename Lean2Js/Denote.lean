@@ -106,8 +106,8 @@ end
 /-! ### What the walk refuses
 
 A refusal that cannot name what to write instead names the rule the term broke, and the three rules are
-the three questions `SYNTAX.md` opens with: what may be a value, how a program repeats, and whose
-vocabulary it reads. One fixture per rule is what keeps the two sides from drifting — the wording lives
+the three questions the subset reference opens with: what may be a value, how a program repeats, and
+whose vocabulary it reads. One fixture per rule is what keeps the two sides from drifting — the wording lives
 in `Lean2Js.Reify` and is read back here.
 
 Lean's `/` on `Int` rounds towards negative infinity and the subset's truncates, so `/` is not a form the

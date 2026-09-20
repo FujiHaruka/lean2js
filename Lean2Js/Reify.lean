@@ -18,9 +18,9 @@ open Lean2Js Core
 /-! ### The three rules a refusal closes with
 
 A refusal that cannot name what to write instead names the rule the term broke, and there are three:
-what a value may be, whose vocabulary it reads, and where a call may go. The first two are the one line
-`SYNTAX.md` opens with, said of the types and of the names; `Lean2Js.Denote` pins the wording, so neither
-side can move alone. -/
+what a value may be, whose vocabulary it reads, and where a call may go. The first two are the first rule
+of the subset reference, said of the types and of the names; `Lean2Js.Denote` pins the wording, so
+neither side can move alone. -/
 
 /-- What may be a value. -/
 private def valueRule : String :=

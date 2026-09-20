@@ -1,7 +1,7 @@
 ---
 paths:
   - "Lean2Js/*.lean"
-  - "templates/verified-package/SYNTAX.md"
+  - "templates/verified-package/reference/**"
 ---
 
 # Adding an operation to the subset
@@ -52,5 +52,5 @@ an extra `Helper.Stmt`.
 
 A form, a public function, a declaration, a helper, a vector count or the fuel figure changing means
 `README.md`, `docs/guarantees.md` and `CHANGELOG.md` are corrected in the same commit — measured, not
-estimated. An operation landing also means deleting its row from **Operations that are not there** in
-`templates/verified-package/SYNTAX.md`.
+estimated. An operation landing also means a row in `templates/verified-package/reference/vocabulary.md`
+and the deletion of its row from **Operations that are not there** in `reference/javascript.md`.

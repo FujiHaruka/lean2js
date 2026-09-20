@@ -39,7 +39,7 @@ compiler's source, the experiment is worthless.
 
 **Allowed:**
 
-- Anything inside `PROJECT/` — including `MyLogic.lean`, `SYNTAX.md`, `PROVING.md`, `README.md`.
+- Anything inside `PROJECT/` — including `MyLogic.lean`, `README.md` and everything under `reference/`.
 - `DEP/README.md`, `DEP/docs/guarantees.md`, `DEP/docs/index.md`.
 - The output of `lake build` / `lake exe`, including every error message.
 - The files the emit writes into `PROJECT/dist/`.
@@ -76,7 +76,7 @@ That entry is worth more to us than a working function.
 1. `lake build` passes.
 2. `lake exe lean2js MyLogic --out dist` passes and prints its vector count and export count.
 3. The package covers as much of the spec as you could get through, with **at least 3 theorems**
-   that say something a business person would recognise (`PROVING.md` has the shapes). A theorem
+   that say something a business person would recognise (`reference/proving.md` has the shapes). A theorem
    whose hypotheses nothing can satisfy is worse than no theorem — check with `#eval`.
 4. **One real call from Node**, to prove the consumer story works. Write
    `PROJECT/smoke.mjs` that imports from `./dist/index.js`, calls your entry function with a
@@ -142,7 +142,7 @@ what sentence would have done it?
 Which refusals pointed straight at the fix, and which left you guessing. Quote them.
 
 ## Proving
-How the proofs went. Which of PROVING.md's four shapes actually applied, which goals you could not
+How the proofs went. Which of `reference/proving.md`'s shapes actually applied, which goals you could not
 close, what tactic you reached for that did not exist.
 
 ## Context leaks
