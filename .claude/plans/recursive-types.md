@@ -661,3 +661,108 @@ written without the binder is a different `match`.
 
 **Budget it as two or three legs, not one.** Ten modules of it are written; the three proofs that are
 left are each the size of the two that are done put together.
+
+### Phase 5's proofs, re-priced against the code on 2026-09-21: `Correct` is the whole of what is left in Lean
+
+**Measured by writing them.** `Renderable`, `Sound` and `StepAgree` are written and build, with the
+per-module warning counts unchanged; `Exhaustive` needed nothing; `Decl` needed two lines. The patch at
+`~/.claude/handoffs/-Users-haruka-dev-lean2js-foldE.patch` carries all of it. What is left in Lean is
+`Correct`'s two cases and the machinery under them, and then the `Reify` / `EncDeriving` half.
+
+**Three things the section above gets wrong, and one it does not mention.**
+
+**1. `evalFold` has to look the constructor up through `ctorsAt`, not `ctors`.** The patch read
+`td.ctors.find? (·.name == ctor)` — the declared constructors, before the type arguments are
+substituted — while `Compile.foldSpecOf` reads `t.ctorsAt tyArgs`. For a parameterised type the two
+disagree about which field comes round: at `tyArgs = [Int53]` a field declared `Tree α` has
+`foldKindOf "Tree" [.int53] (.named "Tree" [.var "α"]) = .plain`, and the substituted
+`.named "Tree" [.int53]` gives `.self`. The evaluator would have handed the field back unwalked where
+the emitted spec walks it. Three sites: `Eval.evalFold`, its unfolding lemma `evalFold_obj`, and
+`Step.beginFold`. `Fuel.fold_refines`, `Cost`'s `hfoldI` and `Step` all went through unchanged
+afterwards. **The proof is what found it** — `foldPatParts` reads `findAt?`, and the soundness case
+cannot be closed against `ctors`.
+
+**2. Type soundness needs a constructor's fields named apart, so `ProgramTyped` gained a field.**
+`evalFoldFields` looks a field up in the value **by name** while `Value.hasFieldTys` lines the value's
+fields up with the declared ones **in order**. With two fields of one name the lookup lands on the
+first and the answer is typed at the second, so `hasFieldTys ps (foldFieldTys …)` is not merely
+unprovable, it is false. `ProgramTyped.fieldNames` now carries
+`∀ c ∈ t.ctorsAt args, (c.fields.map (·.name)).Nodup`; `ProgramTyped` has exactly one construction
+site, and `Decl.programTyped_of_compileProgram` discharges it in one line from
+`typesNamesOk_of_compileProgram`, which `Compile.validateType`'s `validateDistinct "field"` already
+gave. The lemma that reads it is `Sound.hasTy_of_lookupFieldV`.
+
+**3. `Exhaustive` is zero, and `Decl` is two lines.** `Exhaustive` was priced "unwritten, expected
+small"; it needed nothing at all, because `useful` and `firstUnreachable` are read at the declared type
+and a fold hands them the same `Pat`s a `match` does. `Decl` is `ProgramTyped.fieldNames` plus one
+alternative in `compileBody_type`'s list — a shape that is not a `let` goes straight to
+`compileFinish`. Neither was in the plan's list.
+
+**4. `StepAgree` is three conjuncts, not the four the value walk has.** `evalFoldListAt` needs none of
+its own: the machine's `.list` arm matches the value against `.arr` in place, and both sides refuse a
+non-array the same way, so `evalFoldListAt_arr` at the point of use is enough. The three are
+`beginFold`, `continueFoldFields` and `continueFoldElems`, each carrying the continuation the way
+`mapItems` does. Two things the writing turned on:
+
+- **The state a field walk hands its answer to is the field walk itself with nothing left to walk** —
+  `continueFoldFields … (done ++ ps) [] k`. That is what makes the `nil` case `hok []` plus
+  `List.append_nil`, exactly as in `mapItems`.
+- **`induction rest generalizing done`.** `mapItems` does not need it because its accumulator is
+  threaded through `intro`; the field walk's `done` grows under the induction, so it has to be
+  reverted or the hypothesis comes back at the wrong accumulator.
+
+**What `Renderable` and `Sound` turned on, so it is not paid twice.**
+
+- **`compileExpr.mutual_induct`'s motive order is not the declaration order.** Adding `compileFoldAlts`
+  to the mutual block put its motive **third**, between `compileValues` and `compileAlts`, although it
+  is declared last. `renderable_compiled`'s conjunction and its case order both have to take it there.
+  The `apply` failure prints "the full type of `compileExpr.mutual_induct`", and that is where to read
+  the order off.
+- **The `foldE` case of that principle is one case with two hypotheses** — `motive1 ctx scrut` and
+  `motive3 ctx typeName tyArgs result alts` — and the `if`s and `match`es inside the arm are not split
+  by the principle. The proof splits them by hand: two `bind_ok`s, three `split at h`, the `bind_ok`
+  for the arms, three more `split at h`.
+- **`rw [hfind] at h` does not reduce the `match` whose scrutinee it just rewrote to `some c`;
+  `simp only [hfind] at h` does**, and it zeta-expands `foldPatParts`' `let fields := …` (which prints
+  as `have fields := …`) in the same step. That is the one tactic difference between
+  `renderable_patParts`'s `.ctor` case and `renderable_foldPatParts`'s, and it recurs in
+  `Sound.foldPatParts_binds`.
+- **`Sound.hasTy_of_fold` is the four-way strong induction again**, `Nat.strongRecOn` over a bound for
+  the value's size, and it compiled first try like the other two. The fold's arms run at the fold's own
+  fuel, so the fuel induction's `ih` types their bodies with nothing extra. `ty_of_foldKindOf_self` and
+  `_list` are what turn a `foldKindOf` answer back into the field's type.
+
+**`Correct`'s two cases are the whole of what the Lean side has left — measured, not guessed.** With
+both stubbed at `sorry`, `lake build` reaches the end: `Renderable`, `Sound`, `StepAgree`,
+`Exhaustive`, `Decl` and `Checks` all pass, and the only module that complains is `Axioms`, where
+`sorryAx` has leaked into every shipped theorem. That is `Checks`/`Axioms` doing its job, and it is
+also the measurement: **nothing else in the repository is missing a fold case.**
+
+**`Correct`, priced from the code.** The two cases are `fragment_correct_succ` (`Correct.lean:6286`)
+and `fragment_traps_succ` (`:8564`). `InFragment` gaining a constructor and `InFragment.all` /
+`.typeChecked` an arm each is 12 lines, written and building. Under the two cases, none of it written:
+
+| | what | why it is not a copy |
+| --- | --- | --- |
+| `JsSem` unfolding lemmas | `evalFoldJs_obj`, `evalFoldList_nil` / `_cons`, `evalFoldListAt_arr`, `evalFoldPairs_nil` / `_cons_none` / `_cons_some` | The JS fold family recurses on a value under the same five-component measure, so its equations do not fire on their own. **`JsSem.lean` has none of them**, because `evalMapJs` needed none: it is structural on a list and proofs `rw [Js.evalMapJs]` directly. `Eval.lean`'s six twins are the text to copy. |
+| `foldPatParts_matched` / `_unmatched` | `patParts_matched` (`:3316`), `patParts_unmatched` (`:3415`) | The same split as `Sound.foldPatParts_binds`: only the `.ctor` arm moves and the nested patterns go to `patPartsList`'s existing partner unchanged. The hypothesis is not `Value.hasTy sv ty` but `hasFieldTys p fs (foldFieldTys …)` — the rebuilt node is not a value of the declared type. |
+| `eventually_foldChain` | `eventually_chain` (`:3705`) over `compileFoldAlts` | Same shape, against the rebuilt node, reading `foldPatParts_matched` where it reads `patParts_matched`. |
+| the walk | `Js.evalFoldJs` on `JsValue` against `evalFold` on `Value` through `encodeValue`, four ways | **The one piece with no twin.** `eventuallyMap_of_items` (`:2667`) is the shape for the existential fuel and the continuation; the recursion is on the value, so the induction is `Sound.hasTy_of_fold`'s. |
+| `mapSetAll` | that `mapSetAll [(key, .str tag)] ps = (key, .str tag) :: ps` when `ps`' names are apart from each other and from `key` | `JsSem.evalFoldJs` rebuilds the node with a set-all; `encodeValue (.obj ctor fields)` is `(keyFor ctor, .str ctor) :: encodeFields fields`. **`SignatureOk` (`:3161`) already gives all three facts needed** — fields not named `keyFor name`, names `Nodup`, and `keyFor ctor = keyFor name` for every constructor of the type. The last is what makes the emitted key right for a node whose constructor is not the type's first one, which is why `Helper.fold` takes the key. |
+
+Then the trap direction again, against `EventuallyErr`.
+
+**What is left, in the order it has to go.**
+
+| | State |
+| --- | --- |
+| `Core`, `Value`, `Eval`, `Traps`, `Bound`, `Fuel`, `Step`, `Cost`, `Gather`, `Compile`, `Renderable`, `Sound`, `StepAgree`, `Decl` | **written and building** — in the patch |
+| `Exhaustive`, `Checks` | **nothing to do** |
+| `Correct`, the agreement direction | unwritten — the table above. Budget a leg |
+| `Correct`, the trap direction | unwritten. Budget a leg unless it shares more than it looks like it will |
+| `Reify` finding the fold by an attribute, `EncDeriving` emitting `T.fold` and `denotes_fold` | unwritten, and still the other expensive half |
+| `Example`, `Axioms`, the documents, `/proof-audit` | unwritten |
+
+**Iterate one module at a time with `lake env lean Lean2Js/<M>.lean`.** It needs only that module's
+imports built, and it answers in seconds where `lake build` takes minutes: Renderable 3.3s, StepAgree
+10.2s, Sound 11.6s, Correct 16.5s. Three modules fitted in one leg because of it.
