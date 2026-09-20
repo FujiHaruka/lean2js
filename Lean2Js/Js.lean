@@ -95,6 +95,40 @@ termination_by alts => sizeOf alts
 
 end
 
+/-! ### Descriptors that reach no dictionary crossing as an object
+
+A dictionary declared to cross as a plain object is the one node a declaration's walk out moves, so a
+return type whose expanded descriptor reaches none needs no walk at all: the entry hands the body's
+result straight back and is byte-for-byte what it was before a dictionary could cross as an object. A
+`ref` says nothing on its own — it resolves against the environment — so `envNoDictObj` is the other
+half of the reading. -/
+
+mutual
+
+def descNoDictObj : TyDesc → Bool
+  | .bool | .int53 | .uint32 | .string | .bigint | .ref _ => true
+  | .option t | .array t | .dict t => descNoDictObj t
+  | .result ok err => descNoDictObj ok && descNoDictObj err
+  | .dictObj _ => false
+  | .ctors _ alts | .mu _ alts => altsNoDictObj alts
+termination_by d => sizeOf d
+
+def fieldsNoDictObj : List (String × TyDesc) → Bool
+  | [] => true
+  | (_, d) :: rest => descNoDictObj d && fieldsNoDictObj rest
+termination_by fs => sizeOf fs
+
+def altsNoDictObj : List (String × List (String × TyDesc)) → Bool
+  | [] => true
+  | (_, fields) :: rest => fieldsNoDictObj fields && altsNoDictObj rest
+termination_by alts => sizeOf alts
+
+end
+
+def envNoDictObj : TyEnv → Bool
+  | [] => true
+  | (_, alts) :: rest => altsNoDictObj alts && envNoDictObj rest
+
 /-- A comma-separated list of names. Written as a recursion rather than `String.intercalate`, which walks
 an accumulator and does not unfold in a proof, for the reason the rest of the printer is: the file the
 compiler writes has to be something a proof can read back. -/

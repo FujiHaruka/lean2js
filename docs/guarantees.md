@@ -58,9 +58,13 @@ every call a consumer can make. The other two cover every declaration, exported 
   function; both still have an entry, and both are covered by the returning and trapping directions.
 - **One call inside the package goes back through an entry**: a call through a function-typed parameter.
   The argument is a value holding a declaration's name, so calling it lands on that declaration's entry
-  and is checked again. Nothing a consumer supplies reaches such a parameter — a declaration taking a
-  function is never exported, and the argument has to name a declaration of the same package — so this
-  is a cost rather than a guarantee.
+  and is checked again — and, because an entry hands its result back through the declared return type,
+  **the result is read back in the same way**, which is the `__ck` the compiler writes around such a
+  call. A crossing in one direction is a crossing in both. Nothing a consumer supplies reaches such a
+  parameter through a proved path — a declaration taking a function is never exported, and the argument
+  has to name a declaration of the same package — so within the proofs this is a cost rather than a
+  guarantee. It is not only a cost outside them: what a hand-written JavaScript function handed to such a
+  parameter returns used to reach the body unread, and now meets the same check an argument meets.
 - **Except for a dictionary holding the same key twice, all three directions speak for every spelling of
   the arguments the entry check accepts** (`ArgsDecode`) — the order of keys and keys the declaration does
   not name are carried by the same theorems as the canonical spelling. That one excluded shape exists only
@@ -88,7 +92,9 @@ descriptor ties a knot instead: the node is written once as a `mu` and the occur
 back to it. `__has` and `__norm` carry the binders they are inside as an argument, and the three
 directions hold at every such environment, not only at the empty one a call starts from. A type whose
 expansion has no such fixed point — one applied to a bigger argument each time round — runs out of the
-budget `tyDescBudget` gives it and is refused by name rather than compiled. **What a shipped `def` may do
+budget `tyDescBudget` gives it and is refused by name rather than compiled — **as a return type as well
+as a parameter's**, because the entry has to expand a return type before it can tell whether reading the
+result back out through it does anything, and here it cannot. **What a shipped `def` may do
 with such a value is unchanged**: it reads the constructor it was handed and the fields directly under it,
 because walking further is a recursion and the subset has none.
 
@@ -112,9 +118,11 @@ text says the length of, which runs its body once per element.
 The `index.js` that is written **reads back as the same AST**
 ([`parseModule_render_of_compileProgram`], no caveat). The run-time helpers the generated code calls under
 the `__` prefix are hand-written, but **everything the model assumes of them** agrees with what the printer
-writes out: every row of the table ([`helpers_ship_as_modelled`]), and `__ck` and the seven traversal
-helpers, which the model holds as evaluation rules rather than as table rows ([`calls_ck_checkTy`],
-[`calls_map`] and the rest). The others are only called by helpers, and are unfolded inside those proofs.
+writes out: every row of the table ([`helpers_ship_as_modelled`]), and the nine the model holds as
+evaluation rules rather than as table rows — `__ck` ([`calls_ck_checkTy`]), `__out`
+([`calls_out_outTy`]) and the seven traversal helpers ([`calls_map`] and the rest). `__ck` and `__out`
+are the two an entry calls directly, one at each side of it. The helpers none of those name are reached
+only from another helper, and are unfolded inside its proof.
 
 An argument the entry check accepts satisfies the `.d.ts` type ([`entry_check_fits_dts`]), and an argument
 satisfying the `.d.ts` type passes the entry check, with the range caveat below
@@ -193,4 +201,5 @@ real JavaScript answer alike, not the range of spellings.
 [`encoded_values_fit_dts`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.encoded_values_fit_dts
 [`checkAgreement`]: https://fujiharuka.github.io/lean2js/Lean2Js/Agree.html#Lean2Js.checkAgreement
 [`calls_ck_checkTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_ck_checkTy
+[`calls_out_outTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_out_outTy
 [`calls_map`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_map

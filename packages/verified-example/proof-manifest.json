@@ -13,7 +13,7 @@
   "artifacts": [
     {
       "file": "index.js",
-      "sha256": "3cb6e49b392279172952204b583e19c33501b9eb8c179c02905a4ff21587f3ac"
+      "sha256": "a5dcb98b848333991aa7bfea6c9390f6393413d6cdb55c133f826985a28974cc"
     },
     {
       "file": "index.d.ts",
@@ -21,7 +21,7 @@
     },
     {
       "file": "README.md",
-      "sha256": "0b254bc61854b056c4434506d95843a1e112f62d2c2ef0f0e096cff4334eb754"
+      "sha256": "d14a30c6b1540cbe2eb7e1bf3df108e2f44e7235e6d52a684ba576ca66544317"
     },
     {
       "file": "package.json",
@@ -767,6 +767,11 @@
       "doc": "Two amounts in the same currency add up, as long as their sum stays within `Int53`."
     },
     {
+      "name": "program_noDictObj",
+      "statement": "program_noDictObj : program.noDictObj = true",
+      "doc": "No type this program declares, and no parameter or return type it uses, is a dictionary the\ndeclaration told the compiler to hand across the boundary as a plain object rather than as a `Map`.\nEvery entry therefore emits no walk out and returns exactly what its body built — that step is\n`Decl.retWalk_id_of_noDictObj` — which is what lets the claims below be stated at `encodeValue`, the\nspelling they have always had."
+    },
+    {
       "name": "add_calls_agree",
       "statement": "add_calls_agree [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)\n  (jargs : List Js.JsValue) (args : List Value) (v : Value) (hdec : Decl.ArgsDecode program addDecl.params jargs args)\n  (he : evalCall program \"add\" args = Except.ok v) :\n  ∃ g, ∀ (g' : Nat), g ≤ g' → Js.callFunctionAt m g' \"add\" jargs = Except.ok (encodeValue v)",
       "doc": "Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body\nis a single binary operation."
@@ -864,7 +869,7 @@
     {
       "name": "encoded_values_fit_dts",
       "statement": "encoded_values_fit_dts [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value)\n  (ty : Ty) (hv : Value.hasTy program v ty = true) : Dts.TsSat program ty (encodeValue v)",
-      "doc": "What comes back, rather than what goes in: a value the reference semantics gives a declared type to\nencodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration\nreturns, and `decl_correct` says the generated function returns its encoding."
+      "doc": "What comes back, rather than what goes in: a value the reference semantics gives a declared type to\nencodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration\nreturns, and `decl_correct` says the generated function returns that value read through the declared\nreturn type, which for this program is its encoding (`program_noDictObj`)."
     },
     {
       "name": "steps_agree",

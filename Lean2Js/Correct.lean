@@ -3848,6 +3848,36 @@ theorem eventually_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {jargs
     simp only [bind, Except.bind, hg1 g (by omega), hname]
     exact hg2 g (by omega)
 
+/-- A call through a function value crosses the boundary, so what comes back is read the way an
+argument is: where the check accepts it, the caller holds what the normalisation makes of it. -/
+theorem eventually_check {m : Js.Module} {jenv : Js.JsEnv} {d : Js.TyDesc} {je : Js.Expr}
+    {w : Js.JsValue} (hx : Eventually m jenv je w) (hc : Js.checkTy [] w d = true) :
+    Eventually m jenv (.check d je) (Js.normTy [] w d) := by
+  obtain ⟨g1, hg1⟩ := hx
+  refine ⟨g1 + 1, fun g' hge => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [hg1 g (by omega)]
+    show (if Js.checkTy [] w d = true then Except.ok (Js.normTy [] w d)
+      else Except.error "typeError") = _
+    rw [if_pos hc]
+
+/-- The same when what it reads threw: the check never runs, so the code the callee raised is the code
+the caller sees. -/
+theorem eventuallyErr_check {m : Js.Module} {jenv : Js.JsEnv} {d : Js.TyDesc} {je : Js.Expr}
+    {code : String} (hx : EventuallyErr m jenv je code) :
+    EventuallyErr m jenv (.check d je) code := by
+  obtain ⟨g1, hg1⟩ := hx
+  refine ⟨g1 + 1, fun g' hge => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [hg1 g (by omega)]
+    rfl
+
 /-- The same when the callee throws. -/
 theorem eventuallyErr_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {jargs : List Js.Expr}
     {jvs : List Js.JsValue} {code : String}
@@ -3889,14 +3919,21 @@ fuel the call is left with, so this is the same fuel the expression-level statem
 
 The entry and not the body, because a function reference evaluates to the declared name: passing a
 declaration by name calls it the way a consumer would, entry check and all. A call the compiler can see
-the callee of goes to `DeclBodyAgrees` instead. -/
+the callee of goes to `DeclBodyAgrees` instead.
+
+What the entry hands back is read through the declared return type, so this does not say the caller is
+holding `encodeValue v`: it says the caller is holding something the descriptor accepts, and that
+reading it back in is what the body built. That is what the compiled call does with it — a call through
+a function value is a crossing in both directions. -/
 abbrev DeclAgrees (p : Program) (m : Js.Module) (f : Nat) : Prop :=
-  ∀ (fn : String) (d : Decl) (args : List Value) (v : Value),
+  ∀ (fn : String) (d : Decl) (args : List Value) (v : Value) (retd : Js.TyDesc),
     p.find? fn = some d →
+    Compile.tyDesc p (Compile.tyDescBudget p d.ret) d.ret = .ok retd →
     d.params.length = args.length →
     ParamsTyped p d.params args →
     evalExpr p f (bindParams d.params args) d.body = .ok v →
-    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v)
+    ∃ w, Js.checkTy [] w retd = true ∧ Js.normTy [] w retd = encodeValue v ∧
+      ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn (args.map encodeValue) = .ok w
 
 /-- The same for the body function, which is where a call whose callee the compiler read off the program
 goes. The arguments are already the encoding of values of the declared types, which is exactly what the
@@ -6142,6 +6179,9 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
       split at hc
       · simp at hc
       rename_i hall
+      split at hc
+      · simp at hc
+      rename_i retd hretd
       simp only [Except.ok.injEq, Prod.mk.injEq] at hc
       obtain ⟨hje, -⟩ := hc
       subst hje
@@ -6156,17 +6196,21 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         rw [hcallee] at hfind
         rw [hasTy_fn, hfind, Bool.and_eq_true] at hwt
         obtain rfl : params = d.params.map (·.ty) := (tyList_eq_of_beq hwt.1).symm
+        obtain rfl : ret = d.ret := (Ty.eq_of_beq hwt.2).symm
         have htyped := paramsTyped_of_args
           (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
           d.params (fun a ha => (hargs a ha).typeChecked) hcs hvs
           (zipAll_of_map d.params (by simpa using hall)) (by simpa using hlen)
+        obtain ⟨w, hck, hnm, hcall⟩ := ihd g0 d vs v retd hfind hretd hlenv htyped he
+        rw [← hnm]
+        refine eventually_check ?_ hck
         refine eventually_call (jvs := vs.map encodeValue)
           (helper_of_unreserved (hjenv.unreserved fn _ hw) _) ?_ ?_
         · rw [← encodeList_eq]
           exact eventuallyList_of_args p m args js vs
             (fun a ha => iharg a ha henv hjenv) hcs hvs
         · rw [calleeName_agrees hjenv (hjenv.unreserved fn _ hw), hcallee]
-          exact ihd g0 d vs v hfind hlenv htyped he
+          exact hcall
     · simp at hc
     · rename_i hctx
       split at hc
@@ -8371,6 +8415,9 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       split at hc
       · simp at hc
       rename_i hall
+      split at hc
+      · simp at hc
+      rename_i retd hretd
       simp only [Except.ok.injEq, Prod.mk.injEq] at hc
       obtain ⟨hje, -⟩ := hc
       subst hje
@@ -8387,8 +8434,9 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         split at he
         · rename_i e0 hae
           obtain rfl : err = e0 := (Except.error.inj he).symm
-          exact eventuallyErr_call_args (eventuallyListErr_of_args p m hsig hprog iha henv hjenv
-            args js hargs (fun a ha => iharg a ha henv hcov hjenv) hcs hae hne)
+          exact eventuallyErr_check (eventuallyErr_call_args
+            (eventuallyListErr_of_args p m hsig hprog iha henv hjenv
+              args js hargs (fun a ha => iharg a ha henv hcov hjenv) hcs hae hne))
         rename_i vs hvs
         rw [hcallee] at he
         split at he
@@ -8409,6 +8457,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
           d.params (fun a ha => (hargs a ha).typeChecked) hcs hvs
           (zipAll_of_map d.params (by simpa using hall)) (by simpa using hlen)
+        refine eventuallyErr_check ?_
         refine eventuallyErr_call (jvs := vs.map encodeValue)
           (helper_of_unreserved hunres _) ?_ ?_
         · rw [← encodeList_eq]

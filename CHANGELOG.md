@@ -6,6 +6,28 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- **A call through a function value is read back in.** A declaration's entry hands its result back
+  through the type it was declared at, so the one call inside a package that goes to an entry — a call
+  through a function-typed parameter — now reads that result back the way it reads an argument. The
+  compiler writes `__ck(rule(amount), ["int53"])` where it used to write `rule(amount)`: a crossing in
+  one direction is a crossing in both.
+
+  Inside the proofs this changes nothing, and could not: the argument has to name a declaration of the
+  same package, so the check always accepts and `decl_correct` says what it said. **Outside them it
+  closes a hole.** What a hand-written JavaScript function handed to such a parameter returned used to
+  reach the body unread; it now meets the check an argument meets.
+
+- **A declaration's entry reads its result out through the declared return type.** `decl_correct` now
+  says the generated function returns `encodeAt p d.ret v` rather than `encodeValue v` — the value the
+  reference semantics produced, read through the type the declaration was declared to return. The two
+  are the same wherever that type reaches no dictionary told to cross the boundary as a plain object,
+  which is every type an author can write today, so every claim already published keeps its exact text
+  and is stated through that reading (`encodeAt_eq_encodeValue`, `retWalk_id_of_noDictObj`).
+
+  Two things follow. The entry now expands its return type, so **a return type the compiler cannot
+  expand within `tyDescBudget` is refused by name**, the way a parameter of that type already was. And
+  `__out`, the walk back out, is now a form the compiler can write rather than a helper nothing calls.
+
 - **`emit` looks for an argument that meets each shipped theorem's hypotheses**, and names on stderr the
   claims that nothing among the ones it tried met:
 

@@ -1298,7 +1298,7 @@ function priced(__p0, __p1) {
 }
 
 function __b_priced(rule, amount) {
-  return rule(amount);
+  return __ck(rule(amount), ["int53"]);
 }
 
 /** memberPrice : (amount : Int53) → Int53 */

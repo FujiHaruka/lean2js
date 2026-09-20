@@ -2966,6 +2966,9 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
         split at hc
         · simp at hc
         rename_i hall
+        split at hc
+        · simp at hc
+        rename_i retDesc hretDesc
         simp only [Except.ok.injEq, Prod.mk.injEq] at hc
         cases hw : Env.lookup? env fn with
         | none =>

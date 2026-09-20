@@ -682,6 +682,18 @@ theorem renderable_reduceJs {arr init : Js.Expr} {a e : String} {body : Js.Expr}
 theorem renderable_check {d : Js.TyDesc} {e : Js.Expr} (he : RenderableExpr e = true) :
     RenderableExpr (.check d e) = true := by rw [RenderableExpr]; exact he
 
+theorem renderable_out {d : Js.TyDesc} {e : Js.Expr} (he : RenderableExpr e = true) :
+    RenderableExpr (.out d e) = true := by rw [RenderableExpr]; exact he
+
+/-- The entry's walk out is renderable either way: where it emits nothing the expression is the call
+itself, and where it emits the walk it is the call inside one more form. -/
+theorem renderable_retWalk {d : Js.TyDesc} {e : Js.Expr} (he : RenderableExpr e = true) :
+    RenderableExpr (Compile.retWalk d e) = true := by
+  rw [Compile.retWalk]
+  split
+  · exact he
+  · exact renderable_out he
+
 private theorem renderable_of_ok {jx : Js.Expr} {tx : Ty} {j : Js.Expr} {t : Ty}
     (h : (Except.ok (jx, tx) : Except String (Js.Expr × Ty)) = .ok (j, t))
     (hj : RenderableExpr jx = true) : RenderableExpr j = true := by
@@ -1004,8 +1016,10 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
        all_goals
          (split at h <;> peel h
           all_goals
-            exact renderable_of_ok h
-              (renderable_call (okCallee_of_ctx hctx hfound) (ihargs hctx js hjs))))
+            (obtain ⟨retDesc, -, h⟩ := bind_ok h
+             exact renderable_of_ok h
+               (renderable_check
+                 (renderable_call (okCallee_of_ctx hctx hfound) (ihargs hctx js hjs))))))
   -- 22, 23: a name in scope that is not a function, and a name that is nowhere
   · intro ctx fn args val hne hfound _ j t h
     rw [compileExpr] at h
@@ -1742,6 +1756,7 @@ theorem renderableFunc_of_compileDecl {p : Program} (hp : DeclNamesOk p) (hfn : 
   split at h
   · exact (errNotOk h).elim
   obtain ⟨checks, hchecks, h⟩ := bind_ok h
+  obtain ⟨retDesc, -, h⟩ := bind_ok h
   simp only [Except.ok.injEq] at h
   subst h
   refine ⟨?_, ?_⟩
@@ -1750,8 +1765,8 @@ theorem renderableFunc_of_compileDecl {p : Program} (hp : DeclNamesOk p) (hfn : 
     · simp only [List.all_append, List.all_cons, List.all_nil, Bool.and_eq_true, and_true]
       refine ⟨renderable_paramChecks 0 d.params checks hvp hchecks, ?_⟩
       simp only [RenderableStmt]
-      exact renderable_call (okCallee_bodyName (okName_of_validateIdent hvi))
-        (renderable_paramIdents d.params hvp)
+      exact renderable_retWalk (renderable_call (okCallee_bodyName (okName_of_validateIdent hvi))
+        (renderable_paramIdents d.params hvp))
     · refine noCommentClose_of_noStar ?_
       exact noStar_append (noStar_append (noStar_append
         (noStar_append (noStar_of_okName (okName_of_validateIdent hvi)) (by decide))

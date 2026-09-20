@@ -42,7 +42,9 @@ theorem decl_ships (m : Js.Module) (hm : Compile.compileProgram Example.program 
   | ok v =>
     obtain ⟨g, hg⟩ := Decl.decl_correct Example.program m fn d jargs args v hm hd hdec he
     refine ⟨g, fun g' hle => Or.inl ?_⟩
-    rw [hg g' hle, hcert (Nat.le_refl _) v (by rwa [Decl.evalCall_body hd hdec.length htyped] at he)]
+    rw [hg g' hle, encodeAt_eq_encodeValue (p := Example.program) Example.program_noDictObj
+        (Program.noDictObj_ret Example.program_noDictObj (List.mem_of_find?_eq_some hd)) v,
+      hcert (Nat.le_refl _) v (by rwa [Decl.evalCall_body hd hdec.length htyped] at he)]
   | error err =>
     obtain ⟨g, hg⟩ := Decl.decl_traps_at_cost Example.program m fn d jargs args err hm hd hpub
       Example.program_progOk Example.program_cost_fits htyped hdec he

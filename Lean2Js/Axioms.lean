@@ -149,6 +149,10 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.memberPrice_calls_agree
 
+/-- info: 'Lean2Js.Example.program_noDictObj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.program_noDictObj
+
 /-- info: 'Lean2Js.Example.program_progOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.program_progOk

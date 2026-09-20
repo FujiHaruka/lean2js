@@ -336,6 +336,18 @@ theorem same_currency_adds (x y : Int) (currency : String) (hx : int53Min ≤ x 
     Except.ok (Value.obj "ok" [("value", money (x + y) currency)])
 ```
 
+### program_noDictObj
+
+No type this program declares, and no parameter or return type it uses, is a dictionary the
+declaration told the compiler to hand across the boundary as a plain object rather than as a `Map`.
+Every entry therefore emits no walk out and returns exactly what its body built — that step is
+`Decl.retWalk_id_of_noDictObj` — which is what lets the claims below be stated at `encodeValue`, the
+spelling they have always had.
+
+```lean
+theorem program_noDictObj : program.noDictObj = true
+```
+
 ### add_calls_agree
 
 Whatever arguments the entry check accepts, the generated `add` returns what `eval` returns. Its body
@@ -571,7 +583,8 @@ theorem dts_fits_entry_check [Discriminators] (m : Js.Module) (hm : Compile.comp
 
 What comes back, rather than what goes in: a value the reference semantics gives a declared type to
 encodes to one the published `.d.ts` admits. `typeSound` gives that type to whatever a declaration
-returns, and `decl_correct` says the generated function returns its encoding.
+returns, and `decl_correct` says the generated function returns that value read through the declared
+return type, which for this program is its encoding (`program_noDictObj`).
 
 ```lean
 theorem encoded_values_fit_dts [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m) (v : Value)

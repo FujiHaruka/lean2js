@@ -592,36 +592,9 @@ theorem envOk_getElem : ∀ {env : TyEnv} {k : Nat} {b : String × TyAlts}, envO
 
 /-! ### Descriptors that reach no dictionary crossing as an object
 
-A declaration whose return descriptor reaches no `dictObj` leaves its result exactly as the body built
-it, so its entry emits no walk out at all and the package is what it was before a dictionary could
-cross as a plain object. A `ref` says nothing on its own — it resolves against the environment — so
-`envNoDictObj` is the other half of the reading. -/
-
-mutual
-
-def descNoDictObj : TyDesc → Bool
-  | .bool | .int53 | .uint32 | .string | .bigint | .ref _ => true
-  | .option t | .array t | .dict t => descNoDictObj t
-  | .result ok err => descNoDictObj ok && descNoDictObj err
-  | .dictObj _ => false
-  | .ctors _ alts | .mu _ alts => altsNoDictObj alts
-termination_by d => sizeOf d
-
-def fieldsNoDictObj : List (String × TyDesc) → Bool
-  | [] => true
-  | (_, d) :: rest => descNoDictObj d && fieldsNoDictObj rest
-termination_by fs => sizeOf fs
-
-def altsNoDictObj : List (String × List (String × TyDesc)) → Bool
-  | [] => true
-  | (_, fields) :: rest => fieldsNoDictObj fields && altsNoDictObj rest
-termination_by alts => sizeOf alts
-
-end
-
-def envNoDictObj : TyEnv → Bool
-  | [] => true
-  | (_, alts) :: rest => altsNoDictObj alts && envNoDictObj rest
+The predicates themselves are in `Js.lean`, beside the descriptor they read, because the compiler
+consults them to decide whether a declaration's entry needs a walk out at all. What is here is what a
+proof needs of them. -/
 
 theorem envNoDictObj_drop : ∀ {env : TyEnv} (k : Nat),
     envNoDictObj env = true → envNoDictObj (env.drop k) = true

@@ -2305,6 +2305,155 @@ theorem descOk_tyDesc {p : Program} (hnames : TypesNamesOk p) (b : Nat) (ty : Ty
         rw [Js.fieldsOk]
         simp [iht dt hdt, hfok]
 
+/-- Where the program declares no dictionary that crosses as a plain object and a type reaches none,
+the descriptor the entry is compiled against reaches none either. This is what carries the author's
+reading — "nothing here uses `Dict.Obj`" — over to the reading the compiler consults when it decides
+whether an entry needs a walk out at all. -/
+theorem descNoDictObj_tyDesc {p : Program} (hp : p.noDictObj = true) (b : Nat) (ty : Ty) :
+    Ty.noDictObj ty = true → ∀ d, Compile.tyDescIn p st b ty = .ok d →
+      Js.descNoDictObj d = true := by
+  have hpt : p.types.all TypeDef.noDictObj = true := by
+    rw [Program.noDictObj, Bool.and_eq_true] at hp; exact hp.1
+  induction st, b, ty using Compile.tyDescIn.induct (p := p)
+    (motive2 := fun st b cs => (∀ c ∈ cs, ∀ f ∈ c.fields, Ty.noDictObj f.ty = true) →
+      ∀ alts, Compile.tyDescAlts p st b cs = .ok alts → Js.altsNoDictObj alts = true)
+    (motive3 := fun st b fs => (∀ f ∈ fs, Ty.noDictObj f.ty = true) →
+      ∀ flds, Compile.tyDescFields p st b fs = .ok flds → Js.fieldsNoDictObj flds = true)
+    with
+  | case1 _ _ | case2 _ _ | case3 _ _ | case4 _ _ | case5 _ _ =>
+    intro _ d hd
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only at hd
+    cases hd
+    rw [Js.descNoDictObj]
+  | case6 _ _ _ => intro _ d hd; rw [Compile.tyDescIn.eq_def] at hd; simp at hd
+  | case7 st budget t ih | case9 st budget t ih | case10 st budget t ih =>
+    intro hty d hd
+    rw [Ty.noDictObj] at hty
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [bind, Except.bind] at hd
+    split at hd
+    · exact (errNeOk hd).elim
+    · rename_i inner hinner
+      cases hd
+      rw [Js.descNoDictObj]
+      exact ih hty inner hinner
+  | case17 st budget t ih =>
+    intro hty d hd
+    rw [Ty.noDictObj] at hty
+    exact absurd hty (by simp)
+  | case8 st budget a bb iha ihb =>
+    intro hty d hd
+    rw [Ty.noDictObj, Bool.and_eq_true] at hty
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [bind, Except.bind] at hd
+    split at hd
+    · exact (errNeOk hd).elim
+    · rename_i da hda
+      split at hd
+      · exact (errNeOk hd).elim
+      · rename_i db hdb
+        cases hd
+        rw [Js.descNoDictObj]
+        simp [iha hty.1 da hda, ihb hty.2 db hdb]
+  | case11 _ _ _ _ => intro _ d hd; rw [Compile.tyDescIn.eq_def] at hd; simp at hd
+  | case12 st budget n args k hfind =>
+    intro _ d hd
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [hfind] at hd
+    cases hd
+    rw [Js.descNoDictObj]
+  | case13 _ n args hfind =>
+    intro _ d hd
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp [hfind] at hd
+  | case14 _ n args hfind b' hft =>
+    intro _ d hd
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp [hfind, hft] at hd
+  | case15 st n args hfind b' t hft hrec ih =>
+    intro hty d hd
+    rw [Ty.noDictObj] at hty
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [hfind, hft, hrec, if_true, bind, Except.bind] at hd
+    cases halts : Compile.tyDescAlts p ((n, args) :: st) b' (t.ctorsAt args) with
+    | error e => rw [halts] at hd; exact (errNeOk hd).elim
+    | ok alts =>
+      rw [halts] at hd
+      cases hd
+      rw [Js.descNoDictObj]
+      exact ih (TypeDef.noDictObj_ctorsAt
+        (List.all_eq_true.mp hpt t (List.mem_of_find?_eq_some hft)) hty) alts halts
+  | case16 st n args hfind b' t hft hrec ih =>
+    intro hty d hd
+    rw [Ty.noDictObj] at hty
+    rw [Compile.tyDescIn.eq_def] at hd
+    simp only [hfind, hft, hrec, bind, Except.bind] at hd
+    cases halts : Compile.tyDescAlts p st b' (t.ctorsAt args) with
+    | error e => rw [halts] at hd; exact (errNeOk hd).elim
+    | ok alts =>
+      rw [halts] at hd
+      cases hd
+      rw [Js.descNoDictObj]
+      exact ih (TypeDef.noDictObj_ctorsAt
+        (List.all_eq_true.mp hpt t (List.mem_of_find?_eq_some hft)) hty) alts halts
+  | case18 st budget hok alts halts =>
+    rw [Compile.tyDescAlts.eq_def] at halts
+    simp only at halts
+    cases halts
+    rw [Js.altsNoDictObj]
+  | case19 st budget c rest ihf ihr hok alts halts =>
+    rw [Compile.tyDescAlts.eq_def] at halts
+    simp only [bind, Except.bind] at halts
+    split at halts
+    · exact (errNeOk halts).elim
+    · rename_i flds hflds
+      split at halts
+      · exact (errNeOk halts).elim
+      · rename_i rs hrs
+        cases halts
+        rw [Js.altsNoDictObj]
+        simp [ihf (hok c (by simp)) flds hflds,
+          ihr (fun c' hc' => hok c' (by simp [hc'])) rs hrs]
+  | case20 st budget hf flds hflds =>
+    rw [Compile.tyDescFields.eq_def] at hflds
+    simp only at hflds
+    cases hflds
+    rw [Js.fieldsNoDictObj]
+  | case21 st budget f rest iht ihr hf flds hflds =>
+    rw [Compile.tyDescFields.eq_def] at hflds
+    simp only [bind, Except.bind] at hflds
+    split at hflds
+    · exact (errNeOk hflds).elim
+    · rename_i dt hdt
+      split at hflds
+      · exact (errNeOk hflds).elim
+      · rename_i rs hrs
+        cases hflds
+        rw [Js.fieldsNoDictObj]
+        simp [iht (hf f (by simp)) dt hdt, ihr (fun g hg => hf g (by simp [hg])) rs hrs]
+
+/-- **No entry of such a program emits a walk out.** The return descriptor the compiler expands reaches
+no `dictObj`, so `Compile.retWalk` is the identity and the function written out is the one it was before
+a dictionary could cross the boundary as a plain object. -/
+theorem retWalk_id_of_noDictObj {p : Program} (hp : p.noDictObj = true)
+    {d : Decl} (hd : d ∈ p.decls) {desc : Js.TyDesc}
+    (hdesc : Compile.tyDesc p (Compile.tyDescBudget p d.ret) d.ret = .ok desc) (e : Js.Expr) :
+    Compile.retWalk desc e = e := by
+  rw [Compile.retWalk, if_pos (descNoDictObj_tyDesc (st := []) hp _ d.ret
+    (Program.noDictObj_ret hp hd) desc hdesc)]
+
+/-- Where the descriptor the entry read reaches no dictionary crossing as a plain object, reading a
+value out through its declared type is reading it without one, so the entry emits no walk and hands back
+what the body built. This is what keeps every claim a package makes today where it is. -/
+theorem encodeAt_eq_encodeValue_of_desc [Discriminators] (p : Program) (hn : TypesNamesOk p)
+    {ty : Ty} {b : Nat} {d : Js.TyDesc} {v : Value}
+    (hd : tyDesc p b ty = .ok d) (hnd : Js.descNoDictObj d = true)
+    (hv : Value.hasTy p v ty = true) : encodeAt p ty v = encodeValue v := by
+  have hdo := descOk_tyDesc (st := []) hn b ty d hd
+  rw [← outTy_encodeValue p hn ty [] [] b d v hd .nil rfl hdo hv,
+    Js.outTy_eq_normTy rfl hnd, normTy_encodeValue p hn ty [] [] b d v hd .nil rfl hdo hv]
+
 theorem eval_check (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
     (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) (hc : Js.checkTy [] v d = true) :
     Js.eval m (f + 1) jenv (.check d x) = .ok (Js.normTy [] v d) := by
@@ -2322,6 +2471,22 @@ theorem eval_check_fail (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDe
   show (if Js.checkTy [] v d = true then Except.ok (Js.normTy [] v d) else Except.error "typeError")
     = .error "typeError"
   rw [if_neg (by simp [hc])]
+
+/-- The walk out runs no check: what the body handed back already has the declared type. -/
+theorem eval_out (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
+    (v : Js.JsValue) (hx : Js.eval m f jenv x = .ok v) :
+    Js.eval m (f + 1) jenv (.out d x) = .ok (Js.outTy [] v d) := by
+  rw [Js.eval.eq_def]
+  simp only [hx]
+  rfl
+
+/-- And where the body threw, the walk never runs. -/
+theorem eval_out_err (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (d : Js.TyDesc) (x : Js.Expr)
+    (code : String) (hx : Js.eval m f jenv x = .error code) :
+    Js.eval m (f + 1) jenv (.out d x) = .error code := by
+  rw [Js.eval.eq_def]
+  simp only [hx]
+  rfl
 
 theorem evalStmts_const (m : Js.Module) (f : Nat) (jenv : Js.JsEnv) (name : String)
     (val : Js.Expr) (v : Js.JsValue) (rest : List Js.Stmt) (h : Js.eval m f jenv val = .ok v) :
@@ -3378,12 +3543,14 @@ theorem signatureOk_of_compileProgram {p : Program} {m : Js.Module}
 
 theorem compileDecl_shape {p : Program} {d : Decl} {fs : Js.Func × Js.Func}
     (h : compileDecl p d = .ok fs) :
-    ∃ stmts ty checks,
+    ∃ stmts ty checks retd,
       Unreserved d.params ∧ DistinctNames d.params ∧
       compileBody p (d.params.map fun param => (param.name, param.ty)) d.body [] = .ok (stmts, ty) ∧
       paramChecks p 0 d.params = .ok checks ∧
+      Compile.tyDesc p (Compile.tyDescBudget p d.ret) d.ret = .ok retd ∧
       fs.1.name = d.name ∧ fs.1.params = rawParams 0 d.params ∧
-      fs.1.body = checks ++ [.ret (.call (bodyName d.name) (Compile.paramIdents d.params))] ∧
+      fs.1.body = checks ++ [.ret (Compile.retWalk retd
+        (.call (bodyName d.name) (Compile.paramIdents d.params)))] ∧
       fs.2.name = bodyName d.name ∧ fs.2.params = d.params.map (·.name) ∧ fs.2.body = stmts ∧
       ty = d.ret := by
   rw [compileDecl] at h
@@ -3402,8 +3569,10 @@ theorem compileDecl_shape {p : Program} {d : Decl} {fs : Js.Func × Js.Func}
   rename_i hret
   split at h; · exact (errNeOk h).elim
   rename_i checks hchecks
-  refine ⟨stmts, ty, checks, unreserved_of_validated d.params (by simpa using hidents),
-    distinctNames_of_validated d.params (by simpa using hdistinct), hbody, hchecks,
+  split at h; · exact (errNeOk h).elim
+  rename_i retd hretd
+  refine ⟨stmts, ty, checks, retd, unreserved_of_validated d.params (by simpa using hidents),
+    distinctNames_of_validated d.params (by simpa using hdistinct), hbody, hchecks, hretd,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact (congrArg (Js.Func.name ∘ Prod.fst) (Except.ok.inj h)).symm
   · exact (congrArg (Js.Func.params ∘ Prod.fst) (Except.ok.inj h)).symm
@@ -3432,7 +3601,7 @@ theorem compileDecls_find :
     split at hcs; · exact (errNeOk hcs).elim
     rename_i funcsRest hrest
     obtain rfl : funcs = fs₀.1 :: fs₀.2 :: funcsRest := (Except.ok.inj hcs).symm
-    obtain ⟨_, _, _, _, _, _, _, hname, _, _, hbname, _, _, _⟩ := compileDecl_shape hf₀
+    obtain ⟨_, _, _, _, _, _, _, _, _, hname, _, _, hbname, _, _, _⟩ := compileDecl_shape hf₀
     have hd₀res : isReserved d₀.name = false := hdres d₀ (List.mem_cons_self ..)
     have hdname : d.name = fn := eq_of_beq (by simpa using List.find?_some hfind)
     have hdres' : isReserved fn = false :=
@@ -3498,7 +3667,7 @@ theorem programTyped_of_compileProgram {p : Program} {m : Js.Module}
   refine ⟨?_, ?_⟩
   · intro d hd
     obtain ⟨f, hf⟩ := compileDecls_mem p 0 p.decls funcs d hfuncs hd
-    obtain ⟨stmts, ty, _, _, _, hcb, _, _, _, _, _, _, _, hret⟩ := compileDecl_shape hf
+    obtain ⟨stmts, ty, _, _, _, _, hcb, _, _, _, _, _, _, _, _, hret⟩ := compileDecl_shape hf
     exact compileBody_type p d.body _ [] stmts ty hcb |>.imp fun _ h => hret ▸ h
   · intro d hd
     obtain ⟨f, hf⟩ := compileDecls_mem p 0 p.decls funcs d hfuncs hd
@@ -3536,7 +3705,7 @@ theorem argsDecode_of_compileProgram {p : Program} {m : Js.Module} {fn : String}
     (htyped : ParamsTyped p d.params args) :
     ArgsDecode p d.params (args.map encodeValue) args := by
   obtain ⟨_, hf, _, _⟩ := compileProgram_find hm hd
-  obtain ⟨_, _, checks, _, _, _, hchecks, _⟩ := compileDecl_shape hf
+  obtain ⟨_, _, checks, _, _, _, _, hchecks, _⟩ := compileDecl_shape hf
   exact argsDecode_encodeValue p (typesNamesOk_of_compileProgram hm) d.params args 0 checks hchecks
     htyped
 
@@ -3555,7 +3724,7 @@ theorem decl_agrees_body (p : Program) (m : Js.Module) (hm : compileProgram p = 
   have hsig := signatureOk_of_compileProgram hm
   have hprog := programTyped_of_compileProgram hm
   obtain ⟨fnc, hf, -, hfindb⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody,
+  obtain ⟨stmts, ty, checks, retd, hres, hdist, hcb, hchecks, hretd, hname, hparams, hfbody,
     hbname, hbparams, hbbody, hret⟩ := compileDecl_shape hf
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_correct m p hsig hprog f iha (InFragment.all d.body) (Nat.le_refl f) hcb
@@ -3583,7 +3752,7 @@ theorem decl_traps_body (p : Program) (m : Js.Module) (hm : compileProgram p = .
   have hsig := signatureOk_of_compileProgram hm
   have hprog := programTyped_of_compileProgram hm
   obtain ⟨fnc, hf, -, hfindb⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody,
+  obtain ⟨stmts, ty, checks, retd, hres, hdist, hcb, hchecks, hretd, hname, hparams, hfbody,
     hbname, hbparams, hbbody, hret⟩ := compileDecl_shape hf
   obtain ⟨inner, hinner, gB, hgB⟩ :=
     compileBody_traps m p hsig hprog f iha iht (InFragment.all d.body) (Nat.le_refl f) hcb
@@ -3598,9 +3767,23 @@ theorem decl_traps_body (p : Program) (m : Js.Module) (hm : compileProgram p = .
   rw [if_neg (by simp [hlen])]
   exact hgB g' hge
 
+/-- The value a declaration's body returns has the type the declaration was declared at. The entry reads
+its result back out through that type, so this is what the walk out is given. -/
+theorem hasTy_ret_of_body (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
+    (fn : String) (d : Decl) (args : List Value) (v : Value)
+    (hd : p.find? fn = some d)
+    (htyped : ParamsTyped p d.params args)
+    (hbody : evalExpr p f (bindParams d.params args) d.body = .ok v) :
+    Value.hasTy p v d.ret = true := by
+  have hprog := programTyped_of_compileProgram hm
+  obtain ⟨jb, hjb⟩ := hprog.bodies d (List.mem_of_find?_eq_some hd)
+  exact typeSound p hprog f _ _ d.body jb d.ret v (TypeChecked.all d.body)
+    (envTyped_bindParams p d.params args htyped) hjb hbody
+
 /-- The declaration-level statement at one fuel, at every spelling of the arguments the entry check
-accepts. The entry checks its arguments, binds them under their declared names and hands them to the
-body, so this is `decl_agrees_body` with the check the body did not run in front of it. -/
+accepts. The entry checks its arguments, binds them under their declared names, hands them to the body
+and reads the result back out through the declared return type, so this is `decl_agrees_body` with the
+check the body did not run in front of it and the walk out behind it. -/
 theorem decl_agrees_jargs (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
     (iha : ∀ g, g ≤ f → AgreesAt p m g) (fn : String) (d : Decl) (jargs : List Js.JsValue)
     (args : List Value) (v : Value)
@@ -3608,26 +3791,49 @@ theorem decl_agrees_jargs (p : Program) (m : Js.Module) (hm : compileProgram p =
     (htyped : ParamsTyped p d.params args)
     (hdec : ArgsDecode p d.params jargs args)
     (hbody : evalExpr p f (bindParams d.params args) d.body = .ok v) :
-    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .ok (encodeValue v) := by
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .ok (encodeAt p d.ret v) := by
   obtain ⟨fnc, hf, hfinde, -⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody,
+  obtain ⟨stmts, ty, checks, retd, hres, hdist, hcb, hchecks, hretd, hname, hparams, hfbody,
     hbname, hbparams, hbbody, hret⟩ := compileDecl_shape hf
   obtain ⟨gB, hgB⟩ := decl_agrees_body p m hm f iha fn d args v hd hdec.length htyped hbody
-  refine ⟨gB + 2, fun g' hge => ?_⟩
-  obtain ⟨g, rfl⟩ : ∃ g, g' = g + 2 := ⟨g' - 2, by omega⟩
-  rw [Js.callFunctionAt, hfinde]
-  simp only [hparams, hfbody]
-  rw [if_neg (by simp [rawParams_length, hdec.length_jargs]),
-    evalStmts_paramChecks m p g hdec 0 checks _ _ hchecks hres
-      (rawBound_bindAll d.params jargs 0 hdec.length_jargs),
-    evalStmts_ret, find?_name hd, Js.eval_call,
-    evalList_paramIdents m g _ d.params args
-      (paramBound_of_binds d.params args _ hdec.length hdist
-        (jsEnvBinds_checkedBindings d.params args _ hdec.length hdist))]
-  simp only [bind, Except.bind, Js.helper_of_isBodyName (isBodyName_bodyName fn)]
-  rw [calleeName_bodyName (jsEnvAgrees_checkedBindings d.params args _ hdec.length hdist hres
-    (bindAll_rawParams_reserved d.params jargs 0) (bindAll_rawParams_notBody d.params jargs 0))]
-  exact hgB (g + 1) (by omega)
+  have hnames := typesNamesOk_of_compileProgram hm
+  have hvty := hasTy_ret_of_body p m hm f fn d args v hd htyped hbody
+  have hcall : ∀ g : Nat, gB ≤ g →
+      Js.eval m (g + 2) (checkedBindings d.params args ++ Js.bindAll (rawParams 0 d.params) jargs)
+        (.call (bodyName d.name) (Compile.paramIdents d.params)) = .ok (encodeValue v) := by
+    intro g hge
+    rw [find?_name hd, Js.eval_call,
+      evalList_paramIdents m g _ d.params args
+        (paramBound_of_binds d.params args _ hdec.length hdist
+          (jsEnvBinds_checkedBindings d.params args _ hdec.length hdist))]
+    simp only [bind, Except.bind, Js.helper_of_isBodyName (isBodyName_bodyName fn)]
+    rw [calleeName_bodyName (jsEnvAgrees_checkedBindings d.params args _ hdec.length hdist hres
+      (bindAll_rawParams_reserved d.params jargs 0) (bindAll_rawParams_notBody d.params jargs 0))]
+    exact hgB (g + 1) (by omega)
+  cases hnd : Js.descNoDictObj retd with
+  | true =>
+    refine ⟨gB + 2, fun g' hge => ?_⟩
+    obtain ⟨g, rfl⟩ : ∃ g, g' = g + 2 := ⟨g' - 2, by omega⟩
+    rw [Js.callFunctionAt, hfinde]
+    simp only [hparams, hfbody, Compile.retWalk, hnd, if_true]
+    rw [if_neg (by simp [rawParams_length, hdec.length_jargs]),
+      evalStmts_paramChecks m p g hdec 0 checks _ _ hchecks hres
+        (rawBound_bindAll d.params jargs 0 hdec.length_jargs),
+      evalStmts_ret, hcall g (by omega),
+      encodeAt_eq_encodeValue_of_desc p hnames hretd hnd hvty]
+  | false =>
+    refine ⟨gB + 3, fun g' hge => ?_⟩
+    obtain ⟨g, rfl⟩ : ∃ g, g' = g + 3 := ⟨g' - 3, by omega⟩
+    rw [Js.callFunctionAt, hfinde]
+    simp only [hparams, hfbody, Compile.retWalk, hnd, Bool.false_eq_true, if_false]
+    rw [show g + 3 = (g + 1) + 2 from rfl,
+      if_neg (by simp [rawParams_length, hdec.length_jargs]),
+      evalStmts_paramChecks m p (g + 1) hdec 0 checks _ _ hchecks hres
+        (rawBound_bindAll d.params jargs 0 hdec.length_jargs),
+      evalStmts_ret, show g + 1 + 2 = (g + 2) + 1 from by omega,
+      eval_out m (g + 2) _ retd _ _ (hcall g (by omega)),
+      outTy_encodeValue p hnames d.ret [] [] _ retd v hretd .nil rfl
+        (descOk_tyDesc (st := []) hnames _ _ retd hretd) hvty]
 
 /-- The same on the other side. -/
 theorem decl_traps_jargs (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
@@ -3640,30 +3846,54 @@ theorem decl_traps_jargs (p : Program) (m : Js.Module) (hm : compileProgram p = 
     (hne : Mirrorable err) :
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .error err.code := by
   obtain ⟨fnc, hf, hfinde, -⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody,
+  obtain ⟨stmts, ty, checks, retd, hres, hdist, hcb, hchecks, hretd, hname, hparams, hfbody,
     hbname, hbparams, hbbody, hret⟩ := compileDecl_shape hf
   obtain ⟨gB, hgB⟩ :=
     decl_traps_body p m hm f iha iht fn d args err hd hdec.length htyped hbody hne
-  refine ⟨gB + 2, fun g' hge => ?_⟩
-  obtain ⟨g, rfl⟩ : ∃ g, g' = g + 2 := ⟨g' - 2, by omega⟩
-  rw [Js.callFunctionAt, hfinde]
-  simp only [hparams, hfbody]
-  rw [if_neg (by simp [rawParams_length, hdec.length_jargs]),
-    evalStmts_paramChecks m p g hdec 0 checks _ _ hchecks hres
-      (rawBound_bindAll d.params jargs 0 hdec.length_jargs),
-    evalStmts_ret, find?_name hd, Js.eval_call,
-    evalList_paramIdents m g _ d.params args
-      (paramBound_of_binds d.params args _ hdec.length hdist
-        (jsEnvBinds_checkedBindings d.params args _ hdec.length hdist))]
-  simp only [bind, Except.bind, Js.helper_of_isBodyName (isBodyName_bodyName fn)]
-  rw [calleeName_bodyName (jsEnvAgrees_checkedBindings d.params args _ hdec.length hdist hres
-    (bindAll_rawParams_reserved d.params jargs 0) (bindAll_rawParams_notBody d.params jargs 0))]
-  exact hgB (g + 1) (by omega)
+  have hcall : ∀ g : Nat, gB ≤ g →
+      Js.eval m (g + 2) (checkedBindings d.params args ++ Js.bindAll (rawParams 0 d.params) jargs)
+        (.call (bodyName d.name) (Compile.paramIdents d.params)) = .error err.code := by
+    intro g hge
+    rw [find?_name hd, Js.eval_call,
+      evalList_paramIdents m g _ d.params args
+        (paramBound_of_binds d.params args _ hdec.length hdist
+          (jsEnvBinds_checkedBindings d.params args _ hdec.length hdist))]
+    simp only [bind, Except.bind, Js.helper_of_isBodyName (isBodyName_bodyName fn)]
+    rw [calleeName_bodyName (jsEnvAgrees_checkedBindings d.params args _ hdec.length hdist hres
+      (bindAll_rawParams_reserved d.params jargs 0) (bindAll_rawParams_notBody d.params jargs 0))]
+    exact hgB (g + 1) (by omega)
+  cases hnd : Js.descNoDictObj retd with
+  | true =>
+    refine ⟨gB + 2, fun g' hge => ?_⟩
+    obtain ⟨g, rfl⟩ : ∃ g, g' = g + 2 := ⟨g' - 2, by omega⟩
+    rw [Js.callFunctionAt, hfinde]
+    simp only [hparams, hfbody, Compile.retWalk, hnd, if_true]
+    rw [if_neg (by simp [rawParams_length, hdec.length_jargs]),
+      evalStmts_paramChecks m p g hdec 0 checks _ _ hchecks hres
+        (rawBound_bindAll d.params jargs 0 hdec.length_jargs),
+      evalStmts_ret, hcall g (by omega)]
+  | false =>
+    refine ⟨gB + 3, fun g' hge => ?_⟩
+    obtain ⟨g, rfl⟩ : ∃ g, g' = g + 3 := ⟨g' - 3, by omega⟩
+    rw [Js.callFunctionAt, hfinde]
+    simp only [hparams, hfbody, Compile.retWalk, hnd, Bool.false_eq_true, if_false]
+    rw [show g + 3 = (g + 1) + 2 from rfl,
+      if_neg (by simp [rawParams_length, hdec.length_jargs]),
+      evalStmts_paramChecks m p (g + 1) hdec 0 checks _ _ hchecks hres
+        (rawBound_bindAll d.params jargs 0 hdec.length_jargs),
+      evalStmts_ret, show g + 1 + 2 = (g + 2) + 1 from by omega,
+      eval_out_err m (g + 2) _ retd _ _ (hcall g (by omega))]
 
 /-- What the mutual induction needs for a call through a function value, which goes to the entry. -/
 theorem decl_agrees_at (p : Program) (m : Js.Module) (hm : compileProgram p = .ok m) (f : Nat)
     (iha : ∀ g, g ≤ f → AgreesAt p m g) : DeclAgrees p m f := by
-  intro fn d args v hd _ htyped hbody
+  intro fn d args v retd hd hretd _ htyped hbody
+  have hnames := typesNamesOk_of_compileProgram hm
+  have hvty := hasTy_ret_of_body p m hm f fn d args v hd htyped hbody
+  have hdo := descOk_tyDesc (st := []) hnames _ d.ret retd hretd
+  refine ⟨encodeAt p d.ret v,
+    checkTy_encodeAt p hnames d.ret [] [] _ retd v hretd .nil rfl hdo hvty,
+    normTy_encodeAt p hnames d.ret [] [] _ retd v hretd .nil rfl hdo hvty, ?_⟩
   exact decl_agrees_jargs p m hm f iha fn d _ args v hd htyped
     (argsDecode_of_compileProgram hm hd htyped) hbody
 
@@ -3803,7 +4033,12 @@ replaced by "any arguments at all", for every declaration the program has.
 
 `ArgsDecode` is the spelling the claim is at, and it is the whole set the entry admits: key order and
 keys the declared type does not name are absorbed by the normalisation, so `{currency, amount}` and
-`{amount, currency}` are both covered, and `decl_refuses` says everything else throws. -/
+`{amount, currency}` are both covered, and `decl_refuses` says everything else throws.
+
+The value is read through the type the declaration was declared to return, which is `encodeValue v`
+wherever that type reaches no dictionary crossing as a plain object — `encodeAt_eq_encodeValue_of_desc`
+and `Agree.encodeAt_eq_encodeValue` are the two readings of that, and every claim a package makes today
+is stated through one of them. -/
 
 theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl)
     (jargs : List Js.JsValue) (args : List Value) (v : Value)
@@ -3811,7 +4046,7 @@ theorem decl_correct (p : Program) (m : Js.Module) (fn : String) (d : Decl)
     (hd : p.find? fn = some d)
     (hdec : ArgsDecode p d.params jargs args)
     (he : evalCall p fn args = .ok v) :
-    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .ok (encodeValue v) := by
+    ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn jargs = .ok (encodeAt p d.ret v) := by
   obtain ⟨hlen, htyped, hbody⟩ := evalCall_inv hd he
   exact decl_agrees_jargs p m hm defaultFuel (fun g _ => (levels p m hm g g (Nat.le_refl g)).1)
     fn d jargs args v hd htyped hdec hbody
@@ -3892,7 +4127,7 @@ theorem decl_refuses (p : Program) (m : Js.Module) (fn : String) (d : Decl)
   intro g hg
   obtain ⟨g', rfl⟩ : ∃ g', g = g' + 2 := ⟨g - 2, by omega⟩
   obtain ⟨f, hf, hfindf, -⟩ := compileProgram_find hm hd
-  obtain ⟨stmts, ty, checks, hres, hdist, hcb, hchecks, hname, hparams, hfbody,
+  obtain ⟨stmts, ty, checks, retd, hres, hdist, hcb, hchecks, hretd, hname, hparams, hfbody,
     hbname, hbparams, hbbody, hret⟩ := compileDecl_shape hf
   rw [Js.callFunctionAt, hfindf]
   simp only [hparams, hfbody]

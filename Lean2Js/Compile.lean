@@ -337,6 +337,103 @@ termination_by pats => sizeOf pats
 
 end
 
+/-- Whether a type's fields can reach `target` through the declarations they name. Type arguments are
+searched too, so `Tree (Tree Int53)` is caught the same way a field of type `Tree` is. -/
+partial def mentions (p : Program) (target : String) (seen : List String) : Ty → Bool
+  | .option t => mentions p target seen t
+  | .array t => mentions p target seen t
+  | .dict v | .dictObj v => mentions p target seen v
+  | .result ok err => mentions p target seen ok || mentions p target seen err
+  | .named n args =>
+    if n == target || args.any (mentions p target seen) then true
+    else if seen.contains n then false
+    else
+      match p.findType? n with
+      | none => false
+      | some t => t.ctors.any fun c => c.fields.any fun f => mentions p target (n :: seen) f.ty
+  | _ => false
+
+/-- Whether a declared type can reach itself through the types its fields name. Only such a type binds
+where it is expanded; one that cannot is written out where it is used, exactly as every declared type was
+before a type could name itself. -/
+def recursiveType (p : Program) (n : String) : Bool :=
+  match p.findType? n with
+  | none => false
+  | some t => t.ctors.any fun c => c.fields.any fun f => mentions p n [] f.ty
+
+/-- The declared types whose expansion the walk is inside, nearest first, at the arguments they were
+applied to. A name met again at the same arguments is the knot: it becomes a `ref` back to the binder
+rather than an expansion that would not end. -/
+abbrev Stack := List (String × List Ty)
+
+mutual
+
+/-- Expands a declared type into the shape the generated code checks an argument against. Recursion is
+what would make this diverge, and `validateType` has already rejected it, so no occurs check is needed
+here — one by name would reject `Paginated (Paginated Int53)`, which is not recursive.
+
+`budget` counts the name expansions still allowed. A name expansion substitutes the type arguments into
+the field types, so the result can be larger than what was expanded and the structure alone does not
+measure the recursion; `tyDescBudget` is what bounds it from above. Exhausting it is a compile error, so a
+budget that turns out to be too small loses the artifact rather than weakening the check it emits.
+
+The constructor and field lists recurse through helpers rather than `mapM` so that a proof about the
+entry check can unfold them. -/
+def tyDescIn (p : Program) (st : Stack) : Nat → Ty → Except String Js.TyDesc
+  | _, .bool => .ok .bool
+  | _, .int53 => .ok .int53
+  | _, .uint32 => .ok .uint32
+  | _, .string => .ok .string
+  | _, .bigint => .ok .bigint
+  | _, .var n => .error s!"unbound type parameter: {n}"
+  | budget, .option t => do .ok (.option (← tyDescIn p st budget t))
+  | budget, .result ok err =>
+    do .ok (.result (← tyDescIn p st budget ok) (← tyDescIn p st budget err))
+  | budget, .array t => do .ok (.array (← tyDescIn p st budget t))
+  | budget, .dict v => do .ok (.dict (← tyDescIn p st budget v))
+  | _, .fn _ _ => .error "a function type has no shape to check at the boundary"
+  | budget, .named n args =>
+    match st.findIdx? (fun e => e.1 == n && e.2 == args) with
+    | some k => .ok (.ref k)
+    | none =>
+      match budget with
+      | 0 => .error s!"ran out of budget expanding type: {n}"
+      | b + 1 =>
+        match p.findType? n with
+        | none => .error s!"unknown type: {n}"
+        | some t =>
+          if recursiveType p n then do
+            .ok (.mu t.discriminator (← tyDescAlts p ((n, args) :: st) b (t.ctorsAt args)))
+          else do
+            .ok (.ctors t.discriminator (← tyDescAlts p st b (t.ctorsAt args)))
+  | budget, .dictObj v => do .ok (.dictObj (← tyDescIn p st budget v))
+termination_by budget ty => (budget, 0, sizeOf ty)
+
+def tyDescAlts (p : Program) (st : Stack) (budget : Nat) :
+    List CtorDef → Except String (List (String × List (String × Js.TyDesc)))
+  | [] => .ok []
+  | c :: rest => do
+    .ok ((c.name, ← tyDescFields p st budget c.fields) :: (← tyDescAlts p st budget rest))
+termination_by cs => (budget, 2, sizeOf cs)
+
+def tyDescFields (p : Program) (st : Stack) (budget : Nat) :
+    List Field → Except String (List (String × Js.TyDesc))
+  | [] => .ok []
+  | f :: rest => do .ok ((f.name, ← tyDescIn p st budget f.ty) :: (← tyDescFields p st budget rest))
+termination_by fs => (budget, 1, sizeOf fs)
+
+end
+
+/-- The descriptor a type crosses the boundary as: expanded from nothing, so the only binders in it are
+the ones the types themselves put there. -/
+def tyDesc (p : Program) (budget : Nat) (ty : Ty) : Except String Js.TyDesc :=
+  tyDescIn p [] budget ty
+
+/-- Every name expansion either descends one edge of the declaration graph, which `validateType` keeps
+acyclic and so is at most `p.types.length` long, or lands in a type argument, of which the type carries at
+most `sizeOf ty`. -/
+def tyDescBudget (p : Program) (ty : Ty) : Nat := (ty.size + 1) * (p.types.length + 1)
+
 mutual
 
 def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except String (Js.Expr × Ty) :=
@@ -441,7 +538,9 @@ def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except S
         if params.length != js.length then .error s!"wrong number of arguments to {fn}"
         else if !(params.zip js).all (fun (ty, (_, t)) => ty == t) then
           .error s!"argument types do not match the signature of {fn}"
-        else .ok (.call fn (js.map (·.1)), ret)
+        else do
+          let retDesc ← tyDesc p (tyDescBudget p ret) ret
+          .ok (.check retDesc (.call fn (js.map (·.1))), ret)
     | some _ => .error s!"{fn} names both a function and a binding in scope here"
     | none =>
       match p.find? fn with
@@ -753,102 +852,6 @@ def compileBody [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) (acc : Lis
   | e => compileFinish p ctx e acc
 termination_by e
 
-/-- Whether a type's fields can reach `target` through the declarations they name. Type arguments are
-searched too, so `Tree (Tree Int53)` is caught the same way a field of type `Tree` is. -/
-partial def mentions (p : Program) (target : String) (seen : List String) : Ty → Bool
-  | .option t => mentions p target seen t
-  | .array t => mentions p target seen t
-  | .dict v | .dictObj v => mentions p target seen v
-  | .result ok err => mentions p target seen ok || mentions p target seen err
-  | .named n args =>
-    if n == target || args.any (mentions p target seen) then true
-    else if seen.contains n then false
-    else
-      match p.findType? n with
-      | none => false
-      | some t => t.ctors.any fun c => c.fields.any fun f => mentions p target (n :: seen) f.ty
-  | _ => false
-
-/-- Whether a declared type can reach itself through the types its fields name. Only such a type binds
-where it is expanded; one that cannot is written out where it is used, exactly as every declared type was
-before a type could name itself. -/
-def recursiveType (p : Program) (n : String) : Bool :=
-  match p.findType? n with
-  | none => false
-  | some t => t.ctors.any fun c => c.fields.any fun f => mentions p n [] f.ty
-
-/-- The declared types whose expansion the walk is inside, nearest first, at the arguments they were
-applied to. A name met again at the same arguments is the knot: it becomes a `ref` back to the binder
-rather than an expansion that would not end. -/
-abbrev Stack := List (String × List Ty)
-
-mutual
-
-/-- Expands a declared type into the shape the generated code checks an argument against. Recursion is
-what would make this diverge, and `validateType` has already rejected it, so no occurs check is needed
-here — one by name would reject `Paginated (Paginated Int53)`, which is not recursive.
-
-`budget` counts the name expansions still allowed. A name expansion substitutes the type arguments into
-the field types, so the result can be larger than what was expanded and the structure alone does not
-measure the recursion; `tyDescBudget` is what bounds it from above. Exhausting it is a compile error, so a
-budget that turns out to be too small loses the artifact rather than weakening the check it emits.
-
-The constructor and field lists recurse through helpers rather than `mapM` so that a proof about the
-entry check can unfold them. -/
-def tyDescIn (p : Program) (st : Stack) : Nat → Ty → Except String Js.TyDesc
-  | _, .bool => .ok .bool
-  | _, .int53 => .ok .int53
-  | _, .uint32 => .ok .uint32
-  | _, .string => .ok .string
-  | _, .bigint => .ok .bigint
-  | _, .var n => .error s!"unbound type parameter: {n}"
-  | budget, .option t => do .ok (.option (← tyDescIn p st budget t))
-  | budget, .result ok err =>
-    do .ok (.result (← tyDescIn p st budget ok) (← tyDescIn p st budget err))
-  | budget, .array t => do .ok (.array (← tyDescIn p st budget t))
-  | budget, .dict v => do .ok (.dict (← tyDescIn p st budget v))
-  | _, .fn _ _ => .error "a function type has no shape to check at the boundary"
-  | budget, .named n args =>
-    match st.findIdx? (fun e => e.1 == n && e.2 == args) with
-    | some k => .ok (.ref k)
-    | none =>
-      match budget with
-      | 0 => .error s!"ran out of budget expanding type: {n}"
-      | b + 1 =>
-        match p.findType? n with
-        | none => .error s!"unknown type: {n}"
-        | some t =>
-          if recursiveType p n then do
-            .ok (.mu t.discriminator (← tyDescAlts p ((n, args) :: st) b (t.ctorsAt args)))
-          else do
-            .ok (.ctors t.discriminator (← tyDescAlts p st b (t.ctorsAt args)))
-  | budget, .dictObj v => do .ok (.dictObj (← tyDescIn p st budget v))
-termination_by budget ty => (budget, 0, sizeOf ty)
-
-def tyDescAlts (p : Program) (st : Stack) (budget : Nat) :
-    List CtorDef → Except String (List (String × List (String × Js.TyDesc)))
-  | [] => .ok []
-  | c :: rest => do
-    .ok ((c.name, ← tyDescFields p st budget c.fields) :: (← tyDescAlts p st budget rest))
-termination_by cs => (budget, 2, sizeOf cs)
-
-def tyDescFields (p : Program) (st : Stack) (budget : Nat) :
-    List Field → Except String (List (String × Js.TyDesc))
-  | [] => .ok []
-  | f :: rest => do .ok ((f.name, ← tyDescIn p st budget f.ty) :: (← tyDescFields p st budget rest))
-termination_by fs => (budget, 1, sizeOf fs)
-
-end
-
-/-- The descriptor a type crosses the boundary as: expanded from nothing, so the only binders in it are
-the ones the types themselves put there. -/
-def tyDesc (p : Program) (budget : Nat) (ty : Ty) : Except String Js.TyDesc :=
-  tyDescIn p [] budget ty
-
-/-- Every name expansion either descends one edge of the declaration graph, which `validateType` keeps
-acyclic and so is at most `p.types.length` long, or lands in a type argument, of which the type carries at
-most `sizeOf ty`. -/
-def tyDescBudget (p : Program) (ty : Ty) : Nat := (ty.size + 1) * (p.types.length + 1)
 
 /-- The name an exported function takes its argument under, before the entry check hands it to the body
 under the declared name. The reserved prefix is what keeps it out of reach of a declared name. -/
@@ -889,6 +892,12 @@ def paramIdents : List Param → List Js.Expr
   | [] => []
   | param :: rest => .ident param.name :: paramIdents rest
 
+/-- The result, read back out through the type the declaration was declared to return. A dictionary
+declared to cross as a plain object is the only node the walk moves, so where the expanded descriptor
+reaches none nothing is emitted and the entry is byte-for-byte what it is without a walk. -/
+def retWalk (d : Js.TyDesc) (e : Js.Expr) : Js.Expr :=
+  if Js.descNoDictObj d then e else .out d e
+
 /-- A declaration becomes two functions: the body, which is where the compiled expression goes and which
 every call from inside the package lands on, and the entry, which checks its arguments and hands them to
 the body under their declared names. The entry is what a consumer imports and what `decl_correct`,
@@ -907,10 +916,11 @@ def compileDecl [Discriminators] (p : Program) (d : Decl) :
     .error s!"{d.name} is declared to return {d.ret.render} but its body is {ty.render}"
   else do
     let checks ← paramChecks p 0 d.params
+    let retDesc ← tyDesc p (tyDescBudget p d.ret) d.ret
     .ok (
       { name := d.name
         params := rawParams 0 d.params
-        body := checks ++ [.ret (.call (bodyName d.name) (paramIdents d.params))]
+        body := checks ++ [.ret (retWalk retDesc (.call (bodyName d.name) (paramIdents d.params)))]
         doc := d.name ++ " : (" ++ declSig d.params ++ ") → " ++ d.ret.render
         exported := d.isPublic },
       { name := bodyName d.name

@@ -84,8 +84,9 @@ nothing at all.
 Every headline theorem in `Lean2Js/Example.lean` opens with
 `(m : Js.Module) (hm : Compile.compileProgram program = .ok m)`. If `compileProgram program` were
 `.error`, the entire published guarantee would be vacuous and every gate would stay green. It is not:
-`Lean2Js/Tests.lean` carries `#guard (Compile.compileProgram program).isOk`, and `program_progOk`,
-`program_cost_fits` and the `private theorem find_*` family discharge the rest by `rfl`.
+`Lean2Js/Example.lean` carries a `#guard` that the program compiles at the reading its own types
+declare, beside `program_noDictObj`, and `program_progOk`, `program_cost_fits` and the
+`private theorem find_*` family discharge the rest by `rfl`.
 
 So the check is mechanical: **for each shipped theorem, name where each hypothesis is discharged,
 and confirm they can be discharged together.** A hypothesis with no in-tree discharge is a finding
