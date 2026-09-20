@@ -86,6 +86,33 @@ Two things that made the first half cheaper than feared, and apply again:
   named by equation number (`checkTy.eq_10`) and their `.induct` proofs by case number, so an arm
   inserted in the middle renames a dozen proofs.
 
+## The open question: how `Dict.Obj` is spelled in Lean
+
+**Settle this before writing it.** The first plan's non-goal table says there are no operations to add,
+because "inside the module a dictionary is a `Map` whatever it crosses as". That is true of the
+*generated JavaScript* and false of the *Lean vocabulary*: an author still needs something to write.
+Checked against the tree, not guessed:
+
+- `Reify.lean` is a table keyed by Lean constant name — `Lean2Js.Dict.get` → `dictGet` at `:344`, and
+  eight more beside it. A name not in that table does not reify.
+- A structure projection reifies to `Core.Expr.proj` (`Reify.lean:260`), which resolves its field
+  against a `TypeDef` in the program. `Dict.Obj` is not a declared type, so `Dict.Obj.toDict` as a
+  projection **does not compile away** — it does not compile at all.
+- So a wrapper `structure Dict.Obj (α) where toDict : Dict α` buys nothing: the unwrapping is what the
+  author writes, and the unwrapping is what has no reading.
+
+Three shapes, cheapest first:
+
+| Shape | What it costs | What it gives up |
+| --- | --- | --- |
+| **A twin structure** — `Dict.Obj` with its own `entries` and its own nine operations | nine `Prelude` defs, nine `Reify` rows, their `denotes_*` lemmas, and `compileExpr`'s dict arms widened to take a `.dictObj` receiver (`Compile.lean:625`–`664`) | the vocabulary says everything twice |
+| **A conversion form** in `Core.Expr` | `Sound` and `Correct` each gain a case — what `extending-the-subset.md` calls the expensive layer | nothing, but it is the most expensive layer for the least new meaning |
+| **Boundary-only** — `Dict.Obj` may be a parameter or a return and nothing else | almost nothing | an author cannot read a `Dict.Obj` argument without a conversion that does not exist |
+
+The twin structure is the one that fits the machinery that is already there, and widening
+`compileExpr`'s receiver match is the only place it touches the compiler proper. **Write that down as
+settled, or settle it otherwise, before any of it is written.**
+
 ## Files
 
 | File | What moves |
