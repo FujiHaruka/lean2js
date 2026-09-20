@@ -815,6 +815,222 @@ termination_by _ _ _ _ _ es => sizeOf es
 
 end
 
+/-! ### The walk out reads the same value through its declared type
+
+`outTy` parts from `normTy` at one node and `encodeAt` parts from `encodeValue` at the same one, so
+the two meet: what a declaration's entry hands back is the value the reference semantics produced,
+read through the type the declaration was declared to return.
+
+`encodeValue v` on the left is what the body built, which is what `decl_correct` says, and the walk is
+what the entry runs over it. Where the return type reaches no `dictObj`, `Js.outTy_eq_normTy` makes
+this `normTy_encodeValue` again and the entry emits no walk at all. -/
+
+mutual
+
+theorem outTy_encodeValue (p : Program) (hn : TypesNamesOk p) :
+    ∀ (ty : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (v : Value),
+      tyDescIn p st b ty = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasTy p v ty = true →
+      Js.outTy env (encodeValue v) d = encodeAt p ty v
+  | .bool, st, env, _, _, v, hd, hsa, henv, _, hv => by
+    obtain ⟨x, rfl⟩ := hasTy_bool_inv hv
+    rw [tyDesc_bool_inv hd, show encodeValue (Value.bool x) = .bool x from by
+      rw [encodeValue.eq_def], Js.outTy_bool, encodeAt_bool]
+  | .int53, st, env, _, _, v, hd, hsa, henv, _, hv => by
+    obtain ⟨i, rfl⟩ := hasTy_int53_inv hv
+    rw [tyDesc_int53_inv hd, show encodeValue (Value.int53 i) = .num i from by
+      rw [encodeValue.eq_def], Js.outTy_int53, encodeAt_int53]
+  | .uint32, st, env, _, _, v, hd, hsa, henv, _, hv => by
+    obtain ⟨n, rfl⟩ := hasTy_uint32_inv hv
+    rw [tyDesc_uint32_inv hd, show encodeValue (Value.uint32 n) = .num n.toNat from by
+      rw [encodeValue.eq_def], Js.outTy_uint32, encodeAt_uint32]
+  | .string, st, env, _, _, v, hd, hsa, henv, _, hv => by
+    obtain ⟨x, rfl⟩ := hasTy_string_inv hv
+    rw [tyDesc_string_inv hd, show encodeValue (Value.str x) = .str x from by
+      rw [encodeValue.eq_def], Js.outTy_string, encodeAt_string]
+  | .bigint, st, env, _, _, v, hd, hsa, henv, _, hv => by
+    obtain ⟨i, rfl⟩ := hasTy_bigint_inv hv
+    rw [tyDesc_bigint_inv hd, show encodeValue (Value.bigint i) = .bigint i from by
+      rw [encodeValue.eq_def], Js.outTy_bigint, encodeAt_bigint]
+  | .var _, st, env, _, _, _, hd, hsa, henv, _, _ => (tyDesc_var_inv hd).elim
+  | .fn _ _, st, env, _, _, _, hd, hsa, henv, _, _ => (tyDesc_fn_inv hd).elim
+  | .option elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
+    obtain ⟨ctor, fields, rfl⟩ := hasTy_option_inv hv
+    obtain ⟨de, hde, rfl⟩ := tyDesc_option_inv hd
+    rw [Js.descOk] at hdo
+    rcases hasTy_option_fields hv with ⟨rfl, rfl⟩ | ⟨rfl, hfs⟩
+    · rw [show encodeValue (.obj "none" []) = .obj [("tag", .str "none")] from by
+        simp [encodeValue, encodeFields], Js.outTy_none (Js.lookupField_head _ _ _),
+        encodeAt_none]
+    · obtain ⟨x, rfl, hx⟩ := hasFieldTys_singleton_inv hfs
+      rw [show encodeValue (.obj "some" [("value", x)])
+            = .obj (("tag", .str "some") :: [("value", encodeValue x)]) from by
+          simp [encodeValue, encodeFields],
+        Js.outTy_some (Js.lookupField_head _ _ _),
+        Js.outFields_cons (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
+        Js.outFields_nil, outTy_encodeValue p hn elem st env b de x hde hsa henv hdo hx,
+        encodeAt_some, encodeFieldsAt_cons, encodeFieldsAt_nil]
+  | .result ok err, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
+    obtain ⟨ctor, fields, rfl⟩ := hasTy_result_inv hv
+    obtain ⟨dok, derr, hdok, hderr, rfl⟩ := tyDesc_result_inv hd
+    rw [Js.descOk, Bool.and_eq_true] at hdo
+    rcases hasTy_result_fields hv with ⟨rfl, hfs⟩ | ⟨rfl, hfs⟩
+    · obtain ⟨x, rfl, hx⟩ := hasFieldTys_singleton_inv hfs
+      rw [show encodeValue (.obj "ok" [("value", x)])
+            = .obj (("tag", .str "ok") :: [("value", encodeValue x)]) from by
+          simp [encodeValue, encodeFields],
+        Js.outTy_ok (Js.lookupField_head _ _ _),
+        Js.outFields_cons (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
+        Js.outFields_nil, outTy_encodeValue p hn ok st env b dok x hdok hsa henv hdo.1 hx,
+        encodeAt_ok, encodeFieldsAt_cons, encodeFieldsAt_nil]
+    · obtain ⟨x, rfl, hx⟩ := hasFieldTys_singleton_inv hfs
+      rw [show encodeValue (.obj "error" [("error", x)])
+            = .obj (("tag", .str "error") :: [("error", encodeValue x)]) from by
+          simp [encodeValue, encodeFields],
+        Js.outTy_error (Js.lookupField_head _ _ _),
+        Js.outFields_cons (v := encodeValue x) (by simp [Js.lookupField, List.find?]),
+        Js.outFields_nil, outTy_encodeValue p hn err st env b derr x hderr hsa henv hdo.2 hx,
+        encodeAt_error, encodeFieldsAt_cons, encodeFieldsAt_nil]
+  | .array elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
+    obtain ⟨xs, rfl⟩ := hasTy_array_inv hv
+    obtain ⟨de, hde, rfl⟩ := tyDesc_array_inv hd
+    rw [Js.descOk] at hdo
+    rw [hasTy_array] at hv
+    rw [show encodeValue (.arr xs) = .arr (encodeList xs) from by rw [encodeValue.eq_def],
+      Js.outTy_array, outList_encodeListAt p hn elem st env b de xs hde hsa henv hdo hv,
+      encodeAt_array]
+  | .dict elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
+    obtain ⟨es, rfl⟩ := hasTy_dict_inv hv
+    obtain ⟨de, hde, rfl⟩ := tyDesc_dict_inv hd
+    rw [Js.descOk] at hdo
+    rw [hasTy_dict, Bool.and_eq_true] at hv
+    rw [show encodeValue (.dict es) = .dict (encodeFields es) from by rw [encodeValue.eq_def],
+      Js.outTy_dict, outEntries_encodeEntriesAt p hn elem st env b de es hde hsa henv hdo hv.2,
+      encodeAt_dict]
+  | .dictObj elem, st, env, b, _, v, hd, hsa, henv, hdo, hv => by
+    obtain ⟨es, rfl⟩ := hasTy_dictObj_inv hv
+    obtain ⟨de, hde, rfl⟩ := tyDesc_dictObj_inv hd
+    rw [Js.descOk] at hdo
+    rw [hasTy_dictObj, Bool.and_eq_true] at hv
+    rw [show encodeValue (.dict es) = .dict (encodeFields es) from by rw [encodeValue.eq_def],
+      Js.outTy_dictObj, outEntries_encodeEntriesAt p hn elem st env b de es hde hsa henv hdo hv.2,
+      encodeAt_dictObj]
+  | .named n args, st, env, b, d, v, hd, hsa, henv, hdo, hv => by
+    obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hv
+    obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', -, -, hshape, hok⟩ := named_unfolds hd hsa
+    obtain ⟨henv', hdoC⟩ := hok henv hdo
+    have hout : ∀ jv, Js.outTy env jv d = Js.outTy envC jv (.ctors t.discriminator alts) := by
+      rcases hshape with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨k, rfl, hk, rfl⟩
+      · exact fun _ => rfl
+      · exact fun jv => by rw [Js.outTy]
+      · exact fun jv => by rw [Js.outTy, hk]
+    rw [hout]
+    obtain ⟨t', c, ht', hc, hfs⟩ := hasTy_named_fields hv
+    rw [ht] at ht'
+    obtain rfl : t = t' := Option.some.inj ht'
+    obtain ⟨ds, hfind, hds⟩ := tyDescAlts_find p stC b' (t.ctorsAt args) alts ctor c halts hc
+    have hcname : c.name = ctor := by
+      have := List.find?_some hc
+      simpa using this
+    have hkey : keyFor ctor = t.discriminator :=
+      hcname ▸ ((hn n args t ht).2 c (List.mem_of_find?_eq_some hc)).1
+    obtain ⟨hnames, hflds⟩ := Js.altsOk_find hdoC (hcname ▸ hfind)
+    rw [show encodeValue (.obj ctor fields)
+          = .obj ((keyFor ctor, .str ctor) :: encodeFields fields) from by rw [encodeValue.eq_def],
+      encodeAt_named p n args ctor fields t c ht hc,
+      hkey, Js.outTy_ctors (Js.lookupField_head _ _ _) (hcname ▸ hfind)]
+    simp only []
+    rw [Js.outFields_skip (t.discriminator, Js.JsValue.str ctor) _ ds
+        (fun m hm => Js.namesOk_not_key hnames m hm),
+      outFields_encodeFieldsAt p hn c.fields stC envC b' ds t.discriminator fields hds hsa' henv'
+        hnames hflds hfs]
+termination_by _ _ _ _ _ v => sizeOf v
+
+theorem outFields_encodeFieldsAt (p : Program) (hn : TypesNamesOk p) :
+    ∀ (fdecls : List Field) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat)
+      (ds : List (String × Js.TyDesc)) (key : String) (fs : List (String × Value)),
+      tyDescFields p st b fdecls = .ok ds → StackAgrees p st env → Js.envOk env = true →
+      Js.namesOk key ds = true → Js.fieldsOk env.length ds = true →
+      Value.hasFieldTys p fs (fdecls.map fun f => (f.name, f.ty)) = true →
+      Js.outFields env (encodeFields fs) ds
+        = encodeFieldsAt p fs (fdecls.map fun f => (f.name, f.ty))
+  | [], st, env, _, ds, _, fs, hds, hsa, henv, _, _, hfs => by
+    rw [tyDescFields.eq_def] at hds
+    simp only at hds
+    have : ds = [] := (Except.ok.inj hds).symm
+    subst this
+    rw [Js.outFields_nil]
+    match fs with
+    | [] => rw [encodeFieldsAt.eq_def]
+    | _ :: _ => rw [Value.hasFieldTys.eq_def] at hfs; simp at hfs
+  | fd :: fdecls, st, env, b, ds, key, fs, hds, hsa, henv, hnames, hflds, hfs => by
+    rw [tyDescFields.eq_def] at hds
+    simp only at hds
+    cases hd : tyDescIn p st b fd.ty with
+    | error e => rw [hd] at hds; exact (errNeOk hds).elim
+    | ok d =>
+      cases hrest : tyDescFields p st b fdecls with
+      | error e => rw [hd, hrest] at hds; exact (errNeOk hds).elim
+      | ok dsRest =>
+        rw [hd, hrest] at hds
+        have : ds = (fd.name, d) :: dsRest := (Except.ok.inj hds).symm
+        subst this
+        obtain ⟨hno, hnrest⟩ := Js.namesOk_head hnames
+        rw [Js.fieldsOk, Bool.and_eq_true] at hflds
+        match fs with
+        | [] => rw [Value.hasFieldTys.eq_def] at hfs; simp at hfs
+        | (key, v) :: rest =>
+          rw [List.map_cons, Value.hasFieldTys.eq_def] at hfs
+          simp only [Bool.and_eq_true, beq_iff_eq] at hfs
+          obtain ⟨⟨hk, hv⟩, hrestv⟩ := hfs
+          subst hk
+          rw [show encodeFields ((fd.name, v) :: rest)
+                = (fd.name, encodeValue v) :: encodeFields rest from by rw [encodeFields.eq_def],
+            Js.outFields_cons (v := encodeValue v) (Js.lookupField_head _ _ _),
+            Js.outFields_skip (fd.name, encodeValue v) _ dsRest hno,
+            outTy_encodeValue p hn fd.ty st env b d v hd hsa henv hflds.1 hv,
+            outFields_encodeFieldsAt p hn fdecls st env b dsRest key rest hrest hsa henv hnrest
+              hflds.2 hrestv,
+            List.map_cons, encodeFieldsAt_cons]
+termination_by _ _ _ _ _ _ fs => sizeOf fs
+
+theorem outList_encodeListAt (p : Program) (hn : TypesNamesOk p) :
+    ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc) (xs : List Value),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasElemTy p xs elem = true →
+      Js.outList env (encodeList xs) d = encodeListAt p xs elem
+  | _, st, env, _, d, [], _, hsa, henv, _, _ => by
+    rw [show encodeList ([] : List Value) = [] from by rw [encodeList.eq_def], Js.outList_nil,
+      encodeListAt_nil]
+  | elem, st, env, b, d, x :: rest, hd, hsa, henv, hdo, hv => by
+    rw [hasElemTy_cons, Bool.and_eq_true] at hv
+    rw [show encodeList (x :: rest) = encodeValue x :: encodeList rest from by
+        rw [encodeList.eq_def], Js.outList_cons,
+      outTy_encodeValue p hn elem st env b d x hd hsa henv hdo hv.1,
+      outList_encodeListAt p hn elem st env b d rest hd hsa henv hdo hv.2,
+      encodeListAt_cons]
+termination_by _ _ _ _ _ xs => sizeOf xs
+
+theorem outEntries_encodeEntriesAt (p : Program) (hn : TypesNamesOk p) :
+    ∀ (elem : Ty) (st : Compile.Stack) (env : Js.TyEnv) (b : Nat) (d : Js.TyDesc)
+      (es : List (String × Value)),
+      tyDescIn p st b elem = .ok d → StackAgrees p st env → Js.envOk env = true →
+      Js.descOk env.length d = true → Value.hasEntryTys p es elem = true →
+      Js.outEntries env (encodeFields es) d = encodeEntriesAt p es elem
+  | _, st, env, _, d, [], _, hsa, henv, _, _ => by
+    rw [show encodeFields ([] : List (String × Value)) = [] from by rw [encodeFields.eq_def],
+      Js.outEntries_nil, encodeEntriesAt_nil]
+  | elem, st, env, b, d, (key, v) :: rest, hd, hsa, henv, hdo, hv => by
+    rw [hasEntryTys_cons, Bool.and_eq_true] at hv
+    rw [show encodeFields ((key, v) :: rest) = (key, encodeValue v) :: encodeFields rest from by
+        rw [encodeFields.eq_def], Js.outEntries_cons,
+      outTy_encodeValue p hn elem st env b d v hd hsa henv hdo hv.1,
+      outEntries_encodeEntriesAt p hn elem st env b d rest hd hsa henv hdo hv.2,
+      encodeEntriesAt_cons]
+termination_by _ _ _ _ _ es => sizeOf es
+
+end
+
 end
 
 /-! ### The entry check refuses

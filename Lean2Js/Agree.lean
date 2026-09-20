@@ -103,6 +103,95 @@ termination_by entries => sizeOf entries
 
 end
 
+/-! ### Reading a result through its declared type
+
+`encodeAt` is a well-founded recursion for the reason `Value.hasTy` is, so each shape is unfolded once
+here rather than by `simp` at every use. -/
+
+section
+
+variable [Discriminators] (p : Program)
+
+theorem encodeAt_bool (b : Bool) : encodeAt p .bool (.bool b) = .bool b := by
+  rw [encodeAt.eq_def]; simp [encodeValue]
+
+theorem encodeAt_int53 (i : Int) : encodeAt p .int53 (.int53 i) = .num i := by
+  rw [encodeAt.eq_def]; simp [encodeValue]
+
+theorem encodeAt_uint32 (n : UInt32) : encodeAt p .uint32 (.uint32 n) = .num n.toNat := by
+  rw [encodeAt.eq_def]; simp [encodeValue]
+
+theorem encodeAt_string (s : String) : encodeAt p .string (.str s) = .str s := by
+  rw [encodeAt.eq_def]; simp [encodeValue]
+
+theorem encodeAt_bigint (i : Int) : encodeAt p .bigint (.bigint i) = .bigint i := by
+  rw [encodeAt.eq_def]; simp [encodeValue]
+
+theorem encodeAt_none (elem : Ty) :
+    encodeAt p (.option elem) (.obj "none" []) = .obj [("tag", .str "none")] := by
+  rw [encodeAt.eq_def]; simp [encodeValue, encodeFields]
+
+theorem encodeAt_some (fields : List (String × Value)) (elem : Ty) :
+    encodeAt p (.option elem) (.obj "some" fields)
+      = .obj (("tag", .str "some") :: encodeFieldsAt p fields [("value", elem)]) := by
+  rw [encodeAt.eq_def]; simp
+
+theorem encodeAt_ok (fields : List (String × Value)) (ok err : Ty) :
+    encodeAt p (.result ok err) (.obj "ok" fields)
+      = .obj (("tag", .str "ok") :: encodeFieldsAt p fields [("value", ok)]) := by
+  rw [encodeAt.eq_def]; simp
+
+theorem encodeAt_error (fields : List (String × Value)) (ok err : Ty) :
+    encodeAt p (.result ok err) (.obj "error" fields)
+      = .obj (("tag", .str "error") :: encodeFieldsAt p fields [("error", err)]) := by
+  rw [encodeAt.eq_def]; simp
+
+theorem encodeAt_array (xs : List Value) (elem : Ty) :
+    encodeAt p (.array elem) (.arr xs) = .arr (encodeListAt p xs elem) := by
+  rw [encodeAt.eq_def]
+
+theorem encodeAt_dict (es : List (String × Value)) (elem : Ty) :
+    encodeAt p (.dict elem) (.dict es) = .dict (encodeEntriesAt p es elem) := by
+  rw [encodeAt.eq_def]
+
+theorem encodeAt_dictObj (es : List (String × Value)) (elem : Ty) :
+    encodeAt p (.dictObj elem) (.dict es) = .obj (encodeEntriesAt p es elem) := by
+  rw [encodeAt.eq_def]
+
+theorem encodeAt_named (n : String) (args : List Ty) (ctor : String)
+    (fields : List (String × Value)) (t : TypeDef) (c : CtorDef)
+    (ht : p.findType? n = some t) (hc : t.findAt? args ctor = some c) :
+    encodeAt p (.named n args) (.obj ctor fields)
+      = .obj ((keyFor ctor, .str ctor)
+          :: encodeFieldsAt p fields (c.fields.map fun f => (f.name, f.ty))) := by
+  rw [encodeAt.eq_def]; simp [ht, hc]
+
+theorem encodeFieldsAt_nil (tys : List (String × Ty)) : encodeFieldsAt p [] tys = [] := by
+  rw [encodeFieldsAt.eq_def]
+
+theorem encodeFieldsAt_cons (k : String) (v : Value) (rest : List (String × Value))
+    (n : String) (ty : Ty) (tys : List (String × Ty)) :
+    encodeFieldsAt p ((k, v) :: rest) ((n, ty) :: tys)
+      = (k, encodeAt p ty v) :: encodeFieldsAt p rest tys := by
+  rw [encodeFieldsAt.eq_def]
+
+theorem encodeListAt_nil (elem : Ty) : encodeListAt p [] elem = [] := by
+  rw [encodeListAt.eq_def]
+
+theorem encodeListAt_cons (x : Value) (rest : List Value) (elem : Ty) :
+    encodeListAt p (x :: rest) elem = encodeAt p elem x :: encodeListAt p rest elem := by
+  rw [encodeListAt.eq_def]
+
+theorem encodeEntriesAt_nil (elem : Ty) : encodeEntriesAt p [] elem = [] := by
+  rw [encodeEntriesAt.eq_def]
+
+theorem encodeEntriesAt_cons (k : String) (v : Value) (rest : List (String × Value)) (elem : Ty) :
+    encodeEntriesAt p ((k, v) :: rest) elem
+      = (k, encodeAt p elem v) :: encodeEntriesAt p rest elem := by
+  rw [encodeEntriesAt.eq_def]
+
+end
+
 /-! ### Reading a value through the type it was declared at
 
 `encodeAt` is `encodeValue` wherever no `dictObj` is reachable, which is every package built before one
