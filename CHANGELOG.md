@@ -6,6 +6,16 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- `Int53.divFloor`, `Int53.divCeil` and `Int53.divRound` are in the subset: the division `Int53.div`
+  already does, rounded towards negative infinity, towards positive infinity, and with a half away from
+  zero. An amount in minor units is what the subset has instead of a fractional number, and every such
+  amount that comes out of a rate, a share or a split is a division that has to round — which until now
+  each author wrote out of `div` and `mod` themselves, in the one place where getting it wrong is a
+  wrong number rather than a refusal. `divRound` compares the remainder against what is left of the
+  divisor rather than doubling it, so a divisor near the top of the range decides rather than trapping.
+  JavaScript's `Math.round` is not one of the three: it takes a half towards positive infinity, where
+  `divRound` takes it away from zero, so a refund rounds like the charge it reverses.
+
 - A tag carries a build of this library, and a user's first `lake build` fetches it instead of compiling
   it. `preferReleaseBuild` asks Lake for the archive attached to the release for the tag the `rev`
   names, and `.github/workflows/release.yml` is what attaches one per platform on a tag push. A rev that

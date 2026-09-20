@@ -103,6 +103,7 @@ told to unfold.
 | Written | Is |
 | --- | --- |
 | `Int53.div a b` | `Int.tdiv a b` — truncating, unlike Lean's `/` |
+| `Int53.divFloor` / `Int53.divCeil` / `Int53.divRound` | `Int53.div` with the remainder tested, so a goal about one opens with the same `Int.tdiv` after a `split` per `if` |
 | `Int53.mod a b` | `Int.tmod a b` |
 | `Int53.abs a` | `Int.natAbs a`, as an `Int` |
 | `Int53.toString a` | `toString a` — the decimal spelling |

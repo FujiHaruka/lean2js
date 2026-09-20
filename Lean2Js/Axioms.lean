@@ -33,6 +33,26 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.cheapest_first_keeps_every_line
 
+/-- info: 'Lean2Js.Example.no_rate_is_no_tax' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.no_rate_is_no_tax
+
+/-- info: 'Lean2Js.Example.a_refund_is_taxed_as_the_charge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.a_refund_is_taxed_as_the_charge
+
+/-- info: 'Lean2Js.Example.tax_of_five_at_a_tenth' does not depend on any axioms -/
+#guard_msgs in
+#print axioms Lean2Js.Example.tax_of_five_at_a_tenth
+
+/-- info: 'Lean2Js.Example.shares_cover_the_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.shares_cover_the_cost
+
+/-- info: 'Lean2Js.Example.the_day_holds_the_instant' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.the_day_holds_the_instant
+
 /-- info: 'Lean2Js.Example.monthly_limit_is_not_negative' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms Lean2Js.Example.monthly_limit_is_not_negative

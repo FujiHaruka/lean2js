@@ -337,6 +337,32 @@ def mod (a b : Int) : Int := a.tmod b
 
 def abs (a : Int) : Int := a.natAbs
 
+/-- Division rounding towards negative infinity, where `div` rounds towards zero: `divFloor (-7) 2` is
+`-4` and `div (-7) 2` is `-3`. A zero divisor traps, as `div` does. -/
+@[expand] def divFloor (a b : Int) : Int :=
+  let q := div a b
+  if mod a b == 0 then q
+  else if a < 0 then (if b < 0 then q else q - 1)
+  else (if b < 0 then q - 1 else q)
+
+/-- Division rounding towards positive infinity. -/
+@[expand] def divCeil (a b : Int) : Int :=
+  let q := div a b
+  if mod a b == 0 then q
+  else if a < 0 then (if b < 0 then q + 1 else q)
+  else (if b < 0 then q else q + 1)
+
+/-- Division rounding a half away from zero, which is how an amount in minor units is rounded where
+nothing says otherwise: `divRound 5 2` is `3` and `divRound (-5) 2` is `-3`. The remainder is compared
+against what is left of the divisor rather than doubled, so a divisor near the top of the range decides
+the same way as any other rather than trapping on the way to the answer. -/
+@[expand] def divRound (a b : Int) : Int :=
+  let q := div a b
+  let rest := abs (mod a b)
+  if rest < abs b - rest then q
+  else if a < 0 then (if b < 0 then q + 1 else q - 1)
+  else (if b < 0 then q - 1 else q + 1)
+
 /-- The decimal spelling. JS's `String(n)` falls back to exponent notation only at 1e21, which is above
 the Int53 range, so the two agree on every Int53. -/
 def toString (a : Int) : String := ToString.toString a

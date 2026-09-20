@@ -316,6 +316,38 @@ export declare function divide(a: number, b: number): number;
 export declare function remainder(a: number, b: number): number;
 
 /**
+ * The tax on an amount in minor units at a rate in basis points, rounded half away from zero — which
+ * is the rounding an amount of money gets where nothing says otherwise.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function taxOn(amount: number, rate: number): number;
+
+/**
+ * What each of `parties` carries of a cost, rounded up. A count of zero or less is read as one, since
+ * a cost carried by nobody is carried by the one who has it.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function shareOf(cost: number, parties: number): number;
+
+/**
+ * One party's share of an amount split evenly, rounded to the nearest whole unit with a half going
+ * away from zero. A count of zero or less is read as one, as `shareOf` reads it.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function evenShare(amount: number, parties: number): number;
+
+/**
+ * Which whole day an instant falls in, counting from the epoch, where an instant before it belongs to
+ * the day it is inside rather than to the one after: `divFloor` and not `div`.
+ *
+ * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}
+ */
+export declare function dayOfInstant(ms: number): number;
+
+/**
  * @throws {TrapError<"typeError" | "int53Overflow">}
  */
 export declare function negate(a: number): number;

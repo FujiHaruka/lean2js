@@ -13,7 +13,7 @@ constructors and the operators.
 | | `Arr.sortByKey` | `List.mergeSort`, which takes a comparison. The key's type carries the order: `Int` or `String` |
 | | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's, which repeat by recursion |
 | `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API, none of which is read |
-| `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | `/`, which floors where the subset truncates, and `toString` |
+| `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.divFloor` `Int53.divCeil` `Int53.divRound` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | `/`, which floors where the subset truncates, and `toString` |
 | `Dict V` | `Dict.ofList` `Dict.ofPairs` `.get` `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` | `List (String × V)`, which already encodes as an array |
 | `Option T` / `Except E A` | `Opt.getD` `Opt.map` `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | `Option.getD` and `Except.map`, imported before this library is read |
 
@@ -67,7 +67,9 @@ element type.
 
 | `Int` / `BigInt` / `Option` / `Except` | |
 | --- | --- |
-| `Int53.div` / `Int53.mod` | `Int → Int → Int` |
+| `Int53.div` / `Int53.mod` | `Int → Int → Int` — `div` truncates towards zero |
+| `Int53.divFloor` / `Int53.divCeil` | `Int → Int → Int` — the same division rounded towards negative or positive infinity |
+| `Int53.divRound` | `Int → Int → Int` — rounded with a half away from zero, which is how an amount in minor units is rounded |
 | `Int53.abs` | `Int → Int` |
 | `Int53.toString` | `Int → String` |
 | `BigInt.div` / `BigInt.mod` | `BigInt → BigInt → BigInt` |
@@ -79,7 +81,7 @@ element type.
 | `Exc.mapError` | `Except ε α → (ε → ε') → Except ε' α` |
 | `Exc.toOption` | `Except ε α → Option α` |
 
-**`Str.replace`, `Str.isEmpty`, `Str.padStart` and everything from `Arr.take` down is `@[expand]`**, so
+**`Str.replace`, `Str.isEmpty`, `Str.padStart`, the three rounded divisions, and everything from `Arr.take` down is `@[expand]`**, so
 each call writes the body out where it stands: nothing of them reaches `index.js`, and the fuel the
 program needs grows with how deeply they nest. `Arr.contains` needs `BEq T` (`deriving DecidableEq`);
 `Arr.head?` and `Arr.last?` need `Inhabited T` (`deriving Inhabited`).

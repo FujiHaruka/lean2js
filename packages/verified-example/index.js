@@ -845,6 +845,39 @@ export function remainder(__p0, __p1) {
   return __i53mod(a, b);
 }
 
+/** taxOn : (amount : Int53, rate : Int53) → Int53 */
+export function taxOn(__p0, __p1) {
+  const amount = __ck(__p0, ["int53"]);
+  const rate = __ck(__p1, ["int53"]);
+  const q = __i53div(__i53((amount * rate)), 10000);
+  const rest = __i53(__abs(__i53mod(__i53((amount * rate)), 10000)));
+  return ((rest < __i53((__i53(__abs(10000)) - rest))) ? q : ((__i53((amount * rate)) < 0) ? ((10000 < 0) ? __i53((q + 1)) : __i53((q - 1))) : ((10000 < 0) ? __i53((q - 1)) : __i53((q + 1)))));
+}
+
+/** shareOf : (cost : Int53, parties : Int53) → Int53 */
+export function shareOf(__p0, __p1) {
+  const cost = __ck(__p0, ["int53"]);
+  const parties = __ck(__p1, ["int53"]);
+  const q = __i53div(cost, __max(parties, 1));
+  return ((__i53mod(cost, __max(parties, 1)) === 0) ? q : ((cost < 0) ? ((__max(parties, 1) < 0) ? __i53((q + 1)) : q) : ((__max(parties, 1) < 0) ? q : __i53((q + 1)))));
+}
+
+/** evenShare : (amount : Int53, parties : Int53) → Int53 */
+export function evenShare(__p0, __p1) {
+  const amount = __ck(__p0, ["int53"]);
+  const parties = __ck(__p1, ["int53"]);
+  const q = __i53div(amount, __max(parties, 1));
+  const rest = __i53(__abs(__i53mod(amount, __max(parties, 1))));
+  return ((rest < __i53((__i53(__abs(__max(parties, 1))) - rest))) ? q : ((amount < 0) ? ((__max(parties, 1) < 0) ? __i53((q + 1)) : __i53((q - 1))) : ((__max(parties, 1) < 0) ? __i53((q - 1)) : __i53((q + 1)))));
+}
+
+/** dayOfInstant : (ms : Int53) → Int53 */
+export function dayOfInstant(__p0) {
+  const ms = __ck(__p0, ["int53"]);
+  const q = __i53div(ms, 86400000);
+  return ((__i53mod(ms, 86400000) === 0) ? q : ((ms < 0) ? ((86400000 < 0) ? q : __i53((q - 1))) : ((86400000 < 0) ? __i53((q - 1)) : q)));
+}
+
 /** negate : (a : Int53) → Int53 */
 export function negate(__p0) {
   const a = __ck(__p0, ["int53"]);

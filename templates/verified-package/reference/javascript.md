@@ -10,6 +10,12 @@ the reference semantics and the generated code to it.
 - **A length is counted in code points.** `Str.length`, `Str.substring`, `Str.indexOf?`, `Str.repeat`
   and `Str.padStart` count what `Array.from` counts, not UTF-16 units, so a surrogate pair is one
   character and `substring` never splits one in half.
+- **A rounded division rounds the way the name says, and `Math.round` is not one of them.** `Int53.div`
+  truncates; `Int53.divFloor`, `Int53.divCeil` and `Int53.divRound` are the same division rounded
+  towards negative infinity, towards positive infinity, and with a half away from zero. JavaScript's
+  `Math.round` takes a half towards positive infinity, so it answers `-2` where `divRound (-5) 2`
+  answers `-3` — which is the rounding an amount of money is given, a refund being rounded like the
+  charge it reverses.
 - **`-0` is normalised to `0`.** `Int53` is a mathematical integer, where JavaScript produces `-0` for
   `0 - 0` and `-4 % 2`.
 - **Equality is structural**, and generated per type: `===` cannot compare two records.

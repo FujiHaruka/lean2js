@@ -80,6 +80,14 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `divide(a: number, b: number): number`
   Truncating division. Division by zero traps on the JS side too.
 - `remainder(a: number, b: number): number`
+- `taxOn(amount: number, rate: number): number`
+  The tax on an amount in minor units at a rate in basis points, rounded half away from zero — which is the rounding an amount of money gets where nothing says otherwise.
+- `shareOf(cost: number, parties: number): number`
+  What each of `parties` carries of a cost, rounded up. A count of zero or less is read as one, since a cost carried by nobody is carried by the one who has it.
+- `evenShare(amount: number, parties: number): number`
+  One party's share of an amount split evenly, rounded to the nearest whole unit with a half going away from zero. A count of zero or less is read as one, as `shareOf` reads it.
+- `dayOfInstant(ms: number): number`
+  Which whole day an instant falls in, counting from the epoch, where an instant before it belongs to the day it is inside rather than to the one after: `divFloor` and not `div`.
 - `negate(a: number): number`
 - `priceGap(a: number, b: number): number`
 - `discounted(amount: number, percent: number): number`
@@ -566,6 +574,55 @@ does.
 ```lean
 theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :
   ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args
+```
+
+### no_rate_is_no_tax
+
+Nothing is taxed at a rate of zero, whatever the amount.
+
+```lean
+theorem no_rate_is_no_tax (amount : Int) : taxOn amount 0 = 0
+```
+
+### a_refund_is_taxed_as_the_charge
+
+A refund is taxed exactly as the charge it reverses: the tax on a negative amount is the tax on the
+positive one, negated. Rounding a half away from zero is what holds this; rounding a half upwards, as
+JavaScript's `Math.round` does, would not.
+
+```lean
+theorem a_refund_is_taxed_as_the_charge (amount rate : Int) : taxOn (-amount) rate = -taxOn amount rate
+```
+
+### tax_of_five_at_a_tenth
+
+Where the tax lands exactly on a half, it goes away from zero and is not dropped: a tenth of five is
+one either way round, where truncating would answer zero to both. Two amounts rather than a rule — the
+symmetry above holds of truncation too, so it is this that says which way a half goes.
+
+```lean
+theorem tax_of_five_at_a_tenth : taxOn 5 1000 = 1 ∧ taxOn (-5) 1000 = -1
+```
+
+### the_day_holds_the_instant
+
+The day an instant is filed under is the day that holds it: the instant is at or after that day's
+first millisecond and before the next day's. It is what says an instant before the epoch belongs to the
+day it is inside rather than to the one after — truncating division puts the last millisecond before the
+epoch in day zero, where this rules it out for every instant rather than at one.
+
+```lean
+theorem the_day_holds_the_instant (ms : Int) : dayOfInstant ms * 86400000 ≤ ms ∧ ms < (dayOfInstant ms + 1) * 86400000
+```
+
+### shares_cover_the_cost
+
+The shares cover the cost: what each of the parties carries, multiplied back out, is never less than
+the cost itself. Rounding up is what holds it, and it holds however many parties there are, a count of
+zero or less being read as one.
+
+```lean
+theorem shares_cover_the_cost (cost parties : Int) : cost ≤ shareOf cost parties * max parties 1
 ```
 
 ## Constants the theorems name

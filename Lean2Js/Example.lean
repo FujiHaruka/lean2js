@@ -221,6 +221,26 @@ def divide (a b : Int) : Int := Int53.div a b
 @[ship]
 def remainder (a b : Int) : Int := Int53.mod a b
 
+/-- The tax on an amount in minor units at a rate in basis points, rounded half away from zero — which
+is the rounding an amount of money gets where nothing says otherwise. -/
+@[ship]
+def taxOn (amount : Int) (rate : Int) : Int := Int53.divRound (amount * rate) 10000
+
+/-- What each of `parties` carries of a cost, rounded up. A count of zero or less is read as one, since
+a cost carried by nobody is carried by the one who has it. -/
+@[ship]
+def shareOf (cost : Int) (parties : Int) : Int := Int53.divCeil cost (max parties 1)
+
+/-- One party's share of an amount split evenly, rounded to the nearest whole unit with a half going
+away from zero. A count of zero or less is read as one, as `shareOf` reads it. -/
+@[ship]
+def evenShare (amount : Int) (parties : Int) : Int := Int53.divRound amount (max parties 1)
+
+/-- Which whole day an instant falls in, counting from the epoch, where an instant before it belongs to
+the day it is inside rather than to the one after: `divFloor` and not `div`. -/
+@[ship]
+def dayOfInstant (ms : Int) : Int := Int53.divFloor ms 86400000
+
 @[ship]
 def negate (a : Int) : Int := -a
 
@@ -990,6 +1010,77 @@ theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.f
     (hpub : d.isPublic = true) :
     ∃ n, ∀ bound, n ≤ bound → stepCall program bound fn args = evalCall program fn args :=
   StepAgree.stepCall_agrees program_progOk program_cost_fits hd hpub
+
+omit [Discriminators] in
+/-- Nothing is taxed at a rate of zero, whatever the amount. -/
+theorem no_rate_is_no_tax (amount : Int) : taxOn amount 0 = 0 := by
+  simp [taxOn, Int53.divRound, Int53.div, Int53.mod, Int53.abs]
+
+omit [Discriminators] in
+/-- A refund is taxed exactly as the charge it reverses: the tax on a negative amount is the tax on the
+positive one, negated. Rounding a half away from zero is what holds this; rounding a half upwards, as
+JavaScript's `Math.round` does, would not. -/
+theorem a_refund_is_taxed_as_the_charge (amount rate : Int) :
+    taxOn (-amount) rate = -taxOn amount rate := by
+  have hi := Int.tmod_lt_of_pos (amount * rate) (show (0:Int) < 10000 by decide)
+  have lo := Int.tmod_lt_of_pos (-(amount * rate)) (show (0:Int) < 10000 by decide)
+  rw [Int.neg_tmod] at lo
+  have pos : 0 ≤ amount * rate → 0 ≤ (amount * rate).tmod 10000 := fun h => Int.tmod_nonneg 10000 h
+  have neg : amount * rate ≤ 0 → (amount * rate).tmod 10000 ≤ 0 := by
+    intro h
+    have k := Int.tmod_nonneg (a := -(amount * rate)) 10000 (by omega)
+    rw [Int.neg_tmod] at k
+    omega
+  simp only [taxOn, Int53.divRound, Int53.div, Int53.mod, Int53.abs, Int.neg_mul,
+    Int.neg_tdiv, Int.neg_tmod, Int.natAbs_neg]
+  repeat' split
+  all_goals omega
+
+omit [Discriminators] in
+/-- Where the tax lands exactly on a half, it goes away from zero and is not dropped: a tenth of five is
+one either way round, where truncating would answer zero to both. Two amounts rather than a rule — the
+symmetry above holds of truncation too, so it is this that says which way a half goes. -/
+theorem tax_of_five_at_a_tenth : taxOn 5 1000 = 1 ∧ taxOn (-5) 1000 = -1 := by decide
+
+omit [Discriminators] in
+/-- The day an instant is filed under is the day that holds it: the instant is at or after that day's
+first millisecond and before the next day's. It is what says an instant before the epoch belongs to the
+day it is inside rather than to the one after — truncating division puts the last millisecond before the
+epoch in day zero, where this rules it out for every instant rather than at one. -/
+theorem the_day_holds_the_instant (ms : Int) :
+    dayOfInstant ms * 86400000 ≤ ms ∧ ms < (dayOfInstant ms + 1) * 86400000 := by
+  have htd := Int.mul_tdiv_add_tmod ms 86400000
+  have hi := Int.tmod_lt_of_pos ms (show (0:Int) < 86400000 by decide)
+  have lo := Int.tmod_lt_of_pos (-ms) (show (0:Int) < 86400000 by decide)
+  rw [Int.neg_tmod] at lo
+  have pos : 0 ≤ ms → 0 ≤ ms.tmod 86400000 := fun h => Int.tmod_nonneg 86400000 h
+  have neg : ms ≤ 0 → ms.tmod 86400000 ≤ 0 := by
+    intro h
+    have k := Int.tmod_nonneg (a := -ms) 86400000 (by omega)
+    rw [Int.neg_tmod] at k
+    omega
+  simp only [dayOfInstant, Int53.divFloor, Int53.div, Int53.mod, beq_iff_eq]
+  refine ⟨?_, ?_⟩ <;> (repeat' split) <;> omega
+
+omit [Discriminators] in
+/-- The shares cover the cost: what each of the parties carries, multiplied back out, is never less than
+the cost itself. Rounding up is what holds it, and it holds however many parties there are, a count of
+zero or less being read as one. -/
+theorem shares_cover_the_cost (cost parties : Int) :
+    cost ≤ shareOf cost parties * max parties 1 := by
+  have hb : 0 < max parties 1 := by omega
+  have htd := Int.mul_tdiv_add_tmod cost (max parties 1)
+  have hi := Int.tmod_lt_of_pos cost hb
+  have neg : cost ≤ 0 → cost.tmod (max parties 1) ≤ 0 := by
+    intro h
+    have k := Int.tmod_nonneg (a := -cost) (max parties 1) (by omega)
+    rw [Int.neg_tmod] at k
+    omega
+  simp only [shareOf, Int53.divCeil, Int53.div, Int53.mod, beq_iff_eq]
+  repeat' split
+  all_goals simp only [Int.add_mul, Int.one_mul,
+    Int.mul_comm (Int.tdiv cost (max parties 1)) (max parties 1)]
+  all_goals omega
 
 def manifest : Manifest := {
   package := "@lean2js/verified-example"

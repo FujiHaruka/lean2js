@@ -13,15 +13,15 @@
   "artifacts": [
     {
       "file": "index.js",
-      "sha256": "3755b571b6c0a8f6f0b573777c38401bb8666abb804c6d0f34a49ba43c865683"
+      "sha256": "b20355f7e80bdc70a3cb81b320a0e468212cdbf1520c7be0f84f2564be602531"
     },
     {
       "file": "index.d.ts",
-      "sha256": "ed590b9579c5b8a1efc7791571e838d22f62188e1c9048311cd8c6aca7190944"
+      "sha256": "08c7ab501b0693352bb10e97bebe01105e1f74912ad82f82f6fa603e78ad981c"
     },
     {
       "file": "README.md",
-      "sha256": "a8cfa834d44a7b92770067688f44ca3d379c693f332ec259c730d3d508743321"
+      "sha256": "f24a58769fc5d8b527e50637df05edb42ddfa4db3e927826ef6bedf9e5bccf51"
     },
     {
       "file": "package.json",
@@ -266,6 +266,30 @@
       "name": "remainder",
       "signature": "(a : Int53, b : Int53) → Int53",
       "declaration": "remainder(a: number, b: number): number"
+    },
+    {
+      "name": "taxOn",
+      "signature": "(amount : Int53, rate : Int53) → Int53",
+      "declaration": "taxOn(amount: number, rate: number): number",
+      "doc": "The tax on an amount in minor units at a rate in basis points, rounded half away from zero — which\nis the rounding an amount of money gets where nothing says otherwise."
+    },
+    {
+      "name": "shareOf",
+      "signature": "(cost : Int53, parties : Int53) → Int53",
+      "declaration": "shareOf(cost: number, parties: number): number",
+      "doc": "What each of `parties` carries of a cost, rounded up. A count of zero or less is read as one, since\na cost carried by nobody is carried by the one who has it."
+    },
+    {
+      "name": "evenShare",
+      "signature": "(amount : Int53, parties : Int53) → Int53",
+      "declaration": "evenShare(amount: number, parties: number): number",
+      "doc": "One party's share of an amount split evenly, rounded to the nearest whole unit with a half going\naway from zero. A count of zero or less is read as one, as `shareOf` reads it."
+    },
+    {
+      "name": "dayOfInstant",
+      "signature": "(ms : Int53) → Int53",
+      "declaration": "dayOfInstant(ms: number): number",
+      "doc": "Which whole day an instant falls in, counting from the epoch, where an instant before it belongs to\nthe day it is inside rather than to the one after: `divFloor` and not `div`."
     },
     {
       "name": "negate",
@@ -810,6 +834,31 @@
       "name": "steps_agree",
       "statement": "steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :\n  ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args",
       "doc": "The small-step machine, given enough steps, answers every call to a public function exactly as `eval`\ndoes."
+    },
+    {
+      "name": "no_rate_is_no_tax",
+      "statement": "no_rate_is_no_tax (amount : Int) : taxOn amount 0 = 0",
+      "doc": "Nothing is taxed at a rate of zero, whatever the amount."
+    },
+    {
+      "name": "a_refund_is_taxed_as_the_charge",
+      "statement": "a_refund_is_taxed_as_the_charge (amount rate : Int) : taxOn (-amount) rate = -taxOn amount rate",
+      "doc": "A refund is taxed exactly as the charge it reverses: the tax on a negative amount is the tax on the\npositive one, negated. Rounding a half away from zero is what holds this; rounding a half upwards, as\nJavaScript's `Math.round` does, would not."
+    },
+    {
+      "name": "tax_of_five_at_a_tenth",
+      "statement": "tax_of_five_at_a_tenth : taxOn 5 1000 = 1 ∧ taxOn (-5) 1000 = -1",
+      "doc": "Where the tax lands exactly on a half, it goes away from zero and is not dropped: a tenth of five is\none either way round, where truncating would answer zero to both. Two amounts rather than a rule — the\nsymmetry above holds of truncation too, so it is this that says which way a half goes."
+    },
+    {
+      "name": "the_day_holds_the_instant",
+      "statement": "the_day_holds_the_instant (ms : Int) : dayOfInstant ms * 86400000 ≤ ms ∧ ms < (dayOfInstant ms + 1) * 86400000",
+      "doc": "The day an instant is filed under is the day that holds it: the instant is at or after that day's\nfirst millisecond and before the next day's. It is what says an instant before the epoch belongs to the\nday it is inside rather than to the one after — truncating division puts the last millisecond before the\nepoch in day zero, where this rules it out for every instant rather than at one."
+    },
+    {
+      "name": "shares_cover_the_cost",
+      "statement": "shares_cover_the_cost (cost parties : Int) : cost ≤ shareOf cost parties * max parties 1",
+      "doc": "The shares cover the cost: what each of the parties carries, multiplied back out, is never less than\nthe cost itself. Rounding up is what holds it, and it holds however many parties there are, a count of\nzero or less being read as one."
     }
   ],
   "constants": [
