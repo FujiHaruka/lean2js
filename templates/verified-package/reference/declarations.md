@@ -145,3 +145,33 @@ export type TrapError<Code extends TrapCode = TrapCode> = Error & { readonly cod
 /** @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">} */
 export declare function divide(a: number, b: number): number;
 ```
+
+## What a call costs
+
+A declaration is written out as two functions. The one under its own name is the entry: it checks each
+argument against the declared type and hands the results to the second, which carries the compiled body
+under the `__b_` prefix and checks nothing.
+
+```js
+/** lineTotal : (unitPrice : Int53, quantity : Int53) → Int53 */
+export function lineTotal(__p0, __p1) {
+  const unitPrice = __ck(__p0, ["int53"]);
+  const quantity = __ck(__p1, ["int53"]);
+  return __b_lineTotal(unitPrice, quantity);
+}
+
+function __b_lineTotal(unitPrice, quantity) {
+  return __i53((unitPrice * __b_clampQuantity(quantity, 999)));
+}
+```
+
+**A call from one declaration to another goes to the body.** So the check is paid once, where the value
+arrives from outside, and not again at every call inside a traversal. A declaration passed by name
+rather than called — handed to `map` as a function — resolves to the entry instead, and is checked the
+way a consumer's call is.
+
+**What the check costs at the boundary is the price of the guarantee, and it stays.** It walks the
+argument once to see the shape and once to copy it, which is linear in the value: a cart of 20000 line
+items crossing the boundary costs around 400 µs on Node, against 20 µs for the `concat` it is doing.
+Pass large values across the boundary as few times as the work allows; once they are inside, calls
+between your declarations are free of it.

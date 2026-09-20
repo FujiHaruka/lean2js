@@ -566,6 +566,10 @@ const __ck = (x, t) => (__has(x, t, []) ? __norm(x, t, []) : __fail("typeError")
 export function add(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);
   const b = __ck(__p1, ["int53"]);
+  return __b_add(a, b);
+}
+
+function __b_add(a, b) {
   return __i53((a + b));
 }
 
@@ -573,6 +577,10 @@ export function add(__p0, __p1) {
 export function clampQuantity(__p0, __p1) {
   const quantity = __ck(__p0, ["int53"]);
   const upper = __ck(__p1, ["int53"]);
+  return __b_clampQuantity(quantity, upper);
+}
+
+function __b_clampQuantity(quantity, upper) {
   return ((quantity < 1) ? 1 : ((quantity > upper) ? upper : quantity));
 }
 
@@ -580,12 +588,20 @@ export function clampQuantity(__p0, __p1) {
 export function lineTotal(__p0, __p1) {
   const unitPrice = __ck(__p0, ["int53"]);
   const quantity = __ck(__p1, ["int53"]);
-  return __i53((unitPrice * clampQuantity(quantity, 999)));
+  return __b_lineTotal(unitPrice, quantity);
+}
+
+function __b_lineTotal(unitPrice, quantity) {
+  return __i53((unitPrice * __b_clampQuantity(quantity, 999)));
 }
 
 /** roleRank : (role : Role) → Int53 */
 export function roleRank(__p0) {
   const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
+  return __b_roleRank(role);
+}
+
+function __b_roleRank(role) {
   return ((__s) => ((((__s).tag === "guest") ? 0 : (((__s).tag === "member") ? 1 : 2))))(role);
 }
 
@@ -593,13 +609,21 @@ export function roleRank(__p0) {
 export function lineTotals(__p0, __p1) {
   const unitPrice = __ck(__p0, ["int53"]);
   const quantities = __ck(__p1, ["array", ["int53"]]);
-  return __map(quantities, (quantity) => (lineTotal(unitPrice, quantity)));
+  return __b_lineTotals(unitPrice, quantities);
+}
+
+function __b_lineTotals(unitPrice, quantities) {
+  return __map(quantities, (quantity) => (__b_lineTotal(unitPrice, quantity)));
 }
 
 /** anyOverLimit : (amounts : Array Int53, limit : Int53) → Bool */
 export function anyOverLimit(__p0, __p1) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
   const limit = __ck(__p1, ["int53"]);
+  return __b_anyOverLimit(amounts, limit);
+}
+
+function __b_anyOverLimit(amounts, limit) {
   return __reduce(amounts, false, (seen, amount) => ((seen ? true : (amount > limit))));
 }
 
@@ -607,6 +631,10 @@ export function anyOverLimit(__p0, __p1) {
 export function firstOverLimit(__p0, __p1) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
   const limit = __ck(__p1, ["int53"]);
+  return __b_firstOverLimit(amounts, limit);
+}
+
+function __b_firstOverLimit(amounts, limit) {
   return __find(amounts, (amount) => ((amount > limit)));
 }
 
@@ -614,12 +642,20 @@ export function firstOverLimit(__p0, __p1) {
 export function everyLineWithinLimit(__p0, __p1) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
   const limit = __ck(__p1, ["int53"]);
+  return __b_everyLineWithinLimit(amounts, limit);
+}
+
+function __b_everyLineWithinLimit(amounts, limit) {
   return __all(amounts, (amount) => ((amount <= limit)));
 }
 
 /** someLineIsFree : (amounts : Array Int53) → Bool */
 export function someLineIsFree(__p0) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __b_someLineIsFree(amounts);
+}
+
+function __b_someLineIsFree(amounts) {
   return __any(amounts, (amount) => ((amount === 0)));
 }
 
@@ -628,12 +664,20 @@ export function pageOf(__p0, __p1, __p2) {
   const xs = __ck(__p0, ["array", ["int53"]]);
   const lo = __ck(__p1, ["int53"]);
   const hi = __ck(__p2, ["int53"]);
+  return __b_pageOf(xs, lo, hi);
+}
+
+function __b_pageOf(xs, lo, hi) {
   return __aslice(xs, lo, hi);
 }
 
 /** mostRecentFirst : (events : Array String) → Array String */
 export function mostRecentFirst(__p0) {
   const events = __ck(__p0, ["array", ["string"]]);
+  return __b_mostRecentFirst(events);
+}
+
+function __b_mostRecentFirst(events) {
   return __areverse(events);
 }
 
@@ -641,6 +685,10 @@ export function mostRecentFirst(__p0) {
 export function combinedCart(__p0, __p1) {
   const saved = __ck(__p0, ["array", ["int53"]]);
   const added = __ck(__p1, ["array", ["int53"]]);
+  return __b_combinedCart(saved, added);
+}
+
+function __b_combinedCart(saved, added) {
   return __aconcat(saved, added);
 }
 
@@ -648,6 +696,10 @@ export function combinedCart(__p0, __p1) {
 export function headOr(__p0, __p1) {
   const xs = __ck(__p0, ["array", ["int53"]]);
   const fallback = __ck(__p1, ["int53"]);
+  return __b_headOr(xs, fallback);
+}
+
+function __b_headOr(xs, fallback) {
   return ((__i53((xs).length) < 1) ? fallback : __at(xs, 0));
 }
 
@@ -655,6 +707,10 @@ export function headOr(__p0, __p1) {
 export function slugOf(__p0, __p1) {
   const prefix = __ck(__p0, ["string"]);
   const name = __ck(__p1, ["string"]);
+  return __b_slugOf(prefix, name);
+}
+
+function __b_slugOf(prefix, name) {
   return ((prefix + "-") + name);
 }
 
@@ -662,12 +718,20 @@ export function slugOf(__p0, __p1) {
 export function orderReference(__p0, __p1) {
   const prefix = __ck(__p0, ["string"]);
   const orderNo = __ck(__p1, ["int53"]);
+  return __b_orderReference(prefix, orderNo);
+}
+
+function __b_orderReference(prefix, orderNo) {
   return ((prefix + "-") + __str(orderNo));
 }
 
 /** amountOf : (field : String) → Option Int53 */
 export function amountOf(__p0) {
   const field = __ck(__p0, ["string"]);
+  return __b_amountOf(field);
+}
+
+function __b_amountOf(field) {
   return __toInt(field);
 }
 
@@ -675,6 +739,10 @@ export function amountOf(__p0) {
 export function amountOr(__p0, __p1) {
   const field = __ck(__p0, ["string"]);
   const fallback = __ck(__p1, ["int53"]);
+  return __b_amountOr(field, fallback);
+}
+
+function __b_amountOr(field, fallback) {
   return ((__s) => ((((__s).tag === "some") ? ((a) => (a))((__s).value) : fallback)))(__toInt(field));
 }
 
@@ -682,12 +750,20 @@ export function amountOr(__p0, __p1) {
 export function separatorAt(__p0, __p1) {
   const reference = __ck(__p0, ["string"]);
   const sep = __ck(__p1, ["string"]);
+  return __b_separatorAt(reference, sep);
+}
+
+function __b_separatorAt(reference, sep) {
   return __indexOf(reference, sep);
 }
 
 /** referencePrefix : (reference : String) → String */
 export function referencePrefix(__p0) {
   const reference = __ck(__p0, ["string"]);
+  return __b_referencePrefix(reference);
+}
+
+function __b_referencePrefix(reference) {
   return ((__s) => ((((__s).tag === "some") ? ((i) => (__substring(reference, 0, i)))((__s).value) : reference)))(__indexOf(reference, "-"));
 }
 
@@ -695,12 +771,20 @@ export function referencePrefix(__p0) {
 export function joinFields(__p0, __p1) {
   const fields = __ck(__p0, ["array", ["string"]]);
   const separator = __ck(__p1, ["string"]);
+  return __b_joinFields(fields, separator);
+}
+
+function __b_joinFields(fields, separator) {
   return __join(fields, separator);
 }
 
 /** referenceFrom : (parts : Array String) → String */
 export function referenceFrom(__p0) {
   const parts = __ck(__p0, ["array", ["string"]]);
+  return __b_referenceFrom(parts);
+}
+
+function __b_referenceFrom(parts) {
   return __join(parts, "-");
 }
 
@@ -709,24 +793,40 @@ export function refiled(__p0, __p1, __p2) {
   const reference = __ck(__p0, ["string"]);
   const oldSep = __ck(__p1, ["string"]);
   const newSep = __ck(__p2, ["string"]);
+  return __b_refiled(reference, oldSep, newSep);
+}
+
+function __b_refiled(reference, oldSep, newSep) {
   return __join(__split(reference, oldSep), newSep);
 }
 
 /** receiptRule : (mark : String) → String */
 export function receiptRule(__p0) {
   const mark = __ck(__p0, ["string"]);
+  return __b_receiptRule(mark);
+}
+
+function __b_receiptRule(mark) {
   return __repeat(mark, 32);
 }
 
 /** amountColumn : (amount : Int53) → String */
 export function amountColumn(__p0) {
   const amount = __ck(__p0, ["int53"]);
+  return __b_amountColumn(amount);
+}
+
+function __b_amountColumn(amount) {
   return (((__i53(__strlen(" ")) === 0) || (12 <= __i53(__strlen(__str(amount))))) ? __str(amount) : (__substring(__repeat(" ", __i53((12 - __i53(__strlen(__str(amount)))))), 0, __i53((12 - __i53(__strlen(__str(amount)))))) + __str(amount)));
 }
 
 /** lineNumbers : (rows : Int53) → Array Int53 */
 export function lineNumbers(__p0) {
   const rows = __ck(__p0, ["int53"]);
+  return __b_lineNumbers(rows);
+}
+
+function __b_lineNumbers(rows) {
   return __map(__range(__min(__max(rows, 0), 999)), (i) => (__i53((i + 1))));
 }
 
@@ -734,6 +834,10 @@ export function lineNumbers(__p0) {
 export function sortsBefore(__p0, __p1) {
   const a = __ck(__p0, ["string"]);
   const b = __ck(__p1, ["string"]);
+  return __b_sortsBefore(a, b);
+}
+
+function __b_sortsBefore(a, b) {
   return (__strcmp(a, b) < 0);
 }
 
@@ -741,6 +845,10 @@ export function sortsBefore(__p0, __p1) {
 export function mentionsTerm(__p0, __p1) {
   const text = __ck(__p0, ["string"]);
   const term = __ck(__p1, ["string"]);
+  return __b_mentionsTerm(text, term);
+}
+
+function __b_mentionsTerm(text, term) {
   return __includes(__lower(text), __lower(term));
 }
 
@@ -748,6 +856,10 @@ export function mentionsTerm(__p0, __p1) {
 export function storedCoupon(__p0, __p1) {
   const campaign = __ck(__p0, ["string"]);
   const entered = __ck(__p1, ["string"]);
+  return __b_storedCoupon(campaign, entered);
+}
+
+function __b_storedCoupon(campaign, entered) {
   return __upper(__trim((campaign + entered)));
 }
 
@@ -755,6 +867,10 @@ export function storedCoupon(__p0, __p1) {
 export function couponApplies(__p0, __p1) {
   const code = __ck(__p0, ["string"]);
   const campaign = __ck(__p1, ["string"]);
+  return __b_couponApplies(code, campaign);
+}
+
+function __b_couponApplies(code, campaign) {
   return __startsWith(__lower(__trim(code)), __lower(__trim(campaign)));
 }
 
@@ -762,6 +878,10 @@ export function couponApplies(__p0, __p1) {
 export function fieldCount(__p0, __p1) {
   const row = __ck(__p0, ["string"]);
   const separator = __ck(__p1, ["string"]);
+  return __b_fieldCount(row, separator);
+}
+
+function __b_fieldCount(row, separator) {
   return __i53((__split(row, separator)).length);
 }
 
@@ -769,18 +889,30 @@ export function fieldCount(__p0, __p1) {
 export function truncateLabel(__p0, __p1) {
   const label = __ck(__p0, ["string"]);
   const limit = __ck(__p1, ["int53"]);
+  return __b_truncateLabel(label, limit);
+}
+
+function __b_truncateLabel(label, limit) {
   return ((__i53(__strlen(label)) <= limit) ? label : (__substring(label, 0, limit) + "..."));
 }
 
 /** isSpreadsheet : (fileName : String) → Bool */
 export function isSpreadsheet(__p0) {
   const fileName = __ck(__p0, ["string"]);
+  return __b_isSpreadsheet(fileName);
+}
+
+function __b_isSpreadsheet(fileName) {
   return __endsWith(__lower(__trim(fileName)), ".csv");
 }
 
 /** limitsFor : (role : Role) → Dict Int53 */
 export function limitsFor(__p0) {
   const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
+  return __b_limitsFor(role);
+}
+
+function __b_limitsFor(role) {
   return ((__s) => ((((__s).tag === "guest") ? new Map([["daily", 10], ["monthly", 100]]) : (((__s).tag === "member") ? new Map([["daily", 100], ["monthly", 3000]]) : new Map([["daily", 1000], ["monthly", 30000]])))))(role);
 }
 
@@ -788,6 +920,10 @@ export function limitsFor(__p0) {
 export function priceOf(__p0, __p1) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
   const sku = __ck(__p1, ["string"]);
+  return __b_priceOf(prices, sku);
+}
+
+function __b_priceOf(prices, sku) {
   return __dget(prices, sku);
 }
 
@@ -795,6 +931,10 @@ export function priceOf(__p0, __p1) {
 export function isListed(__p0, __p1) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
   const sku = __ck(__p1, ["string"]);
+  return __b_isListed(prices, sku);
+}
+
+function __b_isListed(prices, sku) {
   return __dhas(prices, sku);
 }
 
@@ -803,18 +943,30 @@ export function repriced(__p0, __p1, __p2) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
   const sku = __ck(__p1, ["string"]);
   const amount = __ck(__p2, ["int53"]);
+  return __b_repriced(prices, sku, amount);
+}
+
+function __b_repriced(prices, sku, amount) {
   return __dset(prices, sku, amount);
 }
 
 /** listedSkus : (prices : Dict Int53) → Array String */
 export function listedSkus(__p0) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
+  return __b_listedSkus(prices);
+}
+
+function __b_listedSkus(prices) {
   return __dkeys(prices);
 }
 
 /** listedPrices : (prices : Dict Int53) → Array Int53 */
 export function listedPrices(__p0) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
+  return __b_listedPrices(prices);
+}
+
+function __b_listedPrices(prices) {
   return __dvalues(prices);
 }
 
@@ -822,12 +974,20 @@ export function listedPrices(__p0) {
 export function withdrawn(__p0, __p1) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
   const sku = __ck(__p1, ["string"]);
+  return __b_withdrawn(prices, sku);
+}
+
+function __b_withdrawn(prices, sku) {
   return __ddelete(prices, sku);
 }
 
 /** catalogueSize : (prices : Dict Int53) → Int53 */
 export function catalogueSize(__p0) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
+  return __b_catalogueSize(prices);
+}
+
+function __b_catalogueSize(prices) {
   return __i53((prices).size);
 }
 
@@ -835,6 +995,10 @@ export function catalogueSize(__p0) {
 export function divide(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);
   const b = __ck(__p1, ["int53"]);
+  return __b_divide(a, b);
+}
+
+function __b_divide(a, b) {
   return __i53div(a, b);
 }
 
@@ -842,6 +1006,10 @@ export function divide(__p0, __p1) {
 export function remainder(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);
   const b = __ck(__p1, ["int53"]);
+  return __b_remainder(a, b);
+}
+
+function __b_remainder(a, b) {
   return __i53mod(a, b);
 }
 
@@ -849,6 +1017,10 @@ export function remainder(__p0, __p1) {
 export function taxOn(__p0, __p1) {
   const amount = __ck(__p0, ["int53"]);
   const rate = __ck(__p1, ["int53"]);
+  return __b_taxOn(amount, rate);
+}
+
+function __b_taxOn(amount, rate) {
   const q = __i53div(__i53((amount * rate)), 10000);
   const rest = __i53(__abs(__i53mod(__i53((amount * rate)), 10000)));
   return ((rest < __i53((__i53(__abs(10000)) - rest))) ? q : ((__i53((amount * rate)) < 0) ? ((10000 < 0) ? __i53((q + 1)) : __i53((q - 1))) : ((10000 < 0) ? __i53((q - 1)) : __i53((q + 1)))));
@@ -858,6 +1030,10 @@ export function taxOn(__p0, __p1) {
 export function shareOf(__p0, __p1) {
   const cost = __ck(__p0, ["int53"]);
   const parties = __ck(__p1, ["int53"]);
+  return __b_shareOf(cost, parties);
+}
+
+function __b_shareOf(cost, parties) {
   const q = __i53div(cost, __max(parties, 1));
   return ((__i53mod(cost, __max(parties, 1)) === 0) ? q : ((cost < 0) ? ((__max(parties, 1) < 0) ? __i53((q + 1)) : q) : ((__max(parties, 1) < 0) ? q : __i53((q + 1)))));
 }
@@ -866,6 +1042,10 @@ export function shareOf(__p0, __p1) {
 export function evenShare(__p0, __p1) {
   const amount = __ck(__p0, ["int53"]);
   const parties = __ck(__p1, ["int53"]);
+  return __b_evenShare(amount, parties);
+}
+
+function __b_evenShare(amount, parties) {
   const q = __i53div(amount, __max(parties, 1));
   const rest = __i53(__abs(__i53mod(amount, __max(parties, 1))));
   return ((rest < __i53((__i53(__abs(__max(parties, 1))) - rest))) ? q : ((amount < 0) ? ((__max(parties, 1) < 0) ? __i53((q + 1)) : __i53((q - 1))) : ((__max(parties, 1) < 0) ? __i53((q - 1)) : __i53((q + 1)))));
@@ -874,6 +1054,10 @@ export function evenShare(__p0, __p1) {
 /** dayOfInstant : (ms : Int53) → Int53 */
 export function dayOfInstant(__p0) {
   const ms = __ck(__p0, ["int53"]);
+  return __b_dayOfInstant(ms);
+}
+
+function __b_dayOfInstant(ms) {
   const q = __i53div(ms, 86400000);
   return ((__i53mod(ms, 86400000) === 0) ? q : ((ms < 0) ? ((86400000 < 0) ? q : __i53((q - 1))) : ((86400000 < 0) ? __i53((q - 1)) : q)));
 }
@@ -883,6 +1067,10 @@ export function dayNumber(__p0, __p1, __p2) {
   const year = __ck(__p0, ["int53"]);
   const month = __ck(__p1, ["int53"]);
   const day = __ck(__p2, ["int53"]);
+  return __b_dayNumber(year, month, day);
+}
+
+function __b_dayNumber(year, month, day) {
   const y = ((month <= 2) ? __i53((year - 1)) : year);
   const era = __i53div(((y >= 0) ? y : __i53((y - 399))), 400);
   const yoe = __i53((y - __i53((era * 400))));
@@ -894,6 +1082,10 @@ export function dayNumber(__p0, __p1, __p2) {
 /** yearOf : (days : Int53) → Int53 */
 export function yearOf(__p0) {
   const days = __ck(__p0, ["int53"]);
+  return __b_yearOf(days);
+}
+
+function __b_yearOf(days) {
   const doy = ((yoe) => (__i53((((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))) - __i53((__i53((__i53((365 * yoe)) + __i53div(yoe, 4))) - __i53div(yoe, 100)))))))(((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468)))));
   return __i53((__i53((((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468)))) + __i53((((z) => (__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097)))(__i53((days + 719468))) * 400)))) + ((__i53div(__i53((__i53((5 * doy)) + 2)), 153) >= 10) ? 1 : 0)));
 }
@@ -901,6 +1093,10 @@ export function yearOf(__p0) {
 /** monthOf : (days : Int53) → Int53 */
 export function monthOf(__p0) {
   const days = __ck(__p0, ["int53"]);
+  return __b_monthOf(days);
+}
+
+function __b_monthOf(days) {
   const mp = __i53div(__i53((__i53((5 * ((yoe) => (__i53((((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))) - __i53((__i53((__i53((365 * yoe)) + __i53div(yoe, 4))) - __i53div(yoe, 100)))))))(((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))))))) + 2)), 153);
   return __i53((mp + ((mp < 10) ? 3 : -9)));
 }
@@ -908,6 +1104,10 @@ export function monthOf(__p0) {
 /** dayOfMonthOf : (days : Int53) → Int53 */
 export function dayOfMonthOf(__p0) {
   const days = __ck(__p0, ["int53"]);
+  return __b_dayOfMonthOf(days);
+}
+
+function __b_dayOfMonthOf(days) {
   const doy = ((yoe) => (__i53((((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468))) - __i53((__i53((__i53((365 * yoe)) + __i53div(yoe, 4))) - __i53div(yoe, 100)))))))(((doe) => (__i53div(__i53((__i53((__i53((doe - __i53div(doe, 1460))) + __i53div(doe, 36524))) - __i53div(doe, 146096))), 365)))(((z) => (__i53((z - __i53((__i53div(((z >= 0) ? z : __i53((z - 146096))), 146097) * 146097))))))(__i53((days + 719468)))));
   return __i53((__i53((doy - __i53div(__i53((__i53((153 * __i53div(__i53((__i53((5 * doy)) + 2)), 153))) + 2)), 5))) + 1));
 }
@@ -915,6 +1115,10 @@ export function dayOfMonthOf(__p0) {
 /** weekdayOf : (days : Int53) → Int53 */
 export function weekdayOf(__p0) {
   const days = __ck(__p0, ["int53"]);
+  return __b_weekdayOf(days);
+}
+
+function __b_weekdayOf(days) {
   return __i53((__i53((days + 4)) - __i53((7 * ((q) => (((__i53mod(__i53((days + 4)), 7) === 0) ? q : ((__i53((days + 4)) < 0) ? ((7 < 0) ? q : __i53((q - 1))) : ((7 < 0) ? __i53((q - 1)) : q)))))(__i53div(__i53((days + 4)), 7))))));
 }
 
@@ -922,12 +1126,20 @@ export function weekdayOf(__p0) {
 export function monthLength(__p0, __p1) {
   const year = __ck(__p0, ["int53"]);
   const month = __ck(__p1, ["int53"]);
+  return __b_monthLength(year, month);
+}
+
+function __b_monthLength(year, month) {
   return __i53((((y) => (((era) => (((yoe) => (((doy) => (((doe) => (__i53((__i53((__i53((era * 146097)) + doe)) - 719468))))(__i53((__i53((__i53((__i53((yoe * 365)) + __i53div(yoe, 4))) - __i53div(yoe, 100))) + doy)))))(__i53((__i53((__i53div(__i53((__i53((153 * __i53((((month >= 12) ? 1 : __i53((month + 1))) + ((((month >= 12) ? 1 : __i53((month + 1))) > 2) ? -3 : 9))))) + 2)), 5) + 1)) - 1)))))(__i53((y - __i53((era * 400)))))))(__i53div(((y >= 0) ? y : __i53((y - 399))), 400))))(((((month >= 12) ? 1 : __i53((month + 1))) <= 2) ? __i53((((month >= 12) ? __i53((year + 1)) : year) - 1)) : ((month >= 12) ? __i53((year + 1)) : year))) - ((y) => (((era) => (((yoe) => (((doy) => (((doe) => (__i53((__i53((__i53((era * 146097)) + doe)) - 719468))))(__i53((__i53((__i53((__i53((yoe * 365)) + __i53div(yoe, 4))) - __i53div(yoe, 100))) + doy)))))(__i53((__i53((__i53div(__i53((__i53((153 * __i53((month + ((month > 2) ? -3 : 9))))) + 2)), 5) + 1)) - 1)))))(__i53((y - __i53((era * 400)))))))(__i53div(((y >= 0) ? y : __i53((y - 399))), 400))))(((month <= 2) ? __i53((year - 1)) : year))));
 }
 
 /** negate : (a : Int53) → Int53 */
 export function negate(__p0) {
   const a = __ck(__p0, ["int53"]);
+  return __b_negate(a);
+}
+
+function __b_negate(a) {
   return __i53((-a));
 }
 
@@ -935,6 +1147,10 @@ export function negate(__p0) {
 export function priceGap(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);
   const b = __ck(__p1, ["int53"]);
+  return __b_priceGap(a, b);
+}
+
+function __b_priceGap(a, b) {
   return __i53(__abs(__i53((a - b))));
 }
 
@@ -942,6 +1158,10 @@ export function priceGap(__p0, __p1) {
 export function discounted(__p0, __p1) {
   const amount = __ck(__p0, ["int53"]);
   const percent = __ck(__p1, ["int53"]);
+  return __b_discounted(amount, percent);
+}
+
+function __b_discounted(amount, percent) {
   const rate = __i53((100 - ((percent < 0) ? 0 : ((percent > 100) ? 100 : percent))));
   return __i53div(__i53((amount * rate)), 100);
 }
@@ -949,18 +1169,30 @@ export function discounted(__p0, __p1) {
 /** tenPercentOff : (amount : Int53) → Int53 */
 export function tenPercentOff(__p0) {
   const amount = __ck(__p0, ["int53"]);
+  return __b_tenPercentOff(amount);
+}
+
+function __b_tenPercentOff(amount) {
   return __i53((amount - __i53div(amount, 10)));
 }
 
 /** rebindTwice : (amount : Int53) → Int53 */
 export function rebindTwice(__p0) {
   const amount = __ck(__p0, ["int53"]);
+  return __b_rebindTwice(amount);
+}
+
+function __b_rebindTwice(amount) {
   return ((amount) => (((amount) => (amount))(__i53((amount * 2)))))(__i53((amount + 1)));
 }
 
 /** noDiscount : (amount : Int53) → Int53 */
 export function noDiscount(__p0) {
   const amount = __ck(__p0, ["int53"]);
+  return __b_noDiscount(amount);
+}
+
+function __b_noDiscount(amount) {
   return amount;
 }
 
@@ -968,25 +1200,41 @@ export function noDiscount(__p0) {
 function priced(__p0, __p1) {
   const rule = __p0;
   const amount = __ck(__p1, ["int53"]);
+  return __b_priced(rule, amount);
+}
+
+function __b_priced(rule, amount) {
   return rule(amount);
 }
 
 /** memberPrice : (amount : Int53) → Int53 */
 export function memberPrice(__p0) {
   const amount = __ck(__p0, ["int53"]);
-  return priced(tenPercentOff, amount);
+  return __b_memberPrice(amount);
+}
+
+function __b_memberPrice(amount) {
+  return __b_priced(tenPercentOff, amount);
 }
 
 /** guestPrice : (amount : Int53) → Int53 */
 export function guestPrice(__p0) {
   const amount = __ck(__p0, ["int53"]);
-  return priced(noDiscount, amount);
+  return __b_guestPrice(amount);
+}
+
+function __b_guestPrice(amount) {
+  return __b_priced(noDiscount, amount);
 }
 
 /** mixChannels : (a : UInt32, b : UInt32) → UInt32 */
 export function mixChannels(__p0, __p1) {
   const a = __ck(__p0, ["uint32"]);
   const b = __ck(__p1, ["uint32"]);
+  return __b_mixChannels(a, b);
+}
+
+function __b_mixChannels(a, b) {
   return ((__u32mul(a, b) + ((a - b) >>> 0)) >>> 0);
 }
 
@@ -994,6 +1242,10 @@ export function mixChannels(__p0, __p1) {
 export function bucketOf(__p0, __p1) {
   const key = __ck(__p0, ["uint32"]);
   const buckets = __ck(__p1, ["uint32"]);
+  return __b_bucketOf(key, buckets);
+}
+
+function __b_bucketOf(key, buckets) {
   return __u32mod(key, buckets);
 }
 
@@ -1002,6 +1254,10 @@ export function clampChannel(__p0, __p1, __p2) {
   const value = __ck(__p0, ["uint32"]);
   const lo = __ck(__p1, ["uint32"]);
   const hi = __ck(__p2, ["uint32"]);
+  return __b_clampChannel(value, lo, hi);
+}
+
+function __b_clampChannel(value, lo, hi) {
   return __min(__max(value, lo), hi);
 }
 
@@ -1009,6 +1265,10 @@ export function clampChannel(__p0, __p1, __p2) {
 export function scaleFee(__p0, __p1) {
   const fee = __ck(__p0, ["bigint"]);
   const factor = __ck(__p1, ["bigint"]);
+  return __b_scaleFee(fee, factor);
+}
+
+function __b_scaleFee(fee, factor) {
   return ((fee * factor) - 1n);
 }
 
@@ -1016,6 +1276,10 @@ export function scaleFee(__p0, __p1) {
 export function bigQuotient(__p0, __p1) {
   const a = __ck(__p0, ["bigint"]);
   const b = __ck(__p1, ["bigint"]);
+  return __b_bigQuotient(a, b);
+}
+
+function __b_bigQuotient(a, b) {
   return __bigdiv(a, b);
 }
 
@@ -1023,6 +1287,10 @@ export function bigQuotient(__p0, __p1) {
 export function sameLabel(__p0, __p1) {
   const a = __ck(__p0, ["string"]);
   const b = __ck(__p1, ["string"]);
+  return __b_sameLabel(a, b);
+}
+
+function __b_sameLabel(a, b) {
   return (a === b);
 }
 
@@ -1030,6 +1298,10 @@ export function sameLabel(__p0, __p1) {
 export function safeQuotientIsPositive(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);
   const b = __ck(__p1, ["int53"]);
+  return __b_safeQuotientIsPositive(a, b);
+}
+
+function __b_safeQuotientIsPositive(a, b) {
   return ((b !== 0) && (__i53div(a, b) > 0));
 }
 
@@ -1038,6 +1310,10 @@ export function canCheckout(__p0, __p1, __p2) {
   const signedIn = __ck(__p0, ["bool"]);
   const cartTotal = __ck(__p1, ["int53"]);
   const stock = __ck(__p2, ["int53"]);
+  return __b_canCheckout(signedIn, cartTotal, stock);
+}
+
+function __b_canCheckout(signedIn, cartTotal, stock) {
   return ((signedIn && (cartTotal > 0)) && (stock >= 1));
 }
 
@@ -1045,6 +1321,10 @@ export function canCheckout(__p0, __p1, __p2) {
 export function cappedCharge(__p0, __p1) {
   const amount = __ck(__p0, ["int53"]);
   const budget = __ck(__p1, ["int53"]);
+  return __b_cappedCharge(amount, budget);
+}
+
+function __b_cappedCharge(amount, budget) {
   return __min(amount, budget);
 }
 
@@ -1052,6 +1332,10 @@ export function cappedCharge(__p0, __p1) {
 export function atLeast(__p0, __p1) {
   const amount = __ck(__p0, ["int53"]);
   const floor = __ck(__p1, ["int53"]);
+  return __b_atLeast(amount, floor);
+}
+
+function __b_atLeast(amount, floor) {
   return __max(amount, floor);
 }
 
@@ -1059,6 +1343,10 @@ export function atLeast(__p0, __p1) {
 export function addMoney(__p0, __p1) {
   const a = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   const b = __ck(__p1, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return __b_addMoney(a, b);
+}
+
+function __b_addMoney(a, b) {
   return (((a).currency !== (b).currency) ? { "tag": "error", "error": "currency mismatch" } : { "tag": "ok", "value": { "tag": "Money", "amount": __i53(((a).amount + (b).amount)), "currency": (a).currency } });
 }
 
@@ -1066,42 +1354,70 @@ export function addMoney(__p0, __p1) {
 export function sameMoney(__p0, __p1) {
   const a = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
   const b = __ck(__p1, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return __b_sameMoney(a, b);
+}
+
+function __b_sameMoney(a, b) {
   return __eq(a, b);
 }
 
 /** currenciesOf : (items : Array Money) → Array String */
 export function currenciesOf(__p0) {
   const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __b_currenciesOf(items);
+}
+
+function __b_currenciesOf(items) {
   return __map(items, (item) => ((item).currency));
 }
 
 /** cartTotal : (items : Array Money) → Int53 */
 export function cartTotal(__p0) {
   const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __b_cartTotal(items);
+}
+
+function __b_cartTotal(items) {
   return __reduce(items, 0, (subtotal, item) => (__i53((subtotal + (item).amount))));
 }
 
 /** cheapestFirst : (items : Array Money) → Array Money */
 export function cheapestFirst(__p0) {
   const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __b_cheapestFirst(items);
+}
+
+function __b_cheapestFirst(items) {
   return __sortBy(items, (item) => ((item).amount));
 }
 
 /** inLabelOrder : (labels : Array String) → Array String */
 export function inLabelOrder(__p0) {
   const labels = __ck(__p0, ["array", ["string"]]);
+  return __b_inLabelOrder(labels);
+}
+
+function __b_inLabelOrder(labels) {
   return __sortBy(labels, (label) => (label));
 }
 
 /** total : (xs : Array Int53) → Int53 */
 export function total(__p0) {
   const xs = __ck(__p0, ["array", ["int53"]]);
+  return __b_total(xs);
+}
+
+function __b_total(xs) {
   return __reduce(xs, 0, (sum, x) => (__i53((sum + x))));
 }
 
 /** trackingOf : (state : OrderState) → Option String */
 export function trackingOf(__p0) {
   const state = __ck(__p0, ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
+  return __b_trackingOf(state);
+}
+
+function __b_trackingOf(state) {
   return ((__s) => ((((__s).kind === "draft") ? { "tag": "none" } : (((__s).kind === "placed") ? { "tag": "none" } : (((__s).kind === "shipped") ? ((trackingId) => ({ "tag": "some", "value": trackingId }))((__s).trackingId) : { "tag": "none" })))))(state);
 }
 
@@ -1109,104 +1425,172 @@ export function trackingOf(__p0) {
 export function canRefund(__p0, __p1) {
   const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
   const state = __ck(__p1, ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
-  return ((__s) => ((((__s).kind === "draft") ? false : (((__s).kind === "placed") ? (roleRank(role) >= 1) : (((__s).kind === "shipped") ? (roleRank(role) >= 2) : false)))))(state);
+  return __b_canRefund(role, state);
+}
+
+function __b_canRefund(role, state) {
+  return ((__s) => ((((__s).kind === "draft") ? false : (((__s).kind === "placed") ? (__b_roleRank(role) >= 1) : (((__s).kind === "shipped") ? (__b_roleRank(role) >= 2) : false)))))(state);
 }
 
 /** firstTracking : (states : Array OrderState) → Option String */
 export function firstTracking(__p0) {
   const states = __ck(__p0, ["array", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
-  return ((__i53((states).length) === 0) ? { "tag": "none" } : trackingOf(__at(states, 0)));
+  return __b_firstTracking(states);
+}
+
+function __b_firstTracking(states) {
+  return ((__i53((states).length) === 0) ? { "tag": "none" } : __b_trackingOf(__at(states, 0)));
 }
 
 /** refundableOnly : (role : Role, states : Array OrderState) → Array OrderState */
 export function refundableOnly(__p0, __p1) {
   const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
   const states = __ck(__p1, ["array", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
-  return __filter(states, (state) => (canRefund(role, state)));
+  return __b_refundableOnly(role, states);
+}
+
+function __b_refundableOnly(role, states) {
+  return __filter(states, (state) => (__b_canRefund(role, state)));
 }
 
 /** ship : (state : OrderState, trackingId : String) → Result OrderState String */
 export function ship(__p0, __p1) {
   const state = __ck(__p0, ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]);
   const trackingId = __ck(__p1, ["string"]);
+  return __b_ship(state, trackingId);
+}
+
+function __b_ship(state, trackingId) {
   return ((__s) => ((((__s).kind === "draft") ? { "tag": "error", "error": "a draft order cannot ship" } : (((__s).kind === "placed") ? ((orderId) => (((trackingId === "") ? { "tag": "error", "error": "a tracking id is required" } : { "tag": "ok", "value": { "kind": "shipped", "orderId": orderId, "trackingId": trackingId } })))((__s).orderId) : (((__s).kind === "shipped") ? { "tag": "error", "error": "the order has already shipped" } : { "tag": "error", "error": "a cancelled order cannot ship" })))))(state);
 }
 
 /** quantityLabel : (quantity : Int53) → String */
 export function quantityLabel(__p0) {
   const quantity = __ck(__p0, ["int53"]);
+  return __b_quantityLabel(quantity);
+}
+
+function __b_quantityLabel(quantity) {
   return ((__s) => (((__s === 0) ? "out of stock" : ((__s === 1) ? "last one" : "in stock"))))(quantity);
 }
 
 /** renewalLabel : (autoRenew : Bool) → String */
 export function renewalLabel(__p0) {
   const autoRenew = __ck(__p0, ["bool"]);
+  return __b_renewalLabel(autoRenew);
+}
+
+function __b_renewalLabel(autoRenew) {
   return ((__s) => (((__s === true) ? "renews" : "ends")))(autoRenew);
 }
 
 /** chargeable : (amount : Money) → Bool */
 export function chargeable(__p0) {
   const amount = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return __b_chargeable(amount);
+}
+
+function __b_chargeable(amount) {
   return ((__s) => (((((__s).tag === "Money") && ((__s).amount === 0)) ? false : ((((__s).tag === "Money") && ((__s).currency === "")) ? false : ((value) => ((value > 0)))((__s).amount)))))(amount);
 }
 
 /** settleMessage : (outcome : Result OrderState String) → String */
 export function settleMessage(__p0) {
   const outcome = __ck(__p0, ["result", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
+  return __b_settleMessage(outcome);
+}
+
+function __b_settleMessage(outcome) {
   return ((__s) => (((((__s).tag === "ok") && (((__s).value).kind === "shipped")) ? ((trackingId) => (trackingId))(((__s).value).trackingId) : ((((__s).tag === "ok") && (((__s).value).kind === "placed")) ? "awaiting shipment" : (((__s).tag === "ok") ? "no update" : ((message) => (message))((__s).error))))))(outcome);
 }
 
 /** settledOrderId : (outcome : Result OrderState String) → Int53 */
 export function settledOrderId(__p0) {
   const outcome = __ck(__p0, ["result", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]], ["string"]]);
+  return __b_settledOrderId(outcome);
+}
+
+function __b_settledOrderId(outcome) {
   return ((__s) => (((((__s).tag === "ok") && (((__s).value).kind === "placed")) ? ((orderId) => (orderId))(((__s).value).orderId) : 0)))(outcome);
 }
 
 /** dailyLimit : (role : Role) → Int53 */
 export function dailyLimit(__p0) {
   const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
-  return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(limitsFor(role), "daily"));
+  return __b_dailyLimit(role);
+}
+
+function __b_dailyLimit(role) {
+  return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(__b_limitsFor(role), "daily"));
 }
 
 /** monthlyLimit : (role : Role) → Int53 */
 export function monthlyLimit(__p0) {
   const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
-  return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(limitsFor(role), "monthly"));
+  return __b_monthlyLimit(role);
+}
+
+function __b_monthlyLimit(role) {
+  return ((__s) => ((((__s).tag === "some") ? ((value) => (value))((__s).value) : 0)))(__dget(__b_limitsFor(role), "monthly"));
 }
 
 /** remainingItems : (page : Paginated Money) → Int53 */
 export function remainingItems(__p0) {
   const page = __ck(__p0, ["ctors", "tag", [["Paginated", [["items", ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]], ["total", ["int53"]]]]]]);
+  return __b_remainingItems(page);
+}
+
+function __b_remainingItems(page) {
   return __i53(((page).total - __i53(((page).items).length)));
 }
 
 /** firstPage : (amounts : Array Int53) → Paginated Int53 */
 export function firstPage(__p0) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __b_firstPage(amounts);
+}
+
+function __b_firstPage(amounts) {
   return { "tag": "Paginated", "items": amounts, "total": __i53((amounts).length) };
 }
 
 /** validateQuantity : (quantity : Int53) → Validated String Int53 */
 export function validateQuantity(__p0) {
   const quantity = __ck(__p0, ["int53"]);
+  return __b_validateQuantity(quantity);
+}
+
+function __b_validateQuantity(quantity) {
   return ((quantity < 1) ? { "tag": "invalid", "errors": ["a quantity must be at least 1"] } : ((quantity > 999) ? { "tag": "invalid", "errors": ["a quantity may not exceed 999"] } : { "tag": "valid", "value": quantity }));
 }
 
 /** validationMessage : (outcome : Validated String Int53) → String */
 export function validationMessage(__p0) {
   const outcome = __ck(__p0, ["ctors", "tag", [["valid", [["value", ["int53"]]]], ["invalid", [["errors", ["array", ["string"]]]]]]]);
-  return ((__s) => ((((__s).tag === "valid") ? ((value) => (quantityLabel(value)))((__s).value) : ((errors) => (((__i53((errors).length) === 0) ? "refused" : __at(errors, 0))))((__s).errors))))(outcome);
+  return __b_validationMessage(outcome);
+}
+
+function __b_validationMessage(outcome) {
+  return ((__s) => ((((__s).tag === "valid") ? ((value) => (__b_quantityLabel(value)))((__s).value) : ((errors) => (((__i53((errors).length) === 0) ? "refused" : __at(errors, 0))))((__s).errors))))(outcome);
 }
 
 /** amountWithTax : (amount : Int53) → Array Int53 */
 export function amountWithTax(__p0) {
   const amount = __ck(__p0, ["int53"]);
+  return __b_amountWithTax(amount);
+}
+
+function __b_amountWithTax(amount) {
   return [amount, __i53div(amount, 10)];
 }
 
 /** currencyOf : (item : Money) → String */
 export function currencyOf(__p0) {
   const item = __ck(__p0, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return __b_currencyOf(item);
+}
+
+function __b_currencyOf(item) {
   return (item).currency;
 }
 
@@ -1214,6 +1598,10 @@ export function currencyOf(__p0) {
 export function previewLines(__p0, __p1) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
   const upTo = __ck(__p1, ["int53"]);
+  return __b_previewLines(amounts, upTo);
+}
+
+function __b_previewLines(amounts, upTo) {
   return __aslice(amounts, 0, upTo);
 }
 
@@ -1221,12 +1609,20 @@ export function previewLines(__p0, __p1) {
 export function linesBelowFold(__p0, __p1) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
   const upTo = __ck(__p1, ["int53"]);
+  return __b_linesBelowFold(amounts, upTo);
+}
+
+function __b_linesBelowFold(amounts, upTo) {
   return __aslice(amounts, upTo, __i53((amounts).length));
 }
 
 /** cartIsEmpty : (items : Array Money) → Bool */
 export function cartIsEmpty(__p0) {
   const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
+  return __b_cartIsEmpty(items);
+}
+
+function __b_cartIsEmpty(items) {
   return (__i53((items).length) === 0);
 }
 
@@ -1234,48 +1630,80 @@ export function cartIsEmpty(__p0) {
 export function stocksSku(__p0, __p1) {
   const skus = __ck(__p0, ["array", ["string"]]);
   const sku = __ck(__p1, ["string"]);
+  return __b_stocksSku(skus, sku);
+}
+
+function __b_stocksSku(skus, sku) {
   return __any(skus, (y) => ((y === sku)));
 }
 
 /** amountsTotal : (amounts : Array Int53) → Int53 */
 export function amountsTotal(__p0) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __b_amountsTotal(amounts);
+}
+
+function __b_amountsTotal(amounts) {
   return __reduce(amounts, 0, (running, y) => (__i53((running + y))));
 }
 
 /** spreadsheetCount : (fileNames : Array String) → Int53 */
 export function spreadsheetCount(__p0) {
   const fileNames = __ck(__p0, ["array", ["string"]]);
-  return __reduce(fileNames, 0, (running, y) => ((isSpreadsheet(y) ? __i53((running + 1)) : running)));
+  return __b_spreadsheetCount(fileNames);
+}
+
+function __b_spreadsheetCount(fileNames) {
+  return __reduce(fileNames, 0, (running, y) => ((__b_isSpreadsheet(y) ? __i53((running + 1)) : running)));
 }
 
 /** firstAmount : (amounts : Array Int53) → Option Int53 */
 export function firstAmount(__p0) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __b_firstAmount(amounts);
+}
+
+function __b_firstAmount(amounts) {
   return ((__i53((amounts).length) === 0) ? { "tag": "none" } : { "tag": "some", "value": __at(amounts, 0) });
 }
 
 /** latestEvent : (events : Array String) → Option String */
 export function latestEvent(__p0) {
   const events = __ck(__p0, ["array", ["string"]]);
+  return __b_latestEvent(events);
+}
+
+function __b_latestEvent(events) {
   return ((__i53((events).length) === 0) ? { "tag": "none" } : { "tag": "some", "value": __at(events, __i53((__i53((events).length) - 1))) });
 }
 
 /** allLines : (orders : Array Array Int53) → Array Int53 */
 export function allLines(__p0) {
   const orders = __ck(__p0, ["array", ["array", ["int53"]]]);
+  return __b_allLines(orders);
+}
+
+function __b_allLines(orders) {
   return __reduce(orders, [], (running, xs) => (__aconcat(running, xs)));
 }
 
 /** linesWithTax : (amounts : Array Int53) → Array Int53 */
 export function linesWithTax(__p0) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
-  return __reduce(amounts, [], (running, x) => (__aconcat(running, amountWithTax(x))));
+  return __b_linesWithTax(amounts);
+}
+
+function __b_linesWithTax(amounts) {
+  return __reduce(amounts, [], (running, x) => (__aconcat(running, __b_amountWithTax(x))));
 }
 
 /** noteIsBlank : (note : String) → Bool */
 export function noteIsBlank(__p0) {
   const note = __ck(__p0, ["string"]);
+  return __b_noteIsBlank(note);
+}
+
+function __b_noteIsBlank(note) {
   return (__i53(__strlen(__trim(note))) === 0);
 }
 
@@ -1284,86 +1712,142 @@ export function priceOr(__p0, __p1, __p2) {
   const prices = __ck(__p0, ["dict", ["int53"]]);
   const sku = __ck(__p1, ["string"]);
   const fallback = __ck(__p2, ["int53"]);
+  return __b_priceOr(prices, sku, fallback);
+}
+
+function __b_priceOr(prices, sku, fallback) {
   return ((__s) => ((((__s).tag === "some") ? ((a) => (a))((__s).value) : fallback)))(__dget(prices, sku));
 }
 
 /** byCurrency : (items : Array Money) → Dict Money */
 export function byCurrency(__p0) {
   const items = __ck(__p0, ["array", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]]);
-  return __reduce(items, new Map([]), (d, x) => (__dset(d, currencyOf(x), x)));
+  return __b_byCurrency(items);
+}
+
+function __b_byCurrency(items) {
+  return __reduce(items, new Map([]), (d, x) => (__dset(d, __b_currencyOf(x), x)));
 }
 
 /** quantityOr : (quantity : Option Int53, fallback : Int53) → Int53 */
 export function quantityOr(__p0, __p1) {
   const quantity = __ck(__p0, ["option", ["int53"]]);
   const fallback = __ck(__p1, ["int53"]);
+  return __b_quantityOr(quantity, fallback);
+}
+
+function __b_quantityOr(quantity, fallback) {
   return ((__s) => ((((__s).tag === "some") ? ((a) => (a))((__s).value) : fallback)))(quantity);
 }
 
 /** discountedIfAny : (amount : Option Int53) → Option Int53 */
 export function discountedIfAny(__p0) {
   const amount = __ck(__p0, ["option", ["int53"]]);
-  return ((__s) => ((((__s).tag === "some") ? ((a) => ({ "tag": "some", "value": tenPercentOff(a) }))((__s).value) : { "tag": "none" })))(amount);
+  return __b_discountedIfAny(amount);
+}
+
+function __b_discountedIfAny(amount) {
+  return ((__s) => ((((__s).tag === "some") ? ((a) => ({ "tag": "some", "value": __b_tenPercentOff(a) }))((__s).value) : { "tag": "none" })))(amount);
 }
 
 /** settledOrElse : (outcome : Result Money String, fallback : Money) → Money */
 export function settledOrElse(__p0, __p1) {
   const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
   const fallback = __ck(__p1, ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]]);
+  return __b_settledOrElse(outcome, fallback);
+}
+
+function __b_settledOrElse(outcome, fallback) {
   return ((__s) => ((((__s).tag === "ok") ? ((a) => (a))((__s).value) : fallback)))(outcome);
 }
 
 /** settledCurrency : (outcome : Result Money String) → Result String String */
 export function settledCurrency(__p0) {
   const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
-  return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "ok", "value": currencyOf(a) }))((__s).value) : ((err) => ({ "tag": "error", "error": err }))((__s).error))))(outcome);
+  return __b_settledCurrency(outcome);
+}
+
+function __b_settledCurrency(outcome) {
+  return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "ok", "value": __b_currencyOf(a) }))((__s).value) : ((err) => ({ "tag": "error", "error": err }))((__s).error))))(outcome);
 }
 
 /** loudRefusal : (outcome : Result Money String) → Result Money String */
 export function loudRefusal(__p0) {
   const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  return __b_loudRefusal(outcome);
+}
+
+function __b_loudRefusal(outcome) {
   return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "ok", "value": a }))((__s).value) : ((err) => ({ "tag": "error", "error": __upper(err) }))((__s).error))))(outcome);
 }
 
 /** settledMoney : (outcome : Result Money String) → Option Money */
 export function settledMoney(__p0) {
   const outcome = __ck(__p0, ["result", ["ctors", "tag", [["Money", [["amount", ["int53"]], ["currency", ["string"]]]]]], ["string"]]);
+  return __b_settledMoney(outcome);
+}
+
+function __b_settledMoney(outcome) {
   return ((__s) => ((((__s).tag === "ok") ? ((a) => ({ "tag": "some", "value": a }))((__s).value) : { "tag": "none" })))(outcome);
 }
 
 /** trackingIds : (states : Array OrderState) → Array String */
 export function trackingIds(__p0) {
   const states = __ck(__p0, ["array", ["ctors", "kind", [["draft", []], ["placed", [["orderId", ["int53"]]]], ["shipped", [["orderId", ["int53"]], ["trackingId", ["string"]]]], ["cancelled", [["reason", ["string"]]]]]]]);
+  return __b_trackingIds(states);
+}
+
+function __b_trackingIds(states) {
   return __map(states, (state) => (((__s) => ((((__s).kind === "shipped") ? ((trackingId) => (trackingId))((__s).trackingId) : "")))(state)));
 }
 
 /** refundCount : (amounts : Array Int53) → Int53 */
 export function refundCount(__p0) {
   const amounts = __ck(__p0, ["array", ["int53"]]);
+  return __b_refundCount(amounts);
+}
+
+function __b_refundCount(amounts) {
   return __reduce(amounts, 0, (running, y) => (((y < 0) ? __i53((running + 1)) : running)));
 }
 
 /** creditNoteAmount : (amount : Int53) → Int53 */
 export function creditNoteAmount(__p0) {
   const amount = __ck(__p0, ["int53"]);
+  return __b_creditNoteAmount(amount);
+}
+
+function __b_creditNoteAmount(amount) {
   return __i53((-1 * __max(amount, 0)));
 }
 
 /** directionLabel : (sign : Int53) → String */
 export function directionLabel(__p0) {
   const sign = __ck(__p0, ["int53"]);
+  return __b_directionLabel(sign);
+}
+
+function __b_directionLabel(sign) {
   return ((__s) => (((__s === -1) ? "credit" : ((__s === 1) ? "debit" : "none"))))(sign);
 }
 
 /** categoryName : (category : Category) → String */
 export function categoryName(__p0) {
   const category = __ck(__p0, ["mu", "tag", [["leaf", [["name", ["string"]]]], ["group", [["name", ["string"]], ["children", ["array", ["ref", 0]]]]]]]);
+  return __b_categoryName(category);
+}
+
+function __b_categoryName(category) {
   return ((__s) => ((((__s).tag === "leaf") ? ((name) => (name))((__s).name) : ((name) => (name))((__s).name))))(category);
 }
 
 /** directChildren : (category : Category) → Int53 */
 export function directChildren(__p0) {
   const category = __ck(__p0, ["mu", "tag", [["leaf", [["name", ["string"]]]], ["group", [["name", ["string"]], ["children", ["array", ["ref", 0]]]]]]]);
+  return __b_directChildren(category);
+}
+
+function __b_directChildren(category) {
   return ((__s) => ((((__s).tag === "leaf") ? 0 : ((children) => (__i53((children).length)))((__s).children))))(category);
 }
 

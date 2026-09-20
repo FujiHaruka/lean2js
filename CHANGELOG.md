@@ -6,6 +6,23 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- **The entry check runs at the boundary and only there.** A declaration now compiles to two functions:
+  the entry a consumer imports, which checks its arguments and binds them under their declared names,
+  and an unchecked body under the `__b_` prefix, which is where the compiled expression goes. A call
+  from one declaration to another lands on the body, so an argument that has already crossed the
+  boundary is no longer walked and copied again at every call. On Node v24.19.0, `lineTotals` over 10,
+  100, 1000 and 10000 elements goes from 1.03, 8.10, 77.66 and 750.24 µs to 0.31, 2.35, 21.88 and
+  197.73 µs. What the check costs at the boundary is unchanged and stays: `combinedCart` over
+  10000 + 10000 elements is 413 µs against `concat`'s 20 µs either way, which is the price of the
+  guarantee and is paid once.
+
+  Nothing a consumer sees moves. The exported name, its `.d.ts` line and its JSDoc are what they were,
+  and `decl_correct`, `decl_traps` and `decl_refuses` are still statements about the function of the
+  declared name. A declaration passed by name resolves to the entry, so a higher-order call is checked
+  exactly as a consumer's is. The prefix is inside the reserved `__`, which `validateIdent` already
+  refuses, so no name a package can write reaches it. The cost is bytes: the example's `index.js` grew
+  from 53,396 to 62,812, the entry of a declaration nothing names being dead weight a bundler drops.
+
 - The civil calendar is in the subset, as `Cal`. `Cal.fromCivil` counts a date to days from
   1970-01-01 and `Cal.year` / `Cal.month` / `Cal.day` read a date back out of a day number, with
   `Cal.weekday`, `Cal.isLeapYear`, `Cal.daysInMonth` and the `Cal.dayOfInstant` / `Cal.instantOfDay`

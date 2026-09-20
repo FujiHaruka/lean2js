@@ -2448,7 +2448,11 @@ compiled body never names them.
 `scrutFree` is the other half, and `match` is why it is here: the generated arm chain runs under the
 scrutinee bound to `scrutName`, so a reference environment that bound that name too would be read on one
 side and shadowed on the other. Every name a program can bind went through `validateIdent`, which
-rejects the `__` prefix. -/
+rejects the `__` prefix.
+
+`bodyFree` is why a call the compiler redirects to a declaration's body lands on the module's function
+of that name: `calleeName` lets a binding holding a function shadow the module's own, and nothing the
+generated code binds is spelled under the body prefix. -/
 structure JsEnvAgrees (env : Env) (jenv : Js.JsEnv) : Prop where
   binds : ∀ name v, Env.lookup? env name = some v →
     ((jenv.find? (·.1 == name)).map (·.2)) = some (encodeValue v)
@@ -2456,6 +2460,8 @@ structure JsEnvAgrees (env : Env) (jenv : Js.JsEnv) : Prop where
     isReserved name = false
   fresh : ∀ name jv, isReserved name = false →
     ((jenv.find? (·.1 == name)).map (·.2)) = some jv → ∃ v, Env.lookup? env name = some v
+  bodyFree : ∀ name jv,
+    ((jenv.find? (·.1 == name)).map (·.2)) = some jv → isBodyName name = false
 
 /-- The reference environment binds no reserved name, so in particular not the scrutinee's. -/
 theorem JsEnvAgrees.scrutFree {env : Env} {jenv : Js.JsEnv} (h : JsEnvAgrees env jenv) :
@@ -2477,7 +2483,7 @@ theorem lookup_cons_none {env : Env} {name : String} {v : Value} {key : String}
 theorem JsEnvAgrees.cons {env : Env} {jenv : Js.JsEnv} {name : String} {v : Value}
     (h : JsEnvAgrees env jenv) (hname : isReserved name = false) :
     JsEnvAgrees ((name, v) :: env) ((name, encodeValue v) :: jenv) := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro key w hw
     simp only [Env.lookup?, List.find?_cons] at hw
     cases hkey : name == key with
@@ -2508,6 +2514,12 @@ theorem JsEnvAgrees.cons {env : Env} {jenv : Js.JsEnv} {name : String} {v : Valu
       refine ⟨w, ?_⟩
       simp only [Env.lookup?, List.find?_cons, hkey, Bool.false_eq_true, if_false]
       exact hw
+  · intro key jv hfound
+    cases hkey : name == key with
+    | true => exact (eq_of_beq hkey) ▸ isBodyName_of_unreserved hname
+    | false =>
+      simp only [List.find?_cons, hkey] at hfound
+      exact h.bodyFree key jv hfound
 
 /-- The names of `encodeEnv env` are the names of `env`, so an unreserved one found there is bound. -/
 theorem lookup_of_encodeEnv :
@@ -2529,7 +2541,10 @@ theorem lookup_of_encodeEnv :
 theorem jsEnvAgrees_encodeEnv (env : Env)
     (hres : ∀ name v, Env.lookup? env name = some v → isReserved name = false) :
     JsEnvAgrees env (encodeEnv env) :=
-  ⟨fun _ _ h => lookup_encodeEnv h, hres, fun _ _ _ h => lookup_of_encodeEnv h⟩
+  ⟨fun _ _ h => lookup_encodeEnv h, hres, fun _ _ _ h => lookup_of_encodeEnv h,
+    fun name _ h =>
+      let ⟨v, hv⟩ := lookup_of_encodeEnv h
+      isBodyName_of_unreserved (hres name v hv)⟩
 
 /-! ## Traversals
 
@@ -3583,7 +3598,7 @@ theorem eventually_ident {m : Js.Module} {jenv : Js.JsEnv} {name : String} {w : 
 
 theorem JsEnvAgrees.consScrut {env : Env} {jenv : Js.JsEnv} (h : JsEnvAgrees env jenv)
     (w : Js.JsValue) : JsEnvAgrees env ((Compile.scrutName, w) :: jenv) := by
-  refine ⟨?_, h.unreserved, ?_⟩
+  refine ⟨?_, h.unreserved, ?_, ?_⟩
   · intro name v hv
     have hne : (Compile.scrutName == name) = false := by
       refine beq_eq_false_iff_ne.mpr fun hEq => ?_
@@ -3599,6 +3614,12 @@ theorem JsEnvAgrees.consScrut {env : Env} {jenv : Js.JsEnv} (h : JsEnvAgrees env
       exact Bool.noConfusion hr
     rw [List.find?_cons, hne] at hfound
     exact h.fresh name jv hfree hfound
+  · intro name jv hfound
+    cases hne : Compile.scrutName == name with
+    | true => exact (eq_of_beq hne) ▸ (rfl : isBodyName Compile.scrutName = false)
+    | false =>
+      rw [List.find?_cons, hne] at hfound
+      exact h.bodyFree name jv hfound
 
 theorem PathsAgree.names {m : Js.Module} {jenv : Js.JsEnv} :
     ∀ {pbinds : List (String × Js.Expr × Ty)} {binds : Env}, PathsAgree m jenv pbinds binds →
@@ -3787,11 +3808,27 @@ theorem calleeName_agrees {env : Env} {jenv : Js.JsEnv} {name : String}
     rw [h.binds name w hv]
     cases w <;> rw [encodeValue]
 
+/-- A call the compiler redirected to a declaration's body lands on the module's function of that name.
+Nothing the generated code binds carries the body prefix, so no binding shadows it. -/
+theorem calleeName_bodyName {env : Env} {jenv : Js.JsEnv} {name : String}
+    (h : JsEnvAgrees env jenv) : Js.calleeName jenv (bodyName name) = bodyName name := by
+  rw [Js.calleeName]
+  cases hj : ((jenv.find? (·.1 == bodyName name)).map (·.2)) with
+  | none => simp only [hj]
+  | some jv =>
+    have := h.bodyFree _ jv hj
+    rw [isBodyName_bodyName] at this
+    exact absurd this (by simp)
+
 /-- A call in the generated code: the arguments evaluate, the name is no helper, and the callee returns
-what the reference semantics returned. -/
+what the reference semantics returned.
+
+Stated with "no helper answers this call" rather than with the reserved prefix, because the two callees
+the compiler writes sit on opposite sides of that prefix: a declaration's own name is outside it and a
+declaration's body is inside it, and neither is a row of the table. -/
 theorem eventually_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {jargs : List Js.Expr}
     {jvs : List Js.JsValue} {r : Js.JsValue}
-    (hname : isReserved name = false)
+    (hname : Js.helper name jvs = none)
     (hargs : EventuallyList m jenv jargs jvs)
     (hcall : ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' (Js.calleeName jenv name) jvs = .ok r) :
     Eventually m jenv (.call name jargs) r := by
@@ -3802,13 +3839,13 @@ theorem eventually_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {jargs
   | zero => omega
   | succ g =>
     rw [Js.eval_call]
-    simp only [bind, Except.bind, hg1 g (by omega), helper_of_unreserved hname]
+    simp only [bind, Except.bind, hg1 g (by omega), hname]
     exact hg2 g (by omega)
 
 /-- The same when the callee throws. -/
 theorem eventuallyErr_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {jargs : List Js.Expr}
     {jvs : List Js.JsValue} {code : String}
-    (hname : isReserved name = false)
+    (hname : Js.helper name jvs = none)
     (hargs : EventuallyList m jenv jargs jvs)
     (hcall : ∃ g, ∀ g', g ≤ g' →
       Js.callFunctionAt m g' (Js.calleeName jenv name) jvs = .error code) :
@@ -3820,7 +3857,7 @@ theorem eventuallyErr_call {m : Js.Module} {jenv : Js.JsEnv} {name : String} {ja
   | zero => omega
   | succ g =>
     rw [Js.eval_call]
-    simp only [bind, Except.bind, hg1 g (by omega), helper_of_unreserved hname]
+    simp only [bind, Except.bind, hg1 g (by omega), hname]
     exact hg2 g (by omega)
 
 /-- And when an argument throws before the call is made. -/
@@ -3840,9 +3877,13 @@ program; a function reference evaluates to the name, and the generated code reso
 abbrev ModuleHasDecls (p : Program) (m : Js.Module) : Prop :=
   ∀ d ∈ p.decls, (m.funcs.find? (·.name == d.name)).isSome = true
 
-/-- What a call needs about the declaration it lands on: at this much reference fuel, the module's
-function of that name returns what the body returns. The body runs at exactly the fuel the call is left
-with, so this is the same fuel the expression-level statement is at. -/
+/-- What a call through a function value needs about the declaration it lands on: at this much reference
+fuel, the module's function of that name returns what the body returns. The body runs at exactly the
+fuel the call is left with, so this is the same fuel the expression-level statement is at.
+
+The entry and not the body, because a function reference evaluates to the declared name: passing a
+declaration by name calls it the way a consumer would, entry check and all. A call the compiler can see
+the callee of goes to `DeclBodyAgrees` instead. -/
 abbrev DeclAgrees (p : Program) (m : Js.Module) (f : Nat) : Prop :=
   ∀ (fn : String) (d : Decl) (args : List Value) (v : Value),
     p.find? fn = some d →
@@ -3850,6 +3891,18 @@ abbrev DeclAgrees (p : Program) (m : Js.Module) (f : Nat) : Prop :=
     ParamsTyped p d.params args →
     evalExpr p f (bindParams d.params args) d.body = .ok v →
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn (args.map encodeValue) = .ok (encodeValue v)
+
+/-- The same for the body function, which is where a call whose callee the compiler read off the program
+goes. The arguments are already the encoding of values of the declared types, which is exactly what the
+entry check would have handed back, so the check is the one thing this statement does without. -/
+abbrev DeclBodyAgrees (p : Program) (m : Js.Module) (f : Nat) : Prop :=
+  ∀ (fn : String) (d : Decl) (args : List Value) (v : Value),
+    p.find? fn = some d →
+    d.params.length = args.length →
+    ParamsTyped p d.params args →
+    evalExpr p f (bindParams d.params args) d.body = .ok v →
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' (bodyName fn) (args.map encodeValue) = .ok (encodeValue v)
 
 /-- Expression-level agreement at one amount of the reference semantics' fuel.
 
@@ -3871,7 +3924,7 @@ which is not a subterm of the call. Every shape evaluates its subterms with one 
 hypothesis at `f` reaches subterms and callee bodies alike. -/
 theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     (hprog : ProgramTyped p) (hmod : ModuleHasDecls p m) (f : Nat) (ih : AgreesAt p m f)
-    (ihd : DeclAgrees p m f) : AgreesAt p m (f + 1) := by
+    (ihd : DeclAgrees p m f) (ihdb : DeclBodyAgrees p m f) : AgreesAt p m (f + 1) := by
   intro e hfrag
   cases hfrag with
   | lit l =>
@@ -6101,7 +6154,8 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
           (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
           d.params (fun a ha => (hargs a ha).typeChecked) hcs hvs
           (zipAll_of_map d.params (by simpa using hall)) (by simpa using hlen)
-        refine eventually_call (jvs := vs.map encodeValue) (hjenv.unreserved fn _ hw) ?_ ?_
+        refine eventually_call (jvs := vs.map encodeValue)
+          (helper_of_unreserved (hjenv.unreserved fn _ hw) _) ?_ ?_
         · rw [← encodeList_eq]
           exact eventuallyList_of_args p m args js vs
             (fun a ha => iharg a ha henv hjenv) hcs hvs
@@ -6147,12 +6201,13 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         d'.params (fun a ha => (hargs a ha).typeChecked) hcs hvs (by simpa using hall)
         (by simpa using hlen)
       rw [find?_name hfind']
-      refine eventually_call (jvs := vs.map encodeValue) hunres ?_ ?_
+      refine eventually_call (jvs := vs.map encodeValue)
+        (Js.helper_of_isBodyName (isBodyName_bodyName fn) _) ?_ ?_
       · rw [← encodeList_eq]
         exact eventuallyList_of_args p m args js vs
           (fun a ha => iharg a ha henv hjenv) hcs hvs
-      · rw [calleeName_agrees hjenv hunres, hcallee]
-        exact ihd fn d' vs v hfind' hlen' htyped he'
+      · rw [calleeName_bodyName hjenv]
+        exact ihdb fn d' vs v hfind' hlen' htyped he'
   | matchE hscrut halts =>
     rename_i scrutE alts
     have ihscrut := ih hscrut
@@ -7064,6 +7119,17 @@ abbrev DeclTraps (p : Program) (m : Js.Module) (f : Nat) : Prop :=
     Mirrorable err →
     ∃ g, ∀ g', g ≤ g' → Js.callFunctionAt m g' fn (args.map encodeValue) = .error err.code
 
+/-- The same for the body function. -/
+abbrev DeclBodyTraps (p : Program) (m : Js.Module) (f : Nat) : Prop :=
+  ∀ (fn : String) (d : Decl) (args : List Value) (err : Err),
+    p.find? fn = some d →
+    d.params.length = args.length →
+    ParamsTyped p d.params args →
+    evalExpr p f (bindParams d.params args) d.body = .error err →
+    Mirrorable err →
+    ∃ g, ∀ g', g ≤ g' →
+      Js.callFunctionAt m g' (bodyName fn) (args.map encodeValue) = .error err.code
+
 /-- Expression-level trap agreement at one amount of the reference semantics' fuel. -/
 abbrev TrapsAt (p : Program) (m : Js.Module) (f : Nat) : Prop :=
   ∀ {e : Expr}, InFragment e →
@@ -7081,7 +7147,7 @@ abbrev TrapsAt (p : Program) (m : Js.Module) (f : Nat) : Prop :=
 On fuel for the same reason as `fragment_correct_succ`: the callee's body is not a subterm of the call. -/
 theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
     (hprog : ProgramTyped p) (f : Nat) (iha : AgreesAt p m f) (ih : TrapsAt p m f)
-    (ihd : DeclTraps p m f) : TrapsAt p m (f + 1) := by
+    (ihd : DeclTraps p m f) (ihdb : DeclBodyTraps p m f) : TrapsAt p m (f + 1) := by
   intro e hfrag
   cases hfrag with
   | lit l =>
@@ -8337,7 +8403,8 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
           (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
           d.params (fun a ha => (hargs a ha).typeChecked) hcs hvs
           (zipAll_of_map d.params (by simpa using hall)) (by simpa using hlen)
-        refine eventuallyErr_call (jvs := vs.map encodeValue) hunres ?_ ?_
+        refine eventuallyErr_call (jvs := vs.map encodeValue)
+          (helper_of_unreserved hunres _) ?_ ?_
         · rw [← encodeList_eq]
           exact eventuallyList_of_args p m args js vs
             (fun a ha => iha (hargs a ha) henv hjenv) hcs hvs
@@ -8400,12 +8467,13 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         (fun e je' t w' hchk' => typeSound p hprog f ctx env e je' t w' hchk' henv) args js vs
         d'.params (fun a ha => (hargs a ha).typeChecked) hcs hvs (by simpa using hall)
         (by simpa using hlen)
-      refine eventuallyErr_call (jvs := vs.map encodeValue) hunres ?_ ?_
+      refine eventuallyErr_call (jvs := vs.map encodeValue)
+        (Js.helper_of_isBodyName (isBodyName_bodyName fn) _) ?_ ?_
       · rw [← encodeList_eq]
         exact eventuallyList_of_args p m args js vs
           (fun a ha => iha (hargs a ha) henv hjenv) hcs hvs
-      · rw [calleeName_agrees hjenv hunres, hcallee]
-        exact ihd fn d vs err (hdd ▸ hfind') hfl (hdd ▸ htyped) he hne
+      · rw [calleeName_bodyName hjenv]
+        exact ihdb fn d vs err (hdd ▸ hfind') hfl (hdd ▸ htyped) he hne
   | matchE hscrut halts =>
     rename_i scrutE alts
     have ihscrut := ih hscrut

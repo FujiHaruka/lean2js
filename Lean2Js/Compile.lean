@@ -452,7 +452,7 @@ def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except S
           .error s!"argument types do not match the signature of {fn}"
         else do
           fnArgsPrecede p fn d args
-          .ok (.call d.name (js.map (·.1)), d.ret)
+          .ok (.call (bodyName d.name) (js.map (·.1)), d.ret)
   | .ctor typeName tyArgs ctorName args => do
     wfTy p [] (.named typeName tyArgs)
     match p.findType? typeName with
@@ -881,7 +881,19 @@ def declSig : List Param → String
   | [] => ""
   | param :: rest => param.name ++ " : " ++ param.ty.render ++ declSigRest rest
 
-def compileDecl [Discriminators] (p : Program) (d : Decl) : Except String Js.Func := do
+/-- The arguments the entry hands the body: every parameter under its declared name, which is what the
+checks above it have just bound. -/
+def paramIdents : List Param → List Js.Expr
+  | [] => []
+  | param :: rest => .ident param.name :: paramIdents rest
+
+/-- A declaration becomes two functions: the body, which is where the compiled expression goes and which
+every call from inside the package lands on, and the entry, which checks its arguments and hands them to
+the body under their declared names. The entry is what a consumer imports and what `decl_correct`,
+`decl_traps` and `decl_refuses` are statements about; the split is what keeps a call from inside the
+package from walking an argument that is already good. -/
+def compileDecl [Discriminators] (p : Program) (d : Decl) :
+    Except String (Js.Func × Js.Func) := do
   validateIdent "function" d.name
   d.params.forM fun param => validateIdent "parameter" param.name
   validateDistinct "parameter" (d.params.map (·.name))
@@ -893,13 +905,17 @@ def compileDecl [Discriminators] (p : Program) (d : Decl) : Except String Js.Fun
     .error s!"{d.name} is declared to return {d.ret.render} but its body is {ty.render}"
   else do
     let checks ← paramChecks p 0 d.params
-    .ok {
-      name := d.name
-      params := rawParams 0 d.params
-      body := checks ++ stmts
-      doc := d.name ++ " : (" ++ declSig d.params ++ ") → " ++ d.ret.render
-      exported := d.isPublic
-    }
+    .ok (
+      { name := d.name
+        params := rawParams 0 d.params
+        body := checks ++ [.ret (.call (bodyName d.name) (paramIdents d.params))]
+        doc := d.name ++ " : (" ++ declSig d.params ++ ") → " ++ d.ret.render
+        exported := d.isPublic },
+      { name := bodyName d.name
+        params := d.params.map (·.name)
+        body := stmts
+        doc := ""
+        exported := false })
 
 /-- A constructor is carried under the key its own type declares. Written as its own step rather than
 as an `if` in the walk below so that the reading can be taken back out of a validated program. -/
@@ -1004,7 +1020,8 @@ def compileDecls [Discriminators] (p : Program) : Nat → List Decl → Except S
   | _, [] => .ok []
   | i, d :: rest => do
     callsPrecede p i d.body
-    .ok ((← compileDecl p d) :: (← compileDecls p (i + 1) rest))
+    let (entry, body) ← compileDecl p d
+    .ok (entry :: body :: (← compileDecls p (i + 1) rest))
 
 /-- A declaration is compiled against the whole program and `callsPrecede` is what keeps a function from
 calling itself or a later one. That is what keeps nontermination out of the subset: `eval`'s fuel bounds

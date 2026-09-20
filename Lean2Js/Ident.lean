@@ -43,6 +43,63 @@ def isReserved (name : String) : Bool :=
   | '_' :: '_' :: _ => true
   | _ => false
 
+/-- The prefix a declaration's unchecked body is named under. Inside the reserved prefix, so nothing a
+program can write reaches it, and no runtime helper carries a `_` in that position, so the two names the
+compiler writes stay apart from each other as well as from the ones it is given. -/
+def bodyPrefix : String := "__b_"
+
+/-- The function a call from inside the package lands on: the declaration's body with no entry check in
+front of it. The declared name stays with the checked function a consumer imports. -/
+def bodyName (name : String) : String := bodyPrefix ++ name
+
+/-- The same test as `String.startsWith bodyPrefix`, written on the characters for the reason
+`isReserved` is: the helper dispatch and the environment both have to be shown that a name is or is not
+one of these, and those arguments read the characters. -/
+def isBodyName (s : String) : Bool :=
+  match s.toList with
+  | '_' :: '_' :: 'b' :: '_' :: _ => true
+  | _ => false
+
+theorem toList_bodyName (name : String) :
+    (bodyName name).toList = '_' :: '_' :: 'b' :: '_' :: name.toList := by
+  show ("__b_" ++ name).toList = _
+  rw [String.toList_append]; rfl
+
+theorem isBodyName_bodyName (name : String) : isBodyName (bodyName name) = true := by
+  rw [isBodyName, toList_bodyName]; rfl
+
+theorem isReserved_bodyName (name : String) : isReserved (bodyName name) = true := by
+  rw [isReserved, toList_bodyName]; rfl
+
+/-- A name the compiler was given is never a body name: `validateIdent` rejects the whole reserved
+prefix, and the body prefix is inside it. -/
+theorem isBodyName_of_unreserved {s : String} (h : isReserved s = false) : isBodyName s = false := by
+  rw [isBodyName]
+  split
+  · rename_i cs heq
+    rw [isReserved, heq] at h
+    exact absurd h (by simp)
+  · rfl
+
+theorem bodyName_inj {a b : String} (h : bodyName a = bodyName b) : a = b := by
+  have hl := congrArg String.toList h
+  rw [toList_bodyName, toList_bodyName] at hl
+  simp only [List.cons.injEq, true_and] at hl
+  exact String.toList_inj.mp hl
+
+theorem okName_bodyName {name : String} (h : okName name = true) :
+    okName (bodyName name) = true := by
+  have hall : name.toList.all isIdentPart = true := by
+    rw [okName] at h
+    split at h
+    · exact absurd h (by simp)
+    · rename_i c cs hcs
+      simp only [Bool.and_eq_true] at h
+      rw [hcs]; exact h.2
+  rw [okName, toList_bodyName]
+  simp only [List.all_cons, Bool.and_eq_true]
+  exact ⟨by decide, by decide, by decide, by decide, by decide, hall⟩
+
 def validateIdent (kind name : String) : Except String Unit :=
   if name.isEmpty then .error s!"{kind} name is empty"
   else if !okName name then

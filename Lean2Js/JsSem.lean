@@ -373,6 +373,16 @@ theorem helper_row {name : String} {args : List JsValue} {r : JsResult}
        | none => rw [hs] at h; simp at h
        | some ss => rw [strsOf_eq hs]; exact .join ss sep)
     | exact absurd h (by simp)
+/-- A declaration's body function is no runtime helper. Every row of the table names a literal, and none
+of them carries `_` where the body prefix does, so a call the compiler redirects to a body reaches the
+module's own function and not the table. Read off `HelperRow` rather than off `helper`, for the reason
+`HelperRow` exists. -/
+theorem helper_of_isBodyName {name : String} (h : isBodyName name = true)
+    (args : List JsValue) : helper name args = none := by
+  cases hr : helper name args with
+  | none => rfl
+  | some r => exact absurd h (by cases helper_row hr <;> simp [isBodyName])
+
 def arith (op : String) (a b : JsValue) : JsResult :=
   match op, a, b with
   | "+", .num x, .num y => .ok (.num (x + y))

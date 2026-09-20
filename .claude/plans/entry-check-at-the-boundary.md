@@ -98,6 +98,51 @@ the wrapper is where the boundary lives. Each leaves every gate green and the ar
 | `Lean2Js/Example.lean`, `Lean2Js/Axioms.lean` | 2 | a private shipped helper, to put the case in the artifact |
 | `README.md`, `docs/guarantees.md`, `CHANGELOG.md`, `reference/declarations.md` | 1, 2 | what a call costs, and what `@[ship] private` does |
 
+## Phase 1: landed
+
+The wrapper split is in. What was actually built, and where it differs from the sketch above:
+
+- **The body is named `__b_` + the declared name**, in `Lean2Js/Ident.lean` beside `isReserved`, with
+  `isBodyName` written on the characters the way `isReserved` is. Neither `okCallee` nor `isReserved`
+  changed, so **the trusted base did not grow**. Two observations made that possible. `okCallee` only
+  refuses the eleven names the reader dispatches on, not the whole `__` prefix, so `okCallee_bodyName`
+  is a lemma and not a change to the definition. And what `eventually_call` needed of the callee was
+  never "unreserved" but "no helper answers this call": its hypothesis is now
+  `Js.helper name jvs = none`, which the declared name discharges through `helper_of_unreserved` and the
+  body name through `Js.helper_of_isBodyName`, read off `HelperRow` in `JsSem.lean` where the matcher is.
+  `__b_` rather than `__b` because `__bigdiv` and `__bigmod` are helpers and `bodyName "igdiv"` would be
+  one of them.
+- **`JsEnvAgrees` gained a fourth field, `bodyFree`**: nothing the generated environment binds carries
+  the body prefix. `calleeName` lets a binding holding a function shadow the module's own, so this is
+  what says a call to `__b_f` reaches the module's `__b_f`. Five construction sites, all mechanical —
+  `.cons` (from `isReserved name = false`), `.consScrut`, `jsEnvAgrees_encodeEnv` and
+  `jsEnvAgrees_checkedBindings`, which now also takes `bindAll_rawParams_notBody`.
+- **The entry keeps its `const` per parameter** and ends `return __b_f(a, b)`, rather than checking
+  inline inside the call. That is what lets `evalStmts_paramChecks` and `evalStmts_paramChecks_sound`
+  stay exactly as they were, so `decl_refuses` needed nothing but a wider `obtain`.
+- **`DeclAgrees` split into `DeclAgrees` (the entry) and `DeclBodyAgrees` (the body)**, and the same for
+  traps; `fragment_correct_succ` and `fragment_traps_succ` take both. The call case of the induction uses
+  the body, the call-through-a-function-value case uses the entry.
+- **`fnRef` still names the entry.** A declaration passed by name is called checked. Making it unchecked
+  would mean `encodeValue (Value.fn name) = .fn (bodyName name)` — changing what a function value *is* in
+  the model, which reaches `Norm`, `Agree` and the node check. The plan's `Correct.lean:6052` worry
+  dissolves with that choice: `eventually_fnRef` is untouched.
+
+Measured on Node v24.19.0, same harness both sides:
+
+| elements | `lineTotals` before | after |
+| --- | --- | --- |
+| 10 | 1.03 µs | 0.31 µs |
+| 100 | 8.10 µs | 2.35 µs |
+| 1000 | 77.66 µs | 21.88 µs |
+| 10000 | 750.24 µs | 197.73 µs |
+
+`combinedCart` is unchanged — 413 µs at 10000 + 10000 against `concat`'s 20 µs — which is the point: the
+boundary check is what stays. `index.js` for the example grew from 53,396 to 62,812 bytes.
+
+**Phase 2, the `@[ship] private` mark, is still open**, and the "A mark for ship it, do not export it"
+section above is unchanged by any of this.
+
 ## What a first attempt found
 
 The codegen half is small and was written in one sitting: `bodyName`, `compileBodyDecl`, `compileDecls`

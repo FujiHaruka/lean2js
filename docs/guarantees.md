@@ -44,6 +44,13 @@ the body runs ([`decl_refuses`]). The returning direction carries no "for argume
 type" caveat — that the types match follows from `eval` having returned at all. The trapping direction
 assumes the declared type, and the refusing one assumes the declaration is public.
 
+- **A declaration is two functions in the artifact, and the three directions are about the first.** The
+  entry, under the declared name, checks its arguments and hands them to a body under the `__b_` prefix
+  that checks nothing; a call from one declaration to another lands on that body, so the check is paid
+  where the value arrives from outside and not again at every call inside. The entry is what a consumer
+  imports and the only one `index.d.ts` names, and it is the function `decl_correct`, `decl_traps` and
+  `decl_refuses` speak of. A declaration passed by name rather than called resolves to the entry too, so
+  a higher-order call carries the check.
 - **Except for a dictionary holding the same key twice, all three directions speak for every spelling of
   the arguments the entry check accepts** (`ArgsDecode`) — the order of keys and keys the declaration does
   not name are carried by the same theorems as the canonical spelling. That one excluded shape exists only

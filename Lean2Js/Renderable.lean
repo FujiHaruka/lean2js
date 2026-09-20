@@ -289,6 +289,19 @@ theorem okCallee_of_validateIdent {kind name : String} {u : Unit}
     all_goals exact absurd hres (by decide)
   simp [okCallee, hok, hd]
 
+/-- The name a declaration's body is compiled under is a callee the reader takes back: it is spelled as
+an identifier, and none of the names the reader gives a meaning of its own carries `_` where the body
+prefix does. -/
+theorem okCallee_bodyName {name : String} (h : okName name = true) :
+    okCallee (bodyName name) = true := by
+  have hok := okName_bodyName h
+  have hnd : bodyName name ∉ dispatchNames := by
+    intro hmem
+    simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
+    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
+      (have hc := congrArg String.toList hq; rw [toList_bodyName] at hc; simp at hc)
+  simp [okCallee, hok, hnd]
+
 /-! ## What the compiler is holding while it builds an expression
 
 The names in scope and the names of the declarations are the only two places a compiled expression can
@@ -1013,7 +1026,8 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
             (obtain ⟨_, _, h⟩ := bind_ok h
              try simp only at h
              exact renderable_of_ok h
-               (renderable_call (okCallee_of_decl_name hp hfind) (ihargs hctx js hjs)))))
+               (renderable_call (okCallee_bodyName (okName_of_okCallee (okCallee_of_decl_name hp hfind)))
+              (ihargs hctx js hjs)))))
   -- 25: a constructor
   · intro ctx typeName tyArgs ctorName args ihargs hctx j t h
     rw [compileExpr] at h
@@ -1691,9 +1705,27 @@ theorem fieldNamesOk_of_validated {p : Program} (ts : List TypeDef)
   obtain ⟨_, hvi, _⟩ := bind_ok h3
   exact okName_of_validateIdent hvi
 
+theorem renderable_paramIdents : ∀ params : List Param,
+    (params.forM fun param => validateIdent "parameter" param.name) = .ok () →
+    RenderableList (Compile.paramIdents params) = true
+  | [], _ => by rw [Compile.paramIdents, RenderableList]
+  | param :: rest, hv => by
+    obtain ⟨_, hv1, hv2⟩ := bind_ok hv
+    rw [Compile.paramIdents]
+    exact renderableList_cons (renderable_ident (okCallee_of_validateIdent hv1))
+      (renderable_paramIdents rest hv2)
+
+theorem paramNames_all_okName : ∀ params : List Param,
+    (params.forM fun param => validateIdent "parameter" param.name) = .ok () →
+    (params.map (·.name)).all okName = true
+  | [], _ => rfl
+  | param :: rest, hv => by
+    obtain ⟨_, hv1, hv2⟩ := bind_ok hv
+    simp [okName_of_validateIdent hv1, paramNames_all_okName rest hv2]
+
 theorem renderableFunc_of_compileDecl {p : Program} (hp : DeclNamesOk p) (hfn : FieldNamesOk p)
-    (hn : TypeNamesOk p) {d : Decl} {fn : Js.Func} (h : compileDecl p d = .ok fn) :
-    RenderableFunc fn = true := by
+    (hn : TypeNamesOk p) {d : Decl} {fns : Js.Func × Js.Func} (h : compileDecl p d = .ok fns) :
+    RenderableFunc fns.1 = true ∧ RenderableFunc fns.2 = true := by
   rw [compileDecl] at h
   obtain ⟨_, hvi, h⟩ := bind_ok h
   obtain ⟨_, hvp, h⟩ := bind_ok h
@@ -1707,15 +1739,23 @@ theorem renderableFunc_of_compileDecl {p : Program} (hp : DeclNamesOk p) (hfn : 
   obtain ⟨checks, hchecks, h⟩ := bind_ok h
   simp only [Except.ok.injEq] at h
   subst h
-  simp only [RenderableFunc, Bool.and_eq_true]
-  refine ⟨⟨⟨okName_of_validateIdent hvi, rawParams_all_okName 0 d.params⟩, ?_⟩, ?_⟩
-  · simp only [List.all_append, Bool.and_eq_true]
-    exact ⟨renderable_paramChecks 0 d.params checks hvp hchecks,
-      renderable_compileBody hp hfn _ d.body [] stmts ty (ctxOk_of_params d.params hvp) rfl hbody⟩
-  · refine noCommentClose_of_noStar ?_
-    exact noStar_append (noStar_append (noStar_append
-      (noStar_append (noStar_of_okName (okName_of_validateIdent hvi)) (by decide))
-      (noStar_declSig hn d.params hvp hwp)) (by decide)) (noStar_render hn d.ret hwr)
+  refine ⟨?_, ?_⟩
+  · simp only [RenderableFunc, Bool.and_eq_true]
+    refine ⟨⟨⟨okName_of_validateIdent hvi, rawParams_all_okName 0 d.params⟩, ?_⟩, ?_⟩
+    · simp only [List.all_append, List.all_cons, List.all_nil, Bool.and_eq_true, and_true]
+      refine ⟨renderable_paramChecks 0 d.params checks hvp hchecks, ?_⟩
+      simp only [RenderableStmt]
+      exact renderable_call (okCallee_bodyName (okName_of_validateIdent hvi))
+        (renderable_paramIdents d.params hvp)
+    · refine noCommentClose_of_noStar ?_
+      exact noStar_append (noStar_append (noStar_append
+        (noStar_append (noStar_of_okName (okName_of_validateIdent hvi)) (by decide))
+        (noStar_declSig hn d.params hvp hwp)) (by decide)) (noStar_render hn d.ret hwr)
+  · simp only [RenderableFunc, Bool.and_eq_true]
+    exact ⟨⟨⟨okName_bodyName (okName_of_validateIdent hvi),
+        paramNames_all_okName d.params hvp⟩,
+      renderable_compileBody hp hfn _ d.body [] stmts ty (ctxOk_of_params d.params hvp) rfl hbody⟩,
+      by decide⟩
 
 theorem declNames_of_compileDecls {p : Program} :
     ∀ (i : Nat) (ds : List Decl) (fs : List Js.Func),
@@ -1752,8 +1792,8 @@ theorem renderable_compileDecls {p : Program} (hp : DeclNamesOk p) (hfn : FieldN
     simp only [Except.ok.injEq] at h
     subst h
     simp only [List.all_cons, Bool.and_eq_true]
-    exact ⟨renderableFunc_of_compileDecl hp hfn hn hf,
-      renderable_compileDecls hp hfn hn (i + 1) rest fsRest hrest⟩
+    have hr := renderableFunc_of_compileDecl hp hfn hn hf
+    exact ⟨hr.1, hr.2, renderable_compileDecls hp hfn hn (i + 1) rest fsRest hrest⟩
 
 /-- Nothing the compiler builds falls outside what the reader takes back. `Renderable` names the trees
 `render` does not separate, and this says the compiler never writes one: the names it emits are the ones

@@ -13,7 +13,7 @@
   "artifacts": [
     {
       "file": "index.js",
-      "sha256": "1039bfa1e345c8ec65cc69769ef40363f18495499118be6c08d08834d5db72cf"
+      "sha256": "c71e406fb1e91871fbc89d5c0ba8f961a7a5ab16e61d1adb63be6b0731b5abd2"
     },
     {
       "file": "index.d.ts",
