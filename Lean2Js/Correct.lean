@@ -1302,6 +1302,12 @@ theorem beq_encodeValue (p : Program) : ∀ (t : Ty) (a b : Value),
     simp only [Value.hasTy, Bool.and_eq_true] at ha hb
     simp only [encodeValue, Js.JsValue.beq, Value.beq]
     exact beq_encodeEntries p elem ea eb ha.2 hb.2
+  | .dictObj elem, a, b, ha, hb => by
+    obtain ⟨ea, rfl⟩ := hasTy_dictObj_inv ha
+    obtain ⟨eb, rfl⟩ := hasTy_dictObj_inv hb
+    simp only [Value.hasTy, Bool.and_eq_true] at ha hb
+    simp only [encodeValue, Js.JsValue.beq, Value.beq]
+    exact beq_encodeEntries p elem ea eb ha.2 hb.2
   | .fn params ret, a, b, ha, hb => by
     obtain ⟨na, rfl⟩ := hasTy_fn_inv ha
     obtain ⟨nb, rfl⟩ := hasTy_fn_inv hb

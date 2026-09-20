@@ -3033,6 +3033,7 @@ def tyVal : TyDesc → Val
   | .result ok err => .arr [.str "result", tyVal ok, tyVal err]
   | .array t => .arr [.str "array", tyVal t]
   | .dict t => .arr [.str "dict", tyVal t]
+  | .dictObj t => .arr [.str "dictObj", tyVal t]
   | .ctors key alts => .arr [.str "ctors", .str key, .arr (tyValAlts alts)]
   | .mu key alts => .arr [.str "mu", .str key, .arr (tyValAlts alts)]
   | .ref up => .arr [.str "ref", .num up]
@@ -3092,6 +3093,8 @@ def hasV (env : TyEnv) : Val → TyDesc → Bool
     match alts.find? (fun c => strictEq (.str c.1) (lookupV es key)) with
     | some alt => hasFields env es alt.2
     | none => false
+  | .obj es, .dictObj t => hasEntries env es t
+  | .dict es, .dictObj t => hasEntries env es t
   | v, .mu key alts => hasV ((key, alts) :: env) v (.ctors key alts)
   | v, .ref up =>
     match env[up]? with
@@ -3128,6 +3131,8 @@ are stated for every larger amount, so an upper bound is all a proof needs. -/
 def hasFuel (env : TyEnv) : Val → TyDesc → Nat
   | .arr xs, .array t => hasFuelList env xs t + 66
   | .dict es, .dict t => hasFuelEntries env es t + 4 * es.length + 66
+  | .obj es, .dictObj t => hasFuelEntries env es t + 66
+  | .dict es, .dictObj t => hasFuelEntries env es t + 66
   | .obj es, .option t => hasFuelFields env es [("value", t)] + 66
   | .obj es, .result ok err =>
     hasFuelFields env es [("value", ok)] + hasFuelFields env es [("error", err)] + 66
@@ -3308,6 +3313,7 @@ def headName : TyDesc → String
   | .bigint => "bigint"
   | .array _ => "array"
   | .dict _ => "dict"
+  | .dictObj _ => "dictObj"
   | .option _ => "option"
   | .result _ _ => "result"
   | .ctors _ _ => "ctors"
@@ -3785,6 +3791,78 @@ private theorem calls_has_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc)
               valAll_hasList, ← hasEntries_eq]
             simp [hasV]
           all_goals (walk; simp [hasV]))]
+    | dictObj te =>
+      simp only [headName, tyVal] at hk ⊢
+      rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+        has_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+        show f + m + 62 = (f + m + 59) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 59 + 2 = (f + m + 58) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 58 + 2 = (f + m + 57) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 57 + 2 = (f + m + 56) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 56 + 2 = (f + m + 55) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 55 + 2 = (f + m + 54) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 54 + 2 = (f + m + 53) + 3 from by omega,
+        has_skip _ _ _ _ _ _ _ hk rfl]
+      walk
+      rw [show f + m + 52 = (f + m + 44) + 8 from by omega, calls_isObj]
+      cases v
+      case obj es =>
+        walk
+        simp only [Helper.hasObjKinds]
+        rw [show f + m + 54 = (f + m + 51) + 3 from by omega,
+          has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 51 + 2 = (f + m + 50) + 3 from by omega,
+          has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 50 + 2 = (f + m + 49) + 3 from by omega,
+          has_take _ _ _ _ _ _ (.bool (hasV tenv (Val.obj es) (.dictObj te))) hk (by
+            simp only [Helper.hasDictObj]
+            walk
+            have hml : m = hasFuelEntries tenv es te := by simp only [hasFuel] at hm; omega
+            subst hml
+            rw [show f + hasFuelEntries tenv es te + 49
+                  = (f + 41) + sumCost (fun w => hasFuel tenv w te + 7) (es.map (·.2)) + 8 from by
+                rw [sumCost_hasFuelList, ← hasFuelEntries_eq]; omega,
+              calls_all_gen ext _ _ _ _
+                (answers_element ext n (fun w d hw g => ih w d tenv hw g) te "dictObj" (.obj es) _
+                  (fun w hw => by
+                    have := sizeOf_snd_mem hw
+                    simp only [Val.obj.sizeOf_spec] at hlt
+                    omega)) (f + 41),
+              valAll_hasList, ← hasEntries_eq]
+            simp [hasV])]
+      case dict es =>
+        walk
+        simp only [Helper.hasObjKinds]
+        rw [show f + m + 54 = (f + m + 51) + 3 from by omega,
+          has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 51 + 2 = (f + m + 50) + 3 from by omega,
+          has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 50 + 2 = (f + m + 49) + 3 from by omega,
+          has_take _ _ _ _ _ _ (.bool (hasV tenv (Val.dict es) (.dictObj te))) hk (by
+            simp only [Helper.hasDictObj]
+            walk
+            have hml : m = hasFuelEntries tenv es te := by simp only [hasFuel] at hm; omega
+            subst hml
+            rw [calls_dvalues]
+            walk
+            rw [show f + hasFuelEntries tenv es te + 49
+                  = (f + 41) + sumCost (fun w => hasFuel tenv w te + 7) (es.map (·.2)) + 8 from by
+                rw [sumCost_hasFuelList, ← hasFuelEntries_eq]; omega,
+              calls_all_gen ext _ _ _ _
+                (answers_element ext n (fun w d hw g => ih w d tenv hw g) te "dictObj" (.dict es) _
+                  (fun w hw => by
+                    have := sizeOf_snd_mem hw
+                    simp only [Val.dict.sizeOf_spec] at hlt
+                    omega)) (f + 41),
+              valAll_hasList, ← hasEntries_eq]
+            simp [hasV])]
+      all_goals (walk; simp [hasV])
     | option te =>
       simp only [headName, tyVal] at hk ⊢
       rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
@@ -3950,6 +4028,8 @@ private theorem calls_has_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc)
         rw [show f + m + 54 = (f + m + 51) + 3 from by omega,
           has_skip _ _ _ _ _ _ _ hk rfl,
           show f + m + 51 + 2 = (f + m + 50) + 3 from by omega,
+          has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 50 + 2 = (f + m + 49) + 3 from by omega,
           has_skip _ _ _ _ _ _ _ hk rfl]
         simp only [Helper.hasCtors]
         walk
@@ -3958,12 +4038,12 @@ private theorem calls_has_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc)
         rw [show ([Val.str "ctors", Val.str key, Val.arr (tyValAlts alts)][Int.toNat 2]?).getD
               Val.undef = Val.arr (tyValAlts alts) from rfl,
           tyValAlts_eq,
-          show f + m + 50 = (f + hasFuelAlts tenv es alts + 42)
+          show f + m + 49 = (f + hasFuelAlts tenv es alts + 41)
               + sumCost (fun _ => 4) (alts.map altVal) + 8 from by
             rw [sumCost_four, List.length_map]; omega,
           calls_find_gen ext _ _ _ _
             (answers_alt ext (.obj es) (.str key) (lookupV es key) _ _ _ rfl rfl)
-            (f + hasFuelAlts tenv es alts + 42),
+            (f + hasFuelAlts tenv es alts + 41),
           valFind_alts]
         walk
         simp only [← strictEq.eq_def]
@@ -3988,9 +4068,9 @@ private theorem calls_has_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc)
           have hle := hasFuelFields_le_alts (tenv := tenv) es alts alt (List.mem_of_find?_eq_some hfind)
           rw [show ([Val.str alt.1, Val.arr (tyValFields alt.2)][Int.toNat 1]?).getD Val.undef
                 = Val.arr (tyValFields alt.2) from rfl,
-            show f + m + 48
-                = (f + m + 32 - hasFuelFields tenv es alt.2) + hasFuelFields tenv es alt.2 + 16 from by omega,
-            calls_hasFields ext es hsub alt.2 (f + m + 32 - hasFuelFields tenv es alt.2)]
+            show f + m + 47
+                = (f + m + 31 - hasFuelFields tenv es alt.2) + hasFuelFields tenv es alt.2 + 16 from by omega,
+            calls_hasFields ext es hsub alt.2 (f + m + 31 - hasFuelFields tenv es alt.2)]
           simp only [hasV, hfind, bind_ok]
       case dict es =>
         walk
@@ -3998,6 +4078,8 @@ private theorem calls_has_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc)
         rw [show f + m + 54 = (f + m + 51) + 3 from by omega,
           has_skip _ _ _ _ _ _ _ hk rfl,
           show f + m + 51 + 2 = (f + m + 50) + 3 from by omega,
+          has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 50 + 2 = (f + m + 49) + 3 from by omega,
           has_skip _ _ _ _ _ _ _ hk rfl]
         simp only [Helper.hasCtors]
         walk
@@ -4006,10 +4088,10 @@ private theorem calls_has_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc)
         rw [show ([Val.str "ctors", Val.str key, Val.arr (tyValAlts alts)][Int.toNat 2]?).getD
               Val.undef = Val.arr (tyValAlts alts) from rfl,
           tyValAlts_eq,
-          show f + m + 50 = (f + 42) + sumCost (fun _ => 4) (alts.map altVal) + 8 from by
+          show f + m + 49 = (f + 41) + sumCost (fun _ => 4) (alts.map altVal) + 8 from by
             rw [sumCost_four, List.length_map]; omega,
           calls_find_gen ext _ _ _ _
-            (answers_alt ext (.dict es) (.str key) tagv _ _ _ rfl hidx) (f + 42),
+            (answers_alt ext (.dict es) (.str key) tagv _ _ _ rfl hidx) (f + 41),
           valFind_alts, find_alts_notStr hns]
         walk
         rw [show lookupV [("tag", Val.str "none")] "tag" = Val.str "none" from rfl]
@@ -4068,6 +4150,8 @@ def normV (tenv : TyEnv) : Val → TyDesc → Val
     match alts.find? (fun c => strictEq (.str c.1) (lookupV es key)) with
     | some alt => .obj ((key, lookupV es key) :: normVFields tenv es alt.2)
     | none => .obj es
+  | .obj es, .dictObj t => .dict (mapSetAll [] (normVEntries tenv es t))
+  | .dict es, .dictObj t => .dict (normVEntries tenv es t)
   | v, .mu key alts => normV ((key, alts) :: tenv) v (.ctors key alts)
   | v, .ref up =>
     match tenv[up]? with
@@ -4104,6 +4188,8 @@ the claims are stated for every larger amount. -/
 def normFuel (tenv : TyEnv) : Val → TyDesc → Nat
   | .arr xs, .array t => normFuelList tenv xs t + 4 * xs.length + 66
   | .dict es, .dict t => normFuelEntries tenv es t + 8 * es.length + 66
+  | .obj es, .dictObj t => normFuelEntries tenv es t + 8 * es.length + 66
+  | .dict es, .dictObj t => normFuelEntries tenv es t + 8 * es.length + 66
   | .obj es, .option t => normFuelFields tenv es [("value", t)] + 66
   | .obj es, .result ok err =>
     normFuelFields tenv es [("value", ok)] + normFuelFields tenv es [("error", err)] + 66
@@ -4320,6 +4406,80 @@ def normFuelKeys (tenv : TyEnv) (es : List (String × Val)) (t : TyDesc) : List 
   | k :: ks =>
     have := sizeOf_lookupV_lt es k
     normFuel tenv (lookupV es k) t + normFuelKeys tenv es t ks + 12
+
+/-- The loop `__norm` runs over a dictionary that arrived as a plain object. It walks the entries
+rather than the keys, so each value is normalised once and no lookup is needed; what the `Map` is left
+holding is `mapSetAll`, which is where a key an object could not have carried twice would collapse. -/
+private theorem mapSet_fresh {acc : List (String × Val)} {k : String} {v : Val}
+    (h : acc.any (·.1 == k) = false) : mapSet acc k v = acc ++ [(k, v)] := by
+  rw [mapSet, if_neg (by simp [h])]
+
+/-- Filling a `Map` from entries whose keys are already distinct leaves the list as it was: nothing
+overwrites, so every entry is appended in the order it came. -/
+private theorem mapSetAll_append : ∀ (es acc : List (String × Val)),
+    keysDistinctV (es.map (·.1)) = true →
+    (∀ k ∈ es.map (·.1), acc.any (·.1 == k) = false) →
+    mapSetAll acc es = acc ++ es
+  | [], acc, _, _ => by rw [mapSetAll, List.append_nil]
+  | (k, v) :: rest, acc, hd, hacc => by
+    rw [List.map_cons, keysDistinctV, Bool.and_eq_true] at hd
+    have hfresh : acc.any (·.1 == k) = false := hacc k (by simp)
+    have hnext : ∀ j ∈ rest.map (·.1), (acc ++ [(k, v)]).any (·.1 == j) = false := by
+      intro j hj
+      have hjk : (k == j) = false := by
+        cases hc : k == j with
+        | false => rfl
+        | true => simp_all
+      have hj' : j ∈ ((k, v) :: rest).map (·.1) := by simp [hj]
+      simp [List.any_append, hacc j hj', hjk]
+    rw [mapSetAll, mapSet_fresh hfresh, mapSetAll_append rest (acc ++ [(k, v)]) hd.2 hnext]
+    simp
+
+theorem normVEntries_keys : ∀ (es : List (String × Val)) (t : TyDesc),
+    (normVEntries tenv es t).map (·.1) = es.map (·.1)
+  | [], _ => by simp [normVEntries]
+  | (k, v) :: rest, t => by
+    rw [normVEntries, List.map_cons, List.map_cons, normVEntries_keys rest t]
+
+theorem mapSetAll_normVEntries (es : List (String × Val)) (t : TyDesc)
+    (h : keysDistinctV (es.map (·.1)) = true) :
+    mapSetAll [] (normVEntries tenv es t) = normVEntries tenv es t := by
+  rw [mapSetAll_append _ [] (by rw [normVEntries_keys]; exact h) (by simp), List.nil_append]
+
+theorem normDictObj_loop (ext : Ext) (te : TyDesc) (K X : Val) :
+    ∀ (es : List (String × Val)) (acc : List (String × Val)) (f : Nat),
+    (∀ w ∈ es.map (·.2), ∀ (g : Nat), callDef ext (g + normFuel tenv w te) "__norm"
+      [w, tyVal te, envVal tenv] = .ok (normV tenv w te)) →
+    evalFor ext (f + normFuelEntries tenv es te + 8 * es.length + 8)
+      [("out", .dict acc), ("k", K), ("x", X), ("t", Val.arr [Val.str "dictObj", tyVal te]),
+        ("e", envVal tenv)]
+      "en" (es.map fun e => Val.arr [Val.str e.1, e.2])
+      [.setKey "out" (.index (.var "en") (.num 0))
+        (.call "__norm" [.index (.var "en") (.num 1), .index (.var "t") (.num 1), (.var "e")])]
+      = .ok (.next [("out", .dict (mapSetAll acc (normVEntries tenv es te))), ("k", K), ("x", X),
+        ("t", Val.arr [Val.str "dictObj", tyVal te]), ("e", envVal tenv)]) := by
+  intro es
+  induction es with
+  | nil => intro acc f _; simp only [normFuelEntries]; walk; simp [normVEntries, mapSetAll]
+  | cons e rest ih =>
+    obtain ⟨k, v⟩ := e
+    intro acc f hsub
+    simp only [normFuelEntries, List.length_cons]
+    rw [show f + (normFuel tenv v te + normFuelEntries tenv rest te + 8) + 8 * (rest.length + 1) + 8
+      = (f + normFuel tenv v te + normFuelEntries tenv rest te + 8 * rest.length + 23) + 1 from by
+        omega]
+    walk
+    simp only [show ((1:Int).toNat) = 1 from rfl, show ((0:Int).toNat) = 0 from rfl,
+      List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD]
+    rw [show f + normFuel tenv v te + normFuelEntries tenv rest te + 8 * rest.length + 21
+      = (f + normFuelEntries tenv rest te + 8 * rest.length + 21) + normFuel tenv v te from by omega,
+      hsub v (by simp)]
+    walk
+    rw [show f + normFuel tenv v te + normFuelEntries tenv rest te + 8 * rest.length + 23
+      = (f + normFuel tenv v te + 15) + normFuelEntries tenv rest te + 8 * rest.length + 8 from by
+        omega,
+      ih _ _ (fun w hw g => hsub w (by simp [hw]) g)]
+    simp [normVEntries, mapSetAll, mapSet]
 
 theorem normDict_loop (ext : Ext) (te : TyDesc) (es : List (String × Val)) (K : Val) :
     ∀ (ks : List String) (acc : List (String × Val)) (f : Nat),
@@ -4617,6 +4777,7 @@ private theorem norm_entered (ext : Ext) (v : Val) (t : TyDesc) (f m : Nat) (r :
        .ifThen (.bin "===" (.var "k") (.str "option")) Helper.normOption ::
        .ifThen (.bin "===" (.var "k") (.str "result")) Helper.normResult ::
        .ifThen (.bin "===" (.var "k") (.str "ctors")) Helper.normCtors ::
+       .ifThen (.bin "===" (.var "k") (.str "dictObj")) Helper.normDictObj ::
        [.ret (.var "x")])) = .ok (.ret r))
     (hm : normFuel tenv v t = m + 66) :
     callDef ext (f + normFuel tenv v t) "__norm" [v, tyVal t, envVal tenv] = .ok r := by
@@ -4766,7 +4927,8 @@ private theorem calls_norm_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc
         show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
         show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
         show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
-        show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl]
+        show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+        show f + m + 55 + 2 = (f + m + 54) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl]
       walk
       rw [normV_scalar v _ (by simp [headName])]
     | array te =>
@@ -4841,6 +5003,74 @@ private theorem calls_norm_aux (ext : Ext) : ∀ (n : Nat) (v : Val) (t : TyDesc
         walk
         rw [normV.eq_def]
         simp
+      | _ => rw [hasV.eq_def] at hh; simp at hh
+    | dictObj te =>
+      simp only [headName, tyVal] at hk ⊢
+      cases v with
+      | obj es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        have hsub : ∀ w ∈ es.map (·.2), ∀ (g : Nat),
+            callDef ext (g + normFuel tenv w te) "__norm" [w, tyVal te, envVal tenv]
+              = .ok (normV tenv w te) := by
+          intro w hw g
+          refine ih w te tenv ?_ hd he (mapsOkFields_mem hmo hw) (hasEntries_mem hh hw) g
+          have := sizeOf_snd_mem hw
+          simp only [Val.obj.sizeOf_spec] at hlt
+          omega
+        have hml : m = normFuelEntries tenv es te + 8 * es.length := by
+          simp only [normFuel] at hm; omega
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          norm_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 55 + 2 = (f + m + 54) + 3 from by omega,
+          has_take _ _ _ _ _ _ (normV tenv (.obj es) (.dictObj te)) hk ?_]
+        simp only [Helper.normDictObj]
+        walk
+        rw [show f + m + 54 = (f + 46) + normFuelEntries tenv es te + 8 * es.length + 8 from by
+              omega,
+          normDictObj_loop ext te (.str "dictObj") (.obj es) es [] (f + 46) hsub]
+        walk
+        rw [normV.eq_def]
+      | dict es =>
+        rw [hasV.eq_def] at hh
+        simp only at hh
+        rw [descOk] at hd
+        rw [mapsOk] at hmo
+        simp only [Bool.and_eq_true] at hmo
+        have hsub : ∀ w ∈ es.map (·.2), ∀ (g : Nat),
+            callDef ext (g + normFuel tenv w te) "__norm" [w, tyVal te, envVal tenv]
+              = .ok (normV tenv w te) := by
+          intro w hw g
+          refine ih w te tenv ?_ hd he (mapsOkFields_mem hmo.2 hw) (hasEntries_mem hh hw) g
+          have := sizeOf_snd_mem hw
+          simp only [Val.dict.sizeOf_spec] at hlt
+          omega
+        have hml : m = normFuelEntries tenv es te + 8 * es.length := by
+          simp only [normFuel] at hm; omega
+        rw [show f + m + 64 = (f + m + 60) + 4 from by omega,
+          norm_past_binders _ _ _ _ _ hk rfl rfl, show f + m + 60 + 2 = f + m + 62 from by omega,
+          show f + m + 62 = (f + m + 59) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 59 + 2 = (f + m + 58) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 58 + 2 = (f + m + 57) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 57 + 2 = (f + m + 56) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 56 + 2 = (f + m + 55) + 3 from by omega, has_skip _ _ _ _ _ _ _ hk rfl,
+          show f + m + 55 + 2 = (f + m + 54) + 3 from by omega,
+          has_take _ _ _ _ _ _ (normV tenv (.dict es) (.dictObj te)) hk ?_]
+        simp only [Helper.normDictObj]
+        walk
+        rw [show f + m + 54 = (f + 46) + normFuelEntries tenv es te + 8 * es.length + 8 from by
+              omega,
+          normDictObj_loop ext te (.str "dictObj") (.dict es) es [] (f + 46) hsub,
+          mapSetAll_normVEntries es te hmo.1]
+        walk
+        rw [normV.eq_def]
       | _ => rw [hasV.eq_def] at hh; simp at hh
     | option te =>
       simp only [headName, tyVal] at hk ⊢
@@ -5147,6 +5377,40 @@ theorem lookupV_ofJsFields_none {es : List (String × Js.JsValue)} {n : String}
       simp only [ofJsFields, lookupV, List.find?, hk]
       exact ih h
 
+private theorem ofJsFields_any_key : ∀ (es : List (String × Js.JsValue)) (k : String),
+    (ofJsFields es).any (·.1 == k) = es.any (·.1 == k)
+  | [], _ => by simp [ofJsFields]
+  | (_, _) :: rest, k => by simp only [ofJsFields, List.any_cons, ofJsFields_any_key rest k]
+
+private theorem ofJsFields_map_set : ∀ (es : List (String × Js.JsValue)) (k : String)
+    (v : Js.JsValue),
+    ofJsFields (es.map (fun e => if e.1 == k then (k, v) else e))
+      = (ofJsFields es).map (fun e => if e.1 == k then (k, ofJs v) else e)
+  | [], _, _ => by simp [ofJsFields]
+  | (n, _) :: rest, k, v => by
+    have ih := ofJsFields_map_set rest k v
+    simp only [beq_iff_eq] at ih
+    by_cases hn : n = k <;> simp [ofJsFields, hn, ih]
+
+private theorem ofJsFields_append : ∀ (es : List (String × Js.JsValue)) (k : String)
+    (v : Js.JsValue),
+    ofJsFields (es ++ [(k, v)]) = ofJsFields es ++ [(k, ofJs v)]
+  | [], _, _ => by simp [ofJsFields]
+  | (_, _) :: rest, k, v => by simp [ofJsFields, ofJsFields_append rest k v]
+
+theorem ofJsFields_mapSet (acc : List (String × Js.JsValue)) (k : String) (v : Js.JsValue) :
+    ofJsFields (Js.Runtime.mapSet acc k v) = mapSet (ofJsFields acc) k (ofJs v) := by
+  rw [Js.Runtime.mapSet, mapSet, ofJsFields_any_key]
+  split
+  · exact ofJsFields_map_set acc k v
+  · exact ofJsFields_append acc k v
+
+theorem ofJsFields_mapSetAll : ∀ (acc es : List (String × Js.JsValue)),
+    ofJsFields (Js.Runtime.mapSetAll acc es) = mapSetAll (ofJsFields acc) (ofJsFields es)
+  | _, [] => by rw [Js.Runtime.mapSetAll, ofJsFields, mapSetAll]
+  | acc, (k, v) :: rest => by
+    rw [Js.Runtime.mapSetAll, ofJsFields, mapSetAll, ofJsFields_mapSetAll, ofJsFields_mapSet]
+
 theorem ofJsFields_keys : ∀ (es : List (String × Js.JsValue)),
     (ofJsFields es).map (·.1) = es.map (·.1) := by
   intro es
@@ -5320,27 +5584,30 @@ theorem normV_ofJs (tenv : TyEnv) (x : Js.JsValue) (t : TyDesc) :
     rw [ofJs, normV.eq_5, List.find?_eq_none.mpr (fun c _ => by
         simp only [strictEq_str_lookupV_false h c.1, Bool.false_eq_true, not_false_eq_true]),
       normTy_ctors_unmatched h, ofJs]
-  | case12 tenv v key alts ih => rw [normV, Js.normTy]; exact ih
-  | case13 tenv v up b hb ih => rw [normV, Js.normTy, hb]; exact ih
-  | case14 tenv v up hb => rw [normV, Js.normTy, hb]
-  | case15 tenv v d h1 h2 h3 h4 h5 => cases v <;> cases d <;> simp_all [ofJs, normV, Js.normTy]
-  | case16 tenv fields => rw [normVFields, Js.normFields, ofJsFields]
-  | case17 tenv fields n d rest v hlk hsz ih1 ih2 =>
+  | case12 tenv fields t ih =>
+    rw [ofJs, normV, Js.normTy, ofJs, ih, ofJsFields_mapSetAll, ofJsFields]
+  | case13 tenv entries t ih => rw [ofJs, normV, Js.normTy, ofJs, ih]
+  | case14 tenv v key alts ih => rw [normV, Js.normTy]; exact ih
+  | case15 tenv v up b hb ih => rw [normV, Js.normTy, hb]; exact ih
+  | case16 tenv v up hb => rw [normV, Js.normTy, hb]
+  | case17 tenv v d h1 h2 h3 h4 h5 => cases v <;> cases d <;> simp_all [ofJs, normV, Js.normTy]
+  | case18 tenv fields => rw [normVFields, Js.normFields, ofJsFields]
+  | case19 tenv fields n d rest v hlk hsz ih1 ih2 =>
     rw [normVFields.eq_2, ofJsFields_any, hlk, if_pos (by simp),
       lookupV_ofJsFields hlk, ih1, ih2, Js.normFields.eq_2]
     split
     · next v' hlk' => rw [hlk] at hlk'; cases hlk'; rw [ofJsFields]
     · next hlk' => rw [hlk] at hlk'; exact absurd hlk' (by simp)
-  | case18 tenv fields n d rest hlk ih =>
+  | case20 tenv fields n d rest hlk ih =>
     rw [normVFields.eq_2, ofJsFields_any, hlk, if_neg (by simp), ih, Js.normFields.eq_2]
     split
     · next v' hlk' => rw [hlk] at hlk'; exact absurd hlk' (by simp)
     · rfl
-  | case19 tenv d => rw [ofJsFields, normVEntries, Js.normEntries, ofJsFields]
-  | case20 tenv k v rest t ih1 ih2 =>
+  | case21 tenv d => rw [ofJsFields, normVEntries, Js.normEntries, ofJsFields]
+  | case22 tenv k v rest t ih1 ih2 =>
     rw [ofJsFields, normVEntries.eq_2, ih1, ih2, Js.normEntries.eq_2, ofJsFields]
-  | case21 tenv d => rw [ofJsList, normVList, Js.normList, ofJsList]
-  | case22 tenv x rest t ih1 ih2 =>
+  | case23 tenv d => rw [ofJsList, normVList, Js.normList, ofJsList]
+  | case24 tenv x rest t ih1 ih2 =>
     rw [ofJsList, normVList, ih1, ih2, Js.normList, ofJsList]
 
 /-! ### The entry check the model runs
@@ -5403,24 +5670,26 @@ theorem has_checkTy (tenv : TyEnv) (x : Js.JsValue) (t : TyDesc) :
     rw [ofJs, hasV.eq_10, List.find?_eq_none.mpr (fun c _ => by
         simp only [strictEq_str_lookupV_false h c.1, Bool.false_eq_true, not_false_eq_true]),
       checkTy_ctors_unmatched h]
-  | case17 tenv v key alts ih => rw [hasV, Js.checkTy]; exact ih
-  | case18 tenv v up b hb ih => rw [hasV, Js.checkTy, hb]; exact ih
-  | case19 tenv v up hb => rw [hasV, Js.checkTy, hb]
-  | case20 tenv x d h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 =>
+  | case17 tenv fields t ih => rw [ofJs, hasV, Js.checkTy, ih]
+  | case18 tenv entries t ih => rw [ofJs, hasV, Js.checkTy, ih]
+  | case19 tenv v key alts ih => rw [hasV, Js.checkTy]; exact ih
+  | case20 tenv v up b hb ih => rw [hasV, Js.checkTy, hb]; exact ih
+  | case21 tenv v up hb => rw [hasV, Js.checkTy, hb]
+  | case22 tenv x d h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 =>
     cases x <;> cases d <;> simp_all [ofJs, hasV, Js.checkTy]
-  | case21 tenv fields => rw [hasFields, Js.checkFields]
-  | case22 tenv fields n t rest v hlk hsz ih1 ih2 =>
+  | case23 tenv fields => rw [hasFields, Js.checkFields]
+  | case24 tenv fields n t rest v hlk hsz ih1 ih2 =>
     rw [hasFields.eq_2, ofJsFields_any, hlk, lookupV_ofJsFields hlk, ih1, ih2,
       Js.checkFields_found hlk]
     simp
-  | case23 tenv fields n t rest hlk =>
+  | case25 tenv fields n t rest hlk =>
     rw [hasFields.eq_2, ofJsFields_any, hlk, Js.checkFields_missing hlk]
     simp
-  | case24 tenv d => rw [ofJsFields, hasEntries, Js.checkEntries]
-  | case25 tenv k v rest t ih1 ih2 =>
+  | case26 tenv d => rw [ofJsFields, hasEntries, Js.checkEntries]
+  | case27 tenv k v rest t ih1 ih2 =>
     rw [ofJsFields, hasEntries, Js.checkEntries, ih1, ih2]
-  | case26 tenv d => rw [ofJsList, hasList, Js.checkList]
-  | case27 tenv x rest t ih1 ih2 =>
+  | case28 tenv d => rw [ofJsList, hasList, Js.checkList]
+  | case29 tenv x rest t ih1 ih2 =>
     rw [ofJsList, hasList, Js.checkList, ih1, ih2]
 
 theorem calls_has_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (f : Nat) :

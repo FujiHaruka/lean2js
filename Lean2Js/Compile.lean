@@ -30,6 +30,7 @@ def wfTy (p : Program) (scope : List String) : Ty → Except String Unit
   | .option t => wfTy p scope t
   | .array t => wfTy p scope t
   | .dict v => wfTy p scope v
+  | .dictObj v => wfTy p scope v
   | .result ok err => do wfTy p scope ok; wfTy p scope err
   | .fn _ _ => .error "a function type is only allowed as a parameter of a declaration"
   | .named n args =>
@@ -757,7 +758,7 @@ searched too, so `Tree (Tree Int53)` is caught the same way a field of type `Tre
 partial def mentions (p : Program) (target : String) (seen : List String) : Ty → Bool
   | .option t => mentions p target seen t
   | .array t => mentions p target seen t
-  | .dict v => mentions p target seen v
+  | .dict v | .dictObj v => mentions p target seen v
   | .result ok err => mentions p target seen ok || mentions p target seen err
   | .named n args =>
     if n == target || args.any (mentions p target seen) then true
@@ -821,6 +822,7 @@ def tyDescIn (p : Program) (st : Stack) : Nat → Ty → Except String Js.TyDesc
             .ok (.mu t.discriminator (← tyDescAlts p ((n, args) :: st) b (t.ctorsAt args)))
           else do
             .ok (.ctors t.discriminator (← tyDescAlts p st b (t.ctorsAt args)))
+  | budget, .dictObj v => do .ok (.dictObj (← tyDescIn p st budget v))
 termination_by budget ty => (budget, 0, sizeOf ty)
 
 def tyDescAlts (p : Program) (st : Stack) (budget : Nat) :

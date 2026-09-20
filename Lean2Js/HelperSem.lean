@@ -185,6 +185,12 @@ def mapSet (es : List (String × Val)) (key : String) (v : Val) : List (String �
   if es.any (·.1 == key) then es.map (fun e => if e.1 == key then (key, v) else e)
   else es ++ [(key, v)]
 
+/-- What a `Map` filled from a list of entries holds: each one set in the order the list carries them.
+A later entry under a key an earlier one already took replaces it, at the place the earlier one had. -/
+def mapSetAll : List (String × Val) → List (String × Val) → List (String × Val)
+  | acc, [] => acc
+  | acc, (k, v) :: rest => mapSetAll (mapSet acc k v) rest
+
 /-- What `Object.fromEntries` builds: the pairs written in order, a later one replacing an earlier one
 that carries the same key, which is where it parts company with a plain `List`. -/
 def fromPairs (acc : List (String × Val)) : List Val → Option (List (String × Val))
@@ -206,9 +212,12 @@ def prim (name : String) (args : List Val) : Res Val :=
   | "Math.trunc", [.num a] => .ok (.num a)
   | "Array.from", [.str s] => .ok (.arr (s.toList.map fun c => .str c.toString))
   | "Array.from", [.arr xs] => .ok (.arr xs)
+  | "Array.from", [.dict es] => .ok (.arr (es.map fun e => .arr [.str e.1, e.2]))
   | "Array.isArray", [.arr _] => .ok (.bool true)
   | "Array.isArray", [_] => .ok (.bool false)
   | "Object.keys", [.obj fields] => .ok (.arr (fields.map fun e => .str e.1))
+  | "Object.values", [.obj fields] => .ok (.arr (fields.map (·.2)))
+  | "Object.entries", [.obj fields] => .ok (.arr (fields.map fun e => .arr [.str e.1, e.2]))
   | "Object.hasOwn", [.obj fields, .str key] => .ok (.bool (fields.any (·.1 == key)))
   | "Object.fromEntries", [.arr pairs] =>
     match fromPairs [] pairs with

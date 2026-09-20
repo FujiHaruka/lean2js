@@ -168,7 +168,7 @@ mutual
 function starts with, and it can only rule out a function value where the type cannot hide one. -/
 def tyFirstOrder : Ty → Bool
   | .bool | .int53 | .uint32 | .string | .bigint | .var _ => true
-  | .option t | .array t | .dict t => tyFirstOrder t
+  | .option t | .array t | .dict t | .dictObj t => tyFirstOrder t
   | .result ok err => tyFirstOrder ok && tyFirstOrder err
   | .named _ args => tyFirstOrderList args
   | .fn _ _ => false
@@ -1501,6 +1501,9 @@ theorem tyFirstOrder_subst (sigma : List (String × Ty))
   | .dict t, h => by
     rw [Ty.subst, tyFirstOrder]; rw [tyFirstOrder] at h
     exact tyFirstOrder_subst sigma hs t h
+  | .dictObj t, h => by
+    rw [Ty.subst, tyFirstOrder]; rw [tyFirstOrder] at h
+    exact tyFirstOrder_subst sigma hs t h
   | .result a b, h => by
     rw [Ty.subst, tyFirstOrder, Bool.and_eq_true]
     rw [tyFirstOrder, Bool.and_eq_true] at h
@@ -1571,6 +1574,10 @@ theorem hasTy_noFn {p : Program} (ht : typesFirstOrder p = true) :
     cases ty
     case dict elem =>
       rw [hasTy_dict, Bool.and_eq_true] at h
+      rw [tyFirstOrder] at hfo
+      exact noFn_dict (hasEntryTys_noFn ht es elem hfo h.2)
+    case dictObj elem =>
+      rw [hasTy_dictObj, Bool.and_eq_true] at h
       rw [tyFirstOrder] at hfo
       exact noFn_dict (hasEntryTys_noFn ht es elem hfo h.2)
     all_goals (exfalso; simp [Value.hasTy.eq_def] at h)

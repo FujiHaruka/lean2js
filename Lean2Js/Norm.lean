@@ -82,6 +82,13 @@ theorem normTy_array (xs : List JsValue) (t : TyDesc) :
 theorem normTy_dict (es : List (String × JsValue)) (t : TyDesc) :
     normTy env (.dict es) (.dict t) = .dict (normEntries env es t) := by rw [normTy.eq_def]
 
+theorem normTy_dictObj_dict (es : List (String × JsValue)) (t : TyDesc) :
+    normTy env (.dict es) (.dictObj t) = .dict (normEntries env es t) := by rw [normTy.eq_def]
+
+theorem normTy_dictObj_obj (fields : List (String × JsValue)) (t : TyDesc) :
+    normTy env (.obj fields) (.dictObj t)
+      = .dict (Runtime.mapSetAll [] (normEntries env fields t)) := by rw [normTy.eq_def]
+
 theorem normTy_none {fields : List (String × JsValue)} {t : TyDesc}
     (h : lookupField fields "tag" = some (.str "none")) :
     normTy env (.obj fields) (.option t) = .obj [("tag", .str "none")] := by

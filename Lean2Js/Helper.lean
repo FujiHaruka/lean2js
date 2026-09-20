@@ -756,6 +756,16 @@ def hasDict : List Stmt := [
   .ret (.call "__all" [.call "__dvalues" [(.var "x")],
     .lam ["y"] (.call "__has" [.var "y", .index (.var "t") (.num 1), (.var "e")])])]
 
+/-- A dictionary declared to cross as a plain object. The object guard this branch sits behind has
+already refused everything that is not one, so what is left is that every value the object carries
+answers for the element type. A `Map` reaches this branch too — `typeof` calls one an object, and a
+declaration that hands one back is a value a caller may hand straight back in — so the values are read
+whichever way the argument holds them. `Object.values` is the twin of the `Object.keys` `__eq` walks. -/
+def hasDictObj : List Stmt := [
+  .ret (.call "__all" [
+    .cond (.isMap (.var "x")) (.call "__dvalues" [(.var "x")]) (.prim "Object.values" [(.var "x")]),
+    .lam ["y"] (.call "__has" [.var "y", .index (.var "t") (.num 1), (.var "e")])])]
+
 def hasOption : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
     [.ret (.call "__hasFields" [(.var "x"), .arrayLit [], (.var "e")])],
@@ -817,7 +827,8 @@ def hasRef : List Stmt := [
 earlier branch never expands it. -/
 def hasObjKinds : List Stmt :=
   .ifThen (.bin "===" (.var "k") (.str "option")) hasOption ::
-  .ifThen (.bin "===" (.var "k") (.str "result")) hasResult :: hasCtors
+  .ifThen (.bin "===" (.var "k") (.str "result")) hasResult ::
+  .ifThen (.bin "===" (.var "k") (.str "dictObj")) hasDictObj :: hasCtors
 
 /-- The two that hand the walk a `ctors` node and carry on. They come first because they answer for a
 value of any shape: what a `mu` or a `ref` accepts is whatever the node it stands for accepts, and that
@@ -871,6 +882,18 @@ def normDict : List Stmt := [
         (.var "e")])],
   .ret (.var "out")]
 
+/-- The mirror of `normDict` for a dictionary that arrives as a plain object: the same `Map`, built out
+of whichever shape the argument arrived in. Walking the entries rather than the keys is what keeps
+each value normalised once: a key carried twice is a shape neither a `Map` nor an object has, and the
+`Map` collapses it rather than the walk having to. -/
+def normDictObj : List Stmt := [
+  .const "out" (.new_ "Map" []),
+  .forOf "en" (.cond (.isMap (.var "x")) (.prim "Array.from" [(.var "x")])
+      (.prim "Object.entries" [(.var "x")])) [
+    .setKey "out" (.index (.var "en") (.num 0))
+      (.call "__norm" [.index (.var "en") (.num 1), .index (.var "t") (.num 1), (.var "e")])],
+  .ret (.var "out")]
+
 def normOption : List Stmt := [
   .ifThen (.bin "===" (.field (.var "x") "tag") (.str "none"))
     [.ret (.call "__normFields" [(.var "x"), .str "tag", .arrayLit [], (.var "e")])],
@@ -919,6 +942,7 @@ def norm : Def :=
       .ifThen (.bin "===" (.var "k") (.str "option")) normOption ::
       .ifThen (.bin "===" (.var "k") (.str "result")) normResult ::
       .ifThen (.bin "===" (.var "k") (.str "ctors")) normCtors ::
+      .ifThen (.bin "===" (.var "k") (.str "dictObj")) normDictObj ::
       [.ret (.var "x")])) }
 
 def ck : Def :=

@@ -147,6 +147,9 @@ theorem noStar_render {p : Program} (hn : TypeNamesOk p) :
   | .dict v, h => by
     have hv : wfTy p [] v = .ok () := by rw [wfTy] at h; exact h
     exact noStar_append (by decide) (noStar_render hn v hv)
+  | .dictObj v, h => by
+    have hv : wfTy p [] v = .ok () := by rw [wfTy] at h; exact h
+    exact noStar_append (by decide) (noStar_render hn v hv)
   | .result ok err, h => by
     rw [wfTy] at h
     obtain ⟨h1, h2⟩ := seq_ok h
@@ -215,6 +218,7 @@ theorem noStar_render_of_wfParamTy {p : Program} (hn : TypeNamesOk p) :
   | .result _ _, h => noStar_render hn _ (by rw [wfParamTy] at h <;> first | exact h | simp)
   | .array _, h => noStar_render hn _ (by rw [wfParamTy] at h <;> first | exact h | simp)
   | .dict _, h => noStar_render hn _ (by rw [wfParamTy] at h <;> first | exact h | simp)
+  | .dictObj _, h => noStar_render hn _ (by rw [wfParamTy] at h <;> first | exact h | simp)
 
 theorem noStar_declSigRest {p : Program} (hn : TypeNamesOk p) :
     ∀ params : List Param,
@@ -464,6 +468,7 @@ theorem okName_of_signature {p : Program} (hf : FieldNamesOk p) :
   | var _ => simp [signature] at h
   | array _ => simp [signature] at h
   | dict _ => simp [signature] at h
+  | dictObj _ => simp [signature] at h
   | fn _ _ => simp [signature] at h
 
 /-- What a pattern's bindings have to be for the arm built from them to be readable back: a name the

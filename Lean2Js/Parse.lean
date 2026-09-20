@@ -336,7 +336,7 @@ mutual
 
 def descSize : Js.TyDesc → Nat
   | .bool | .int53 | .uint32 | .string | .bigint => 1
-  | .option t | .array t | .dict t => descSize t + 1
+  | .option t | .array t | .dict t | .dictObj t => descSize t + 1
   | .result ok err => descSize ok + descSize err + 1
   | .ctors _ alts | .mu _ alts => altsSize alts + 1
   | .ref _ => 1
@@ -382,6 +382,11 @@ def parseDesc : Nat → List Char → Option (Js.TyDesc × List Char)
       let (t, cs) ← parseDesc f cs
       let cs ← expect [']'] cs
       pure (.dict t, cs)
+    | "dictObj" => do
+      let cs ← expect [',', ' '] cs
+      let (t, cs) ← parseDesc f cs
+      let cs ← expect [']'] cs
+      pure (.dictObj t, cs)
     | "result" => do
       let cs ← expect [',', ' '] cs
       let (ok, cs) ← parseDesc f cs
@@ -508,6 +513,12 @@ theorem parseDesc_append (d : Js.TyDesc) (f : Nat) (hf : descSize d ≤ f) (rest
       rw [Js.TyDesc.render, String.toList_append, String.toList_append, List.append_assoc]
       show parseDesc (f + 1) ('[' :: '"' :: 'd' :: 'i' :: 'c' :: 't' :: '"' :: ',' ::
         ' ' :: ((Js.TyDesc.render t).toList ++ (']' :: rest))) = _
+      simp [parseDesc, expect, parseStr, unescape, ih]
+    | .dictObj t =>
+      have ih := parseDesc_append t f (by rw [descSize] at hf; omega)
+      rw [Js.TyDesc.render, String.toList_append, String.toList_append, List.append_assoc]
+      show parseDesc (f + 1) ('[' :: '"' :: 'd' :: 'i' :: 'c' :: 't' :: 'O' :: 'b' :: 'j' :: '"' ::
+        ',' :: ' ' :: ((Js.TyDesc.render t).toList ++ (']' :: rest))) = _
       simp [parseDesc, expect, parseStr, unescape, ih]
     | .result ok err =>
       rw [descSize] at hf

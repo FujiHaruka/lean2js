@@ -46,6 +46,13 @@ inductive TsSat (p : Program) : Ty → Js.JsValue → Prop where
       (∀ x ∈ xs, TsSat p t x) → TsSat p (.array t) (.arr xs)
   | dict {t : Ty} {es : List (String × Js.JsValue)} :
       (∀ e ∈ es, TsSat p t e.2) → TsSat p (.dict t) (.dict es)
+  /-- A dictionary that crosses as a plain object is written as a union, because the entry takes the
+  `Map` another declaration of the same package handed back as readily as the object a consumer
+  writes. -/
+  | dictObjMap {t : Ty} {es : List (String × Js.JsValue)} :
+      (∀ e ∈ es, TsSat p t e.2) → TsSat p (.dictObj t) (.dict es)
+  | dictObjLit {t : Ty} {fs : List (String × Js.JsValue)} :
+      (∀ e ∈ fs, TsSat p t e.2) → TsSat p (.dictObj t) (.obj fs)
   | none {t : Ty} {jfs : List (String × Js.JsValue)} :
       Js.lookupField jfs "tag" = some (.str "none") → TsSat p (.option t) (.obj jfs)
   | some {t : Ty} {jfs : List (String × Js.JsValue)} {x : Js.JsValue} :
@@ -150,6 +157,11 @@ theorem hasTy_tsSat (p : Program) (hn : Decl.TypesNamesOk p) :
     rw [hasTy_dict, Bool.and_eq_true] at hv
     rw [show encodeValue (Value.dict es) = .dict (encodeFields es) from by rw [encodeValue.eq_def]]
     exact .dict (tsSatEntries_encodeFields p hn es elem hv.2)
+  | v, .dictObj elem, hv => by
+    obtain ⟨es, rfl⟩ := hasTy_dictObj_inv hv
+    rw [hasTy_dictObj, Bool.and_eq_true] at hv
+    rw [show encodeValue (Value.dict es) = .dict (encodeFields es) from by rw [encodeValue.eq_def]]
+    exact .dictObjMap (tsSatEntries_encodeFields p hn es elem hv.2)
   | v, .named n args, hv => by
     obtain ⟨ctor, fields, rfl⟩ := hasTy_named_inv hv
     obtain ⟨t, c, ht, hc, hfs⟩ := hasTy_named_fields hv
@@ -296,6 +308,17 @@ theorem checkTy_tsSat (p : Program) :
       omega
     rw [hjv] at hc ⊢
     exact .dict (checkEntries_tsSat p es elem st env b de hde hsa hes)
+  | jv, .dictObj elem, st, env, b, d, hd, hsa, hc => by
+    obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_dictObj_inv hd
+    rcases Decl.checkTy_dictObj_inv hc with ⟨es, hjv, hes⟩ | ⟨fs, hjv, hfs⟩
+    · have hsz : sizeOf es < sizeOf jv := by
+        rw [hjv]; simp only [Js.JsValue.dict.sizeOf_spec]; omega
+      rw [hjv] at hc ⊢
+      exact .dictObjMap (checkEntries_tsSat p es elem st env b de hde hsa hes)
+    · have hsz : sizeOf fs < sizeOf jv := by
+        rw [hjv]; simp only [Js.JsValue.obj.sizeOf_spec]; omega
+      rw [hjv] at hc ⊢
+      exact .dictObjLit (checkEntries_tsSat p fs elem st env b de hde hsa hfs)
   | jv, .named n args, st, env, b, d, hd, hsa, hc => by
     obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', hck, -, -, -⟩ := Decl.named_unfolds hd hsa
     rw [hck] at hc
@@ -399,6 +422,8 @@ def inRange (env : Js.TyEnv) : Js.JsValue → Js.TyDesc → Bool
       | some alt => inRangeFields env fields alt.2
       | none => true
     | _ => true
+  | .dict entries, .dictObj t => inRangeEntries env entries t
+  | .obj fields, .dictObj t => inRangeEntries env fields t
   | v, .mu key alts => inRange ((key, alts) :: env) v (.ctors key alts)
   | v, .ref up =>
     match env[up]? with
@@ -444,6 +469,12 @@ theorem inRange_array (xs : List Js.JsValue) (d : Js.TyDesc) :
 
 theorem inRange_dict (es : List (String × Js.JsValue)) (d : Js.TyDesc) :
     inRange env (.dict es) (.dict d) = inRangeEntries env es d := by rw [inRange.eq_def]
+
+theorem inRange_dictObj_dict (es : List (String × Js.JsValue)) (d : Js.TyDesc) :
+    inRange env (.dict es) (.dictObj d) = inRangeEntries env es d := by rw [inRange.eq_def]
+
+theorem inRange_dictObj_obj (fs : List (String × Js.JsValue)) (d : Js.TyDesc) :
+    inRange env (.obj fs) (.dictObj d) = inRangeEntries env fs d := by rw [inRange.eq_def]
 
 theorem inRange_some {fields : List (String × Js.JsValue)} {d : Js.TyDesc}
     (h : Js.lookupField fields "tag" = some (.str "some")) :
@@ -624,6 +655,23 @@ theorem tsSat_checkTy (p : Program) (hn : Decl.TypesNamesOk p) :
       rw [Decl.checkTy_dict]
       rw [inRange_dict] at hr
       exact tsSatEntries_checkEntries p hn es elem st env b de hde hsa hes hr
+  | jv, .dictObj elem, st, env, b, d, hd, hsa, hts, hr => by
+    obtain ⟨de, hde, rfl⟩ := Decl.tyDesc_dictObj_inv hd
+    cases hts with
+    | dictObjMap hes =>
+      rename_i es
+      have hsz : sizeOf es < sizeOf (Js.JsValue.dict es) := by
+        simp only [Js.JsValue.dict.sizeOf_spec]; omega
+      rw [Decl.checkTy_dictObj_dict]
+      rw [inRange_dictObj_dict] at hr
+      exact tsSatEntries_checkEntries p hn es elem st env b de hde hsa hes hr
+    | dictObjLit hfs =>
+      rename_i fs
+      have hsz : sizeOf fs < sizeOf (Js.JsValue.obj fs) := by
+        simp only [Js.JsValue.obj.sizeOf_spec]; omega
+      rw [Decl.checkTy_dictObj_obj]
+      rw [inRange_dictObj_obj] at hr
+      exact tsSatEntries_checkEntries p hn fs elem st env b de hde hsa hfs hr
   | jv, .named nm targs, st, env, b, d, hd, hsa, hts, hr => by
     obtain ⟨t, alts, b', stC, envC, ht, halts, hsa', hck, -, hshape, -⟩ :=
       Decl.named_unfolds hd hsa

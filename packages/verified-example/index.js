@@ -487,6 +487,9 @@ const __has = (x, t, e) => {
     }
     return (((x).tag === "error") && __hasFields(x, [["error", (t)[2]]], e));
   }
+  if ((k === "dictObj")) {
+    return __all(((x instanceof Map) ? __dvalues(x) : Object.values(x)), ((y) => __has(y, (t)[1], e)));
+  }
   const alt = __find((t)[2], ((c) => ((c)[0] === (x)[(t)[1]])));
   return (((alt).tag === "some") && __hasFields(x, ((alt).value)[1], e));
 };
@@ -551,6 +554,13 @@ const __norm = (x, t, e) => {
       return __normFields(x, (t)[1], ((alt).value)[1], e);
     }
     return x;
+  }
+  if ((k === "dictObj")) {
+    const out = new Map();
+    for (const en of ((x instanceof Map) ? Array.from(x) : Object.entries(x))) {
+      out.set((en)[0], __norm((en)[1], (t)[1], e));
+    }
+    return out;
   }
   return x;
 };

@@ -188,6 +188,7 @@ theorem Ty.beq_refl : ∀ t : Ty, Ty.beq t t = true
   | .result a b => by rw [Ty.beq]; simp [Ty.beq_refl a, Ty.beq_refl b]
   | .array t => by rw [Ty.beq]; exact Ty.beq_refl t
   | .dict t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .dictObj t => by rw [Ty.beq]; exact Ty.beq_refl t
   | .fn as a => by rw [Ty.beq]; simp [Ty.beqList_refl as, Ty.beq_refl a]
 
 theorem Ty.beqList_refl : ∀ ts : List Ty, Ty.beqList ts ts = true
@@ -238,6 +239,11 @@ theorem Ty.eq_of_beq : ∀ {a b : Ty}, Ty.beq a b = true → a = b
     have : a = b' := Ty.eq_of_beq h
     subst this; rfl
   | .dict a, b, h => by
+    cases b <;> simp only [Ty.beq] at h <;> try exact Bool.noConfusion h
+    rename_i b'
+    have : a = b' := Ty.eq_of_beq h
+    subst this; rfl
+  | .dictObj a, b, h => by
     cases b <;> simp only [Ty.beq] at h <;> try exact Bool.noConfusion h
     rename_i b'
     have : a = b' := Ty.eq_of_beq h
@@ -304,6 +310,10 @@ theorem hasTy_result_inv {p : Program} {v : Value} {ok err : Ty}
 
 theorem hasTy_dict_inv {p : Program} {v : Value} {elem : Ty}
     (h : Value.hasTy p v (.dict elem) = true) : ∃ entries, v = .dict entries := by
+  cases v <;> simp_all [Value.hasTy]
+
+theorem hasTy_dictObj_inv {p : Program} {v : Value} {elem : Ty}
+    (h : Value.hasTy p v (.dictObj elem) = true) : ∃ entries, v = .dict entries := by
   cases v <;> simp_all [Value.hasTy]
 
 theorem hasTy_fn_inv {p : Program} {v : Value} {params : List Ty} {ret : Ty}

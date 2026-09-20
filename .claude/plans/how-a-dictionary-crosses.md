@@ -93,38 +93,49 @@ helper and `decl_correct`'s new right-hand side last. Each leaves every gate gre
 | `Lean2Js/Example.lean`, `Axioms.lean` | a public function over one |
 | the documents | `reference/declarations.md`'s table of what a consumer sees, `vocabulary.md`, `javascript.md`, `README.md`, `CHANGELOG.md` |
 
-## What carrying `Ty.dictObj` costs, measured
+## What landed: the boundary reads a `dictObj`, and the proofs follow it
 
-Written and then backed out, so that the next attempt starts from the count rather than from a guess
-(2026-09-20). **The constructor itself is cheap and `Js.TyDesc.dictObj` is the whole of the expense.**
+Written and kept (2026-09-20, leg 4). `Ty.dictObj` and `Js.TyDesc.dictObj` are carried through every
+layer, the two helper branches are written and proved, and every gate is green with the numbers
+unmoved: 42955 vectors, 2090 of 10000 fuel, 120 exports, 39 theorems. Nothing reaches it yet — there is
+no `Dict.Obj` in `Prelude.lean` and no `Enc` instance — so no package and no document claims anything
+about it.
 
-`| dictObj (value : Ty)` beside `Ty.dict` costs twenty-one cases in eight files, every one of them the
-`.dict` case written again. Everything else absorbs it through a `| _ => …` fallback, so nothing else
-even has to be found:
+**The fuel arithmetic did not resist.** Putting the new guard last in each dispatch costs exactly what
+the plan hoped: `__has`'s `ctors` branch walks past one more guard, and `__norm`'s scalars do. Every
+other branch holds as it stands. That was the risk this item was priced on, and it was the cheap half.
 
-| File | The cases |
-| --- | --- |
-| `Core.lean` | `Ty.beq`, `Ty.beq_refl`, `Ty.eq_of_beq`, `Ty.size`, `Ty.render` (`Dict.Obj V`), `Ty.subst` |
-| `Js.lean` | `tsType` (`{ readonly [key: string]: V }`), `tyNames` |
-| `Cost.lean` | `tyFirstOrder`, `tyFirstOrder_subst` |
-| `Compile.lean` | `wfTy`, `tyDescIn` |
-| `Parse.lean` | `descSize`, `parseDesc`, `parseDesc_append` |
-| `JsSem.lean` | `descOk` |
-| `Sound.lean` | its own `Ty.beq_refl` and `Ty.eq_of_beq` |
-| `Renderable.lean` | `noStar_render`, `noStar_render_of_wfParamTy`, `okName_of_signature` |
+What actually cost something, none of it anticipated:
 
-**`Js.TyDesc.dictObj` is where it stops being mechanical.** The descriptor is read at run time by
-generated JavaScript, and `HelperProof.lean` proves `__has` and `__norm` answer what `hasV` and `normV`
-say — `tyVal` and `headName` gain a line each, and then the two `cases t` at the heart of those proofs
-(`HelperProof.lean:3642` and `:4760`) each want a `dictObj` branch. Those branches are written in
-explicit fuel arithmetic: `f + m + 64`, `has_past_binders`, and a chain of `has_skip` counting the
-guards the helper walks past before the one this branch is. **A new branch in the helper moves the
-arithmetic of the branches after it**, so the first thing to try is putting `dictObj` last in the
-dispatch and seeing whether every earlier branch holds as it stands.
+- **The plan's `normTy` line was not implementable.** `| .obj fields, .dictObj t => .dict (normEntries
+  env fields t)` is *false* of what the JavaScript does: the helper fills a `Map`, and a `Map` collapses
+  a key carried twice. Nothing in the model rules that out — `mapsOk` and `Js.dictKeysDistinct` say
+  nothing about an object's own keys, and adding it there would **narrow a shipped hypothesis**
+  (`Example.lean`'s `dictKeysDistinctList jargs`), which `CLAUDE.md` forbids. What is there instead is
+  `Js.Runtime.mapSetAll`, the fold itself, with `Value.entrySetAll` mirroring it across `encodeValue`.
+- **The entry accepts a `Map` as well as an object, and it has to.** `encodeValue` takes no `Ty`, so a
+  `dictObj`-typed value encodes to a `Map`; `Decl.checkTy_encodeValue` then forces `checkTy` to accept
+  one. The helper branches read either shape — `x instanceof Map ? __dvalues(x) : Object.values(x)` and
+  `Array.from(x) : Object.entries(x)` — which costs one walk, not two.
+- **So the `.d.ts` writes a union**: `ReadonlyMap<string, V> | { readonly [key: string]: V }`. `TsSat` is
+  the reading of that text, so it gained a constructor per shape. The return position narrows to the
+  object when `outTy` lands; it is a union today because that is what the entry does today.
+- **Two `HelperSem.prim` rows**: `Object.values` and `Object.entries`, plus `Array.from` of a `Map`.
+  `Object.keys` was already there and `__eq` walks it, so these are its twins rather than a new
+  assumption in kind.
+- **Arm position is load-bearing.** `Js.checkTy`, `Js.normTy`, `hasV`, `normV`, `tyDescIn` and the
+  `.induct` proofs over them are named by number (`checkTy.eq_10`, `case17`), so a new arm anywhere but
+  **last** renames a dozen proofs. Put it last.
 
-Nothing else on the proof side moved at all: `Correct.lean`, `Decl.lean`, `Eval.lean` and `Step.lean`
-built untouched, because the new constructor carries no new semantics. A full `lake build` is about 110
-seconds from warm, which is the loop this work runs in.
+## What is left of G
+
+- `outTy`, the mirror of `normTy` on the way out, and the entry wrapping its `.ret (.call (bodyName …))`
+  where the return type holds a `dictObj`. This is where `encodeAt` becomes unavoidable, and it is what
+  narrows the `.d.ts` return position from the union to the object.
+- `Dict.Obj` in `Prelude.lean`, its `Enc` instance and the `EncDeriving` line — the point at which any
+  of this becomes reachable.
+- A public function over one in `Example.lean`, its `#print axioms` line, a `/proof-audit` run, and the
+  documents: `reference/declarations.md`, `vocabulary.md`, `javascript.md`, `README.md`, `CHANGELOG.md`.
 
 ## Risks
 

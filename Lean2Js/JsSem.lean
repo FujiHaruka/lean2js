@@ -227,6 +227,14 @@ def mapSet (entries : List (String × JsValue)) (key : String) (v : JsValue) :
   if entries.any (·.1 == key) then entries.map (fun e => if e.1 == key then (key, v) else e)
   else entries ++ [(key, v)]
 
+/-- What a `Map` filled from a list of entries holds: each one set in the order the list carries them.
+This model holds an object as an association list, which can carry a key twice where a real object
+cannot; a `Map` keeps the last of such a pair, at the place the first took, and saying so here is what
+lets a dictionary rebuilt out of an object need nothing of the object's keys. -/
+def mapSetAll : List (String × JsValue) → List (String × JsValue) → List (String × JsValue)
+  | acc, [] => acc
+  | acc, (k, v) :: rest => mapSetAll (mapSet acc k v) rest
+
 def arrSlice (xs : List JsValue) (lo hi : Int) : JsResult :=
   if lo < safeMin || safeMax < lo || hi < safeMin || safeMax < hi
       || lo < 0 || hi < lo || Int.ofNat xs.length < hi then
@@ -484,6 +492,8 @@ def checkTy (env : TyEnv) : JsValue → TyDesc → Bool
       | some alt => checkFields env fields alt.2
       | none => false
     | _ => false
+  | .obj fields, .dictObj t => checkEntries env fields t
+  | .dict entries, .dictObj t => checkEntries env entries t
   | v, .mu key alts => checkTy ((key, alts) :: env) v (.ctors key alts)
   | v, .ref up =>
     match env[up]? with
@@ -530,7 +540,7 @@ mutual
 
 def descOk (depth : Nat) : TyDesc → Bool
   | .bool | .int53 | .uint32 | .string | .bigint => true
-  | .option t | .array t | .dict t => descOk depth t
+  | .option t | .array t | .dict t | .dictObj t => descOk depth t
   | .result ok err => descOk depth ok && descOk depth err
   | .ctors key alts => altsOk depth key alts
   | .mu key alts => altsOk (depth + 1) key alts
@@ -609,6 +619,8 @@ def normTy (env : TyEnv) : JsValue → TyDesc → JsValue
       | some alt => .obj ((key, .str ctor) :: normFields env fields alt.2)
       | none => .obj fields
     | _ => .obj fields
+  | .obj fields, .dictObj t => .dict (mapSetAll [] (normEntries env fields t))
+  | .dict entries, .dictObj t => .dict (normEntries env entries t)
   | v, .mu key alts => normTy ((key, alts) :: env) v (.ctors key alts)
   | v, .ref up =>
     match env[up]? with

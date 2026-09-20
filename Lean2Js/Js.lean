@@ -27,6 +27,9 @@ inductive TyDesc where
   | result (ok err : TyDesc)
   | array (t : TyDesc)
   | dict (value : TyDesc)
+  /-- A dictionary the entry meets as a plain object and hands back as one. What the body runs on is
+  the `Map` `dict` describes, so the two descriptors part at the boundary and nowhere else. -/
+  | dictObj (value : TyDesc)
   /-- `key` is what the value carries its constructor's name under; the built-in `option` and `result`
   above have no room for one because their shapes are the subset's own, and those are `tag`. -/
   | ctors (key : String) (alts : List (String × List (String × TyDesc)))
@@ -67,6 +70,7 @@ def TyDesc.render : TyDesc → String
   | .result ok err => "[\"result\", " ++ ok.render ++ ", " ++ err.render ++ "]"
   | .array t => "[\"array\", " ++ t.render ++ "]"
   | .dict v => "[\"dict\", " ++ v.render ++ "]"
+  | .dictObj v => "[\"dictObj\", " ++ v.render ++ "]"
   | .ctors key alts =>
     "[\"ctors\", \"" ++ escapeString key ++ "\", [" ++ TyDesc.renderAlts alts ++ "]]"
   | .mu key alts =>
@@ -238,6 +242,7 @@ the ones that need parentheses around them: a list of lists would otherwise prin
 told to carry on. -/
 private def parenElem : Core.Ty → String → String
   | .array _, printed => "(" ++ printed ++ ")"
+  | .dictObj _, printed => "(" ++ printed ++ ")"
   | .fn _ _, printed => "(" ++ printed ++ ")"
   | _, printed => printed
 
@@ -258,6 +263,8 @@ def tsType : Core.Ty → String
   | .result ok err => "Result<" ++ tsType ok ++ ", " ++ tsType err ++ ">"
   | .array t => "readonly " ++ parenElem t (tsType t) ++ "[]"
   | .dict v => "ReadonlyMap<string, " ++ tsType v ++ ">"
+  | .dictObj v =>
+    "ReadonlyMap<string, " ++ tsType v ++ "> | { readonly [key: string]: " ++ tsType v ++ " }"
   | .fn params ret => "(" ++ tsParams 0 params ++ ") => " ++ tsType ret
 termination_by ty => sizeOf ty
 
@@ -312,7 +319,7 @@ mutual
 /-- Every declared type named anywhere inside a type, including through the arguments of a generic one. -/
 private def tyNames : Core.Ty → List String
   | .named n args => n :: tyNamesList args
-  | .option t | .array t | .dict t => tyNames t
+  | .option t | .array t | .dict t | .dictObj t => tyNames t
   | .result a b => tyNames a ++ tyNames b
   | .fn ps r => tyNamesList ps ++ tyNames r
   | _ => []

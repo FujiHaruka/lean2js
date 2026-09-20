@@ -178,6 +178,18 @@ def keysDistinct : List String → Bool
   | [] => true
   | k :: rest => !rest.contains k && keysDistinct rest
 
+/-- What a `Map` filled from these entries holds, said on the side of the model's values. It mirrors
+`Js.Runtime.mapSetAll` across `encodeValue`, which is what the entry check needs when a dictionary
+reached it as a plain object: the object's entries are set into a `Map` one at a time, and this is the
+list that `Map` is left holding. -/
+def entrySet (acc : List (String × Value)) (k : String) (v : Value) : List (String × Value) :=
+  if acc.any (·.1 == k) then acc.map (fun e => if e.1 == k then (k, v) else e)
+  else acc ++ [(k, v)]
+
+def entrySetAll : List (String × Value) → List (String × Value) → List (String × Value)
+  | acc, [] => acc
+  | acc, (k, v) :: rest => entrySetAll (entrySet acc k v) rest
+
 mutual
 
 /-- Checks that a value matches its declared type. This is what pins the public API boundary down by
@@ -207,6 +219,8 @@ def Value.hasTy (p : Program) : Value → Ty → Bool
     | _ => false
   | .arr xs, .array elem => Value.hasElemTy p xs elem
   | .dict entries, .dict elem =>
+    keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem
+  | .dict entries, .dictObj elem =>
     keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem
   | .fn name, .fn params ret =>
     match p.find? name with
@@ -294,6 +308,13 @@ theorem hasTy_array (p : Program) (xs : List Value) (elem : Ty) :
 
 theorem hasTy_dict (p : Program) (entries : List (String × Value)) (elem : Ty) :
     Value.hasTy p (.dict entries) (.dict elem)
+      = (keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem) := by
+  rw [Value.hasTy.eq_def]
+
+/-- A dictionary declared to cross as a plain object is the same value as one that crosses as a `Map`:
+the constructor moves the boundary's shape, not the model's. -/
+theorem hasTy_dictObj (p : Program) (entries : List (String × Value)) (elem : Ty) :
+    Value.hasTy p (.dict entries) (.dictObj elem)
       = (keysDistinct (entries.map (·.1)) && Value.hasEntryTys p entries elem) := by
   rw [Value.hasTy.eq_def]
 

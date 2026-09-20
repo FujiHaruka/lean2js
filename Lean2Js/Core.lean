@@ -32,6 +32,11 @@ inductive Ty where
   | result (ok err : Ty)
   | array (t : Ty)
   | dict (value : Ty)
+  /-- The same dictionary as `dict`, declared to cross the boundary as a plain object rather than as a
+  `Map`. Inside the module the two are one thing: a value of either is a `Value.dict`, and every
+  operation over a dictionary is an operation over both. What the constructor changes is the shape the
+  entry check accepts and the shape the entry hands back. -/
+  | dictObj (value : Ty)
   | fn (params : List Ty) (ret : Ty)
   deriving Repr, Inhabited
 
@@ -52,6 +57,7 @@ def Ty.beq : Ty → Ty → Bool
   | .result a₁ a₂, .result b₁ b₂ => Ty.beq a₁ b₁ && Ty.beq a₂ b₂
   | .array a, .array b => Ty.beq a b
   | .dict a, .dict b => Ty.beq a b
+  | .dictObj a, .dictObj b => Ty.beq a b
   | .fn as a, .fn bs b => Ty.beqList as bs && Ty.beq a b
   | _, _ => false
 
@@ -74,6 +80,7 @@ theorem Ty.beq_refl : ∀ t : Ty, Ty.beq t t = true
   | .result a c => by rw [Ty.beq]; simp [Ty.beq_refl a, Ty.beq_refl c]
   | .array t => by rw [Ty.beq]; exact Ty.beq_refl t
   | .dict t => by rw [Ty.beq]; exact Ty.beq_refl t
+  | .dictObj t => by rw [Ty.beq]; exact Ty.beq_refl t
   | .fn as a => by rw [Ty.beq]; simp [Ty.beqList_refl as, Ty.beq_refl a]
 
 theorem Ty.beqList_refl : ∀ ts : List Ty, Ty.beqList ts ts = true
@@ -109,6 +116,9 @@ theorem Ty.eq_of_beq : ∀ {a b : Ty}, Ty.beq a b = true → a = b
   | .dict t, b, h => by
     cases b <;> simp only [Ty.beq] at h <;> try exact Bool.noConfusion h
     rw [Ty.eq_of_beq h]
+  | .dictObj t, b, h => by
+    cases b <;> simp only [Ty.beq] at h <;> try exact Bool.noConfusion h
+    rw [Ty.eq_of_beq h]
   | .fn as a, b, h => by
     cases b <;> simp only [Ty.beq, Bool.and_eq_true] at h <;> try exact Bool.noConfusion h
     rw [Ty.eq_of_beqList h.1, Ty.eq_of_beq h.2]
@@ -137,6 +147,7 @@ def Ty.size : Ty → Nat
   | .result ok err => 1 + Ty.size ok + Ty.size err
   | .array t => 1 + Ty.size t
   | .dict v => 1 + Ty.size v
+  | .dictObj v => 1 + Ty.size v
   | .fn params ret => 1 + Ty.sizeList params + Ty.size ret
 
 def Ty.sizeList : List Ty → Nat
@@ -159,6 +170,7 @@ def Ty.render : Ty → String
   | .result ok err => "Result " ++ Ty.render ok ++ " " ++ Ty.render err
   | .array t => "Array " ++ Ty.render t
   | .dict v => "Dict " ++ Ty.render v
+  | .dictObj v => "Dict.Obj " ++ Ty.render v
   | .fn params ret => "(" ++ Ty.renderParams params ++ ") => " ++ Ty.render ret
 
 /-- Each argument carries its own leading space rather than being joined by one, so that a name applied
@@ -189,6 +201,7 @@ def Ty.subst (sigma : List (String × Ty)) : Ty → Ty
   | .result ok err => .result (Ty.subst sigma ok) (Ty.subst sigma err)
   | .array t => .array (Ty.subst sigma t)
   | .dict v => .dict (Ty.subst sigma v)
+  | .dictObj v => .dictObj (Ty.subst sigma v)
   | .fn params ret => .fn (Ty.substArgs sigma params) (Ty.subst sigma ret)
   | ty => ty
 
