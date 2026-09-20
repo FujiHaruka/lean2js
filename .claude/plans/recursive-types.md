@@ -167,7 +167,8 @@ what overflows V8's stack.
 - **The subset's own idiom is that iteration is vocabulary, not recursion.** `.map`, `.filter` and
   `.foldl` are forms proved once, not self-calls. A catamorphism over a declared type is that same idea
   one type-former further out, and the descriptor already knows which fields come round again — `mu` and
-  `ref` are what phase 1 put there. It never reaches `Reify` or `Cost`'s acyclicity at all.
+  `ref` are what phase 1 put there. It gains one compositional arm in `Reify` and leaves the acyclicity
+  `Gather` and `Cost` are built on exactly where it is.
 - **The second keeps the sentence.** The entry check already walks a value to its bottom, so refusing
   one deeper than the type declares is `Str.repeat`, `Str.padStart` and `Arr.range`'s rule — the text
   bounds the size — applied to depth instead of to length. The ceiling has room: the example needs 1007
@@ -190,6 +191,80 @@ what overflows V8's stack.
   about. The vectors are shallow, so the differential run does not reach it. Bounding depth closes this;
   documenting it does not.
 
+### Phase 5, priced: how an author spells a fold, and what the JavaScript side costs
+
+**Measured in the tree on 2026-09-20.** The section above chose the shape. What it did not settle is how
+an author *writes* a fold, and that question decides three of the files the form touches, so it is
+settled here before anything is written.
+
+**An author cannot write the recursion and have it read.** `Reify.walk` reads a term by its head
+constant applied to arguments (`Lean2Js/Reify.lean:340`–`430`), and a structurally recursive `def` is
+elaborated to `brecOn`, not to anything with a head this walk could name. Reading one would mean a
+certificate about `brecOn`, which is a term the author never wrote. So the fold has to be a *name*, and
+a name per type, because the algebra has one function per constructor.
+
+**`deriving Enc` writes that name.** Beside `toValue` / `ofValue` / `accepts` and the two proofs, the
+handler emits the catamorphism:
+
+```lean
+def Category.fold {β : Type} (leaf : String → β) (group : String → List β → β) : Category → β
+  | .leaf n => leaf n
+  | .group n cs => group n (cs.map (Category.fold leaf group))
+```
+
+and the author writes `Category.fold (fun n => 1) (fun _ rs => 1 + Arr.sum rs) c`. Everything the
+emitter needs is already computed at the `deriving`: `EncDeriving.kindOf` (`Lean2Js/EncDeriving.lean:106`)
+classifies every field as `plain`, `selfDirect` or `selfList`, which is exactly the fold's spec, and
+`CtorShape.kinds` already carries it.
+
+**`Reify` finds it by an attribute, not by a name.** `EncDeriving` already registers a
+`ParametricAttribute` for `@[discriminator]` (`Lean2Js/EncDeriving.lean:25`), so a second one marking the
+generated fold with its type's name is the mechanism, and it costs nothing new. A suffix convention is
+the alternative and is worse: an author may write their own `Category.fold`, and reading it as the
+generated one would build a certificate about the wrong function.
+
+**`denotes_fold` is generated too, and it is the expensive half.** `Denotes.lean` has one lemma per
+syntactic form, but `Category.fold` is per type, so its lemma cannot be written once — the handler emits
+it, by induction over the constructors, with the list-walking half in a `mutual` block beside the one
+that walks the type. That is the same move `ofValue_toValue` and `toValue_hasTy` already make for a
+recursive type, one step further out.
+
+**The form carries no spec.**
+
+```
+| foldE (scrut : Expr) (typeName : String) (tyArgs : List Ty) (alts : List (Pat × Expr))
+```
+
+`Eval` reads the kinds off the program's own `TypeDef`: a field whose declared type is
+`.named typeName tyArgs` is folded, one at `.array (.named typeName tyArgs)` is mapped, anything else is
+passed through. `Core.CtorDef` already carries those types, so nothing new goes into `Core.Program` and
+the emitter and the evaluator cannot disagree about which field comes round.
+
+**Fuel does not move, and that is the whole reason for this shape.** The fold's recursion lives inside
+one `evalExpr` arm and is measured on the value, exactly as `evalMapItems` is, so a fold costs one
+expression node however deep the value is. `Cost.cost` stays syntactic and `decl_traps_at_cost` keeps
+its hypothesis.
+
+**The JavaScript side, which was not priced before.** `Js.Expr` (`Lean2Js/Js.lean:140`–`165`) has
+`objLit`, `arrowCall` and the six traversal forms, and no spread, no index form and no named function
+expression — so a fold cannot be an inline arrow, because an arrow has no name to recurse by. Two ways
+out:
+
+| | What it costs |
+| --- | --- |
+| **A `foldJs` form beside `mapJs`**, rendering `__fold(scrut, "tag", { leaf: (x0) => …, group: (x0, x1) => … }, spec)` | one `Js.Expr` form, one helper, and one row in `HelperSem.prim` for applying an arrow read out of an object — the table is the trusted base, so that row is a real addition to it |
+| **A module-level function per fold site** | no new `Js.Expr` form, but `compileExpr` returns an expression and would have to thread a list of generated functions out through `compileProgram` — a change to the compiler's shape rather than to its vocabulary |
+
+The first. The second buys a smaller trusted base at the price of rewriting the one signature every
+other arm is written against.
+
+**The biggest single item is `calls_fold`.** `HelperProof.calls_has_aux` is 370 lines and needed an
+induction on the descriptor's rank beside the one on the value; `calls_fold` needs an induction on the
+value beside one on the constructor list. Budget it as the phase, not as a step in it.
+
+**Do the stack bound first.** It is independent of all of this, it is measured (see Risks), and it is a
+sentence missing from `docs/guarantees.md` today whether or not phase 5 is ever started.
+
 ## Phases
 
 Each phase leaves every gate green and the artifact regenerated.
@@ -208,10 +283,11 @@ Each phase leaves every gate green and the artifact regenerated.
    `Lean2Js/Example.lean`, its theorems, its `#print axioms` lines, and the sentences in `README.md`,
    `docs/guarantees.md`, `CHANGELOG.md` and `templates/verified-package/reference/` that say a type may
    not name itself.
-5. **Walking one.** Not started. The fold in the vocabulary first — it touches neither `Cost` nor
-   `Reify` — and a `def` that calls itself only where that is not enough, at a depth the entry check
-   bounds. What decides either is the one fact above: a bounded depth is what keeps `Cost.cost`
-   syntactic and what keeps V8's stack out of the picture.
+5. **Walking one.** Not started, and **priced** — see "Phase 5, priced" above for the spelling, the
+   `Core.Expr` form, the JavaScript side and where the cost sits. The fold in the vocabulary first — it
+   leaves `Cost` where it is — and a `def` that calls itself only where that is not enough, at a depth
+   the entry check bounds. What decides either is the one fact above: a bounded depth is what keeps
+   `Cost.cost` syntactic and what keeps V8's stack out of the picture.
 
 ## Files
 
@@ -241,12 +317,27 @@ Each phase leaves every gate green and the artifact regenerated.
 - **`HelperProof` is 5000 lines and `calls_has_aux` alone is 370.** The parameter was mechanical; the two
   new branches were not, and `calls_has_aux` had to gain an induction on the descriptor's rank beside the
   one on the value.
-- **Stack depth in the generated JS — outstanding, and it is phases 1 to 4's, not phase 5's.** `__has`
-  has recursed as deep as the value since phase 1, and V8 gives up around a few tens of thousands of
-  frames, where `decl_refuses` says an argument `eval` would not take becomes a `typeError` before the
-  body runs. `docs/guarantees.md` names no such bound today — `grep -i stack` finds nothing in `docs/`.
-  It belongs there, measured rather than estimated, whether or not phase 5 is ever started; a declared
-  depth on the type would retire it instead.
+- **Stack depth in the generated JS — measured, and it is phases 1 to 4's, not phase 5's.** `__has` has
+  recursed as deep as the value since phase 1, where `decl_refuses` says an argument `eval` would not
+  take becomes a `typeError` before the body runs. The estimate above ("a few tens of thousands of
+  frames") was wrong by more than an order of magnitude, for two reasons read off the `RangeError`'s own
+  stack: **one level of the value costs six frames**, repeating
+  `__has` → `__has` → `__hasFields` → `__has` → `__all` → the `__all` callback, and those frames are
+  wider than a trivial one — a plain self-calling arrow gets 10346 frames on this Node, where the walk
+  gets about 4600. Measured on Node v24.19.0 at its default stack size, calling `categoryName` on a
+  `Category` nested with one child per level:
+
+  | | Deepest accepted |
+  | --- | --- |
+  | a cold process, one call | between 770 and 775 |
+  | the same process after ~20 calls | about 1407 |
+
+  It is V8's number rather than this compiler's — it moves with `--stack-size`, with the Node version
+  and with how far V8 has optimised the frames, which is why the warm figure is nearly double the cold
+  one. What comes out is a `RangeError: Maximum call stack size exceeded`, which is **not** one of the
+  four trap codes `decl_traps` speaks about, so it is outside every direction the theorems state. A
+  declared depth on the type would retire it; until then it belongs in `docs/guarantees.md`, which is
+  where every reservation goes.
 - **Vector count.** A recursive type multiplies the tuples; `edgeLimit` may need to come down for the
   example so that emission stays in seconds.
 
