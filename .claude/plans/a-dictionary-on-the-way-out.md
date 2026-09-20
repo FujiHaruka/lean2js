@@ -124,6 +124,45 @@ The twin structure is the one that fits the machinery that is already there, and
 `compileExpr`'s receiver match is the only place it touches the compiler proper. **Write that down as
 settled, or settle it otherwise, before any of it is written.**
 
+## What step 3 turned out to cost: the entry is not only the consumer's door
+
+**Measured in the tree on 2026-09-20, after `__out` and `Js.Expr.out` landed.** The plan above says the
+entry's wrapper and `decl_correct` land in one commit, and prices that as `compileDecl` plus a
+restatement. That is wrong, and the reason is a second caller of the entry.
+
+- **A call through a function-typed binding goes to the entry**, by the declaration's own name:
+  `Compile.lean:436`–`444` compiles it to `.call fn args`, not to `bodyName fn`. Only a call whose
+  callee the compiler read off the program goes to the body (`:456`).
+- **`Correct.lean:3893` (`DeclAgrees`) is the statement that call rests on**, and it says the entry
+  returns `encodeValue v`. Wrap the entry and it returns `encodeAt p d.ret v` instead, so a declaration
+  returning a `Dict.Obj` would hand a plain object to a body that is holding a `Map`. Its one use site
+  is `Correct.lean:6169`.
+- **Nothing at that use site knows the callee's return type is safe.** `AgreesAt` (`Correct.lean:3915`)
+  quantifies over `ctx` with no well-formedness hypothesis at all, so "this `.fn` type came from a
+  `wfParamTy`-validated parameter" is not available there. `hasTy` ties `ret` to `d.ret` and says
+  nothing else.
+
+**Nothing in `packages/verified-example` moves under any of the three answers below**: `Example.lean`
+declares no function-typed parameter, and the generated `.d.ts` has none.
+
+One more reading that is worth having before choosing: **a callback's result is unchecked today.**
+`paramChecks` (`Compile.lean:869`) skips a `.fn` parameter, and the call site above wraps nothing
+around the result, so what a consumer's function hands back flows into the module unread.
+
+### The three answers, priced
+
+| | What it does | What it costs | What it gives up |
+| --- | --- | --- | --- |
+| **A — restrict the callback** | a `.fn` parameter's result may not reach a `dictObj`; `wfParamTy` refuses it | a new hypothesis threaded through `AgreesAt` and every case of `fragment_correct_succ` — thousands of lines, because `ctx` carries no well-formedness today | an author cannot hand back a `Dict.Obj` from a function passed to another function |
+| **B — three names** | the walk moves to a third, exported function; the entry keeps its shape and a `fnRef` compiles to the entry's own name | a naming scheme beside `bodyName`, and `encodeValue (.fn g)` has to name the entry rather than the export | a consumer who passes an export back in as a callback passes the walking wrapper, which is not what the model then says the value is |
+| **C — check the way back in** | the call through a function value wraps its result: `.check retDesc (.call fn args)` | `compileExpr`'s one case, `Cost.lean`'s accounting for the extra check, the composition lemma `normTy (outTy (encodeValue v)) d = encodeValue v`, and the use site | nothing an author can write; within what the theorems cover the behaviour is unchanged |
+
+**C is the one that restricts nothing and closes the unchecked-result hole at the same time**, and the
+arm it needs already exists: `normTy` at a `dictObj` turns an object back into a `Map`
+(`JsSem.lean`, the `.obj fields, .dictObj t` arm landed at `2c7aee5`). It is also the most work.
+**Settle this before any of step 3 is written** — it decides what `DeclAgrees` says, and every line of
+the entry's wrapper is downstream of that.
+
 ## Files
 
 | File | What moves |
