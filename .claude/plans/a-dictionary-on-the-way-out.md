@@ -57,11 +57,22 @@ shape is wrong.
 `tyDescIn p [] b d.ret` holds no `dictObj`, nothing is emitted and the entry is byte-for-byte what it is
 today — which is what keeps `packages/verified-example` from moving until something uses the feature.
 
-**Order.** `encodeAt` and `encodeAt_eq_encodeValue` first, and the restatement of `decl_correct` through
-it, with no `__out` yet and no behaviour change — that alone should leave every gate green and
-`packages/verified-example` unmoved. Then `Js.outTy` and the `__out` helper with its agreement. Then the
-entry's wrapper. Then the `.d.ts` narrowing, which is where the shipped `TsSat` theorems move and where
-`/proof-audit` runs.
+**Order.** `encodeAt`, `noDictObj` and `encodeAt_eq_encodeValue` first: pure additions, nothing
+restated, every gate green. **`decl_correct` cannot be restated yet** — until the entry emits the
+wrapper, the generated function really does hand back `encodeValue v`, so `= encodeAt p d.ret v` would
+only be provable under a hypothesis saying the return type holds no `dictObj`, and that hypothesis is a
+narrowing. `decl_correct` and the entry's wrapper land in the same commit. Then `Js.outTy` and the
+`__out` helper with its agreement, then the `.d.ts` narrowing, which is where the shipped `TsSat`
+theorems move and where `/proof-audit` runs.
+
+**What the restatement has to survive, checked in the tree.** `Decl.decl_correct` is pinned in
+`Axioms.lean:172`, and seven theorems in `Example.lean` — `add_correct` at `:830` and its siblings —
+state `Js.callFunctionAt m g' "add" jargs = .ok (encodeValue v)` in their own published text. Those are
+the claims `proof-manifest.json` carries, so **their text must not move**: each is rewritten through
+`encodeAt_eq_encodeValue` and prints exactly as it prints today. Because `Example.lean` has recursive
+types, the predicate cannot be structural on `Ty` alone — a `.named` type's fields come from the
+program — so it is two: `Ty.noDictObj` structurally, and `Program.noDictObj` sweeping every declared
+type's fields and every declaration's parameters and return.
 
 ## What it costs, measured against `__norm`
 
