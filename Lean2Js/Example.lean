@@ -1070,9 +1070,9 @@ theorem helpers_ship_as_modelled (ext : HelperSem.Ext) (name : String) (args : L
   HelperSem.helper_agrees ext name args r hok h
 
 omit [Discriminators] in
-/-- Everything the entry check lets through is a value the published `.d.ts` type admits. The two are
-not the same set: the check reads a number's range, which a TypeScript type cannot say, so a call the
-`.d.ts` accepts can still be refused at the boundary. -/
+/-- Everything the entry check lets through is a value admitted by the type the published `.d.ts` prints
+for that parameter. The two are not the same set: the check reads a number's range, which a TypeScript
+type cannot say, so a call the `.d.ts` accepts can still be refused at the boundary. -/
 theorem entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)
     (hd : Compile.tyDesc program b ty = .ok d) (hc : Js.checkTy [] jv d = true) :
     Dts.TsSat program ty jv :=
@@ -1101,13 +1101,25 @@ theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram prog
   Dts.hasTy_tsSatOut program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
 
 omit [Discriminators] in
-/-- A value one call hands back is a value the next call takes. The `.d.ts` prints a narrower type for a
-return than for a parameter, so the two directions only meet if the narrower reading implies the wider
-one — which is what this says, and what lets `encoded_values_fit_dts` be handed to
-`dts_fits_entry_check`. -/
+/-- The type the `.d.ts` prints for a return is one the type it prints for a parameter admits, so a call
+chained onto another type-checks. That is a statement about the two printed types and nothing else; that
+the value is *accepted* at run time is `returned_values_pass_the_entry_check`. This is what lets
+`encoded_values_fit_dts` be handed to `dts_fits_entry_check`. -/
 theorem returned_values_fit_parameter_types (ty : Ty) (jv : Js.JsValue)
     (h : Dts.TsSatOut program ty jv) : Dts.TsSat program ty jv :=
   h.toTsSat
+
+/-- And it is accepted, not merely admitted by the type: what one call hands back passes the next call's
+entry check, with none of the range caveat `dts_fits_entry_check` carries. The range is what
+`Value.hasTy` already says about the value the first call returned, so two exported functions compose
+without a check of the consumer's own. -/
+theorem returned_values_pass_the_entry_check (m : Js.Module)
+    (hm : Compile.compileProgram program = .ok m) (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc)
+    (hd : Compile.tyDesc program b ty = .ok d) (hv : Value.hasTy program v ty = true) :
+    Js.checkTy [] (encodeAt program ty v) d = true :=
+  have hn := Decl.typesNamesOk_of_compileProgram hm
+  Decl.checkTy_encodeAt program hn ty [] [] b d v hd .nil rfl
+    (Decl.descOk_tyDesc (st := []) hn b ty d hd) hv
 
 omit [Discriminators] in
 /-- The small-step machine, given enough steps, answers exactly as `eval` does every call whose arguments

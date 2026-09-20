@@ -8,6 +8,8 @@ import {
   divide,
   limitsFor,
   mostRecentFirst,
+  objCatalogueSize,
+  objRepriced,
   roleRank,
   scaleFee,
   ship,
@@ -110,6 +112,17 @@ describe("where the two do not line up", () => {
     expect(limits.get("daily")).toBe(1000);
     expect(push).toBeTypeOf("function");
     expect(set).toBeTypeOf("function");
+  });
+
+  it("a dictionary handed back is the plain object alone, and goes straight back in", () => {
+    // The return is printed at the object alone, so it lands in an object-typed binding with no
+    // narrowing of the consumer's own; the parameter is printed at the union, so it goes back in.
+    const book: { readonly [key: string]: number } = objRepriced({ a: 1 }, "b", 2);
+    // @ts-expect-error the union a parameter takes is what a `ReadonlyMap` binding needs, not this
+    const asMap: ReadonlyMap<string, number> = book;
+    expect(book.b).toBe(2);
+    expect(objCatalogueSize(book)).toBe(2);
+    expect(asMap).toBeTypeOf("object");
   });
 });
 

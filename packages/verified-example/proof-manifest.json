@@ -21,7 +21,7 @@
     },
     {
       "file": "README.md",
-      "sha256": "eb02005f478e953e6d98830a614d8b3aff90fd8d1c9d1d10dc292a5240a07059"
+      "sha256": "10a3b7d71890be6da959a358e01499e9d5d2ec4a4a18edb97a398ddce0caebb2"
     },
     {
       "file": "package.json",
@@ -896,7 +896,7 @@
     {
       "name": "entry_check_fits_dts",
       "statement": "entry_check_fits_dts (jv : Js.JsValue) (ty : Ty) (b : Nat) (d : Js.TyDesc)\n  (hd : Compile.tyDesc program b ty = Except.ok d) (hc : Js.checkTy [] jv d = true) : Dts.TsSat program ty jv",
-      "doc": "Everything the entry check lets through is a value the published `.d.ts` type admits. The two are\nnot the same set: the check reads a number's range, which a TypeScript type cannot say, so a call the\n`.d.ts` accepts can still be refused at the boundary."
+      "doc": "Everything the entry check lets through is a value admitted by the type the published `.d.ts` prints\nfor that parameter. The two are not the same set: the check reads a number's range, which a TypeScript\ntype cannot say, so a call the `.d.ts` accepts can still be refused at the boundary."
     },
     {
       "name": "dts_fits_entry_check",
@@ -911,7 +911,12 @@
     {
       "name": "returned_values_fit_parameter_types",
       "statement": "returned_values_fit_parameter_types (ty : Ty) (jv : Js.JsValue) (h : Dts.TsSatOut program ty jv) :\n  Dts.TsSat program ty jv",
-      "doc": "A value one call hands back is a value the next call takes. The `.d.ts` prints a narrower type for a\nreturn than for a parameter, so the two directions only meet if the narrower reading implies the wider\none — which is what this says, and what lets `encoded_values_fit_dts` be handed to\n`dts_fits_entry_check`."
+      "doc": "The type the `.d.ts` prints for a return is one the type it prints for a parameter admits, so a call\nchained onto another type-checks. That is a statement about the two printed types and nothing else; that\nthe value is *accepted* at run time is `returned_values_pass_the_entry_check`. This is what lets\n`encoded_values_fit_dts` be handed to `dts_fits_entry_check`."
+    },
+    {
+      "name": "returned_values_pass_the_entry_check",
+      "statement": "returned_values_pass_the_entry_check [Discriminators] (m : Js.Module)\n  (hm : Compile.compileProgram program = Except.ok m) (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc)\n  (hd : Compile.tyDesc program b ty = Except.ok d) (hv : Value.hasTy program v ty = true) :\n  Js.checkTy [] (encodeAt program ty v) d = true",
+      "doc": "And it is accepted, not merely admitted by the type: what one call hands back passes the next call's\nentry check, with none of the range caveat `dts_fits_entry_check` carries. The range is what\n`Value.hasTy` already says about the value the first call returned, so two exported functions compose\nwithout a check of the consumer's own."
     },
     {
       "name": "steps_agree",

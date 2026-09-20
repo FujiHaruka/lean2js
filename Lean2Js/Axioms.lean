@@ -225,6 +225,10 @@ one by one would drift the moment a declaration is added.
 #guard_msgs in
 #print axioms Lean2Js.Example.returned_values_fit_parameter_types
 
+/-- info: 'Lean2Js.Example.returned_values_pass_the_entry_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Lean2Js.Example.returned_values_pass_the_entry_check
+
 /-- info: 'Lean2Js.Dts.hasTy_tsSat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Lean2Js.Dts.hasTy_tsSat

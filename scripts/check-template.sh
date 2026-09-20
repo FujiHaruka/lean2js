@@ -285,6 +285,58 @@ grep -q 'readonly kind: "free"' keyed/index.d.ts \
   || { echo "the key an author wrote did not reach the generated type"; exit 1; }
 grep -q '"kind"' keyed/index.js || { echo "the key an author wrote did not reach the module"; exit 1; }
 
+# A dictionary that crosses as a plain object, inside a declared type and on its own. The `.d.ts` prints
+# two types for it and the difference is the whole point: a return is the object alone, a parameter and a
+# field are the union. The field is the case the example package cannot reach — putting one there would
+# move seven published claims — so it is exercised here, where the vectors run on Node like any other.
+cat > MyLogic.lean <<'LEAN'
+import Lean2Js
+
+namespace MyLogic
+
+open Lean2Js Lean2Js.Core Lean2Js.Enc
+
+structure Book where
+  Book ::
+  region : String
+  prices : Dict.Obj Int
+  deriving Enc
+
+@[ship] def markUp (book : Book) (sku : String) (amount : Int) : Book :=
+  Book.Book book.region (book.prices.set sku amount)
+
+@[ship] def pricesOf (book : Book) : Dict.Obj Int := book.prices
+
+@[ship] def priceIn (book : Book) (sku : String) : Int := book.prices.getD sku 0
+
+@[ship] def pricesIf (book : Book) (want : Bool) : Option (Dict.Obj Int) :=
+  if want then some book.prices else none
+
+@[ship] def pricesTwice (book : Book) : List (Dict.Obj Int) := [book.prices, book.prices]
+
+def manifest : Manifest := { package := "@example/my-logic", version := "0.1.0" }
+
+ship_package
+
+end MyLogic
+LEAN
+lake exe lean2js MyLogic --out dictobj
+grep -q 'readonly prices: ReadonlyMap<string, number> | { readonly \[key: string\]: number }' \
+  dictobj/index.d.ts \
+  || { echo "a Dict.Obj field did not keep the union one interface has to answer for"; exit 1; }
+grep -q 'export declare function pricesOf(book: Book): { readonly \[key: string\]: number };' \
+  dictobj/index.d.ts \
+  || { echo "a Dict.Obj return was not printed at the object alone"; exit 1; }
+grep -q 'export declare function markUp(book: Book, sku: string, amount: number): Book;' \
+  dictobj/index.d.ts \
+  || { echo "a declared type carrying a Dict.Obj did not print by name"; exit 1; }
+grep -q 'export declare function pricesIf(book: Book, want: boolean): Option<{ readonly \[key: string\]: number }>;' \
+  dictobj/index.d.ts \
+  || { echo "a Dict.Obj inside an Option return did not narrow"; exit 1; }
+grep -q 'export declare function pricesTwice(book: Book): readonly ({ readonly \[key: string\]: number })\[\];' \
+  dictobj/index.d.ts \
+  || { echo "a Dict.Obj inside a List return did not narrow"; exit 1; }
+
 # The key has to stay free as a field name, whatever the author keyed the type by.
 cat > MyLogic.lean <<'LEAN'
 import Lean2Js
