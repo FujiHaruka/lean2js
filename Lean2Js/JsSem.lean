@@ -589,6 +589,79 @@ theorem envOk_getElem : ∀ {env : TyEnv} {k : Nat} {b : String × TyAlts}, envO
     simp only [List.getElem?_cons_succ] at hb
     simpa using envOk_getElem h.2 hb
 
+
+/-! ### Descriptors that reach no dictionary crossing as an object
+
+A declaration whose return descriptor reaches no `dictObj` leaves its result exactly as the body built
+it, so its entry emits no walk out at all and the package is what it was before a dictionary could
+cross as a plain object. A `ref` says nothing on its own — it resolves against the environment — so
+`envNoDictObj` is the other half of the reading. -/
+
+mutual
+
+def descNoDictObj : TyDesc → Bool
+  | .bool | .int53 | .uint32 | .string | .bigint | .ref _ => true
+  | .option t | .array t | .dict t => descNoDictObj t
+  | .result ok err => descNoDictObj ok && descNoDictObj err
+  | .dictObj _ => false
+  | .ctors _ alts | .mu _ alts => altsNoDictObj alts
+termination_by d => sizeOf d
+
+def fieldsNoDictObj : List (String × TyDesc) → Bool
+  | [] => true
+  | (_, d) :: rest => descNoDictObj d && fieldsNoDictObj rest
+termination_by fs => sizeOf fs
+
+def altsNoDictObj : List (String × List (String × TyDesc)) → Bool
+  | [] => true
+  | (_, fields) :: rest => fieldsNoDictObj fields && altsNoDictObj rest
+termination_by alts => sizeOf alts
+
+end
+
+def envNoDictObj : TyEnv → Bool
+  | [] => true
+  | (_, alts) :: rest => altsNoDictObj alts && envNoDictObj rest
+
+theorem envNoDictObj_drop : ∀ {env : TyEnv} (k : Nat),
+    envNoDictObj env = true → envNoDictObj (env.drop k) = true
+  | _, 0, h => h
+  | [], _ + 1, h => h
+  | (_, _) :: rest, k + 1, h => by
+    rw [envNoDictObj, Bool.and_eq_true] at h
+    exact envNoDictObj_drop k h.2
+
+theorem envNoDictObj_getElem : ∀ {env : TyEnv} {k : Nat} {b : String × TyAlts},
+    envNoDictObj env = true → env[k]? = some b → altsNoDictObj b.2 = true
+  | [], k, b, _, hb => by simp at hb
+  | (key, alts) :: rest, 0, b, h, hb => by
+    rw [envNoDictObj, Bool.and_eq_true] at h
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hb
+    subst hb
+    exact h.1
+  | (_, _) :: rest, k + 1, b, h, hb => by
+    rw [envNoDictObj, Bool.and_eq_true] at h
+    simp only [List.getElem?_cons_succ] at hb
+    exact envNoDictObj_getElem h.2 hb
+
+theorem altsNoDictObj_find {alts : List (String × List (String × TyDesc))} {ctor : String}
+    {alt : String × List (String × TyDesc)}
+    (h : altsNoDictObj alts = true) (hf : alts.find? (·.1 == ctor) = some alt) :
+    fieldsNoDictObj alt.2 = true := by
+  induction alts with
+  | nil => simp [List.find?] at hf
+  | cons a rest ih =>
+    obtain ⟨n, fs⟩ := a
+    rw [altsNoDictObj, Bool.and_eq_true] at h
+    by_cases hk : ((n, fs).1 == ctor) = true
+    · rw [List.find?, hk] at hf
+      simp only [Option.some.injEq] at hf
+      subst hf
+      exact h.1
+    · simp only [Bool.not_eq_true] at hk
+      rw [List.find?, hk] at hf
+      exact ih h.2 hf
+
 /-! ### The canonical shape
 
 `checkTy` reads a constructor's fields by name, so a value it accepts may carry them in any order and may
@@ -648,6 +721,71 @@ def normFields (env : TyEnv) (fields : List (String × JsValue)) :
       have := sizeOf_lookupField fields n h
       (n, normTy env v t) :: normFields env fields rest
     | none => normFields env fields rest
+termination_by fs => (sizeOf (JsValue.obj fields), 0, sizeOf fs)
+
+end
+
+/-! ### The shape a result leaves in
+
+A dictionary is a `Map` everywhere inside the module, whatever its declared type says it crosses the
+boundary as. `outTy` is what the entry reads its result through: the walk `normTy` does, differing at
+exactly one node — a `dictObj` becomes the plain object a consumer can stringify, where `normTy` on the
+way in made the `Map` the body runs on.
+
+Everywhere else the two agree, so a return type reaching no `dictObj` is handed back untouched and the
+entry emits no wrapper at all. -/
+
+mutual
+
+def outTy (env : TyEnv) : JsValue → TyDesc → JsValue
+  | .arr xs, .array t => .arr (outList env xs t)
+  | .dict entries, .dict t => .dict (outEntries env entries t)
+  | .obj fields, .option t =>
+    match lookupField fields "tag" with
+    | some (.str "none") => .obj [("tag", .str "none")]
+    | some (.str "some") => .obj (("tag", .str "some") :: outFields env fields [("value", t)])
+    | _ => .obj fields
+  | .obj fields, .result ok err =>
+    match lookupField fields "tag" with
+    | some (.str "ok") => .obj (("tag", .str "ok") :: outFields env fields [("value", ok)])
+    | some (.str "error") =>
+      .obj (("tag", .str "error") :: outFields env fields [("error", err)])
+    | _ => .obj fields
+  | .obj fields, .ctors key alts =>
+    match lookupField fields key with
+    | some (.str ctor) =>
+      match alts.find? (·.1 == ctor) with
+      | some alt => .obj ((key, .str ctor) :: outFields env fields alt.2)
+      | none => .obj fields
+    | _ => .obj fields
+  | .dict entries, .dictObj t => .obj (outEntries env entries t)
+  | v, .mu key alts => outTy ((key, alts) :: env) v (.ctors key alts)
+  | v, .ref up =>
+    match env[up]? with
+    | some b => outTy (env.drop up) v (.ctors b.1 b.2)
+    | none => v
+  | v, _ => v
+termination_by v d => (sizeOf v, descRank d, 0)
+
+def outList (env : TyEnv) : List JsValue → TyDesc → List JsValue
+  | [], _ => []
+  | x :: rest, t => outTy env x t :: outList env rest t
+termination_by xs => (sizeOf xs, 1, 0)
+
+def outEntries (env : TyEnv) : List (String × JsValue) → TyDesc → List (String × JsValue)
+  | [], _ => []
+  | (k, v) :: rest, t => (k, outTy env v t) :: outEntries env rest t
+termination_by es => (sizeOf es, 1, 0)
+
+def outFields (env : TyEnv) (fields : List (String × JsValue)) :
+    List (String × TyDesc) → List (String × JsValue)
+  | [] => []
+  | (n, t) :: rest =>
+    match h : lookupField fields n with
+    | some v =>
+      have := sizeOf_lookupField fields n h
+      (n, outTy env v t) :: outFields env fields rest
+    | none => outFields env fields rest
 termination_by fs => (sizeOf (JsValue.obj fields), 0, sizeOf fs)
 
 end
