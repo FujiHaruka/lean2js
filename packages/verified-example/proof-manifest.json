@@ -21,7 +21,7 @@
     },
     {
       "file": "README.md",
-      "sha256": "dabe6a1c896fdd4cf8e069742c2cfd5ed39ddca3592dfa1b49478f775932ad16"
+      "sha256": "e7306d8551cc2addf2b3e33af738a65fb133a05378612e647bfefb5b87511887"
     },
     {
       "file": "package.json",
@@ -927,7 +927,7 @@
     {
       "name": "returned_values_read_back_unchanged",
       "statement": "returned_values_read_back_unchanged [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)\n  (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d)\n  (hv : Value.hasTy program v ty = true) : Js.normTy [] (encodeAt program ty v) d = encodeValue v",
-      "doc": "The other half of composing two calls: the second entry does not merely accept what the first handed\nback, it reads it back as the value the first one returned. Together with\n`returned_values_pass_the_entry_check` that is the whole of what a chained call rests on — a dictionary\nwalked out to a plain object is rebuilt as the `Map` the body works in, and nothing else moves."
+      "doc": "The other half of composing two calls: the second entry does not merely accept what the first handed\nback, it reads it back as the value the first one returned. Together with\n`returned_values_pass_the_entry_check` that is the whole of what the crossing costs — what\n`decl_correct` says the first call hands back is accepted, and rebuilt as the value it encodes. A\ndictionary walked out to a plain object becomes the `Map` the body works in again, and nothing else\nmoves."
     },
     {
       "name": "steps_agree",

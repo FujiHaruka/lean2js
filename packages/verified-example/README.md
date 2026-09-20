@@ -641,8 +641,10 @@ theorem returned_values_pass_the_entry_check [Discriminators] (m : Js.Module)
 
 The other half of composing two calls: the second entry does not merely accept what the first handed
 back, it reads it back as the value the first one returned. Together with
-`returned_values_pass_the_entry_check` that is the whole of what a chained call rests on — a dictionary
-walked out to a plain object is rebuilt as the `Map` the body works in, and nothing else moves.
+`returned_values_pass_the_entry_check` that is the whole of what the crossing costs — what
+`decl_correct` says the first call hands back is accepted, and rebuilt as the value it encodes. A
+dictionary walked out to a plain object becomes the `Map` the body works in again, and nothing else
+moves.
 
 ```lean
 theorem returned_values_read_back_unchanged [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)

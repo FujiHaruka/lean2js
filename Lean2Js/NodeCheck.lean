@@ -83,14 +83,16 @@ function reshape(shape, value) {
 // `Object.is` rather than `===`, which cannot see a `-0` the generated code failed to normalise.
 function agrees(actual, expected) {
   if (Object.is(actual, expected)) return true;
-  if (Array.isArray(actual) && Array.isArray(expected)) {
+  // Both or neither, for each of the three shapes an object can take. An empty array, an empty Map and
+  // an empty object all have the same `Object.keys`, and `[1]` has the same keys as `{0: 1}`, so falling
+  // through to the field comparison below would read them as the same value — and which of the three a
+  // value comes back as is exactly what the declared type decides.
+  if (Array.isArray(actual) !== Array.isArray(expected)) return false;
+  if (actual instanceof Map !== expected instanceof Map) return false;
+  if (Array.isArray(actual)) {
     return actual.length === expected.length && actual.every((x, i) => agrees(x, expected[i]));
   }
-  if (actual instanceof Map || expected instanceof Map) {
-    // Both or neither. An empty Map and an empty object have the same `Object.keys`, so falling through
-    // to the field comparison below would read the two as the same value — and which of them a
-    // dictionary comes back as is exactly what the declared type decides.
-    if (!(actual instanceof Map && expected instanceof Map)) return false;
+  if (actual instanceof Map) {
     return (
       actual.size === expected.size &&
       [...actual].every(([key, value]) => expected.has(key) && agrees(value, expected.get(key)))
