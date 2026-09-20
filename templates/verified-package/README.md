@@ -33,7 +33,7 @@ axiom other than `propext` / `Classical.choice` / `Quot.sound` fails the run —
 | [`SYNTAX.md`](SYNTAX.md) | Everything a `def` marked `@[ship]` may be written in |
 | [`PROVING.md`](PROVING.md) | What you are proving with, and the shapes a theorem takes |
 
-`dist/` gets `index.js`, `index.js.map`, `index.d.ts`, `<last segment of the package name>.lean2js`,
+`dist/` gets `index.js`, `index.d.ts`, `<last segment of the package name>.lean2js`,
 `proof-manifest.json`, `README.md` and `package.json`. The generated `README.md` is the public API, what
 a call throws, and the theorems and axioms — that is the page npm shows.
 

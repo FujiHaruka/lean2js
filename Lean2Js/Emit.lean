@@ -5,7 +5,7 @@ import Lean2Js.Compile
 import Lean2Js.Manifest
 import Lean2Js.NodeCheck
 import Lean2Js.Parse
-import Lean2Js.SourceMap
+import Lean2Js.Render
 import Lean2Js.Vectors
 
 /-!
@@ -37,7 +37,7 @@ private def packageJson (m : Manifest) : Json :=
     ("types", .str "./index.d.ts"),
     ("sideEffects", .bool false),
     ("engines", .obj [("node", .str ">=18")]),
-    ("files", .arr [.str "README.md", .str "index.js", .str "index.js.map", .str "index.d.ts",
+    ("files", .arr [.str "README.md", .str "index.js", .str "index.d.ts",
                     .str m.sourceFileName, .str "proof-manifest.json"])
   ])
 
@@ -86,17 +86,16 @@ def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
   match checkAgreement a.program 400 200 with
   | .error e => throw (IO.userError s!"the compiled module disagrees with eval: {e}")
   | .ok () =>
-    let emitted := emitModule jsModule
-    if Parse.parseModule emitted.text.toList != some jsModule then
+    let text := jsModule.render
+    if Parse.parseModule text.toList != some jsModule then
       throw (IO.userError "the emitted text does not read back as the module it was compiled from")
     let vectors ← match renderVectors a.program 400 200 with
       | .error e => throw (IO.userError s!"vector generation failed: {e}")
       | .ok vectors => pure vectors
     let sourceFile := a.manifest.sourceFileName
     let files := [
-      ("index.js", emitted.text),
-      (sourceFile, a.program.source.text),
-      ("index.js.map", (sourceMapFor a.program emitted sourceFile).renderPretty ++ "\n"),
+      ("index.js", text),
+      (sourceFile, a.program.source),
       ("index.d.ts", Js.renderDts a.program a.docs),
       ("README.md", a.toReadme),
       ("proof-manifest.json", a.toJson.renderPretty ++ "\n"),

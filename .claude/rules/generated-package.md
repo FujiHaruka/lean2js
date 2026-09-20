@@ -5,8 +5,8 @@ paths:
 
 # `packages/verified-example/` is generated
 
-Every file here — `index.js`, `index.js.map`, `index.d.ts`, `verified-example.lean2js`,
-`proof-manifest.json`, `README.md`, `package.json` — is written by
+Every file here — `index.js`, `index.d.ts`, `verified-example.lean2js`, `proof-manifest.json`,
+`README.md`, `package.json` — is written by
 `lake exe lean2js Lean2Js.Example --out packages/verified-example` (`pnpm lean:emit`).
 
 **Never edit one by hand.** To change what is in here, change `Lean2Js/Example.lean` or the compiler,

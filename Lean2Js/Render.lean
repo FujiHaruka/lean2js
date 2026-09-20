@@ -107,22 +107,14 @@ def Decl.signature (d : Decl) : String :=
   let params := d.params.map fun p => s!"{p.name} : {p.ty.render}"
   s!"def {d.name}({String.intercalate ", " params}) : {d.ret.render} ="
 
-/-- Pins one declaration to three lines, so the source map can fix a position from the line alone. -/
+/-- One declaration reads as three lines: its signature, its body, and a blank line after it. -/
 def Decl.source (d : Decl) : List String :=
   [d.signature, "  " ++ d.body.source, ""]
 
-structure Source where
-  text : String
-  /-- Which line each function starts on. Zero-based. -/
-  declLines : List (String × Nat)
-
-def Program.source (p : Program) : Source :=
+/-- The whole program as the text the package ships next to `index.js`. -/
+def Program.source (p : Program) : String :=
   let header := ["-- Generated from the Lean subset by lean2js.", ""]
   let types := p.types.flatMap fun t => [t.source, ""]
-  let start := header.length + types.length
-  let (lines, decls) := p.decls.foldl (init := ([], [])) fun (lines, decls) d =>
-    (lines ++ d.source, decls ++ [(d.name, start + lines.length)])
-  { text := String.intercalate "\n" (header ++ types ++ lines) ++ "\n"
-    declLines := decls }
+  String.intercalate "\n" (header ++ types ++ p.decls.flatMap Decl.source) ++ "\n"
 
 end Lean2Js.Core

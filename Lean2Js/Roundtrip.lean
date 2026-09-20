@@ -2383,8 +2383,8 @@ theorem parseFunc_append (fn : Js.Func) (hfn : RenderableFunc fn = true) (f : Na
         rw [core fn.doc false, show ({ fn with doc := fn.doc, exported := false } : Js.Func) = fn
           from by rw [← hx0]]
 
-theorem parseFuncs_step (f : Nat) (cs : List Char) (c1 c2 : Char) (x : List Char)
-    (h : cs = c1 :: c2 :: x) (hne : ¬(c1 = '/' ∧ c2 = '/')) :
+theorem parseFuncs_step (f : Nat) (cs : List Char) (c : Char) (x : List Char)
+    (h : cs = c :: x) :
     parseFuncs (f + 1) cs = (do
       let (fn, r) ← parseFunc f cs
       let r ← expect ['\n', '\n'] r
@@ -2399,73 +2399,72 @@ theorem expect_self (l : List Char) : expect l l = some [] := by
   simpa using expect_append l []
 
 theorem render_func_head (fn : Js.Func) :
-    ∃ c1 c2 x, (Js.Func.render fn).toList = c1 :: c2 :: x ∧ ¬(c1 = '/' ∧ c2 = '/') := by
+    ∃ c x, (Js.Func.render fn).toList = c :: x := by
   rw [render_func_toList]
   by_cases hd : fn.doc.isEmpty = true
   · rw [if_pos hd]
     simp only [List.nil_append]
     by_cases hx : fn.exported = true
-    · rw [if_pos hx]; exact ⟨'e', 'x', _, rfl, by simp⟩
-    · rw [if_neg hx]; simp only [List.nil_append]; exact ⟨'f', 'u', _, rfl, by simp⟩
-  · rw [if_neg hd]; exact ⟨'/', '*', _, rfl, by simp⟩
+    · rw [if_pos hx]; exact ⟨'e', _, rfl⟩
+    · rw [if_neg hx]; simp only [List.nil_append]; exact ⟨'f', _, rfl⟩
+  · rw [if_neg hd]; exact ⟨'/', _, rfl⟩
 
 theorem parseFuncs_append (fs : List Js.Func) (hfs : fs.all RenderableFunc = true) (f : Nat)
-    (hf : (Js.Func.renderAll fs).toList.length + 1 < f) (rest : List Char) :
-    parseFuncs f ((Js.Func.renderAll fs).toList ++ ('/' :: '/' :: '#' :: rest))
-      = some (fs, '/' :: '/' :: '#' :: rest) := by
+    (hf : (Js.Func.renderAll fs).toList.length + 1 < f) :
+    parseFuncs f (Js.Func.renderAll fs).toList = some (fs, []) := by
   induction fs generalizing f with
   | nil =>
     match f with
     | 0 => omega
-    | f + 1 => rw [funcAll_nil_toList, List.nil_append, parseFuncs]
+    | f + 1 => rw [funcAll_nil_toList, parseFuncs]
   | cons fn tl ih =>
     simp only [List.all_cons, Bool.and_eq_true] at hfs
-    obtain ⟨c1, c2, x, hx, hne⟩ := render_func_head fn
+    obtain ⟨c, x, hx⟩ := render_func_head fn
     match f with
     | 0 => omega
     | f + 1 =>
       rw [funcAll_cons_toList] at hf ⊢
-      simp only [List.append_assoc, List.cons_append] at hf ⊢
       simp only [List.length_cons, List.length_append] at hf
-      rw [parseFuncs_step f _ c1 c2 (x ++ ('\n' :: '\n' :: ((Js.Func.renderAll tl).toList ++
-          ('/' :: '/' :: '#' :: rest)))) (by rw [hx]; rfl) hne,
+      rw [parseFuncs_step f _ c (x ++ ('\n' :: '\n' :: (Js.Func.renderAll tl).toList))
+          (by rw [hx]; rfl),
         parseFunc_append fn hfs.1 f (by omega) _]
       show (do
-        let (fs', r) ← parseFuncs f ((Js.Func.renderAll tl).toList ++ ('/' :: '/' :: '#' :: rest))
-        pure (fn :: fs', r)) = some (fn :: tl, '/' :: '/' :: '#' :: rest)
+        let (fs', r) ← parseFuncs f (Js.Func.renderAll tl).toList
+        pure (fn :: fs', r)) = some (fn :: tl, [])
       rw [ih hfs.2 f (by omega)]
       rfl
 
-/-- The prelude and the source-map link are long literals, so they are kept opaque here: nothing about
-the roundtrip depends on what they say, only on their being the same text on both sides. -/
-theorem parseModule_of (P : List Char) (fs : List Js.Func) (hfs : fs.all RenderableFunc = true)
-    (t : List Char) :
+/-- The prelude is a long literal, so it is kept opaque here: nothing about the roundtrip depends on
+what it says, only on its being the same text on both sides and on its leaving the reader more fuel than
+the functions after it need. -/
+theorem parseModule_of (P : List Char) (hP : 1 < P.length) (fs : List Js.Func)
+    (hfs : fs.all RenderableFunc = true) :
     (do
-      let r ← expect P (P ++ ((Js.Func.renderAll fs).toList ++ ('/' :: '/' :: '#' :: t)))
-      let (fs', r) ← parseFuncs
-        (P ++ ((Js.Func.renderAll fs).toList ++ ('/' :: '/' :: '#' :: t))).length r
-      let r ← expect ('/' :: '/' :: '#' :: t) r
+      let r ← expect P (P ++ (Js.Func.renderAll fs).toList)
+      let (fs', r) ← parseFuncs (P ++ (Js.Func.renderAll fs).toList).length r
       if r.isEmpty then some (⟨fs'⟩ : Js.Module) else none) = some ⟨fs⟩ := by
   rw [expect_append]
   simp only [Option.bind_eq_bind, Option.bind_some]
   rw [parseFuncs_append fs hfs _ (by
-    simp only [List.length_append, List.length_cons]
-    omega) t]
-  simp only [Option.bind_eq_bind, Option.bind_some]
-  rw [expect_self]
+    simp only [List.length_append]
+    omega)]
   simp
+
+/-- The prelude opens with a comment, so it leaves the reader more fuel than the functions after it
+need. -/
+theorem preamble_length : 1 < Js.preamble.toList.length := by
+  have h : 1 < Js.preambleComment.toList.length := by decide
+  rw [Js.preamble, String.toList_append, List.length_append]
+  omega
 
 /-- The file the compiler writes reads back as the module it was compiled from. -/
 theorem parseModule_render (m : Js.Module) (hm : RenderableModule m = true) :
     parseModule (Js.Module.render m).toList = some m := by
   rw [RenderableModule] at hm
-  obtain ⟨t, hsuf⟩ : ∃ t, Js.sourceMapLink.toList = '/' :: '/' :: '#' :: t := by
-    rw [Js.sourceMapLink]
-    exact ⟨_, rfl⟩
   have hsplit : (Js.Module.render m).toList =
-      Js.preamble.toList ++ ((Js.Func.renderAll m.funcs).toList ++ Js.sourceMapLink.toList) := by
-    rw [Js.Module.render, String.toList_append, String.toList_append, List.append_assoc]
-  rw [parseModule, hsplit, hsuf]
-  exact parseModule_of _ m.funcs hm t
+      Js.preamble.toList ++ (Js.Func.renderAll m.funcs).toList := by
+    rw [Js.Module.render, String.toList_append]
+  rw [parseModule, hsplit]
+  exact parseModule_of _ preamble_length m.funcs hm
 
 end Lean2Js.Parse

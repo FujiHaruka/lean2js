@@ -77,12 +77,11 @@ seatCharge({ tag: "team" }, "12");             // Error: typeError
 seatCharge({ tag: "team" }, 9007199254740991); // Error: int53Overflow
 ```
 
-`--out dist` writes seven files:
+`--out dist` writes:
 
 | File | What it is |
 | --- | --- |
 | `index.js` | ESM. The runtime helpers it calls are confined to the `__` prefix |
-| `index.js.map` | A source map back to the transcribed source, one entry per function |
 | `index.d.ts` | The types above. Consumers need nothing else to call the package |
 | `my-logic.lean2js` | The compiled program as text, named after the last segment of the package name |
 | `proof-manifest.json` | Theorems, the axioms they rest on, the compiler and Lean versions, the public API |

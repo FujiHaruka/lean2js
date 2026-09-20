@@ -4,6 +4,16 @@ Versions follow the `version` in `lakefile.toml`, which is also the `compiler.ve
 `proof-manifest.json`. Pin a package to a tag rather than to `main`: the `rev` in your `lakefile.toml` is
 what decides which compiler your artifact was built by.
 
+## Unreleased
+
+- A package no longer carries `index.js.map`, and `index.js` no longer ends in a `sourceMappingURL`
+  line. The map told a consumer nothing the names did not already tell them — the generated code keeps
+  each declaration's name and order, and the transcribed source ships beside it — while the one thing it
+  could get wrong, its line arithmetic, was checked against this repository's example rather than inside
+  `emit`, where every other file a package carries is checked. A bundler folds a dependency's map into
+  its own silently, so a map that is off by a line reaches a consumer as a wrong answer they have no way
+  to question.
+
 ## 0.2.0
 
 - A declared type may name itself, directly or through a `List` of itself, and the type a consumer reads

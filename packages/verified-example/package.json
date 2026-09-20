@@ -17,7 +17,6 @@
   "files": [
     "README.md",
     "index.js",
-    "index.js.map",
     "index.d.ts",
     "verified-example.lean2js",
     "proof-manifest.json"

@@ -17,7 +17,7 @@ first build fails here rather than in their terminal.
 
 ## Every refusal the documents promise has a case in that script
 
-The script does not only check that the happy path writes seven files. It pins the refusals the product
+The script does not only check that the happy path writes six files. It pins the refusals the product
 is sold on, each by the message the user would see:
 
 - a declaration `ship_package` did not gather (`does not carry it`)

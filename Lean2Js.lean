@@ -17,7 +17,6 @@ import Lean2Js.Parse
 import Lean2Js.JsSem
 import Lean2Js.Agree
 import Lean2Js.Render
-import Lean2Js.SourceMap
 import Lean2Js.Step
 import Lean2Js.Fuel
 import Lean2Js.Cost

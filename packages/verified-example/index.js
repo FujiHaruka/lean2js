@@ -1270,4 +1270,3 @@ export function directChildren(__p0) {
   return ((__s) => ((((__s).tag === "leaf") ? 0 : ((children) => (__i53((children).length)))((__s).children))))(category);
 }
 
-//# sourceMappingURL=index.js.map

@@ -31,8 +31,7 @@ cd "$work"
 lake build
 lake exe lean2js MyLogic --out dist
 
-for file in index.js index.d.ts index.js.map package.json proof-manifest.json README.md \
-            my-logic.lean2js; do
+for file in index.js index.d.ts package.json proof-manifest.json README.md my-logic.lean2js; do
   test -s "dist/$file" || { echo "the template did not write dist/$file"; exit 1; }
 done
 test ! -e dist/vectors.json || { echo "the vectors were written into dist"; exit 1; }

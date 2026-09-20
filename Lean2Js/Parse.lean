@@ -945,7 +945,7 @@ def parseFuncs : Nat → List Char → Option (List Js.Func × List Char)
   | 0, _ => none
   | f + 1, cs =>
     match cs with
-    | '/' :: '/' :: '#' :: _ => some ([], cs)
+    | [] => some ([], [])
     | _ => do
       let (fn, r) ← parseFunc f cs
       let r ← expect ['\n', '\n'] r
@@ -957,7 +957,6 @@ end
 def parseModule (cs : List Char) : Option Js.Module := do
   let r ← expect Js.preamble.toList cs
   let (fs, r) ← parseFuncs cs.length r
-  let r ← expect Js.sourceMapLink.toList r
   if r.isEmpty then some ⟨fs⟩ else none
 
 /-! ## The grammar the reader accepts
