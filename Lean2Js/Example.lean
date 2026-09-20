@@ -249,6 +249,16 @@ def objListedPrices (prices : Dict.Obj Int) : List Int := prices.values
 @[ship]
 def objCatalogueSize (prices : Dict.Obj Int) : Int := prices.size
 
+/-- What a role may do, written out at the spelling that crosses as a plain object rather than as a
+`Map`. The same dictionary as `limitsFor` twice over: the entries are the same and the operations on
+them are the same, and what the spelling decides is what a consumer is handed. -/
+@[ship]
+def objLimitsFor (role : Role) : Dict.Obj Int :=
+  match role with
+  | .guest => Dict.Obj.ofList [("daily", 10), ("monthly", 100)]
+  | .member => Dict.Obj.ofList [("daily", 100), ("monthly", 3000)]
+  | .admin => Dict.Obj.ofList [("daily", 1000), ("monthly", 30000)]
+
 /-- Truncating division. Division by zero traps on the JS side too. -/
 @[ship]
 def divide (a b : Int) : Int := Int53.div a b
@@ -1112,13 +1122,26 @@ theorem returned_values_fit_parameter_types (ty : Ty) (jv : Js.JsValue)
 /-- And it is accepted, not merely admitted by the type: what one call hands back passes the next call's
 entry check, with none of the range caveat `dts_fits_entry_check` carries. The range is what
 `Value.hasTy` already says about the value the first call returned, so two exported functions compose
-without a check of the consumer's own. -/
+with no check of the consumer's own in between. What the second call then computes on is
+`returned_values_read_back_unchanged`. -/
 theorem returned_values_pass_the_entry_check (m : Js.Module)
     (hm : Compile.compileProgram program = .ok m) (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc)
     (hd : Compile.tyDesc program b ty = .ok d) (hv : Value.hasTy program v ty = true) :
     Js.checkTy [] (encodeAt program ty v) d = true :=
   have hn := Decl.typesNamesOk_of_compileProgram hm
   Decl.checkTy_encodeAt program hn ty [] [] b d v hd .nil rfl
+    (Decl.descOk_tyDesc (st := []) hn b ty d hd) hv
+
+/-- The other half of composing two calls: the second entry does not merely accept what the first handed
+back, it reads it back as the value the first one returned. Together with
+`returned_values_pass_the_entry_check` that is the whole of what a chained call rests on — a dictionary
+walked out to a plain object is rebuilt as the `Map` the body works in, and nothing else moves. -/
+theorem returned_values_read_back_unchanged (m : Js.Module)
+    (hm : Compile.compileProgram program = .ok m) (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc)
+    (hd : Compile.tyDesc program b ty = .ok d) (hv : Value.hasTy program v ty = true) :
+    Js.normTy [] (encodeAt program ty v) d = encodeValue v :=
+  have hn := Decl.typesNamesOk_of_compileProgram hm
+  Decl.normTy_encodeAt program hn ty [] [] b d v hd .nil rfl
     (Decl.descOk_tyDesc (st := []) hn b ty d hd) hv
 
 omit [Discriminators] in

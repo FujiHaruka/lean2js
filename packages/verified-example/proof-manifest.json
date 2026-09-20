@@ -13,15 +13,15 @@
   "artifacts": [
     {
       "file": "index.js",
-      "sha256": "d146a778822a1f1143a5eb91642a9fa2e3e241715bf23c5b6e9619d85ee1a8a0"
+      "sha256": "1f0e069114decbf553da152f84d554363a41bbaab158f60e88d46f8f06a928a9"
     },
     {
       "file": "index.d.ts",
-      "sha256": "4b70f34743e31fed02e2cf8b377cd576ab1851e611f872c21bee7ca2e4377bfa"
+      "sha256": "d913fd76daa97f986a0bb3c49af86d0764eb0df0e7fd300facd434217967049d"
     },
     {
       "file": "README.md",
-      "sha256": "10a3b7d71890be6da959a358e01499e9d5d2ec4a4a18edb97a398ddce0caebb2"
+      "sha256": "d6fd548c33a0f78a6380f03500f77640fa82bed561f5ced55843a9afbaa12fc9"
     },
     {
       "file": "package.json",
@@ -292,6 +292,12 @@
       "name": "objCatalogueSize",
       "signature": "(prices : Dict.Obj Int53) → Int53",
       "declaration": "objCatalogueSize(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): number"
+    },
+    {
+      "name": "objLimitsFor",
+      "signature": "(role : Role) → Dict.Obj Int53",
+      "declaration": "objLimitsFor(role: Role): { readonly [key: string]: number }",
+      "doc": "What a role may do, written out at the spelling that crosses as a plain object rather than as a\n`Map`. The same dictionary as `limitsFor` twice over: the entries are the same and the operations on\nthem are the same, and what the spelling decides is what a consumer is handed."
     },
     {
       "name": "divide",
@@ -916,7 +922,12 @@
     {
       "name": "returned_values_pass_the_entry_check",
       "statement": "returned_values_pass_the_entry_check [Discriminators] (m : Js.Module)\n  (hm : Compile.compileProgram program = Except.ok m) (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc)\n  (hd : Compile.tyDesc program b ty = Except.ok d) (hv : Value.hasTy program v ty = true) :\n  Js.checkTy [] (encodeAt program ty v) d = true",
-      "doc": "And it is accepted, not merely admitted by the type: what one call hands back passes the next call's\nentry check, with none of the range caveat `dts_fits_entry_check` carries. The range is what\n`Value.hasTy` already says about the value the first call returned, so two exported functions compose\nwithout a check of the consumer's own."
+      "doc": "And it is accepted, not merely admitted by the type: what one call hands back passes the next call's\nentry check, with none of the range caveat `dts_fits_entry_check` carries. The range is what\n`Value.hasTy` already says about the value the first call returned, so two exported functions compose\nwith no check of the consumer's own in between. What the second call then computes on is\n`returned_values_read_back_unchanged`."
+    },
+    {
+      "name": "returned_values_read_back_unchanged",
+      "statement": "returned_values_read_back_unchanged [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)\n  (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d)\n  (hv : Value.hasTy program v ty = true) : Js.normTy [] (encodeAt program ty v) d = encodeValue v",
+      "doc": "The other half of composing two calls: the second entry does not merely accept what the first handed\nback, it reads it back as the value the first one returned. Together with\n`returned_values_pass_the_entry_check` that is the whole of what a chained call rests on — a dictionary\nwalked out to a plain object is rebuilt as the `Map` the body works in, and nothing else moves."
     },
     {
       "name": "steps_agree",

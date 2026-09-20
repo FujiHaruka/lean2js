@@ -190,24 +190,39 @@ weaker hypothesis — so `Denote.decl_ships` was restated at `encodeAt` the way 
 `encodeAt_eq_encodeValue` and keeps its published text byte for byte. The shipped theorem is now
 `program_typesNoDictObj`, which is true and says what the program is.
 
-**A `Dict.Obj` inside a declared type is proved and unexercised.** `EncDeriving` emits `.dictObj` for
-such a field and `__out`'s `ctors` / `fields` branches walk into one, but nothing runs it: putting one in
-`Example.lean` would make `program.typesNoDictObj` false, and the seven `*_calls_agree` theorems would
-lose the reading that keeps their published text where it is. The place for that coverage is a program
-whose claims are its own — `templates/verified-package/`, which emits and runs its own vectors on Node.
+**A `Dict.Obj` inside a declared type is exercised** — in `scripts/check-template.sh`, whose `dictobj`
+fixture declares a `structure Book` carrying a `Dict.Obj Int`, returns one bare, one inside an `Option`
+and one inside a `List`, and runs its own vectors on Node. It is there rather than in `Example.lean`
+because putting one in the example would make `program.typesNoDictObj` false and the seven
+`*_calls_agree` theorems would lose the reading that keeps their published text where it is.
 
-**The one thing left open: there is no `Dict.Obj` literal.** `Core.Expr.dictLit` carries the value type
-and `compileExpr` gives it `.dict value`, so `Dict.Obj.ofList` has no form to reify to. `set` and
-`erase` give back the receiver's spelling, so a declaration that takes a `Dict.Obj` can return one, and
-that is the whole of what an author can do today. Three ways to close it, cheapest first:
+## The `Dict.Obj` literal landed, and it found the hole the feature had all along
 
-| Shape | What it costs | What it gives up |
-| --- | --- | --- |
-| **A field on `dictLit`** — the form carries which spelling it was written at | every `match` on `.dictLit` across the eighteen modules that name it, but no new form: `InFragment.all`, `Sound` and `Correct` each keep one case | nothing |
-| **`compileDecl` accepts `.dict v` against a declared `.dictObj v`** | one relaxation in one place | it works at a declaration's return position and nowhere else — not in a `let`, not in a `match` arm |
-| **A new `Core.Expr` form** | `Sound` and `Correct` each gain a case — `extending-the-subset.md`'s layer 3 | nothing, but it is the most expensive layer for the least new meaning |
+**A field on `dictLit`** was the shape taken, as priced. `Core.Expr.dictLit` carries `obj : Bool`;
+`compileExpr` gives the literal `.dictObj value` where it is set and `.dict value` where it is not, and
+emits the same `new Map([...])` either way — the two spellings are one `Map` inside the module, so only
+the static type moves. `Prelude` gained `Dict.Obj.ofList` and `Dict.Obj.ofPairs`, `Denotes` gained
+`denotes_dictObjLit` (the twin of `denotes_dictLit` with one constructor changed) and `Reify` reads both
+names through one helper. As priced, no new form and no new case: `InFragment.all`, `Sound` and
+`Correct` each kept one, `Sound`'s collapsing through `Compile.dictValueTy` and
+`Sound.hasTy_of_dictValueTy` the way the receiver widening did.
 
-The first is the one to take. **Settle it before writing it**, as with the two questions before it.
+**What it found is the bigger result.** The first declaration that could *build* one —
+`Example.objLimitsFor` — failed `checkAgreement` at once, and the reason was not the literal:
+
+- `Vectors.edgeCases` had no `.dictObj` arm, so every `Dict.Obj` parameter was offered the ill-typed
+  filler. **Every vector any `obj*` declaration ever had was a refusal**; the happy path of the whole
+  feature had never run in a differential test, on the model or on Node.
+- `Agree.agrees` compared `encodeValue` of what `eval` returned against what the module handed back,
+  while `decl_correct` says the entry returns `encodeAt p d.ret`. At a `dictObj` return those differ,
+  so the oracle contradicted the theorem. It had never fired because of the first point.
+
+Both fixed: `edgeCases` offers a `Dict.Obj` parameter the cases it offers a `Dict` one, `agrees` reads
+the expected value out through the declaration's return type, and a vector's expected value is written
+into `vectors.json` as the JavaScript value the entry has to hand back, so the Node side compares the
+same thing. `TestVector` carries `ret : Ty` for that, and `TestVector.toJson` / `renderVectors` moved to
+`Agree.lean`, which is where the encoding lives. 44355 vectors became 45388, and the template's
+`dictobj` fixture 1000 became 1785.
 
 ## Step 4, priced: the narrowing is asymmetric, and the plan's own table is wrong about it
 

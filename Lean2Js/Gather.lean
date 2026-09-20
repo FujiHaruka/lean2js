@@ -116,7 +116,7 @@ private def subterms : Core.Expr → List Core.Expr
   | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c | .reduceE a b _ _ c =>
     [a, b, c]
   | .call _ args | .ctor _ _ _ args | .arrayLit _ args => args
-  | .dictLit _ entries => entries.map (·.2)
+  | .dictLit _ _ entries => entries.map (·.2)
   | .matchE scrut alts => scrut :: alts.map (·.2)
 
 /-- The pairs `(later, earlier)` a program has to respect: a body comes after everything it calls or names

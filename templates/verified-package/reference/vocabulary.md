@@ -16,7 +16,7 @@ constructors and the operators.
 | `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.divFloor` `Int53.divCeil` `Int53.divRound` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | `/`, which floors where the subset truncates, and `toString` |
 | `Int` as a date | `Cal.fromCivil` `Cal.year` `Cal.month` `Cal.day` `Cal.weekday` `Cal.isLeapYear` `Cal.daysInMonth` `Cal.dayOfInstant` `Cal.instantOfDay` | `Date`, which reads a clock and a zone. A day is an `Int` of days from 1970-01-01, an instant an `Int` of milliseconds |
 | `Dict V` | `Dict.ofList` `Dict.ofPairs` `.get` `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` | `List (String × V)`, which already encodes as an array |
-| `Dict.Obj V` | `.get` `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.Obj.getD` | `Dict.ofList` and `Dict.ofPairs`, which build a `Dict`. There is no literal at this spelling |
+| `Dict.Obj V` | `Dict.Obj.ofList` `Dict.Obj.ofPairs` `.get` `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.Obj.getD` | `Dict.ofList` and `Dict.ofPairs`, which build a `Dict` |
 | `Option T` / `Except E A` | `Opt.getD` `Opt.map` `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | `Option.getD` and `Except.map`, imported before this library is read |
 
 ## Signatures
@@ -69,6 +69,8 @@ element type.
 
 | `Dict.Obj V` | |
 | --- | --- |
+| `Dict.Obj.ofList` | `List (String × α) → Dict.Obj α` — literal keys |
+| `Dict.Obj.ofPairs` | `List α → (α → String) → Dict.Obj α` — keys read off each element |
 | `Dict.Obj.get` | `Dict.Obj α → String → Option α` |
 | `Dict.Obj.getD` | `Dict.Obj α → String → α → α` — the dictionary, the key, the fallback |
 | `Dict.Obj.set` | `Dict.Obj α → String → α → Dict.Obj α` |
@@ -82,10 +84,9 @@ The two are one dictionary with one set of operations; what the spelling decides
 meets, and `JSON.stringify` of a `Map` is `{}`. `Dict V` is what to write where a caller is meant to get
 a `Map` — because it iterates in insertion order, or because the keys are not names.
 
-**A `Dict.Obj` is one that was handed in, or one built from it.** `set` and `erase` give back the
-spelling they were handed, so a declaration that takes one can return one. Writing one out key by key
-needs a literal that is not there: build a `Dict` and declare the return `Dict V`, or take a
-`Dict.Obj V` parameter.
+**The spelling is decided where the dictionary is built or received, and carried from there.**
+`Dict.Obj.ofList` writes one out key by key, and `set` and `erase` give back the spelling they were
+handed, so a declaration can build one as readily as it can be handed one.
 
 | `Cal` | |
 | --- | --- |
@@ -120,7 +121,7 @@ program needs grows with how deeply they nest. `Arr.contains` needs `BEq T` (`de
 **`Cal.year`, `Cal.month` and `Cal.day` each read the whole date out of the day number**, because the
 subset has no tuple to hand three answers back in. Asking for all three writes the arithmetic out three
 times, and what that costs is fuel: a body that reads a date is deep, and `Cost.cost` charges that depth
-once per declaration in the program. The example needs <!--n:fuelNeeded-->2209<!--/n--> of
+once per declaration in the program. The example needs <!--n:fuelNeeded-->2226<!--/n--> of
 <!--n:fuelCeiling-->10000<!--/n--> with six calendar functions in it.
 
 **A composite key is two sorts.** `Arr.sortByKey` takes one key, of type `Int` or `String`, and is

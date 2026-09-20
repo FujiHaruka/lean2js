@@ -1323,7 +1323,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
             exact renderable_of_ok h (renderable_sortByJs h1 (okName_of_validateIdent hvi)
               (ihbody _ (ctxOk_cons (okCallee_of_validateIdent hvi) hctx) jbody tbody hbody))))
   -- 44: a dictionary literal
-  · intro ctx value entries ihv hctx j t h
+  · intro ctx value obj entries ihv hctx j t h
     rw [compileExpr] at h
     peel h
     all_goals

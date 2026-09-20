@@ -3169,7 +3169,7 @@ theorem compileBody_type (p : Program) :
   | .findE _ _ _, ctx, acc, stmts, ty, hc
   | .quantE _ _ _ _, ctx, acc, stmts, ty, hc
   | .reduceE _ _ _ _ _, ctx, acc, stmts, ty, hc
-  | .dictLit _ _, ctx, acc, stmts, ty, hc
+  | .dictLit _ _ _, ctx, acc, stmts, ty, hc
   | .dictGet _ _, ctx, acc, stmts, ty, hc
   | .dictHas _ _, ctx, acc, stmts, ty, hc
   | .dictSet _ _ _, ctx, acc, stmts, ty, hc

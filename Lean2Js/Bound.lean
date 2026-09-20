@@ -226,7 +226,7 @@ def unboundedIn (factor : Int) (env : Env) : Expr → Option (Sized × Option In
     unboundedIn factor env a <|> unboundedIn factor env init <|>
       unboundedIn (factor * times env a) (Env.without env [acc, x]) b
   | .ctor _ _ _ args | .arrayLit _ args | .call _ args => unboundedInList factor env args
-  | .dictLit _ entries => unboundedInEntries factor env entries
+  | .dictLit _ _ entries => unboundedInEntries factor env entries
   | .matchE scrut alts => unboundedIn factor env scrut <|> unboundedInAlts factor env alts
 
 def unboundedInList (factor : Int) (env : Env) : List Expr → Option (Sized × Option Int)

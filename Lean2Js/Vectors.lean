@@ -5,7 +5,9 @@ import Lean2Js.Traps
 /-!
 # The inputs of the differential test and the values `eval` must return
 
-Writes out the inputs of the differential test and the values `eval` is expected to return.
+Builds the inputs of the differential test and the values `eval` is expected to return. What agreement
+means, and the file both checkers read, are in `Lean2Js/Agree.lean`: saying what the generated code must
+hand back needs the encoding, and the encoding is that module's subject.
 
 Traps are encoded as expected values too. Division by zero and Int53 overflow are the central design
 decision for lining JS and Lean up, so "that it throws" is itself the behaviour we want to check.
@@ -88,7 +90,10 @@ partial def edgeCases (p : Program) (depth width : Nat) : Ty → List Value
     let items := (edgeCases p depth (width / 2 + 1) t).take width
     Value.arr [] :: (items.map fun x => Value.arr [x])
       ++ [Value.arr (items.take 3), Value.arr (items.take 5)]
-  | .dict v =>
+  -- One dictionary at either spelling: a value of both is a `Value.dict`, so the cases a `Dict.Obj`
+  -- parameter is offered are the ones a `Dict` parameter is offered. Leaving the second arm out is what
+  -- left every `Dict.Obj` vector an ill-typed one.
+  | .dict v | .dictObj v =>
     let items := (edgeCases p depth (width / 2 + 1) v).take 3
     let keyed := (dictKeyPool.zip items).map fun (k, x) => Value.dict [(k, x)]
     Value.dict [] :: keyed ++ [Value.dict (dictKeyPool.zip (items.take 2))]
@@ -153,6 +158,10 @@ structure TestVector where
   fn : String
   args : List Value
   expected : Except Err Value
+  /-- The declaration's return type. The entry hands its result back through it, so it is what decides
+  whether a dictionary comes back as a `Map` or as a plain object, and both checkers read it rather than
+  assuming the encoding a `Value` has on its own. -/
+  ret : Ty
   shapes : List ArgShape := []
 
 def TestVector.shapeAt (v : TestVector) (i : Nat) : ArgShape := v.shapes.getD i .canonical
@@ -174,21 +183,11 @@ partial def Value.toJson [Discriminators] : Value → Json
           ("v", .arr (entries.map fun (k, v) => .arr [.str k, Value.toJson v]))]
   | .fn name => .obj [("t", .str "fn"), ("v", .str name)]
 
-def TestVector.toJson [Discriminators] (v : TestVector) : Json :=
-  let outcome :=
-    match v.expected with
-    | .ok value => [("ok", Json.bool true), ("value", value.toJson)]
-    | .error e => [("ok", Json.bool false), ("error", .str e.code)]
-  let shapes :=
-    if v.shapes.all (· == .canonical) then []
-    else [("shapes", Json.arr (v.shapes.map fun s => .str s.render))]
-  .obj ([("fn", .str v.fn), ("args", .arr (v.args.map Value.toJson))] ++ shapes ++ outcome)
-
 def vectorsFor (p : Program) (d : Decl) (edgeLimit randomCount : Nat) (seed : UInt64) :
     List TestVector :=
   let tys := d.params.map (·.ty)
   let tuples := (edgeTuples p tys).take edgeLimit ++ randomTuples p seed tys randomCount
-  tuples.map fun args => { fn := d.name, args, expected := evalCall p d.name args }
+  tuples.map fun args => { fn := d.name, args, expected := evalCall p d.name args, ret := d.ret }
 
 /-- Values to offer a parameter that did not ask for them. The shapes a hand-written checker is most
 likely to wave through are here on purpose: an Int53 past the safe range, a constructor value missing a
@@ -221,7 +220,7 @@ private def illTypedVectorsFor (p : Program) (d : Decl) (perParam : Nat) : List 
     tys.zipIdx.flatMap fun (ty, i) =>
       ((illTypedPool.filter fun v => !v.hasTy p ty && rejectedInJs v ty).take perParam).map fun bad =>
         let args := base.zipIdx.map fun (v, j) => if i == j then bad else v
-        { fn := d.name, args, expected := evalCall p d.name args }
+        { fn := d.name, args, expected := evalCall p d.name args, ret := d.ret }
 
 /-- Whether reshaping an argument would change it: reversing needs an object carrying at least one field,
 adding a key needs only an object. Both look through arrays and dictionaries, since `__norm` does. -/
@@ -237,7 +236,7 @@ for, and a parameter that cannot hold one would otherwise cost a walk of the who
 private def tyHasObj : Ty → Bool
   | .named _ _ | .option _ | .result _ _ => true
   | .array t => tyHasObj t
-  | .dict t => tyHasObj t
+  | .dict t | .dictObj t => tyHasObj t
   | _ => false
 
 /-- Calls each exported function with an argument the `.d.ts` admits and `encodeValue` would never write:
@@ -254,7 +253,7 @@ private def reshapedVectorsFor (p : Program) (d : Decl) : List TestVector :=
     match tuples.find? fun row => (row.getD i (.bool false)) |> changes with
     | none => []
     | some base =>
-      [{ fn := d.name, args := base, expected := evalCall p d.name base,
+      [{ fn := d.name, args := base, expected := evalCall p d.name base, ret := d.ret,
          shapes := base.zipIdx.map fun (_, j) => if i == j then s else ArgShape.canonical }]
   tys.zipIdx.flatMap fun (ty, i) =>
     if tyHasObj ty then
@@ -270,37 +269,5 @@ def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector
         ++ reshapedVectorsFor p d
     else []
 
-/-- Fuel is a device for keeping termination inside the proof, not part of the subset's semantics. Since
-nothing on the JS side corresponds to it, writing `outOfFuel` as an expected value would be the lie that
-"JS must fail too". -/
-private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
-  vectors.find? fun v =>
-    match v.expected with
-    | .error .outOfFuel => true
-    | _ => false
-
-/-- A vector that traps with a code the declaration's `@throws` does not name. The list in the `.d.ts` is
-read off the syntax rather than proved, so this is what stands behind it: a consumer who catches the codes
-it names has caught every one a generated vector reached. -/
-private def undeclaredTrap (p : Program) (vectors : List TestVector) : Option (String × String) :=
-  let traps := Traps.table p
-  vectors.findSome? fun v =>
-    match v.expected with
-    | .error e =>
-      if (Traps.forName p traps v.fn).contains e.code then none else some (v.fn, e.code)
-    | .ok _ => none
-
-def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String := do
-  let _keys : Discriminators ← p.discriminators?
-  let vectors := allTestVectors p edgeLimit randomCount
-  match outOfFuelIn vectors with
-  | some v => .error s!"{v.fn} ran out of fuel; the subset excludes nontermination"
-  | none =>
-    match undeclaredTrap p vectors with
-    | some (fn, code) =>
-      .error s!"{fn} traps with {code}, which the traps read off its body do not name"
-    | none =>
-      let rows := vectors.map fun v => "  " ++ v.toJson.render
-      .ok ("[\n" ++ String.intercalate ",\n" rows ++ "\n]\n")
 
 end Lean2Js

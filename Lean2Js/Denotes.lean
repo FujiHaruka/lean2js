@@ -1408,7 +1408,23 @@ private theorem evalArgs_denotesEntries (p : Program) (env : Env) {f : Nat} (hf 
 
 theorem denotes_dictLit (p : Program) (env : Env) (value : Ty) (entries : List (String × Expr))
     {β : Type} [Enc β] (es : List (String × β)) (h : DenotesEntries p env entries es) :
-    Denotes p env (.dictLit value entries) (Dict.ofList es) := by
+    Denotes p env (.dictLit value false entries) (Dict.ofList es) := by
+  intro f hf v he
+  have hv := Fuel.evalExpr_of_le hf (by simp) he
+  rw [defaultFuel_succ, evalExpr_dictLit] at hv
+  cases hx : evalArgs p 9999 env (entries.map (·.2)) with
+  | error err => rw [hx] at hv; simp [bind, Except.bind] at hv
+  | ok ws =>
+    rw [hx] at hv
+    simp only [bind, Except.bind, Except.ok.injEq] at hv
+    rw [← hv, evalArgs_denotesEntries p env (by simp [defaultFuel]) h hx]
+    rfl
+
+/-- The twin at the other spelling. The value the two build is the same — `Dict.Obj` and `Dict` encode
+alike — so only the flag the literal carries differs, and with it the type the compiler gives it. -/
+theorem denotes_dictObjLit (p : Program) (env : Env) (value : Ty) (entries : List (String × Expr))
+    {β : Type} [Enc β] (es : List (String × β)) (h : DenotesEntries p env entries es) :
+    Denotes p env (.dictLit value true entries) (Dict.Obj.ofList es) := by
   intro f hf v he
   have hv := Fuel.evalExpr_of_le hf (by simp) he
   rw [defaultFuel_succ, evalExpr_dictLit] at hv

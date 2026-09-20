@@ -424,7 +424,10 @@ inductive Expr where
   | quantE (op : QuantOp) (arr : Expr) (binder : String) (body : Expr)
   | reduceE (arr init : Expr) (accName elemName : String) (body : Expr)
   | sortByKeyE (arr : Expr) (binder : String) (body : Expr)
-  | dictLit (value : Ty) (entries : List (String × Expr))
+  /-- Which of the two spellings the dictionary was written at. Inside the module they are one
+  thing; `obj` decides only the type the literal is given, and so what a consumer meets where it
+  crosses. -/
+  | dictLit (value : Ty) (obj : Bool) (entries : List (String × Expr))
   | dictGet (d key : Expr)
   | dictHas (d key : Expr)
   | dictSet (d key val : Expr)

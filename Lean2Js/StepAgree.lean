@@ -532,7 +532,7 @@ theorem sim (p : Program) : ∀ f, Sim p f
         exact reduceItems ih env accName elemName body k xs acc _ hne
           (fun w hw => by rw [hw]; exact Reaches.refl) (fun err he => by rw [he] <;> rfl)
       | _ => exact Reaches.refl
-    | dictLit value entries =>
+    | dictLit value obj entries =>
       rw [evalExpr_dictLit] at hne ⊢
       refine Reaches.head ?_
       refine args ih env k (fun vs => .finish (.dict ((entries.map (·.1)).zip vs)) k)

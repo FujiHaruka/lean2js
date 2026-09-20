@@ -86,6 +86,8 @@ import { add, clampQuantity, lineTotal } from "@lean2js/verified-example";
 - `objListedSkus(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly string[]`
 - `objListedPrices(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): readonly number[]`
 - `objCatalogueSize(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): number`
+- `objLimitsFor(role: Role): { readonly [key: string]: number }`
+  What a role may do, written out at the spelling that crosses as a plain object rather than as a `Map`. The same dictionary as `limitsFor` twice over: the entries are the same and the operations on them are the same, and what the spelling decides is what a consumer is handed.
 - `divide(a: number, b: number): number`
   Truncating division. Division by zero traps on the JS side too.
 - `remainder(a: number, b: number): number`
@@ -625,13 +627,27 @@ theorem returned_values_fit_parameter_types (ty : Ty) (jv : Js.JsValue) (h : Dts
 And it is accepted, not merely admitted by the type: what one call hands back passes the next call's
 entry check, with none of the range caveat `dts_fits_entry_check` carries. The range is what
 `Value.hasTy` already says about the value the first call returned, so two exported functions compose
-without a check of the consumer's own.
+with no check of the consumer's own in between. What the second call then computes on is
+`returned_values_read_back_unchanged`.
 
 ```lean
 theorem returned_values_pass_the_entry_check [Discriminators] (m : Js.Module)
   (hm : Compile.compileProgram program = Except.ok m) (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc)
   (hd : Compile.tyDesc program b ty = Except.ok d) (hv : Value.hasTy program v ty = true) :
   Js.checkTy [] (encodeAt program ty v) d = true
+```
+
+### returned_values_read_back_unchanged
+
+The other half of composing two calls: the second entry does not merely accept what the first handed
+back, it reads it back as the value the first one returned. Together with
+`returned_values_pass_the_entry_check` that is the whole of what a chained call rests on — a dictionary
+walked out to a plain object is rebuilt as the `Map` the body works in, and nothing else moves.
+
+```lean
+theorem returned_values_read_back_unchanged [Discriminators] (m : Js.Module) (hm : Compile.compileProgram program = Except.ok m)
+  (v : Value) (ty : Ty) (b : Nat) (d : Js.TyDesc) (hd : Compile.tyDesc program b ty = Except.ok d)
+  (hv : Value.hasTy program v ty = true) : Js.normTy [] (encodeAt program ty v) d = encodeValue v
 ```
 
 ### steps_agree

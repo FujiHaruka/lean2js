@@ -39,7 +39,7 @@ def exprDepth : Expr → Nat
   | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c | .reduceE a b _ _ c =>
     1 + max (exprDepth a) (max (exprDepth b) (exprDepth c))
   | .call _ args | .ctor _ _ _ args | .arrayLit _ args => 1 + exprDepthList args
-  | .dictLit _ entries => 1 + exprDepthEntries entries
+  | .dictLit _ _ entries => 1 + exprDepthEntries entries
   | .matchE scrut alts => 1 + max (exprDepth scrut) (exprDepthAlts alts)
 
 def exprDepthList : List Expr → Nat
@@ -128,7 +128,7 @@ def bodyOk (p : Program) (i : Nat) (fns : List String) : Expr → Bool
   | .cond a b c | .substring a b c | .arraySlice a b c | .dictSet a b c | .reduceE a b _ _ c =>
     bodyOk p i fns a && bodyOk p i fns b && bodyOk p i fns c
   | .ctor _ _ _ args | .arrayLit _ args => bodyOkList p i fns args
-  | .dictLit _ entries => bodyOkEntries p i fns entries
+  | .dictLit _ _ entries => bodyOkEntries p i fns entries
   | .matchE scrut alts => bodyOk p i fns scrut && bodyOkAlts p i fns alts
   | .call fn args =>
     match declAt? p fn with
@@ -1393,7 +1393,7 @@ theorem eval_safe (p : Program) (hp : declsOk p 0 p.decls = true) :
       case arr xs =>
         refine Safe.bind' (ih i fns env init hb.1.2 henv (by omega)) (fun acc hacc => ?_)
         exact hreduceI env accName elemName body henv hb.2 (by omega) xs acc (arr_noFn hv) hacc
-    | dictLit value entries =>
+    | dictLit value obj entries =>
       rw [bodyOk] at hb; rw [exprDepth] at hf
       rw [evalExpr_dictLit]
       refine Safe.bind' (hargs env (entries.map (·.2)) henv (bodyOkEntries_map hb)

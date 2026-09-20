@@ -340,7 +340,9 @@ private partial def walk (citing : Bool) (ns : Name) (names : Array String) (xs 
     let (hie, hip) ← walk citing ns names xs hi
     return (← `(Lean2Js.Core.Expr.substring $ae $loe $hie),
             ← `(Lean2Js.Denote.denotes_substring _ _ _ _ _ _ _ _ $ap $lop $hip))
-  | (``Lean2Js.Dict.ofList, #[α, l]) => dictLit α l
+  | (``Lean2Js.Dict.ofList, #[α, l]) => dictLit α false ``Lean2Js.Denote.denotes_dictLit l
+  | (``Lean2Js.Dict.Obj.ofList, #[α, l]) =>
+    dictLit α true ``Lean2Js.Denote.denotes_dictObjLit l
   | (``Lean2Js.Dict.get, #[_, d, k]) =>
     dictKeyed `dictGet ``Lean2Js.Denote.denotes_dictGet d k
   | (``Lean2Js.Dict.has, #[_, d, k]) =>
@@ -670,7 +672,7 @@ where
       let some tail ← literalEntries rest | return none
       return some (#[(key, ← walk citing ns names xs valE)] ++ tail)
     | _ => return none
-  dictLit (α : Lean.Expr) (l : Lean.Expr) : TermElabM (Term × Term) := do
+  dictLit (α : Lean.Expr) (obj : Bool) (lemma_ : Name) (l : Lean.Expr) : TermElabM (Term × Term) := do
     let some parts ← literalEntries l
       | throwError "reify: {l} is not a dictionary written out key by key, which is the only form the \
         subset has for one"
@@ -680,8 +682,9 @@ where
       let keyLit : Term := ⟨Syntax.mkStrLit key⟩
       entryStx := entryStx.push (← `(($keyLit, $ve)))
       proof ← `(Lean2Js.Denote.denotesEntries_cons _ _ $keyLit _ _ _ _ $vp $proof)
-    return (← `(Lean2Js.Core.Expr.dictLit $(← encTy α) [$(entryStx.reverse),*]),
-            ← `(Lean2Js.Denote.denotes_dictLit _ _ _ _ _ $proof))
+    let objStx : Term ← if obj then `(true) else `(false)
+    return (← `(Lean2Js.Core.Expr.dictLit $(← encTy α) $objStx [$(entryStx.reverse),*]),
+            ← `($(mkIdent lemma_) _ _ _ _ _ $proof))
   /-- The traversals all carry their binder and body rather than a function, so each reads as the array,
   the binder's name, and the body walked with that name in scope. -/
   arm (f : Lean.Expr) : TermElabM (String × Term × Term) := do

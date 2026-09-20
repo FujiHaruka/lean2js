@@ -1160,6 +1160,16 @@ function __b_objCatalogueSize(prices) {
   return __i53((prices).size);
 }
 
+/** objLimitsFor : (role : Role) → Dict.Obj Int53 */
+export function objLimitsFor(__p0) {
+  const role = __ck(__p0, ["ctors", "tag", [["guest", []], ["member", []], ["admin", []]]]);
+  return __out(__b_objLimitsFor(role), ["dictObj", ["int53"]], []);
+}
+
+function __b_objLimitsFor(role) {
+  return ((__s) => ((((__s).tag === "guest") ? new Map([["daily", 10], ["monthly", 100]]) : (((__s).tag === "member") ? new Map([["daily", 100], ["monthly", 3000]]) : new Map([["daily", 1000], ["monthly", 30000]])))))(role);
+}
+
 /** divide : (a : Int53, b : Int53) → Int53 */
 export function divide(__p0, __p1) {
   const a = __ck(__p0, ["int53"]);

@@ -73,7 +73,7 @@ def any' (arr : Expr) (binder : String) (body : Expr) : Expr := .quantE .any arr
 def reduce' (arr init : Expr) (accName elemName : String) (body : Expr) : Expr :=
   .reduceE arr init accName elemName body
 
-def dict (value : Ty) (entries : List (String × Expr)) : Expr := .dictLit value entries
+def dict (value : Ty) (entries : List (String × Expr)) : Expr := .dictLit value false entries
 def dictGet (d key : Expr) : Expr := .dictGet d key
 def dictHas (d key : Expr) : Expr := .dictHas d key
 def dictSet (d key val : Expr) : Expr := .dictSet d key val

@@ -328,10 +328,12 @@ vector says a caller may write it. -/
 def TestVector.jsArgs [Discriminators] (v : TestVector) : List Js.JsValue :=
   v.args.zipIdx.map fun (a, i) => reshapeJs (v.shapeAt i) (encodeValue a)
 
-/-- Whether the result of `eval` and the result of the model are the same. Two failures are compared by
-the thrown `code`. -/
-def agrees [Discriminators] : Except Err Value → Js.JsResult → Bool
-  | .ok a, .ok b => encodeValue a == b
+/-- Whether the result of `eval` and the result of the model are the same. The expected value is read
+out through the declaration's return type, because that is what the entry hands back — `decl_correct`
+says so — and at a dictionary the declared type says crosses as a plain object the two readings differ.
+Two failures are compared by the thrown `code`. -/
+def agrees [Discriminators] (p : Program) (ret : Ty) : Except Err Value → Js.JsResult → Bool
+  | .ok a, .ok b => encodeAt p ret a == b
   | .error e, .error code => e.code == code
   | _, _ => false
 
@@ -358,11 +360,11 @@ def Disagreement.render (d : Disagreement) : String :=
     | .error code => s!"throw {code}"
   s!"{d.fn}({args}): eval says {expected} but the compiled module says {actual}"
 
-def disagreementsIn [Discriminators] (m : Js.Module) (vectors : List TestVector) :
+def disagreementsIn [Discriminators] (p : Program) (m : Js.Module) (vectors : List TestVector) :
     List Disagreement :=
   vectors.filterMap fun v =>
     let actual := Js.callFunction m v.fn v.jsArgs
-    if agrees v.expected actual then none
+    if agrees p v.ret v.expected actual then none
     else some { fn := v.fn, args := v.args, shapes := v.shapes, expected := v.expected, actual }
 
 /-- Checks that the artifact does not disagree with the reference semantics, before writing it out.
@@ -373,8 +375,70 @@ def checkAgreement (p : Program) (edgeLimit randomCount : Nat) : Except String U
   let _keys : Discriminators ← p.discriminators?
   let m ← Compile.compileProgram p
   let vectors := allTestVectors p edgeLimit randomCount
-  match disagreementsIn m vectors with
+  match disagreementsIn p m vectors with
   | d :: rest => .error s!"{rest.length + 1} disagreements, first: {d.render}"
   | [] => .ok ()
+
+
+/-! ### The file both checkers read
+
+The vector's expected value is written as the **JavaScript value the entry must hand back**, which is
+`encodeAt` of what `eval` returned: a dictionary the declared type says crosses as a plain object is
+written as one. Writing the `Value` on its own instead was right only for as long as no declaration
+returned such a dictionary, and it was what left the walk on the way out unmeasured. -/
+
+partial def Js.JsValue.toJson : Js.JsValue → Json
+  | .num i => .obj [("t", .str "num"), ("v", .num i)]
+  | .bigint i => .obj [("t", .str "bigint"), ("v", .str (toString i))]
+  | .str s => .obj [("t", .str "string"), ("v", .str s)]
+  | .bool b => .obj [("t", .str "bool"), ("v", .bool b)]
+  | .obj fields => .obj [("t", .str "jsobj"), ("v", .obj (fields.map fun (k, x) => (k, x.toJson)))]
+  | .arr xs => .obj [("t", .str "arr"), ("v", .arr (xs.map Js.JsValue.toJson))]
+  | .dict entries =>
+    .obj [("t", .str "dict"), ("v", .arr (entries.map fun (k, x) => .arr [.str k, x.toJson]))]
+  | .fn name => .obj [("t", .str "fn"), ("v", .str name)]
+
+def TestVector.toJson [Discriminators] (p : Program) (v : TestVector) : Json :=
+  let outcome :=
+    match v.expected with
+    | .ok value => [("ok", Json.bool true), ("value", (encodeAt p v.ret value).toJson)]
+    | .error e => [("ok", Json.bool false), ("error", .str e.code)]
+  let shapes :=
+    if v.shapes.all (· == .canonical) then []
+    else [("shapes", Json.arr (v.shapes.map fun s => .str s.render))]
+  .obj ([("fn", .str v.fn), ("args", .arr (v.args.map Value.toJson))] ++ shapes ++ outcome)
+
+/-- Fuel is a device for keeping termination inside the proof, not part of the subset's semantics. Since
+nothing on the JS side corresponds to it, writing `outOfFuel` as an expected value would be the lie that
+"JS must fail too". -/
+private def outOfFuelIn (vectors : List TestVector) : Option TestVector :=
+  vectors.find? fun v =>
+    match v.expected with
+    | .error .outOfFuel => true
+    | _ => false
+
+/-- A vector that traps with a code the declaration's `@throws` does not name. The list in the `.d.ts` is
+read off the syntax rather than proved, so this is what stands behind it: a consumer who catches the codes
+it names has caught every one a generated vector reached. -/
+private def undeclaredTrap (p : Program) (vectors : List TestVector) : Option (String × String) :=
+  let traps := Traps.table p
+  vectors.findSome? fun v =>
+    match v.expected with
+    | .error e =>
+      if (Traps.forName p traps v.fn).contains e.code then none else some (v.fn, e.code)
+    | .ok _ => none
+
+def renderVectors (p : Program) (edgeLimit randomCount : Nat) : Except String String := do
+  let _keys : Discriminators ← p.discriminators?
+  let vectors := allTestVectors p edgeLimit randomCount
+  match outOfFuelIn vectors with
+  | some v => .error s!"{v.fn} ran out of fuel; the subset excludes nontermination"
+  | none =>
+    match undeclaredTrap p vectors with
+    | some (fn, code) =>
+      .error s!"{fn} traps with {code}, which the traps read off its body do not name"
+    | none =>
+      let rows := vectors.map fun v => "  " ++ (v.toJson p).render
+      .ok ("[\n" ++ String.intercalate ",\n" rows ++ "\n]\n")
 
 end Lean2Js

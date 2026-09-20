@@ -74,8 +74,8 @@ inductive TypeChecked : Expr → Prop where
   | ctor (typeName : String) (tyArgs : List Ty) (ctorName : String) {args : List Expr} :
       (∀ e ∈ args, TypeChecked e) → TypeChecked (.ctor typeName tyArgs ctorName args)
   | proj {e : Expr} (field : String) : TypeChecked e → TypeChecked (.proj e field)
-  | dictLit (value : Ty) {entries : List (String × Expr)} :
-      (∀ e ∈ entries, TypeChecked e.2) → TypeChecked (.dictLit value entries)
+  | dictLit (value : Ty) (obj : Bool) {entries : List (String × Expr)} :
+      (∀ e ∈ entries, TypeChecked e.2) → TypeChecked (.dictLit value obj entries)
   | dictGet {d key : Expr} : TypeChecked d → TypeChecked key → TypeChecked (.dictGet d key)
   | dictHas {d key : Expr} : TypeChecked d → TypeChecked key → TypeChecked (.dictHas d key)
   | dictSet {d key val : Expr} :
@@ -136,7 +136,7 @@ theorem TypeChecked.all : ∀ e : Expr, TypeChecked e
   | .quantE _ arr _ body => .quantE (TypeChecked.all arr) (TypeChecked.all body)
   | .reduceE arr init _ _ body =>
     .reduceE (TypeChecked.all arr) (TypeChecked.all init) (TypeChecked.all body)
-  | .dictLit value entries => .dictLit value (TypeChecked.allValues entries)
+  | .dictLit value obj entries => .dictLit value obj (TypeChecked.allValues entries)
   | .dictGet d key => .dictGet (TypeChecked.all d) (TypeChecked.all key)
   | .dictHas d key => .dictHas (TypeChecked.all d) (TypeChecked.all key)
   | .dictSet d key val => .dictSet (TypeChecked.all d) (TypeChecked.all key) (TypeChecked.all val)
@@ -1455,12 +1455,12 @@ theorem paramsTyped_of_args {p : Program} {f : Nat} {ctx : Compile.Ctx} {env : E
       exact ⟨Ty.eq_of_beq hall.1 ▸ ih arg jh th v (hchk arg (by simp)) hchead hv,
         ihr tail vs' gs (fun e he => hchk e (by simp [he])) hctail hvs hall.2 (by simpa using hlen)⟩
 
-private theorem compileExpr_dictLit_inv {p : Program} {ctx : Compile.Ctx} {value : Ty}
+private theorem compileExpr_dictLit_inv {p : Program} {ctx : Compile.Ctx} {value : Ty} {obj : Bool}
     {entries : List (String × Expr)} {je : Js.Expr} {ty : Ty}
-    (hc : Compile.compileExpr p ctx (.dictLit value entries) = .ok (je, ty)) :
+    (hc : Compile.compileExpr p ctx (.dictLit value obj entries) = .ok (je, ty)) :
     ∃ js, keysDistinct (entries.map (·.1)) = true
       ∧ Compile.compileValues p ctx entries = .ok js
-      ∧ (js.all fun x => x.2 == value) = true ∧ ty = .dict value := by
+      ∧ (js.all fun x => x.2 == value) = true ∧ Compile.dictValueTy ty = some value := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
   split at hc
   · simp at hc
@@ -1474,7 +1474,9 @@ private theorem compileExpr_dictLit_inv {p : Program} {ctx : Compile.Ctx} {value
   · simp at hc
   rename_i hall
   simp only [Except.ok.injEq, Prod.mk.injEq] at hc
-  exact ⟨js, keysDistinct_of_validateDistinct hvd, hcs, by simpa using hall, hc.2.symm⟩
+  refine ⟨js, keysDistinct_of_validateDistinct hvd, hcs, by simpa using hall, ?_⟩
+  rw [← hc.2]
+  cases obj <;> rfl
 
 /-- The dictionary operations: the operand the compiler read as a `Dict`, and the type it gave back. -/
 private theorem compileExpr_dictGet_inv {p : Program} {ctx : Compile.Ctx} {d key : Expr}
@@ -2642,10 +2644,9 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
         · rename_i hne
           exact (hne ctor fields rfl).elim
       · simp at hc''
-    | dictLit value hentries =>
+    | dictLit value obj hentries =>
       rename_i entries
-      obtain ⟨js, hkd, hcs, hall, hty⟩ := compileExpr_dictLit_inv hc
-      subst hty
+      obtain ⟨js, hkd, hcs, hall, hdv⟩ := compileExpr_dictLit_inv hc
       rw [evalExpr_dictLit] at he
       simp only [bind, Except.bind] at he
       split at he
@@ -2656,7 +2657,8 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       obtain ⟨htys, hkeys⟩ := hasEntryTys_of_values
         (fun e je t w hchk' => ih ctx env e je t w hchk' henv) entries js vs value hentries hcs hvs
         hall
-      rw [hasTy_dict, Bool.and_eq_true]
+      -- The two spellings answer `hasTy` alike, so this stays one case rather than two.
+      rw [hasTy_of_dictValueTy hdv, hasTy_dict, Bool.and_eq_true]
       exact ⟨by rw [hkeys]; exact hkd, htys⟩
     | dictGet hd hkey =>
       rename_i dE keyE

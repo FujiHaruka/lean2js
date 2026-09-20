@@ -177,7 +177,7 @@ def step (p : Program) : State → State
     | .quantE op arr binder body => .eval env arr (.quantArrK op binder body env :: k)
     | .reduceE arr init accName elemName body =>
       .eval env arr (.reduceArrK init accName elemName body env :: k)
-    | .dictLit _ entries =>
+    | .dictLit _ _ entries =>
       continueArgs (fun vs => .finish (.dict ((entries.map (·.1)).zip vs)) k) []
         (entries.map (·.2)) env k (fun done rest => .dictK (entries.map (·.1)) done rest env)
     | .dictGet d key =>

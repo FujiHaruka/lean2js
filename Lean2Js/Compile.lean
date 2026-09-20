@@ -720,13 +720,16 @@ def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except S
         .error s!"a sortByKey key must be an Int53 or a String, not {tbody.render}"
       else .ok (.sortByJs jarr binder jbody, .array elem)
     | ty => .error s!"sortByKey expects an Array, not {ty.render}"
-  | .dictLit value entries => do
+  | .dictLit value obj entries => do
     wfTy p [] value
     validateDistinct "key" (entries.map (·.1))
     let js ← compileValues p ctx entries
     if !js.all (fun (_, ty) => ty == value) then
       .error s!"dictionary values are not all {value.render}"
-    else .ok (.dictLit ((entries.map (·.1)).zip (js.map (·.1))), .dict value)
+    -- The two spellings are one `Map` inside the module, so only the type moves: what the entry does
+    -- with it on the way back out is read off the declared type, not off the literal.
+    else .ok (.dictLit ((entries.map (·.1)).zip (js.map (·.1))),
+              if obj then .dictObj value else .dict value)
   | .dictGet d key => do
     let (jd, td) ← compileExpr p ctx d
     let (jk, tk) ← compileExpr p ctx key
@@ -1011,7 +1014,7 @@ private def callsPrecede (p : Program) (limit : Nat) : Expr → Except String Un
     declPrecedes p limit fn
     callsPrecedeList p limit args
   | .ctor _ _ _ args | .arrayLit _ args => callsPrecedeList p limit args
-  | .dictLit _ entries => callsPrecedeValues p limit entries
+  | .dictLit _ _ entries => callsPrecedeValues p limit entries
   | .matchE scrut alts => do
     callsPrecede p limit scrut
     callsPrecedeAlts p limit alts

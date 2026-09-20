@@ -75,7 +75,7 @@ def exprCodes (table : List (String × List String)) : Expr → List String
   | .cond a b c | .dictSet a b c | .reduceE a b _ _ c =>
     exprCodes table a ++ exprCodes table b ++ exprCodes table c
   | .ctor _ _ _ args | .arrayLit _ args => exprCodesList table args
-  | .dictLit _ entries => exprCodesEntries table entries
+  | .dictLit _ _ entries => exprCodesEntries table entries
   | .matchE scrut alts => exprCodes table scrut ++ exprCodesAlts table alts
   | .call fn args =>
     (table.lookup fn).getD [] ++ exprCodesArgs table args ++ exprCodesList table args

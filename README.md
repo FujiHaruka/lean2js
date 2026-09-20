@@ -167,7 +167,7 @@ def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String
 | Pure `def`s marked `@[ship]`, and `@[ship internal]` for one the API should not name | Recursion in a `def` / non-termination / DOM access |
 | A lambda where a traversal takes one, and a declaration's name passed to a call | Functions as values: a function in a variable, a closure, a function type on the public boundary |
 | Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.join` / `Str.replace` / `Str.repeat` / `Str.padStart` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
-| `Dict V` (string keys, emitted as a `Map`) and `Dict.Obj V` (the same dictionary, emitted as a plain object) | A `Dict.Obj` written out key by key — build a `Dict`, or take one as a parameter |
+| `Dict V` (string keys, emitted as a `Map`) and `Dict.Obj V` (the same dictionary, emitted as a plain object), each written out with `ofList` or built with `ofPairs` | A dictionary keyed by anything but a string |
 
 A `def` that leaves the subset is refused by name, with the term the walk stopped at. Where JavaScript
 and Lean disagree the generated code follows neither silently: division by zero, `Int53` overflow and

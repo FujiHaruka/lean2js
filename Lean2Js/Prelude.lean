@@ -607,14 +607,14 @@ end Dict
 operation runs on the same `Map` — so what the constructor decides is only what a consumer meets:
 `JSON.stringify` of a `Map` is `{}`, and what a consumer stringifies is a return value.
 
-There is no literal here. A `Dict.Obj` is one a consumer handed in, or one built from it by `set` and
-`erase`, which give back the spelling they were handed. Writing one out key by key needs a form the
-compiler does not have; `.claude/plans/a-dictionary-on-the-way-out.md` prices the three ways to add
-one. -/
+`ofList` writes one out key by key, and `set` and `erase` give back the spelling they were handed, so a
+declaration can build one as readily as it can be handed one. -/
 structure Dict.Obj (α : Type) where
   entries : List (String × α)
 
 namespace Dict.Obj
+
+def ofList (entries : List (String × α)) : Dict.Obj α := ⟨entries⟩
 
 def get (d : Dict.Obj α) (k : String) : Option α := (d.entries.find? (·.1 == k)).map (·.2)
 
@@ -636,6 +636,11 @@ def size (d : Dict.Obj α) : Int := Int.ofNat d.entries.length
 
 /-- What `k` is bound to, or `dflt` where it is bound to nothing. -/
 @[expand] def getD (d : Dict.Obj α) (k : String) (dflt : α) : α := Opt.getD (d.get k) dflt
+
+/-- An array indexed by a key read off each element, at this spelling. `Dict.ofPairs` is the same over a
+`Map`. -/
+@[expand] def ofPairs (xs : List α) (key : α → String) : Dict.Obj α :=
+  xs.foldl (fun d x => d.set (key x) x) (ofList [])
 
 end Dict.Obj
 

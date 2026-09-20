@@ -45,6 +45,27 @@ function decode(value) {
   }
 }
 
+// The expected result, which is written as the JavaScript value the entry has to hand back rather than
+// as the `Value` `eval` returned: at a dictionary the declared type says crosses as a plain object the
+// two are not the same shape, and it is this one the call is compared against.
+function decodeJs(value) {
+  switch (value.t) {
+    case "bigint":
+      return BigInt(value.v);
+    case "jsobj": {
+      const out = {};
+      for (const [key, field] of Object.entries(value.v)) out[key] = decodeJs(field);
+      return out;
+    }
+    case "arr":
+      return value.v.map(decodeJs);
+    case "dict":
+      return new Map(value.v.map(([key, entry]) => [key, decodeJs(entry)]));
+    default:
+      return value.v;
+  }
+}
+
 // A Map's keys are left in place: no order is declared for them.
 function reshape(shape, value) {
   if (Array.isArray(value)) return value.map((item) => reshape(shape, item));
@@ -140,8 +161,8 @@ for (const [index, vector] of vectors.entries()) {
   }
   if (!vector.ok) {
     failures.push(`${call}: returned instead of throwing ${vector.error}`);
-  } else if (!agrees(returned, decode(vector.value))) {
-    failures.push(`${call}: returned ${show(returned)}, expected ${show(decode(vector.value))}`);
+  } else if (!agrees(returned, decodeJs(vector.value))) {
+    failures.push(`${call}: returned ${show(returned)}, expected ${show(decodeJs(vector.value))}`);
   }
 }
 

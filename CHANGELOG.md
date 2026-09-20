@@ -12,9 +12,9 @@ what decides which compiler your artifact was built by.
   stringifies is a return value.
 
   An entry taking one accepts either shape and hands the body a `Map`; an entry returning one walks the
-  result back out through its declared return type. `set` and `erase` give back the spelling they were
-  handed, so a declaration that takes a `Dict.Obj` can return one. There is no literal at that spelling:
-  `Dict.ofList` and `Dict.ofPairs` build a `Dict`.
+  result back out through its declared return type. `Dict.Obj.ofList` and `Dict.Obj.ofPairs` write one
+  out, and `set` and `erase` give back the spelling they were handed, so a declaration can build one as
+  readily as it can be handed one.
 
   One operation reads a receiver at either spelling — `Compile.dictValueTy` is what the compiler matches
   on — so `Sound` and `Correct` keep a single case per operation and nothing about the `Map` spelling
@@ -23,7 +23,15 @@ what decides which compiler your artifact was built by.
   The `.d.ts` prints the union for a parameter and `{ readonly [key: string]: V }` for a return, so a
   consumer never narrows a value they were handed. Both directions are proved:
   `encoded_values_fit_dts` is stated at the returning reading, and
-  `returned_values_fit_parameter_types` carries that reading to the argument one.
+  `returned_values_fit_parameter_types` carries that reading to the argument one. What one call hands
+  back is also accepted by the next call's entry check and read back there as the value the first one
+  returned (`returned_values_pass_the_entry_check`, `returned_values_read_back_unchanged`).
+
+- **A returned dictionary is what the differential test compares against.** A vector's expected value is
+  now written as the JavaScript value the entry has to hand back rather than as the value `eval`
+  returned, and the generator offers a `Dict.Obj` parameter the cases it offers a `Dict` one. Until both
+  of those, no declaration taking or returning a dictionary that crosses as a plain object had a single
+  well-typed vector, so the walk on the way out ran in no differential run.
 
 - **A call through a function value is read back in.** A declaration's entry hands its result back
   through the type it was declared at, so the one call inside a package that goes to an entry — a call

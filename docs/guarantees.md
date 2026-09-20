@@ -88,7 +88,7 @@ every call a consumer can make. The other two cover every declaration, exported 
 - Running out of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on
   the fuel needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against
   the ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
-  <!--n:fuelNeeded-->2209<!--/n-->).
+  <!--n:fuelNeeded-->2226<!--/n-->).
 - **What that rests on**: the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
   exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step
@@ -179,10 +179,13 @@ real JavaScript answer alike, not the range of spellings.
 
 ## What is checked rather than proved
 
-- **Every vector generated for the artifact** (<!--n:vectors-->44355<!--/n--> of them for this example) is
+- **Every vector generated for the artifact** (<!--n:vectors-->45388<!--/n--> of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
-  real JavaScript. One disagreement and nothing is written to the output directory.
+  real JavaScript. One disagreement and nothing is written to the output directory. What a vector is
+  compared against is the JavaScript value the entry has to hand back — `eval`'s value read out through
+  the declaration's return type, which is what `decl_correct` says the entry returns — so a dictionary
+  the declared type hands across as a plain object is compared as one.
 - **The theorems in the manifest are not written by hand.** `lean2js` collects every public theorem in the
   same namespace and uses the signature Lean prints as the wording. The per-declaration certificates are
   not listed one by one: they correspond one-to-one with the shipped declarations and nothing is written

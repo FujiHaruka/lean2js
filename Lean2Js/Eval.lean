@@ -490,7 +490,7 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
         let acc ← evalExpr p f env init
         evalReduceItems p f env accName elemName body acc xs
       | _ => .error (.typeError "reduce expects an Array")
-    | .dictLit _ entries => do
+    | .dictLit _ _ entries => do
       let vs ← evalArgs p f env (entries.map (·.2))
       .ok (.dict ((entries.map (·.1)).zip vs))
     | .dictGet d key => do
@@ -840,9 +840,9 @@ theorem evalExpr_sortByKeyE (p : Program) (f : Nat) (env : Env) (arr : Expr) (bi
           | _ => .error (.typeError "sortByKey expects an Array")) := by
   rw [evalExpr.eq_def]
 
-theorem evalExpr_dictLit (p : Program) (f : Nat) (env : Env) (value : Ty)
+theorem evalExpr_dictLit (p : Program) (f : Nat) (env : Env) (value : Ty) (obj : Bool)
     (entries : List (String × Expr)) :
-    evalExpr p (f + 1) env (.dictLit value entries) =
+    evalExpr p (f + 1) env (.dictLit value obj entries) =
       (do
         let vs ← evalArgs p f env (entries.map (·.2))
         .ok (.dict ((entries.map (·.1)).zip vs))) := by

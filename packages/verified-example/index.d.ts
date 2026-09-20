@@ -344,6 +344,15 @@ export declare function objListedPrices(prices: ReadonlyMap<string, number> | { 
 export declare function objCatalogueSize(prices: ReadonlyMap<string, number> | { readonly [key: string]: number }): number;
 
 /**
+ * What a role may do, written out at the spelling that crosses as a plain object rather than as a
+ * `Map`. The same dictionary as `limitsFor` twice over: the entries are the same and the operations on
+ * them are the same, and what the spelling decides is what a consumer is handed.
+ *
+ * @throws {TrapError<"typeError">}
+ */
+export declare function objLimitsFor(role: Role): { readonly [key: string]: number };
+
+/**
  * Truncating division. Division by zero traps on the JS side too.
  *
  * @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">}

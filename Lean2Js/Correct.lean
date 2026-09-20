@@ -63,8 +63,8 @@ inductive InFragment : Expr → Prop where
       (∀ e ∈ args, InFragment e) → InFragment (.ctor typeName tyArgs ctorName args)
   | arrayLit (elem : Ty) {items : List Expr} :
       (∀ e ∈ items, InFragment e) → InFragment (.arrayLit elem items)
-  | dictLit (value : Ty) {entries : List (String × Expr)} :
-      (∀ e ∈ entries, InFragment e.2) → InFragment (.dictLit value entries)
+  | dictLit (value : Ty) (obj : Bool) {entries : List (String × Expr)} :
+      (∀ e ∈ entries, InFragment e.2) → InFragment (.dictLit value obj entries)
   | mapE {arr body : Expr} {binder : String} :
       InFragment arr → InFragment body → InFragment (.mapE arr binder body)
   | sortByKeyE {arr body : Expr} {binder : String} :
@@ -118,7 +118,7 @@ theorem InFragment.all : ∀ e : Expr, InFragment e
   | .quantE _ arr _ body => .quantE (InFragment.all arr) (InFragment.all body)
   | .reduceE arr init _ _ body =>
     .reduceE (InFragment.all arr) (InFragment.all init) (InFragment.all body)
-  | .dictLit value entries => .dictLit value (InFragment.allValues entries)
+  | .dictLit value obj entries => .dictLit value obj (InFragment.allValues entries)
   | .dictGet d key => .dictGet (InFragment.all d) (InFragment.all key)
   | .dictHas d key => .dictHas (InFragment.all d) (InFragment.all key)
   | .dictSet d key val => .dictSet (InFragment.all d) (InFragment.all key) (InFragment.all val)
@@ -191,7 +191,7 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
   | .proj (field := field) hx => .proj field hx.typeChecked
   | .ctor tn ta cn hargs => .ctor tn ta cn fun e he => (hargs e he).typeChecked
   | .arrayLit elem hitems => .arrayLit elem fun e he => (hitems e he).typeChecked
-  | .dictLit value hentries => .dictLit value fun e he => (hentries e he).typeChecked
+  | .dictLit value obj hentries => .dictLit value obj fun e he => (hentries e he).typeChecked
   | .mapE harr hbody => .mapE harr.typeChecked hbody.typeChecked
   | .sortByKeyE harr hbody => .sortByKeyE harr.typeChecked hbody.typeChecked
   | .filterE harr hbody => .filterE harr.typeChecked hbody.typeChecked
@@ -2110,9 +2110,9 @@ private theorem compileExpr_arrayLit_parts {p : Program} {ctx : Compile.Ctx} {el
   simp only [Except.ok.injEq, Prod.mk.injEq] at hc
   exact ⟨js, hcs, hc.1.symm⟩
 
-private theorem compileExpr_dictLit_parts {p : Program} {ctx : Compile.Ctx} {value : Ty}
+private theorem compileExpr_dictLit_parts {p : Program} {ctx : Compile.Ctx} {value : Ty} {obj : Bool}
     {entries : List (String × Expr)} {je : Js.Expr} {ty : Ty}
-    (hc : Compile.compileExpr p ctx (.dictLit value entries) = .ok (je, ty)) :
+    (hc : Compile.compileExpr p ctx (.dictLit value obj entries) = .ok (je, ty)) :
     ∃ js, Compile.compileValues p ctx entries = .ok js
       ∧ je = .dictLit ((entries.map (·.1)).zip (js.map (·.1))) := by
   simp only [Compile.compileExpr, bind, Except.bind] at hc
@@ -5949,7 +5949,7 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
     rw [encodeValue]
     exact eventually_arrayLit
       (eventuallyList_of_args p m items js vs (fun e he => ihitems e he henv hjenv) hcs hvs)
-  | dictLit value hentries =>
+  | dictLit value obj hentries =>
     rename_i entries
     have ihentries := fun a ha => ih (hentries a ha)
     intro ctx env jenv je ty v henv hjenv hc he
@@ -8202,7 +8202,7 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
       exact eventuallyErr_arrayLit (eventuallyListErr_of_args p m hsig hprog iha henv hjenv items js hitems
         (fun e he => ihitems e he henv hcov hjenv) hcs hie hne)
     · simp at he
-  | dictLit value hentries =>
+  | dictLit value obj hentries =>
     rename_i entries
     have ihentries := fun a ha => ih (hentries a ha)
     intro ctx env jenv je ty err henv hcov hjenv hc he hne

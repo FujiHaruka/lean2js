@@ -218,7 +218,7 @@ theorem evalExpr_succ (p : Program) : ∀ (f : Nat) (env : Env) (e : Expr),
       refine Refines.bind (ih env arr) (fun v => ?_)
       cases v <;> try exact Refines.rfl' _
       exact Refines.bind (ih env init) (fun _ => hreduce env accName elemName body _ _)
-    | dictLit value entries =>
+    | dictLit value obj entries =>
       simp only [evalExpr_dictLit]
       exact Refines.bind (hargs env _) (fun _ => Refines.rfl' _)
     | dictGet d key =>
