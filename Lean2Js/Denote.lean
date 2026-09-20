@@ -138,6 +138,35 @@ open Lean in
 #eval show Elab.Command.CommandElabM (Option String) from
   return Lean2Js.Enc.foldOf? (← getEnv) ``Example.Category.fold
 
+/-! The alternatives a fold will be reified to: one per constructor, in declaration order, every field
+bound. `matchPat` is well-founded and does not reduce on its own, so which arm fires is read through
+`matchPats_binds` and the equation lemmas rather than by `rfl` — these two pin that reading, and they
+are the shape the per-type walk will be generated in. -/
+
+private def catAlts : List Alt :=
+  [ (.ctor "leaf" [.bind "name"], .var "name"),
+    (.ctor "group" [.bind "name", .bind "children"], .var "name") ]
+
+example (n : Value) :
+    firstMatch catAlts (.obj "leaf" [("name", n)]) = some ([("name", n)], .var "name") := by
+  rw [catAlts, firstMatch, matchPat.eq_def]
+  simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]
+  rw [show ([Pat.bind "name"] : List Pat) = ["name"].map Pat.bind from rfl,
+    matchPats_binds ["name"] [n] rfl]
+  simp
+
+example (n : Value) (cs : List Value) :
+    firstMatch catAlts (.obj "group" [("name", n), ("children", .arr cs)])
+      = some ([("name", n), ("children", .arr cs)], .var "name") := by
+  rw [catAlts, firstMatch, matchPat.eq_def]
+  simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]
+  rw [if_neg (by simp), firstMatch, matchPat.eq_def]
+  simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]
+  rw [show ([Pat.bind "name", Pat.bind "children"] : List Pat)
+      = ["name", "children"].map Pat.bind from rfl,
+    matchPats_binds ["name", "children"] [n, .arr cs] rfl]
+  simp
+
 /-! ### What the walk refuses
 
 A refusal that cannot name what to write instead names the rule the term broke, and the three rules are

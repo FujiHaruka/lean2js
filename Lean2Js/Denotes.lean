@@ -314,6 +314,24 @@ theorem denotes_matchE_split (p : Program) (env : Env) {β : Type} [Enc β] {α 
     Denotes p env (.matchE scrut alts) (g x) :=
   h x hs
 
+/-- A pattern that only binds accepts any value and binds it. `matchPat` is well-founded and does not
+reduce on its own, so the arms a fold is reified to — one per constructor, binding every field — are
+read through this rather than by computation. -/
+theorem matchPat_bind (name : String) (v : Value) :
+    matchPat (.bind name) v = some [(name, v)] := by rw [matchPat.eq_def]
+
+/-- The same for a whole row of them, which is what a fold's alternative is: the binds it makes are the
+constructor's field names against the rebuilt node's fields, in order. -/
+theorem matchPats_binds : ∀ (names : List String) (vs : List Value), names.length = vs.length →
+    matchPats (names.map .bind) vs = some (names.zip vs)
+  | [], [], _ => by rw [matchPats.eq_def]; rfl
+  | n :: ns, v :: vs, h => by
+    rw [List.map_cons, matchPats.eq_def]
+    simp only [matchPat_bind, matchPats_binds ns vs (by simpa using h)]
+    rfl
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
+
 /-- What the matcher's splitter hands an arm about the arms before it, turned around. `matchPat` compares
 the pattern's literal against the value, so a proof that an earlier arm missed needs the literal on the
 left and the splitter states it on the right. -/

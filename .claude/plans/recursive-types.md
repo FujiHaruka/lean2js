@@ -996,10 +996,24 @@ bindings.
 
 Three consequences, all of them cheapening:
 
-1. **`firstMatch` reduces.** Every pattern is a constructor applied to binds, the constructor names are
-   distinct and in declaration order, so `firstMatch alts (.obj cᵢ.name fs)` is the `i`-th alternative by
-   computation. One generated lemma per constructor, `by simp [firstMatch, matchPat, matchPats]` — the
-   same shape `Denote.lean`'s existing `#guard`s reduce by. None of `denotes_matchE_split`'s motive
+1. **`firstMatch` reduces — but not by `rfl` and not by plain `simp`.** Measured, because
+   `denotes_matchE_of`'s own docstring warns that `matchPat` is well-founded and does not reduce on its
+   own. `rfl` fails, `simp [firstMatch, matchPat, matchPats]` makes no progress, and
+   `simp [firstMatch.eq_def, matchPat.eq_def, matchPats.eq_def]` loops to `maxRecDepth`. What works is
+   the equation lemmas driven by `rw`, one step per constructor before the one that fires, over a
+   reusable lemma about an all-binds pattern:
+
+   ```
+   rw [alts, firstMatch, matchPat.eq_def]
+   simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]
+   rw [if_neg (by simp)]                     -- once per earlier constructor
+   …
+   rw [show (…) = […].map Pat.bind from rfl, matchPats_binds … rfl]
+   simp
+   ```
+
+   `Denotes.matchPat_bind` and `Denotes.matchPats_binds` are that reusable half and are written; the
+   per-constructor stepping is what `EncDeriving` generates. None of `denotes_matchE_split`'s motive
    trouble arises, because nothing is being split on.
 2. **The exhaustiveness check passes by construction**, and passes the *new* check too: a pattern that
    binds every field is a wildcard at every folded column, which is the branch of `usefulFold` that only
