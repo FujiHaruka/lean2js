@@ -250,8 +250,8 @@ def objListedPrices (prices : Dict.Obj Int) : List Int := prices.values
 def objCatalogueSize (prices : Dict.Obj Int) : Int := prices.size
 
 /-- What a role may do, written out at the spelling that crosses as a plain object rather than as a
-`Map`. The same dictionary as `limitsFor` twice over: the entries are the same and the operations on
-them are the same, and what the spelling decides is what a consumer is handed. -/
+`Map`. Beside `limitsFor` it is one dictionary written twice: the same entries, the same operations, and
+what the spelling decides is only what a consumer is handed. -/
 @[ship]
 def objLimitsFor (role : Role) : Dict.Obj Int :=
   match role with

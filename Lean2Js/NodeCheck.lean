@@ -86,7 +86,11 @@ function agrees(actual, expected) {
   if (Array.isArray(actual) && Array.isArray(expected)) {
     return actual.length === expected.length && actual.every((x, i) => agrees(x, expected[i]));
   }
-  if (actual instanceof Map && expected instanceof Map) {
+  if (actual instanceof Map || expected instanceof Map) {
+    // Both or neither. An empty Map and an empty object have the same `Object.keys`, so falling through
+    // to the field comparison below would read the two as the same value — and which of them a
+    // dictionary comes back as is exactly what the declared type decides.
+    if (!(actual instanceof Map && expected instanceof Map)) return false;
     return (
       actual.size === expected.size &&
       [...actual].every(([key, value]) => expected.has(key) && agrees(value, expected.get(key)))

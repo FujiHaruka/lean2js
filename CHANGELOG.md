@@ -33,6 +33,10 @@ what decides which compiler your artifact was built by.
   of those, no declaration taking or returning a dictionary that crosses as a plain object had a single
   well-typed vector, so the walk on the way out ran in no differential run.
 
+  The Node side of the differential run now refuses a `Map` where an object is expected and an object
+  where a `Map` is: an empty one of each has the same `Object.keys`, so the two used to read as the same
+  value, and which of them comes back is exactly what the declared type decides.
+
 - **A call through a function value is read back in.** A declaration's entry hands its result back
   through the type it was declared at, so the one call inside a package that goes to an entry — a call
   through a function-typed parameter — now reads that result back the way it reads an argument. The

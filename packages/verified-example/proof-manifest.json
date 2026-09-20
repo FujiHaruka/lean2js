@@ -17,11 +17,11 @@
     },
     {
       "file": "index.d.ts",
-      "sha256": "d913fd76daa97f986a0bb3c49af86d0764eb0df0e7fd300facd434217967049d"
+      "sha256": "d3eda2fc96924471661560335db6c163d5e5ab6745489dc529b9c56b1d897b53"
     },
     {
       "file": "README.md",
-      "sha256": "d6fd548c33a0f78a6380f03500f77640fa82bed561f5ced55843a9afbaa12fc9"
+      "sha256": "dabe6a1c896fdd4cf8e069742c2cfd5ed39ddca3592dfa1b49478f775932ad16"
     },
     {
       "file": "package.json",
@@ -297,7 +297,7 @@
       "name": "objLimitsFor",
       "signature": "(role : Role) → Dict.Obj Int53",
       "declaration": "objLimitsFor(role: Role): { readonly [key: string]: number }",
-      "doc": "What a role may do, written out at the spelling that crosses as a plain object rather than as a\n`Map`. The same dictionary as `limitsFor` twice over: the entries are the same and the operations on\nthem are the same, and what the spelling decides is what a consumer is handed."
+      "doc": "What a role may do, written out at the spelling that crosses as a plain object rather than as a\n`Map`. Beside `limitsFor` it is one dictionary written twice: the same entries, the same operations, and\nwhat the spelling decides is only what a consumer is handed."
     },
     {
       "name": "divide",
