@@ -21,21 +21,15 @@ repository; everything about developing the compiler lives under `.claude/`. His
 | `.claude/rules/`, `.claude/plans/` | a session working on the compiler itself. Never linked from a user document |
 | `scripts/dogfood/` | a session run as an outside user, to measure whether the documents above are enough |
 
-## The reference is split so that one file answers one question
-
-`reference/README.md` carries the two rules and the map; `declarations.md`, `expressions.md`,
-`vocabulary.md`, `javascript.md`, `errors.md` and `proving.md` each answer one question and are reached
-from that map. A reader — usually an agent — opens one of them, not all of them, so a fact belongs in
-exactly one and the others link to it. Adding a section means asking which file already owns the
-question before adding a seventh.
-
 ## Assume the reader knows their job
 
 The reader is a software engineer who writes Lean. What `lake exe` resolves, what `npm publish` does,
-how a `lakefile.toml` is laid out, what a discriminated union is, what `omega` decides — none of that is
-written here. **Only what this repository decides is**: which subset is read, what an operation answers,
-what the compiler refuses, how far the proofs reach. A sentence a competent reader could have written
-themselves is padding, however true it is.
+how a `lakefile.toml` is laid out, what a discriminated union is, what `omega` decides, that patterns
+nest — none of that is written here. **Only what this repository decides is**: which subset is read,
+what an operation answers, what the compiler refuses, how far the proofs reach.
+
+**The test is whether a sentence records a decision of this repository.** If it does not, it comes out,
+however true it is and however well it reads. A competent reader could have written it themselves.
 
 The corollary is that a generated package is a package like any other. It carries `"private": true` and
 the manifest can turn that off; how to publish an npm package, or point a workspace at a directory, is
@@ -43,9 +37,8 @@ not this repository's subject.
 
 ## Write the final state only
 
-No diffs, no history, no "this used to be", no rejected alternatives, no defending a decision. The test
-is whether a reader with no context is better off for the sentence. The only exception is a fact that
-changes what a reader does today.
+No diffs, no history, no "this used to be", no rejected alternatives, no defending a decision. The only
+exception is a fact that changes what a reader does today.
 
 **A design reason is not history**, but it is one clause, not a paragraph. Why division by zero and
 `Int53` overflow trap instead of following JavaScript, why `Int53.div` exists rather than Lean's `/` — a
@@ -55,7 +48,18 @@ reader meets those as today's behaviour, so the reason stays, said once and said
 boundary is stated exactly and every reservation belongs; everywhere else, a sentence that only hedges
 comes out.
 
-## A number is measured, or it is not in the document
+## One document answers one question
+
+`reference/README.md` carries the two rules and the map; `declarations.md`, `expressions.md`,
+`vocabulary.md`, `javascript.md`, `errors.md` and `proving.md` each answer one question and are reached
+from that map. A reader — usually an agent — opens one of them, not all of them, so **a fact belongs in
+exactly one file** and the others link to it. Adding a section means asking which file already owns the
+question before adding a seventh.
+
+A document a reader has to scroll past to reach their answer is answering more than one question. Split
+it and give the pieces a map; do not let the map grow into a summary of what it points at.
+
+## A number is measured, and a sample is copied
 
 **A count is not a claim.** Expression forms, public functions, shipped declarations, run-time helpers,
 table rows: the claim is the quantifier, so write *every form*, *every public function*, *one per shipped
@@ -68,8 +72,11 @@ much of the fuel ceiling it needs, and the ceiling itself — are **written by
 between `<!--n:name-->` markers, out of what `lean2js` prints while it emits. CI runs it and fails on the
 diff. Never type one of those in: change what is measured, or change the marker.
 
-A transcript is not a claim either: the sample output in `README.md` shows what the command prints, and a
-reader whose own run counts differently has lost nothing.
+**Everything a document shows as output is copied out of a run of the thing it is showing.** The
+transcript, the `.d.ts`, the value a call returns, the error a bad call throws: emit the module the
+document puts in front of the reader, and paste what came back. A transcript is still not a claim — a
+reader whose own run counts differently has lost nothing — but it may not belong to a different program
+than the one on the page.
 
 ## Code in a document has to work
 
