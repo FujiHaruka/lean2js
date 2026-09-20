@@ -578,3 +578,11 @@ A statement below reads one of these by name. The package holds the value, writt
 ## Axioms
 
 The proofs above reach no axioms beyond Classical.choice, Quot.sound, propext.
+
+## Checking this is the package that was built
+
+`proof-manifest.json` names the SHA-256 of every other file here. What the theorems above are about is the module those digests name, so a file that does not match one is not the file the claims beside it speak about.
+
+```sh
+shasum -a 256 index.js index.d.ts README.md package.json
+```

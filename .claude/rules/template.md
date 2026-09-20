@@ -33,6 +33,10 @@ is sold on, each by the message the user would see:
   a broken install rather than a bad module, and reporting it as the first sends a reader to the
   compiler for a fault on their machine
 - that nothing is left behind in `--out` when any of these refuse
+- that the digest the manifest carries for each file is the one `shasum -a 256` prints for it, and that
+  `verify` names an edited file (`not what the manifest says it is`) and a missing one
+  (`missing from the package`) — the first of those is checked with the consumer's own tool rather than
+  with `lean2js`, because a digest only this compiler can compute answers nobody
 - that an `@[expand] def` leaves no name at all in the generated package
 - that `proof-manifest.json` names the version in `lakefile.toml`
 

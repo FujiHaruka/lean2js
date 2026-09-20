@@ -10,6 +10,24 @@
     "githash": "819816b2e0a3bf405af45ae5c7af2491d8f5bee6"
   },
   "source": "Lean2Js.Example",
+  "artifacts": [
+    {
+      "file": "index.js",
+      "sha256": "3755b571b6c0a8f6f0b573777c38401bb8666abb804c6d0f34a49ba43c865683"
+    },
+    {
+      "file": "index.d.ts",
+      "sha256": "e03b58c8b4fb2cb98a832266052f2f52737ce73d1f30bd93e2c36ff29e4b6b0e"
+    },
+    {
+      "file": "README.md",
+      "sha256": "a8cfa834d44a7b92770067688f44ca3d379c693f332ec259c730d3d508743321"
+    },
+    {
+      "file": "package.json",
+      "sha256": "94cf60d1a65b05f1e4a5b52ff6450c7fe4830d5f23150fbd41828de8d2b195f8"
+    }
+  ],
   "exports": [
     {
       "name": "add",

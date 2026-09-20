@@ -5,6 +5,7 @@ import Lean2Js.Compile
 import Lean2Js.Manifest
 import Lean2Js.NodeCheck
 import Lean2Js.Parse
+import Lean2Js.Sha256
 import Lean2Js.Vectors
 
 /-!
@@ -99,12 +100,14 @@ def emit (outDir : System.FilePath) (a : Artifact) : IO Unit := do
     let vectors ← match renderVectors a.program 400 200 with
       | .error e => throw (IO.userError s!"vector generation failed: {e}")
       | .ok vectors => pure vectors
-    let files := [
+    let carried := [
       ("index.js", text),
       ("index.d.ts", Js.renderDts a.program a.docs),
       ("README.md", a.toReadme),
-      ("proof-manifest.json", a.toJson.renderPretty ++ "\n"),
       ("package.json", (packageJson a.manifest).renderPretty ++ "\n")]
+    let digests := carried.map fun (name, text) => (name, Sha256.digestString text)
+    let files := carried ++
+      [("proof-manifest.json", (a.toJson digests).renderPretty ++ "\n")]
     checkOnNode files vectors
     IO.println s!"needs {Cost.cost a.program} of the {defaultFuel} fuel the artifact runs at"
     IO.FS.createDirAll outDir

@@ -129,6 +129,15 @@ real JavaScript answer alike, not the range of spellings.
   declaration. That no theorem rests on an axiom beyond `propext` / `Classical.choice` / `Quot.sound` is
   also checked before anything is written — a proof plugged with `sorry` gets through `lake build` with
   only a warning, so this is where it is stopped.
+- **The package says which files its claims are about.** `proof-manifest.json` carries the SHA-256 of
+  every other file the package ships, so a consumer who has the files and not the build can ask whether
+  the theorems beside them are about the `index.js` in front of them. `lean2js verify <dir>` asks that
+  from a build holding the compiler; `shasum -a 256` asks it without one, which matters because the
+  reader who most needs the answer has neither Lean nor this repository. The manifest cannot name its own
+  digest, so it is the one file not in the list. **Emitted twice from the same compiler and the same
+  source, a package is the same bytes** — that is what makes a digest something a third party can
+  reproduce rather than only compare, and it is checked rather than proved: CI regenerates this
+  repository's example on another machine and fails on the diff.
 - **What the `@throws` line names is read off the syntax.** `decl_traps` proves the generated code throws
   the code `eval` traps with; *which* codes a given function can trap with is a separate question, and the
   line in `index.d.ts` answers it by reading the body — each operation contributes the codes its case in

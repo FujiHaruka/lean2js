@@ -22,7 +22,10 @@ resting on an axiom other than `propext` / `Classical.choice` / `Quot.sound` fai
 | [`reference/`](reference/README.md) | What a shipped `def` may be written in, and what you prove it with |
 
 `dist/` gets `index.js`, `index.d.ts`, `proof-manifest.json`, `package.json`, and a `README.md` holding
-the public API, what a call throws, and the theorems and their axioms.
+the public API, what a call throws, and the theorems and their axioms. The manifest names the SHA-256 of
+each of the others, and `lake exe lean2js verify dist` reads them back and answers whether they are still
+the files it names — worth a line in your CI, since nothing else tells a consumer that the theorems they
+are reading are about the `index.js` beside them.
 
 ## What to change
 

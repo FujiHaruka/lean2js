@@ -17,7 +17,7 @@ private structure Invocation where
   outDir : System.FilePath
 
 private def usage : String :=
-  "usage: lean2js <Module> [--manifest <const>] [--out <dir>]"
+  "usage: lean2js <Module> [--manifest <const>] [--out <dir>]\n       lean2js verify <dir>"
 
 private def parseFlags (inv : Invocation) : List String → Except String Invocation
   | [] => .ok inv
@@ -25,14 +25,23 @@ private def parseFlags (inv : Invocation) : List String → Except String Invoca
   | "--out" :: value :: rest => parseFlags { inv with outDir := value } rest
   | arg :: _ => .error s!"{arg}: unexpected argument\n{usage}"
 
-private def parseArgs : List String → Except String Invocation
+private inductive Subcommand where
+  | emit (inv : Invocation)
+  | verify (dir : System.FilePath)
+
+private def parseArgs : List String → Except String Subcommand
   | [] => .error usage
+  | "verify" :: rest =>
+    match rest with
+    | [dir] => .ok (.verify dir)
+    | _ => .error s!"verify reads one package directory\n{usage}"
   | arg :: rest =>
     if arg.startsWith "-" then
       .error s!"{arg}: expected a module name first\n{usage}"
     else
       let module := arg.toName
-      parseFlags { module, manifestConst := module ++ `manifest, outDir := "dist" } rest
+      (Subcommand.emit ·) <$>
+        parseFlags { module, manifestConst := module ++ `manifest, outDir := "dist" } rest
 
 /-- `lake exe lean2js MyLogic` builds this executable, not `MyLogic`, so without this the manifest would
 be read out of whatever olean was left lying around. Re-entering lake from inside a lake-launched process
@@ -164,6 +173,52 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
   return { manifest, program, claims, constants := constants.toList,
            source := toString inv.module, axioms, docs := docs.toList }
 
+private structure FileDigest where
+  file : String
+  sha256 : String
+
+private def readDigests (json : Lean.Json) : Except String (Array FileDigest) := do
+  let entries ← (← json.getObjVal? "artifacts").getArr?
+  entries.mapM fun entry => do
+    return { file := ← (← entry.getObjVal? "file").getStr?,
+             sha256 := ← (← entry.getObjVal? "sha256").getStr? }
+
+/-- Reads a package back and asks whether it is the one its own manifest speaks about. Nothing here needs
+the module the package was emitted from, or Lean: the digests are the ones `shasum -a 256` prints, so this
+is a convenience for a build that has `lean2js` to hand rather than the only way to run the check. -/
+private def verify (dir : System.FilePath) : IO UInt32 := do
+  let manifestPath := dir / "proof-manifest.json"
+  unless ← manifestPath.pathExists do
+    IO.eprintln s!"{manifestPath}: not here, so nothing says what this package should be"
+    return 1
+  let json ← match Lean.Json.parse (← IO.FS.readFile manifestPath) with
+    | .error e => do IO.eprintln s!"{manifestPath} is not JSON: {e}"; return 1
+    | .ok json => pure json
+  let digests ← match readDigests json with
+    | .error e => do
+      IO.eprintln s!"{manifestPath} carries no readable `artifacts`: {e}\n\
+        a manifest lean2js {compilerVersion} wrote names the SHA-256 of every other file the package ships"
+      return 1
+    | .ok digests => pure digests
+  let mut wrong := 0
+  for d in digests do
+    let path := dir / d.file
+    unless ← path.pathExists do
+      IO.eprintln s!"{d.file}: named in the manifest, missing from the package"
+      wrong := wrong + 1
+      continue
+    let actual := Sha256.digest (← IO.FS.readBinFile path)
+    unless actual == d.sha256 do
+      IO.eprintln s!"{d.file}: not what the manifest says it is\n  manifest: {d.sha256}\n  \
+        here:     {actual}"
+      wrong := wrong + 1
+  if wrong == 0 then
+    IO.println s!"{digests.size} files match the digests in {manifestPath}"
+    return 0
+  IO.eprintln s!"{wrong} of {digests.size} files are not the ones the manifest names, so the theorems it \
+carries are not claims about this package as it stands"
+  return 1
+
 private unsafe def run (inv : Invocation) : IO UInt32 := do
   unless (← rebuild inv.module) do return 1
   initSearchPath (← findSysroot)
@@ -178,4 +233,5 @@ private unsafe def run (inv : Invocation) : IO UInt32 := do
 unsafe def main (args : List String) : IO UInt32 := do
   match parseArgs args with
   | .error e => IO.eprintln e; return 1
-  | .ok inv => run inv
+  | .ok (.emit inv) => run inv
+  | .ok (.verify dir) => verify dir

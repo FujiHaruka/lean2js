@@ -4,6 +4,7 @@ import Lean2Js.Core
 import Lean2Js.Value
 import Lean2Js.Eval
 import Lean2Js.Json
+import Lean2Js.Sha256
 import Lean2Js.Js
 import Lean2Js.Compile
 import Lean2Js.Emit

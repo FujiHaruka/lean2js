@@ -36,6 +36,30 @@ for file in index.js index.d.ts package.json proof-manifest.json README.md; do
 done
 test ! -e dist/vectors.json || { echo "the vectors were written into dist"; exit 1; }
 
+# The manifest names the SHA-256 of every other file, so a reader holding the package can ask whether the
+# theorems in it are about the files in front of them. The digest is the plain one, because the reader who
+# most needs that question answered has neither Lean nor this compiler: what the package README tells them
+# to run is what is run here.
+lake exe lean2js verify dist > verified.out
+grep -q 'files match the digests' verified.out \
+  || { cat verified.out; echo "verify did not check the package it was given"; exit 1; }
+for file in index.js index.d.ts README.md package.json; do
+  digest="$(shasum -a 256 "dist/$file" | cut -d' ' -f1)"
+  grep -q "\"$digest\"" dist/proof-manifest.json \
+    || { echo "the manifest does not carry what shasum -a 256 prints for $file"; exit 1; }
+done
+cp -R dist patched
+printf '\n// edited after it was written\n' >> patched/index.js
+if lake exe lean2js verify patched > patched.out 2>&1; then
+  echo "verify passed a package whose index.js was edited after it was written"; exit 1
+fi
+grep -q 'not what the manifest says it is' patched.out \
+  || { cat patched.out; echo "verify refused for another reason"; exit 1; }
+rm patched/index.d.ts
+lake exe lean2js verify patched > missing.out 2>&1 || true
+grep -q 'missing from the package' missing.out \
+  || { cat missing.out; echo "verify did not name a file the manifest lists and the package lacks"; exit 1; }
+
 # A node that disagrees with every vector stands in for a module that disagrees with eval on Node. It has
 # to print the verdict the real check prints, because that line is the whole of what tells a module the
 # engine refused from a node that never reached the comparison.

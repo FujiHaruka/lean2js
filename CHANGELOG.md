@@ -6,6 +6,14 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- `proof-manifest.json` names the SHA-256 of every other file the package ships, and `lean2js verify
+  <dir>` reads a package back and answers whether it is still the one its own manifest speaks about.
+  Until now the theorems sat in the manifest beside an `index.js` nothing tied them to, so a package
+  edited after it was written read exactly like one that was not — and the reader with the most reason to
+  ask is a consumer who has neither Lean nor this compiler. The digest is the plain one `shasum -a 256`
+  prints, so that reader needs no tool they do not already have; the generated README says so and names
+  the command. The manifest cannot carry its own digest, so it is the one file the list leaves out.
+
 - `Arr.range n` is in the subset: the whole numbers below `n`, as an `Array Int53`, and `[]` for a count
   of zero or less. It is what a body folds over when it has to run a number of times rather than once per
   element it was handed — a power, a schedule, the characters of a string — which the subset had no way

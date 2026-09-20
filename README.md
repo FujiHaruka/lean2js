@@ -55,9 +55,14 @@ seatCharge({ tag: "team" }, 9007199254740991); // Error: int53Overflow
 | --- | --- |
 | `index.js` | ESM. The runtime helpers it calls are confined to the `__` prefix |
 | `index.d.ts` | The types above, with a `@throws` line per function |
-| `proof-manifest.json` | Theorems, the axioms they rest on, the compiler and Lean versions, the public API |
+| `proof-manifest.json` | Theorems, the axioms they rest on, the compiler and Lean versions, the public API, and the SHA-256 of every other file here |
 | `README.md` | The public API, what a call throws, the theorems and the axioms — the page npm shows |
 | `package.json` | `"private": true` until the manifest says otherwise |
+
+The theorems and the files they are about travel together: `proof-manifest.json` names the digest of each
+of the others, so a reader holding the package can ask whether the two still belong to each other.
+`shasum -a 256 index.js` is that question asked with what is already on their machine, and
+`lake exe lean2js verify dist` is the same one asked from a build that has the compiler.
 
 ## Quickstart
 
