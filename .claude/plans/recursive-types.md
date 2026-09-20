@@ -851,6 +851,11 @@ wildcards at the folded columns, which are exactly the rows that also match the 
 at the declared type ought to give coverage at the rebuilt node. **The case that is not obviously safe is
 a fold whose `result` is the type being folded**, where the two head sets coincide.
 
+> **Wrong, measured on 2026-09-21 — see the last section.** The disagreement is not conservative. Two
+> types may declare constructors of the same name, so the head sets coincide by name while the field
+> types under them differ, and `matchPat` compares names. The compiler accepted a fold `evalFold`
+> reaches `noMatchingAlternative` on. The third row of the table below is the one that happened.
+
 **What to do first, in order.**
 
 | | |
@@ -859,3 +864,93 @@ a fold whose `result` is the type being folded**, where the two head sets coinci
 | If conservative | Prove `Exhaustive.foldFirstMatch_isSome`: coverage at the declared type transfers to the rebuilt node, because only rows wildcard at the folded columns survive `defaultRows`. The plan's "`Exhaustive` needs nothing" is wrong by exactly this theorem |
 | If not | Tighten `compileExpr`'s `foldE` arm to check exhaustiveness at the types `foldPatParts` uses. No shipped program folds yet, so nothing regenerates — but `docs/guarantees.md` moves with it |
 | Then | `fragment_traps_succ`'s `foldE` case, mirroring the agreement direction above |
+
+### Phase 5's trap direction, written on 2026-09-21: the exhaustiveness gap was real, and Lean is done
+
+**The gap the section above priced as "probably conservative, measure it" is not conservative.**
+Measured before anything was proved: `compileExpr` accepted a fold whose rebuilt node no alternative
+matches, and `evalFold` reached `noMatchingAlternative` on it. `fragment_traps` carries every failure but
+`outOfFuel`, and the generated chain takes its last arm without a test, so that fold would have been a
+false theorem rather than a refused program.
+
+**The counterexample needs two types that declare constructors of the same name**, which `keyDeclared`
+allows and says so in its own message: "two types declaring a constructor of the same name have to agree
+on the key".
+
+```
+type Tree = Leaf | Node(kid: Tree)
+type Twig = Leaf | Node(kid: Int53) | Stub
+
+fold t : Tree -> Twig with
+  | Leaf          => Stub
+  | Node(Leaf)    => ...
+  | Node(Node(k)) => ...
+```
+
+Read at the declared type, the folded column `kid` is a `Tree`, the rows name `Leaf` and `Node` — every
+head `Tree` has — and each head's rows cover, so `useful` answered `false` and the compiler accepted.
+Read at `foldFieldTys`, that column is a `Twig` and the rows leave `Stub` out. Fold `Node(Leaf)`: the
+`Leaf` arm answers `Stub`, the rebuilt node is `Node(kid: Stub)`, and no alternative matches it.
+
+The earlier reading — "a row whose pattern at a folded column is a constructor of `result` contributes a
+head the declared type does not have, so `defaultRows` drops it" — is right as far as it goes and is why
+most shapes are refused. What it misses is that the head sets can coincide by *name* while the field
+types underneath differ, and `matchPat` compares names.
+
+**What the compiler does now.** Three definitions in `Compile.lean`, next to `firstUnreachable`:
+
+| | |
+| --- | --- |
+| `foldHeads tn ta result t` | the declared type's constructors with each one's fields at `foldFieldTys` — the signature the alternatives are type-checked against, which no `Ty` names |
+| `usefulFold types heads rows pat` | `useful`'s own step at one column with `signature types ty` replaced by `some heads`. Below that column the types are ordinary and `useful` takes over. Where the step leaves no column it is written as the `.isEmpty` `useful` answers there, rather than as a call at a budget a proof would have to unfold |
+| `firstUnreachableFold` | `firstUnreachable`'s twin over `usefulFold`, so the unreachable-arm message reads the same columns the exhaustiveness check does |
+
+`compileExpr`'s `foldE` arm calls those two in place of `useful` / `firstUnreachable`. Nothing
+regenerates: no shipped program folds. The self-fold — `result` the declared type — is unchanged by the
+swap, because `foldFieldTys` gives back exactly the declared field types there.
+
+**What `Exhaustive.lean` gained**, the theorem the section above priced at zero:
+
+- `covered_of_usefulFold_false` — `covered_of_useful_false`'s twin at one column. A twin rather than an
+  instance: what types the rebuilt node's fields is the head list, and no `Ty` names it. Both branches
+  are short — the covering branch instantiates `heads.any` at the node's own head and hands the rest to
+  `covered_of_useful_false`; the other branch is `defaultRows` non-empty, which is a wildcard row.
+- `usefulFold_false_of_compile` — the check a compiled fold passed, read off `compileExpr` with the same
+  split sequence `compileExpr_foldE_inv` uses.
+- `foldFirstMatch_isSome` — `firstMatch_isSome`'s twin. The head lookup lines up with `findAt?` because
+  both are a `find?` over `t.ctorsAt ta` and `Head.ctor a == Head.ctor b` is `a == b` by `rfl`.
+
+**What `Correct.lean` gained.** `fragment_traps_succ`'s `foldE` case, on three new pieces:
+
+- `eventuallyErr_foldJs` / `eventuallyErr_foldJs_walk` — `eventuallyErr_mapJs` / `_mapJs_items`' twins.
+- `eventuallyErr_foldChain` — `eventually_foldChain` with `EventuallyErr`, `hcov` and `hne` threaded
+  through. A verbatim copy but for those.
+- `eventuallyErrFold_of_fold` — the four-way walk in the error direction. It takes the agreement walk's
+  `ihb` as well as its own, so that it can call `eventuallyFold_of_fold` for the sub-walks that
+  answered: at every level the shape that is new is "a subwalk throws with the walks before it having
+  answered", and that needs both directions at once.
+
+Three cases the agreement direction closed with `simp at hw` are real cases here and each one lands:
+
+1. `evalFoldFields` reaching a field the value does not carry is `Err.typeError`, and the JS side reaches
+   `evalFoldPairs_cons_none`, which throws `"typeError"` under the same lookup — `rfl` closes it.
+2. A value of the wrong shape at `evalFold` is refused by `Value.hasTy` rather than by the equation:
+   `rw [Value.hasTy.eq_def] at hvt; simp at hvt`, and at `evalFoldListAt` by `hasTy_array_inv`.
+3. `firstMatch` answering `none` is `Exhaustive.foldFirstMatch_isSome` against
+   `Exhaustive.valuesTyped_of_hasFieldTys hfsty` — the one case the whole compiler change was for.
+
+**The hole is pinned where it belongs.** `Lean2Js/Tests.lean` is "the programs the compiler must not
+accept", so the counterexample lives there as a `#guard`, beside the fold that covers the rebuilt node,
+the one with a wildcard at the folded column, a constructor left out, an unreachable alternative, a fold
+naming the node itself, and the self-fold. `Builder.lean` gained `foldOn` to write them, which phase 5's
+`Example` wants anyway.
+
+**Lean is done for phase 5.** `lake build` is green with no `sorry`, every module at its baseline warning
+count and `Correct` back at 24. What is left is the half that is not Lean: `Reify` finding the fold by an
+attribute, `EncDeriving` emitting `T.fold` and `denotes_fold`, then `Example`, `Axioms`, the documents
+and `/proof-audit`.
+
+**`docs/guarantees.md` does not move with this.** It names `__fold` as a helper nothing calls, which is
+still true, and it does not enumerate the fragment's forms. `Lean2Js/Traps.lean`'s module comment does
+move: the reason `noMatchingAlternative` is not among the codes a declaration reaches now covers a fold's
+alternatives as well as a `match`'s.

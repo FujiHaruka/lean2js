@@ -84,6 +84,9 @@ inductive InFragment : Expr → Prop where
   | fnRef (name : String) : InFragment (.fnRef name)
   | call {fn : String} {args : List Expr} :
       (∀ e ∈ args, InFragment e) → InFragment (.call fn args)
+  | foldE {scrut : Expr} {typeName : String} {tyArgs : List Ty} {result : Ty} {alts : List Alt} :
+      InFragment scrut → (∀ alt ∈ alts, InFragment (Alt.body alt)) →
+        InFragment (.foldE scrut typeName tyArgs result alts)
 
 mutual
 
@@ -101,6 +104,7 @@ theorem InFragment.all : ∀ e : Expr, InFragment e
   | .ctor typeName tyArgs ctorName args => .ctor typeName tyArgs ctorName (InFragment.allList args)
   | .proj e field => .proj (InFragment.all e)
   | .matchE scrut alts => .matchE (InFragment.all scrut) (InFragment.allAlts alts)
+  | .foldE scrut _ _ _ alts => .foldE (InFragment.all scrut) (InFragment.allAlts alts)
   | .noneE elem => .noneE elem
   | .someE x => .someE (InFragment.all x)
   | .okE _ x => .okE (InFragment.all x)
@@ -201,6 +205,8 @@ theorem InFragment.typeChecked {e : Expr} : InFragment e → TypeChecked e
       .reduceE harr.typeChecked hinit.typeChecked hbody.typeChecked
   | .matchE hscrut halts =>
       .matchE hscrut.typeChecked fun alt ha => (halts alt ha).typeChecked
+  | .foldE hscrut halts =>
+      .foldE hscrut.typeChecked fun alt ha => (halts alt ha).typeChecked
 
 def encodeEnv (env : Env) : Js.JsEnv :=
   env.map fun (name, v) => (name, encodeValue v)
@@ -3778,6 +3784,723 @@ private theorem eventually_chain (p : Program) (m : Js.Module) (hsig : Signature
           refine cond_false (eventually_andFold_of_fail ts t (htl ▸ hfail)) ?_
           exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
 
+/-! ## A fold's arms, and the node the walk rebuilt
+
+A fold reads its alternatives exactly as a `match` does, but against a node that is not a value of the
+declared type: every field that came round carries the fold's answer for it rather than the field. These
+are the twins of `patParts_matched`, `patParts_unmatched` and `eventually_chain` against that node. Only
+the top level differs — what a folded field binds is an ordinary type, so everything nested inside goes
+to `patPartsList_matched` and its partner unchanged. -/
+
+theorem head_ctor_beq (a b : String) :
+    (Compile.Head.ctor a == Compile.Head.ctor b) = (a == b) := rfl
+
+/-- A constructor the declaration names is the head the signature carries, with the fields it declares.
+Both sides read `ctorsAt`, so the lookup that finds one finds the other. -/
+theorem heads_find_of_findAt :
+    ∀ (cs : List CtorDef) (ctor : String) (c : CtorDef), cs.find? (·.name == ctor) = some c →
+      (((cs.map fun c => (Compile.Head.ctor c.name, c.fields.map fun f => (f.name, f.ty))).find?
+          (·.1 == Compile.Head.ctor ctor)).map (·.2))
+        = some (c.fields.map fun f => (f.name, f.ty)) := by
+  intro cs
+  induction cs with
+  | nil => intro ctor c h; simp at h
+  | cons c0 rest ihr =>
+    intro ctor c h
+    simp only [List.find?_cons] at h
+    simp only [List.map_cons, List.find?_cons, head_ctor_beq]
+    cases hb : c0.name == ctor with
+    | true =>
+      rw [hb] at h
+      simp only [Option.some.injEq] at h
+      subst h
+      simp
+    | false =>
+      rw [hb] at h
+      simpa using ihr ctor c h
+
+/-- The spec the emitter wrote names each constructor with the fields that come round. `foldSpecOf` and
+`TypeDef.findAt?` both read `ctorsAt`, so the entry for a constructor is the declaration's. -/
+theorem specOf_find_aux (tn : String) (ta : List Ty) :
+    ∀ (cs : List CtorDef) (ctor : String) (c : CtorDef), cs.find? (·.name == ctor) = some c →
+      (((cs.map fun c => (c.name, c.fields.map fun f =>
+            (f.name, Compile.jsFoldKind (foldKindOf tn ta f.ty)))).find? (·.1 == ctor)).map (·.2))
+        = some (c.fields.map fun f => (f.name, Compile.jsFoldKind (foldKindOf tn ta f.ty))) := by
+  intro cs
+  induction cs with
+  | nil => intro ctor c h; simp at h
+  | cons c0 rest ihr =>
+    intro ctor c h
+    simp only [List.find?_cons] at h
+    simp only [List.map_cons, List.find?_cons]
+    cases hb : c0.name == ctor with
+    | true =>
+      rw [hb] at h
+      simp only [Option.some.injEq] at h
+      subst h
+      simp
+    | false =>
+      rw [hb] at h
+      simpa using ihr ctor c h
+
+theorem foldSpecOf_find {p : Program} {tn : String} {ta : List Ty} {t : TypeDef} {ctor : String}
+    {c : CtorDef} (ht : p.types.find? (·.name == tn) = some t)
+    (hc : t.findAt? ta ctor = some c) :
+    (((Compile.foldSpecOf p.types tn ta).find? (·.1 == ctor)).map (·.2))
+      = some (c.fields.map fun f => (f.name, Compile.jsFoldKind (foldKindOf tn ta f.ty))) := by
+  rw [Compile.foldSpecOf]
+  simp only [ht]
+  exact specOf_find_aux tn ta (t.ctorsAt ta) ctor c hc
+
+/-- The key a fold's alternative tests is the key the value it walks wrote its constructor under. Both
+constructors belong to the type the fold names, and `SignatureOk` settles the key for every value that
+type admits — which is what makes the one key `Helper.fold` is handed right for every node. -/
+theorem foldKey_eq {p : Program} (hsig : SignatureOk p) {tn : String} {ta : List Ty} {t : TypeDef}
+    {name ctor : String} {c : CtorDef} {fields : List (String × Value)}
+    (ht : p.types.find? (·.name == tn) = some t) (hname : t.findAt? ta name = some c)
+    (hv : Value.hasTy p (.obj ctor fields) (.named tn ta) = true) :
+    keyFor ctor = keyFor name := by
+  refine signatureOk_key hsig (ty := .named tn ta)
+    (heads := (t.ctorsAt ta).map fun c =>
+      (Compile.Head.ctor c.name, c.fields.map fun f => (f.name, f.ty)))
+    (ftys := c.fields.map fun f => (f.name, f.ty)) ?_ ?_ hv
+  · simp only [Compile.signature, ht, Option.map_some]
+  · exact heads_find_of_findAt (t.ctorsAt ta) name c hname
+
+/-- A node rebuilt with a set-all is the node written out: what the walk was handed comes first and each
+field is appended after it. Every `mapSet` is an append because the fields are named apart from each
+other and from the key, which is what `SignatureOk` gives. -/
+theorem mapSetAll_of_nodup :
+    ∀ (ps : List (String × Js.JsValue)) (acc : List (String × Js.JsValue)),
+      (∀ q ∈ ps, ∀ a ∈ acc, q.1 ≠ a.1) → (ps.map (·.1)).Nodup →
+      Js.Runtime.mapSetAll acc ps = acc ++ ps := by
+  intro ps
+  induction ps with
+  | nil => intro acc _ _; rw [Js.Runtime.mapSetAll]; simp
+  | cons kv rest ihr =>
+    intro acc hne hnd
+    obtain ⟨k, v⟩ := kv
+    rw [Js.Runtime.mapSetAll]
+    have hk : acc.any (·.1 == k) = false := by
+      simp only [List.any_eq_false]
+      intro a ha hb
+      exact hne (k, v) (by simp) a ha (beq_iff_eq.mp hb).symm
+    rw [Js.Runtime.mapSet, if_neg (by rw [hk]; simp)]
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    rw [ihr (acc ++ [(k, v)]) ?_ hnd.2]
+    · simp
+    · intro q hq a ha
+      rcases List.mem_append.mp ha with ha' | ha'
+      · exact hne q (by simp [hq]) a ha'
+      · simp only [List.mem_singleton] at ha'
+        subst ha'
+        exact fun he => hnd.1 (List.mem_map.mpr ⟨q, hq, he⟩)
+
+/-- A fold's rebuilt node carries its fields named apart from each other and from the key its constructor
+is written under. `foldFieldTys` leaves the declared names alone, and `SignatureOk` is what says those are
+apart — the same fact a `match` reads, at the same constructor. -/
+theorem foldFields_names {p : Program} (hsig : SignatureOk p) {tn : String} {ta : List Ty}
+    {result : Ty} {t : TypeDef} {ctor : String} {c : CtorDef}
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c) :
+    (∀ f ∈ Compile.foldFieldTys tn ta result c.fields, f.1 ≠ keyFor ctor)
+      ∧ ((Compile.foldFieldTys tn ta result c.fields).map (·.1)).Nodup := by
+  obtain ⟨hnotag, hnodup⟩ := signatureOk_fields hsig (ty := .named tn ta)
+    (heads := (t.ctorsAt ta).map fun c =>
+      (Compile.Head.ctor c.name, c.fields.map fun f => (f.name, f.ty)))
+    (by simp only [Compile.signature, ht, Option.map_some])
+    (heads_find_of_findAt (t.ctorsAt ta) ctor c hfind)
+  have hnames : (Compile.foldFieldTys tn ta result c.fields).map (·.1) = c.fields.map (·.name) :=
+    Compile.foldFieldTys_map_fst tn ta result c.fields
+  refine ⟨?_, ?_⟩
+  · intro f hf hk
+    have hmem : f.1 ∈ c.fields.map (·.name) := hnames ▸ List.mem_map.mpr ⟨f, hf, rfl⟩
+    obtain ⟨f', hf', he⟩ := List.mem_map.mp hmem
+    exact hnotag (f'.name, f'.ty) (List.mem_map.mpr ⟨f', hf', rfl⟩) (by simpa [he] using hk)
+  · rw [hnames]
+    simpa [Function.comp_def] using hnodup
+
+/-- Every path a fold's alternative reads lands on the field the rebuilt node carries there. -/
+theorem foldEach_members {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig : SignatureOk p)
+    {tn : String} {ta : List Ty} {result : Ty} {t : TypeDef} {path : Js.Expr} {ctor : String}
+    {fields : List (String × Value)} {c : CtorDef}
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c)
+    (hft : Value.hasFieldTys p fields (Compile.foldFieldTys tn ta result c.fields) = true)
+    (hpath : Eventually m jenv path (encodeValue (.obj ctor fields))) :
+    EventuallyEach m jenv
+      ((Compile.foldFieldTys tn ta result c.fields).map fun f => Js.Expr.member path f.1)
+      (fields.map (·.2)) := by
+  obtain ⟨hnotag, hnodup⟩ := foldFields_names (result := result) hsig ht hfind
+  have hlk : LookupsAgree ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields)
+      (Compile.foldFieldTys tn ta result c.fields) (fields.map (·.2)) := by
+    have := lookupsAgree_of_hasFieldTys fields (Compile.foldFieldTys tn ta result c.fields)
+      hft hnodup [(keyFor ctor, Js.JsValue.str ctor)] (by
+        intro n hn
+        obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hn
+        simp only [List.find?_cons, List.find?_nil]
+        rw [beq_eq_false_iff_ne.mpr (fun he => hnotag f hf he.symm)])
+    simpa using this
+  exact eventuallyEach_members (by rw [encodeValue] at hpath; exact hpath) _ _ hlk
+
+/-- A fold's alternative that matched makes every test the compiler emitted true, and the paths the arm
+reads land on the values the pattern bound.
+
+The twin of `patParts_matched`, against the node the walk rebuilt. What is asked of that node is not that
+it is a value of the declared type — it is not one, the fields that came round carry the fold's answers —
+but that its fields are the ones `foldFieldTys` names. -/
+theorem foldPatParts_matched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig : SignatureOk p)
+    {tn : String} {ta : List Ty} {result : Ty} {t : TypeDef} {path : Js.Expr} {pat : Pat}
+    {ctor : String} {fields : List (String × Value)} {c : CtorDef} {tests : List Js.Expr}
+    {pbinds : List (String × Js.Expr × Ty)} {binds : Env}
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c)
+    (hft : Value.hasFieldTys p fields (Compile.foldFieldTys tn ta result c.fields) = true)
+    (hpp : Compile.foldPatParts p.types tn ta result path pat = .ok (tests, pbinds))
+    (hpath : Eventually m jenv path (encodeValue (.obj ctor fields)))
+    (hm : matchPat pat (.obj ctor fields) = some binds) :
+    (∀ tst ∈ tests, Eventually m jenv tst (.bool true)) ∧ PathsAgree m jenv pbinds binds := by
+  cases pat with
+  | wild =>
+    rw [Compile.foldPatParts] at hpp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    simp only [Option.some.injEq] at hm
+    obtain ⟨rfl, rfl⟩ := hpp
+    subst hm
+    exact ⟨by simp, trivial⟩
+  | bind _ => rw [Compile.foldPatParts] at hpp; simp at hpp
+  | lit _ => rw [Compile.foldPatParts] at hpp; simp at hpp
+  | ctor name args =>
+    have hbind : (p.types.find? (·.name == tn)).bind (fun td => td.findAt? ta ctor) = some c := by
+      rw [ht]; exact hfind
+    rw [matchPat] at hm
+    split at hm
+    · rename_i hname
+      obtain rfl : name = ctor := by simpa using hname
+      rw [Compile.foldPatParts] at hpp
+      simp only [hbind] at hpp
+      split at hpp
+      · simp at hpp
+      simp only [bind, Except.bind] at hpp
+      split at hpp
+      · simp at hpp
+      rename_i parts hpl
+      obtain ⟨itests, ibinds⟩ := parts
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+      obtain ⟨rfl, rfl⟩ := hpp
+      obtain ⟨htests, hbinds⟩ :=
+        patPartsList_matched hsig ((Compile.foldFieldTys tn ta result c.fields).map (·.2))
+          ((Compile.foldFieldTys tn ta result c.fields).map fun f => Js.Expr.member path f.1)
+          args (fields.map (·.2)) itests ibinds binds
+          (valuesTyped_of_hasFieldTys hft) hpl
+          (foldEach_members hsig ht hfind hft hpath) hm
+      refine ⟨?_, hbinds⟩
+      intro tst htst
+      rcases List.mem_cons.mp htst with rfl | hrest
+      · have := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields)
+          rfl hpath
+        rwa [beq_self_eq_true] at this
+      · exact htests tst hrest
+    · simp at hm
+
+/-- A fold's alternative that did not match makes the conjunction false: the test that decides it
+evaluates to `false`, and the ones before it to `true`. The twin of `patParts_unmatched`. -/
+theorem foldPatParts_unmatched {p : Program} {m : Js.Module} {jenv : Js.JsEnv} (hsig : SignatureOk p)
+    {tn : String} {ta : List Ty} {result : Ty} {t : TypeDef} {path : Js.Expr} {pat : Pat}
+    {ctor : String} {fields ofields : List (String × Value)} {c : CtorDef} {tests : List Js.Expr}
+    {pbinds : List (String × Js.Expr × Ty)}
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c)
+    (hov : Value.hasTy p (.obj ctor ofields) (.named tn ta) = true)
+    (hft : Value.hasFieldTys p fields (Compile.foldFieldTys tn ta result c.fields) = true)
+    (hpp : Compile.foldPatParts p.types tn ta result path pat = .ok (tests, pbinds))
+    (hpath : Eventually m jenv path (encodeValue (.obj ctor fields)))
+    (hm : matchPat pat (.obj ctor fields) = none) :
+    TestsFail m jenv tests := by
+  cases pat with
+  | wild => rw [matchPat] at hm; simp at hm
+  | bind _ => rw [matchPat] at hm; simp at hm
+  | lit _ => rw [Compile.foldPatParts] at hpp; simp at hpp
+  | ctor name args =>
+    rw [Compile.foldPatParts] at hpp
+    match hbind' : (p.types.find? (·.name == tn)).bind (fun td => td.findAt? ta name) with
+    | none => simp [hbind'] at hpp
+    | some c' =>
+      simp only [hbind'] at hpp
+      have hfind' : t.findAt? ta name = some c' := by rw [ht] at hbind'; exact hbind'
+      have hkey : keyFor ctor = keyFor name := foldKey_eq hsig ht hfind' hov
+      have htag := eventually_tagTest (m := m) (jenv := jenv) (name := name) (fields := fields)
+        hkey hpath
+      split at hpp
+      · simp at hpp
+      rename_i hlen
+      simp only [bind, Except.bind] at hpp
+      split at hpp
+      · simp at hpp
+      rename_i parts hpl
+      obtain ⟨itests, ibinds⟩ := parts
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+      obtain ⟨rfl, rfl⟩ := hpp
+      rw [matchPat] at hm
+      split at hm
+      · rename_i hname
+        obtain rfl : name = ctor := by simpa using hname
+        obtain rfl : c = c' := by rw [hfind] at hfind'; exact Option.some.inj hfind'
+        refine Or.inr ⟨by rwa [beq_self_eq_true] at htag, ?_⟩
+        have hvt := valuesTyped_of_hasFieldTys hft
+        have hlen' : args.length = (fields.map (·.2)).length := by
+          have hft' : (Compile.foldFieldTys tn ta result c.fields).length = args.length := by
+            simpa using (Bool.not_eq_true _ ▸ hlen :
+              ((Compile.foldFieldTys tn ta result c.fields).length != args.length) = false)
+          have hlv : (fields.map (·.2)).length
+              = (Compile.foldFieldTys tn ta result c.fields).length := by
+            simpa using ValuesTyped.length hvt
+          omega
+        exact patPartsList_unmatched hsig
+          ((Compile.foldFieldTys tn ta result c.fields).map (·.2))
+          ((Compile.foldFieldTys tn ta result c.fields).map fun f => Js.Expr.member path f.1)
+          args (fields.map (·.2)) itests ibinds hvt hpl
+          (foldEach_members hsig ht hfind hft hpath) hlen' hm
+      · rename_i hname
+        refine Or.inl ?_
+        have hne : (ctor == name) = false :=
+          beq_eq_false_iff_ne.mpr fun he => hname (by simp [he])
+        rwa [hne] at htag
+
+/-- `compileAlts_cons_inv` over `compileFoldAlts`: the arms are the alternatives one for one, each with
+the tests and binders its pattern gave and its body compiled against them. -/
+theorem compileFoldAlts_cons_inv {p : Program} {ctx : Compile.Ctx} {tn : String} {ta : List Ty}
+    {result : Ty} {alt : Alt} {rest : List Alt} {arms : List Compile.Arm}
+    (h : Compile.compileFoldAlts p ctx tn ta result (alt :: rest) = .ok arms) :
+    ∃ tests pbinds jbody tbody tail,
+      Compile.foldPatParts p.types tn ta result (.ident Compile.scrutName) (Alt.pat alt)
+          = .ok (tests, pbinds)
+        ∧ Compile.compileExpr p ((pbinds.map fun b => (b.1, b.2.2)) ++ ctx) (Alt.body alt)
+            = .ok (jbody, tbody)
+        ∧ Compile.compileFoldAlts p ctx tn ta result rest = .ok tail
+        ∧ arms = Compile.Arm.mk tests (pbinds.map (·.1)) (pbinds.map (·.2.1)) jbody tbody
+            :: tail := by
+  obtain ⟨pat, abody⟩ := alt
+  rw [Compile.compileFoldAlts] at h
+  simp only [bind, Except.bind] at h
+  split at h
+  · simp at h
+  rename_i parts hpp
+  obtain ⟨tests, pbinds⟩ := parts
+  split at h
+  · simp at h
+  split at h
+  · simp at h
+  rename_i bodyPair hcb
+  obtain ⟨jbody, tbody⟩ := bodyPair
+  split at h
+  · simp at h
+  rename_i tail hctail
+  simp only [Except.ok.injEq] at h
+  exact ⟨tests, pbinds, jbody, tbody, tail, hpp, hcb, hctail, h.symm⟩
+
+/-- The arm the reference semantics took on the rebuilt node is the arm the chain takes: the tests of
+every earlier arm are false because its pattern did not match, and the values this one reads are the ones
+it bound. `eventually_chain` over `compileFoldAlts`, against a node whose fields are typed by
+`foldFieldTys` rather than by the declaration. -/
+private theorem eventually_foldChain (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {f : Nat} {v : Value} {tn : String}
+    {ta : List Ty} {result : Ty} {t : TypeDef} {ctor : String}
+    {fields ofields : List (String × Value)} {c : CtorDef}
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c)
+    (hov : Value.hasTy p (.obj ctor ofields) (.named tn ta) = true)
+    (hft : Value.hasFieldTys p fields (Compile.foldFieldTys tn ta result c.fields) = true)
+    (hscrut : Eventually m jenv (.ident Compile.scrutName) (encodeValue (.obj ctor fields))) :
+    ∀ (alts : List Alt) (arms : List Compile.Arm) (binds : Env) (body : Expr),
+      (∀ alt ∈ alts, ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄
+        ⦃ty : Ty⦄ ⦃v' : Value⦄,
+        EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+        Compile.compileExpr p ctx' (Alt.body alt) = .ok (je, ty) →
+        evalExpr p f env' (Alt.body alt) = .ok v' →
+        Eventually m jenv' je (encodeValue v')) →
+      Compile.compileFoldAlts p ctx tn ta result alts = .ok arms →
+      firstMatch alts (.obj ctor fields) = some (binds, body) →
+      evalExpr p f (binds ++ env) body = .ok v →
+      Eventually m jenv (Compile.compileExpr.chain arms) (encodeValue v) := by
+  have hbind : (p.types.find? (·.name == tn)).bind (fun td => td.findAt? ta ctor) = some c := by
+    rw [ht]; exact hfind
+  intro alts
+  induction alts with
+  | nil => intro arms binds body _ _ hfm _; rw [firstMatch] at hfm; simp at hfm
+  | cons alt alts ihr =>
+    intro arms binds body ih hca hfm he
+    obtain ⟨tests, pbinds, jbody, tbody, tail, hpp, hcb, hctail, rfl⟩ :=
+      compileFoldAlts_cons_inv hca
+    rw [firstMatch] at hfm
+    split at hfm
+    · rename_i binds' hmp
+      simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+      obtain ⟨rfl, rfl⟩ := hfm
+      obtain ⟨htests, hpaths⟩ :=
+        foldPatParts_matched hsig ht hfind hft hpp hscrut hmp
+      have hbody : Eventually m jenv (Compile.compileExpr.apply
+          (Compile.Arm.mk tests (pbinds.map (·.1)) (pbinds.map (·.2.1)) jbody tbody))
+          (encodeValue v) := by
+        have henv' : EnvTyped p (binds' ++ env) ((pbinds.map fun b => (b.1, b.2.2)) ++ ctx) :=
+          henv.append (foldPatParts_binds hbind hft hpp hmp)
+        rw [Compile.compileExpr.apply]
+        split
+        · rename_i hempty
+          simp only [List.isEmpty_iff, List.map_eq_nil_iff] at hempty
+          subst hempty
+          have hbinds : binds' = [] := by
+            cases binds' with
+            | nil => rfl
+            | cons b bs => exact absurd hpaths (by simp [PathsAgree])
+          subst hbinds
+          exact ih alt (by simp) (by simpa using henv') hjenv (by simpa using hcb)
+            (by simpa using he)
+        · refine eventually_arrowCallN hpaths.eventuallyList ?_
+            (ih alt (by simp) henv' (hpaths.jsEnvAgrees hjenv) hcb he)
+          rw [hpaths.names]
+          simp [encodeList_eq]
+      cases tail with
+      | nil => rw [Compile.compileExpr.chain.eq_def]; exact hbody
+      | cons arm2 rest2 =>
+        rw [Compile.compileExpr.chain.eq_def]
+        cases htl : tests with
+        | nil => simpa [htl] using hbody
+        | cons tst ts =>
+          exact cond_true (eventually_andFold_true ts tst (htests tst (by rw [htl]; simp))
+            (fun x hx => htests x (by rw [htl]; simp [hx]))) hbody
+    · rename_i hmp
+      have hfail := foldPatParts_unmatched hsig ht hfind hov hft hpp hscrut hmp
+      cases alts with
+      | nil => rw [firstMatch] at hfm; simp at hfm
+      | cons alt2 rest2 =>
+        obtain ⟨tests2, pbinds2, jbody2, tbody2, tail2, hpp2, hcb2, hctail2, rfl⟩ :=
+          compileFoldAlts_cons_inv hctail
+        rw [Compile.compileExpr.chain.eq_def]
+        cases htl : tests with
+        | nil => exact absurd (htl ▸ hfail) (by simp [TestsFail])
+        | cons tst ts =>
+          refine cond_false (eventually_andFold_of_fail ts tst (htl ▸ hfail)) ?_
+          exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
+
+/-- A fold evaluates its scrutinee and then walks it, which is what `evalFoldJs` does. The twin of
+`eventually_mapJs`. -/
+theorem eventually_foldJs {m : Js.Module} {jenv : Js.JsEnv} {jscrut : Js.Expr} {key : String}
+    {spec : Js.FoldSpec} {binder : String} {jbody : Js.Expr} {x w : Js.JsValue}
+    (ha : Eventually m jenv jscrut x)
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalFoldJs m g' jenv key spec binder jbody x = .ok w) :
+    Eventually m jenv (.foldJs jscrut key spec binder jbody) w := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+/-- A constructor's fields are named apart from the key its own name is carried under, so a field is
+read past the tag entry the node carries first. -/
+theorem ctorFields_not_key {p : Program} (hsig : SignatureOk p) {tn : String} {ta : List Ty}
+    {t : TypeDef} {ctor : String} {c : CtorDef}
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c) :
+    ∀ fd ∈ c.fields, fd.name ≠ keyFor ctor := by
+  obtain ⟨hnotag, -⟩ := signatureOk_fields hsig (ty := .named tn ta)
+    (heads := (t.ctorsAt ta).map fun c =>
+      (Compile.Head.ctor c.name, c.fields.map fun f => (f.name, f.ty)))
+    (by simp only [Compile.signature, ht, Option.map_some])
+    (heads_find_of_findAt (t.ctorsAt ta) ctor c hfind)
+  intro fd hfd
+  exact hnotag (fd.name, fd.ty) (List.mem_map.mpr ⟨fd, hfd, rfl⟩)
+
+theorem encodeFields_map_fst : ∀ (fs : List (String × Value)),
+    (encodeFields fs).map (·.1) = fs.map (·.1)
+  | [] => by rw [encodeFields]; rfl
+  | (k, v) :: rest => by
+    simp only [encodeFields, List.map_cons, List.cons.injEq, true_and]
+    exact encodeFields_map_fst rest
+
+/-- A value's fields are named by the types it was checked against, in the same order. -/
+theorem fst_of_hasFieldTys {p : Program} :
+    ∀ (fs : List (String × Value)) (ftys : List (String × Ty)),
+      Value.hasFieldTys p fs ftys = true → fs.map (·.1) = ftys.map (·.1) := by
+  intro fs
+  induction fs with
+  | nil =>
+    intro ftys h
+    cases ftys with
+    | nil => rfl
+    | cons => rw [Value.hasFieldTys.eq_def] at h; simp at h
+  | cons kv rest ihr =>
+    intro ftys h
+    cases ftys with
+    | nil => rw [Value.hasFieldTys.eq_def] at h; simp at h
+    | cons ft ftr =>
+      obtain ⟨k, v⟩ := kv
+      obtain ⟨n, ty⟩ := ft
+      rw [hasFieldTys_cons] at h
+      simp only [Bool.and_eq_true] at h
+      simp only [List.map_cons, List.cons.injEq]
+      exact ⟨beq_iff_eq.mp h.1.1, ihr ftr h.2⟩
+
+theorem lookupField_encodeFields (fields : List (String × Value)) (k : String) :
+    Js.lookupField (encodeFields fields) k = (lookupFieldV fields k).map encodeValue := by
+  rw [Js.lookupField, encodeFields_find]
+  rfl
+
+/-- The type the fold names has a first constructor, so the key `Helper.fold` is handed is a key some
+constructor of that type is carried under. -/
+theorem findAt_first {t : TypeDef} (ta : List Ty) {first : CtorDef} {rest : List CtorDef}
+    (hctors : t.ctors = first :: rest) : ∃ c0, t.findAt? ta first.name = some c0 := by
+  refine ⟨{ first with
+    fields := first.fields.map fun f => { f with ty := f.ty.subst (t.params.zip ta) } }, ?_⟩
+  rw [TypeDef.findAt?, TypeDef.ctorsAt, hctors]
+  simp
+
+/-- The node `evalFoldJs` rebuilds with a set-all is the node `encodeValue` writes for the fold's answer
+at that constructor: the key comes first and the walked fields follow it in the order they were walked.
+Every `mapSet` is an append because `SignatureOk` names the fields apart from each other and from the
+key, and `foldFieldTys` left those names alone. -/
+theorem mapSetAll_encodeFields {p : Program} (hsig : SignatureOk p) {tn : String} {ta : List Ty}
+    {result : Ty} {t : TypeDef} {ctor key : String} {fs : List (String × Value)} {c : CtorDef}
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c)
+    (hfsty : Value.hasFieldTys p fs (Compile.foldFieldTys tn ta result c.fields) = true)
+    (hkey : key = keyFor ctor) :
+    Js.Runtime.mapSetAll [(key, Js.JsValue.str ctor)] (encodeFields fs)
+      = (keyFor ctor, Js.JsValue.str ctor) :: encodeFields fs := by
+  obtain ⟨hnotag, hnodup⟩ := foldFields_names (result := result) hsig ht hfind
+  have hnames : fs.map (·.1) = (Compile.foldFieldTys tn ta result c.fields).map (·.1) :=
+    fst_of_hasFieldTys fs _ hfsty
+  subst hkey
+  rw [mapSetAll_of_nodup (encodeFields fs) [(keyFor ctor, Js.JsValue.str ctor)] ?_ ?_]
+  · simp
+  · intro q hq a ha
+    simp only [List.mem_singleton] at ha
+    subst ha
+    have hmem : q.1 ∈ (Compile.foldFieldTys tn ta result c.fields).map (·.1) := by
+      rw [← hnames, ← encodeFields_map_fst]
+      exact List.mem_map.mpr ⟨q, hq, rfl⟩
+    obtain ⟨ft, hft', he⟩ := List.mem_map.mp hmem
+    exact fun hqk => hnotag ft hft' (he.trans hqk)
+  · rw [encodeFields_map_fst, hnames]
+    exact hnodup
+
+/-! ## Walking a fold
+
+A fold recurses on the value rather than on the expression, so its four walkers need an induction of
+their own: one strong induction on a bound for the value's size, carrying all four at once because they
+call each other. `Sound.hasTy_of_fold` is that induction for the types; this is it for the values.
+
+The fuel is existential at every level and a node's arms run at the fuel its own walk was handed, so
+each level takes the `max` of what its subwalks asked for. A finite value asks for a finite amount. -/
+
+private theorem eventuallyFold_of_fold (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {f : Nat}
+    {tn : String} {ta : List Ty} {result : Ty} {alts : List Alt} {arms : List Compile.Arm}
+    {t : TypeDef} {first : CtorDef} {rest : List CtorDef}
+    (ihb : ∀ alt ∈ alts, ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄
+      ⦃ty : Ty⦄ ⦃v' : Value⦄, EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+      Compile.compileExpr p ctx' (Alt.body alt) = .ok (je, ty) →
+      evalExpr p f env' (Alt.body alt) = .ok v' → Eventually m jenv' je (encodeValue v'))
+    (haltsty : ∀ alt ∈ alts, TypeChecked (Alt.body alt))
+    (henv : EnvTyped p env ctx) (hjenv : JsEnvAgrees env jenv)
+    (ht : p.types.find? (·.name == tn) = some t) (hctors : t.ctors = first :: rest)
+    (hca : Compile.compileFoldAlts p ctx tn ta result alts = .ok arms)
+    (hsame : (arms.all fun a => a.ty == result) = true) : ∀ n : Nat,
+      (∀ (v w : Value), sizeOf v < n → Value.hasTy p v (.named tn ta) = true →
+        evalFold p f env tn ta alts v = .ok w →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldJs m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) (encodeValue v)
+            = .ok (encodeValue w))
+      ∧ (∀ (xs ws : List Value), sizeOf xs < n → Value.hasElemTy p xs (.named tn ta) = true →
+        evalFoldList p f env tn ta alts xs = .ok ws →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldList m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) (encodeList xs)
+            = .ok (encodeList ws))
+      ∧ (∀ (v : Value) (ws : List Value), sizeOf v < n →
+        Value.hasTy p v (.array (.named tn ta)) = true →
+        evalFoldListAt p f env tn ta alts v = .ok ws →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldListAt m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) (encodeValue v)
+            = .ok (encodeList ws))
+      ∧ (∀ (fields : List (String × Value)) (es : List (String × Js.JsValue)) (fs : List Field)
+          (ps : List (String × Value)),
+        sizeOf fields < n →
+        (∀ fd ∈ fs, ∀ v, lookupFieldV fields fd.name = some v → Value.hasTy p v fd.ty = true) →
+        (∀ fd ∈ fs, Js.lookupField es fd.name = (lookupFieldV fields fd.name).map encodeValue) →
+        evalFoldFields p f env tn ta alts fields fs = .ok ps →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldPairs m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) es
+            (fs.map fun fd => (fd.name, Compile.jsFoldKind (foldKindOf tn ta fd.ty)))
+            = .ok (encodeFields ps)) := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n IH =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · intro v w hv hvt hw
+      cases v with
+      | obj ctor fields =>
+        obtain ⟨t', c, ht', hc, hft⟩ := hasTy_named_fields hvt
+        obtain rfl : t = t' := by
+          have hts : p.types.find? (·.name == tn) = some t' := ht'
+          rw [ht] at hts
+          exact Option.some.inj hts
+        have hbind : (p.types.find? (·.name == tn)).bind (fun td => td.findAt? ta ctor)
+            = some c := by rw [ht]; exact hc
+        rw [evalFold_obj] at hw
+        simp only [hbind, bind, Except.bind] at hw
+        split at hw
+        · simp at hw
+        rename_i fs hfs
+        have hnd := hprog.fieldNames tn ta t ht' c (List.mem_of_find?_eq_some hc)
+        have hlook := hasTy_of_lookupFieldV fields c.fields hft hnd
+        have hfsty : Value.hasFieldTys p fs (Compile.foldFieldTys tn ta result c.fields) = true :=
+          hasFieldTys_of_evalFoldFields hprog f haltsty henv hca hsame hlook hfs
+        split at hw
+        · rename_i binds body hfm
+          obtain ⟨c0, hfirst⟩ := findAt_first ta hctors
+          have hkeyc : keyFor ctor = keyFor first.name := foldKey_eq hsig ht hfirst hvt
+          have hnotk := ctorFields_not_key hsig ht hc
+          have hes : ∀ fd ∈ c.fields,
+              Js.lookupField ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields) fd.name
+                = (lookupFieldV fields fd.name).map encodeValue := by
+            intro fd hfd
+            rw [Js.lookupField, List.find?_cons,
+              beq_eq_false_iff_ne.mpr (fun he => hnotk fd hfd he.symm)]
+            exact lookupField_encodeFields fields fd.name
+          obtain ⟨g1, hg1⟩ := (IH (sizeOf fields + 1)
+              (by simp only [Value.obj.sizeOf_spec] at hv; omega)).2.2.2
+            fields ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields) c.fields fs
+            (by omega) hlook hes hfs
+          obtain ⟨g2, hg2⟩ := eventually_foldChain p m hsig henv
+            (hjenv.consScrut (encodeValue (.obj ctor fs))) ht hc hvt hfsty
+            (eventually_ident (by simp)) alts arms binds body ihb hca hfm hw
+          have hlk : Js.lookupField ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields)
+              (keyFor first.name) = some (.str ctor) := by
+            rw [Js.lookupField, List.find?_cons, ← hkeyc, beq_self_eq_true]
+            rfl
+          have hmap := mapSetAll_encodeFields (result := result) hsig ht hc hfsty hkeyc.symm
+          have hnode : Js.JsValue.obj ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fs)
+              = encodeValue (.obj ctor fs) := by rw [encodeValue]
+          refine ⟨max g1 g2, fun g' hg => ?_⟩
+          rw [encodeValue, Js.evalFoldJs_obj]
+          simp only [hlk, foldSpecOf_find ht hc, bind, Except.bind, hg1 g' (by omega)]
+          rw [hmap, hnode]
+          exact hg2 g' (by omega)
+        · simp at hw
+      | _ => rw [evalFold.eq_def] at hw; simp at hw
+    · intro xs
+      induction xs with
+      | nil =>
+        intro ws _ _ hw
+        rw [evalFoldList_nil] at hw
+        simp only [Except.ok.injEq] at hw
+        subst hw
+        exact ⟨0, fun g' _ => by rw [encodeList, Js.evalFoldList_nil]⟩
+      | cons x rst ihx =>
+        intro ws hxs hxt hw
+        rw [evalFoldList_cons] at hw
+        simp only [bind, Except.bind] at hw
+        split at hw
+        · simp at hw
+        rename_i y hy
+        split at hw
+        · simp at hw
+        rename_i ys hys
+        simp only [Except.ok.injEq] at hw
+        subst hw
+        rw [hasElemTy_cons, Bool.and_eq_true] at hxt
+        obtain ⟨g1, hg1⟩ := (IH (sizeOf (x :: rst)) hxs).1 x y
+          (by simp only [List.cons.sizeOf_spec]; omega) hxt.1 hy
+        obtain ⟨g2, hg2⟩ := ihx ys (by simp only [List.cons.sizeOf_spec] at hxs; omega) hxt.2 hys
+        refine ⟨max g1 g2, fun g' hg => ?_⟩
+        rw [encodeList, encodeList, Js.evalFoldList_cons]
+        simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+    · intro v ws hv hvt hw
+      cases v with
+      | arr xs =>
+        rw [evalFoldListAt_arr] at hw
+        rw [hasTy_array] at hvt
+        obtain ⟨g1, hg1⟩ := (IH (sizeOf xs + 1)
+            (by simp only [Value.arr.sizeOf_spec] at hv; omega)).2.1 xs ws (by omega) hvt hw
+        refine ⟨g1, fun g' hg => ?_⟩
+        rw [encodeValue, Js.evalFoldListAt_arr]
+        exact hg1 g' hg
+      | _ => rw [evalFoldListAt.eq_def] at hw; simp at hw
+    · intro fields es fs
+      induction fs with
+      | nil =>
+        intro ps _ _ _ hw
+        rw [evalFoldFields_nil] at hw
+        simp only [Except.ok.injEq] at hw
+        subst hw
+        exact ⟨0, fun g' _ => by rw [List.map_nil, Js.evalFoldPairs_nil, encodeFields]⟩
+      | cons fd frest ihr =>
+        intro ps hfl hall hlk hw
+        have hrest : ∀ fd' ∈ frest, ∀ w, lookupFieldV fields fd'.name = some w →
+            Value.hasTy p w fd'.ty = true := fun fd' hfd' => hall fd' (by simp [hfd'])
+        have hlkr : ∀ fd' ∈ frest,
+            Js.lookupField es fd'.name = (lookupFieldV fields fd'.name).map encodeValue :=
+          fun fd' hfd' => hlk fd' (by simp [hfd'])
+        match hl : lookupFieldV fields fd.name with
+        | none => rw [evalFoldFields_cons_none _ _ _ _ _ _ _ _ _ hl] at hw; simp at hw
+        | some v =>
+          have hlt := sizeOf_lookupFieldV fields fd.name hl
+          have hvt : Value.hasTy p v fd.ty = true := hall fd (by simp) v hl
+          have hjl : Js.lookupField es fd.name = some (encodeValue v) := by
+            rw [hlk fd (by simp), hl]; rfl
+          rw [evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ hl] at hw
+          simp only [List.map_cons]
+          cases hk : foldKindOf tn ta fd.ty with
+          | plain =>
+            simp only [hk, bind, Except.bind] at hw
+            split at hw
+            · simp at hw
+            rename_i ps' hps
+            simp only [Except.ok.injEq] at hw
+            subst hw
+            obtain ⟨g1, hg1⟩ := ihr ps' hfl hrest hlkr hps
+            refine ⟨g1, fun g' hg => ?_⟩
+            rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+              show Compile.jsFoldKind FoldKind.plain = Js.FoldKind.plain from rfl]
+            simp only [bind, Except.bind, hg1 g' hg, encodeFields]
+          | self =>
+            simp only [hk, bind, Except.bind] at hw
+            split at hw
+            · simp at hw
+            rename_i y hy
+            split at hw
+            · simp at hw
+            rename_i ps' hps
+            simp only [Except.ok.injEq] at hw
+            subst hw
+            obtain ⟨g1, hg1⟩ := (IH (sizeOf fields) hfl).1 v y hlt
+              (ty_of_foldKindOf_self hk ▸ hvt) hy
+            obtain ⟨g2, hg2⟩ := ihr ps' hfl hrest hlkr hps
+            refine ⟨max g1 g2, fun g' hg => ?_⟩
+            rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+              show Compile.jsFoldKind FoldKind.self = Js.FoldKind.self from rfl]
+            simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega), encodeFields]
+          | list =>
+            simp only [hk, bind, Except.bind] at hw
+            split at hw
+            · simp at hw
+            rename_i ys hys
+            split at hw
+            · simp at hw
+            rename_i ps' hps
+            simp only [Except.ok.injEq] at hw
+            subst hw
+            obtain ⟨g1, hg1⟩ := (IH (sizeOf fields) hfl).2.2.1 v ys hlt
+              (ty_of_foldKindOf_list hk ▸ hvt) hys
+            obtain ⟨g2, hg2⟩ := ihr ps' hfl hrest hlkr hps
+            refine ⟨max g1 g2, fun g' hg => ?_⟩
+            rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+              show Compile.jsFoldKind FoldKind.list = Js.FoldKind.list from rfl]
+            simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega),
+              encodeFields, encodeValue]
+
 /-! ## Calls
 
 A call is the one shape that leaves the expression it sits in: the callee's body is not a subterm, and
@@ -6296,6 +7019,24 @@ theorem fragment_correct_succ (p : Program) (m : Js.Module) (hsig : SignatureOk 
         (eventually_ident (by simp)) alts (arm0 :: arms) binds body
         (fun alt ha => ihalts alt ha) hca hfm he
     · simp at he
+  | foldE hscrut halts =>
+    rename_i scrutE tn ta result alts
+    have ihscrut := ih hscrut
+    have ihalts := fun a ha => ih (halts a ha)
+    intro ctx env jenv je ty v henv hjenv hc he
+    obtain ⟨jscrut, arms, t, first, rest, hcs, hca, hsame, ht, hctors, rfl, rfl⟩ :=
+      compileExpr_foldE_inv hc
+    rw [evalExpr_foldE] at he
+    simp only [bind, Except.bind] at he
+    split at he
+    · simp at he
+    rename_i sv hsv
+    have hst := typeSound p hprog f ctx env scrutE jscrut (.named tn ta) sv
+      hscrut.typeChecked henv hcs hsv
+    refine eventually_foldJs (ihscrut henv hjenv hcs hsv) ?_
+    exact (eventuallyFold_of_fold p m hsig hprog (fun alt ha => ihalts alt ha)
+      (fun alt ha => (halts alt ha).typeChecked) henv hjenv ht hctors hca hsame
+      (sizeOf sv + 1)).1 sv v (by omega) hst he
 
 /-- The failures the trap direction carries across: every one but the reference side's own.
 
@@ -6588,6 +7329,36 @@ theorem eventuallyErr_mapJs_items {m : Js.Module} {jenv : Js.JsEnv} {jarr jbody 
     (ha : Eventually m jenv jarr (.arr xs))
     (hb : ∃ g, ∀ g', g ≤ g' → Js.evalMapJs m g' jenv binder jbody xs = .error code) :
     EventuallyErr m jenv (.mapJs jarr binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  obtain ⟨g2, hg2⟩ := hb
+  refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega), hg2 g (by omega)]
+
+/-- A fold evaluates its scrutinee and then walks it, so a scrutinee that throws throws out of the
+fold. The twin of `eventuallyErr_mapJs`. -/
+theorem eventuallyErr_foldJs {m : Js.Module} {jenv : Js.JsEnv} {jscrut : Js.Expr} {key : String}
+    {spec : Js.FoldSpec} {binder : String} {jbody : Js.Expr} {code : String}
+    (ha : EventuallyErr m jenv jscrut code) :
+    EventuallyErr m jenv (.foldJs jscrut key spec binder jbody) code := by
+  obtain ⟨g1, hg1⟩ := ha
+  refine ⟨g1 + 1, fun g' hgle => ?_⟩
+  cases g' with
+  | zero => omega
+  | succ g =>
+    rw [Js.eval.eq_def]
+    simp only [bind, Except.bind, hg1 g (by omega)]
+
+/-- The same for a walk that throws once the scrutinee is in hand. The twin of
+`eventuallyErr_mapJs_items`. -/
+theorem eventuallyErr_foldJs_walk {m : Js.Module} {jenv : Js.JsEnv} {jscrut : Js.Expr}
+    {key : String} {spec : Js.FoldSpec} {binder : String} {jbody : Js.Expr} {x : Js.JsValue}
+    {code : String} (ha : Eventually m jenv jscrut x)
+    (hb : ∃ g, ∀ g', g ≤ g' → Js.evalFoldJs m g' jenv key spec binder jbody x = .error code) :
+    EventuallyErr m jenv (.foldJs jscrut key spec binder jbody) code := by
   obtain ⟨g1, hg1⟩ := ha
   obtain ⟨g2, hg2⟩ := hb
   refine ⟨max g1 g2 + 1, fun g' hgle => ?_⟩
@@ -7177,6 +7948,337 @@ private theorem eventuallyErr_chain (p : Program) (m : Js.Module) (hsig : Signat
         | cons t ts =>
           refine eventuallyErr_condE (eventually_andFold_of_fail ts t (htl ▸ hfail)) ?_
           exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
+
+/-- The mirror of `eventually_foldChain`: the arm the reference semantics took on the rebuilt node is
+the arm the chain takes, and a body that throws there throws out of the chain. -/
+private theorem eventuallyErr_foldChain (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {f : Nat} {tn : String}
+    {ta : List Ty} {result : Ty} {t : TypeDef} {ctor : String}
+    {fields ofields : List (String × Value)} {c : CtorDef} {err : Err}
+    (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
+    (ht : p.types.find? (·.name == tn) = some t) (hfind : t.findAt? ta ctor = some c)
+    (hov : Value.hasTy p (.obj ctor ofields) (.named tn ta) = true)
+    (hft : Value.hasFieldTys p fields (Compile.foldFieldTys tn ta result c.fields) = true)
+    (hscrut : Eventually m jenv (.ident Compile.scrutName) (encodeValue (.obj ctor fields)))
+    (hne : Mirrorable err) :
+    ∀ (alts : List Alt) (arms : List Compile.Arm) (binds : Env) (body : Expr),
+      (∀ alt ∈ alts, ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄
+        ⦃ty : Ty⦄ ⦃err' : Err⦄,
+        EnvTyped p env' ctx' → EnvCovers env' ctx' → JsEnvAgrees env' jenv' →
+        Compile.compileExpr p ctx' (Alt.body alt) = .ok (je, ty) →
+        evalExpr p f env' (Alt.body alt) = .error err' → Mirrorable err' →
+        EventuallyErr m jenv' je err'.code) →
+      Compile.compileFoldAlts p ctx tn ta result alts = .ok arms →
+      firstMatch alts (.obj ctor fields) = some (binds, body) →
+      evalExpr p f (binds ++ env) body = .error err →
+      EventuallyErr m jenv (Compile.compileExpr.chain arms) err.code := by
+  have hbind : (p.types.find? (·.name == tn)).bind (fun td => td.findAt? ta ctor) = some c := by
+    rw [ht]; exact hfind
+  intro alts
+  induction alts with
+  | nil => intro arms binds body _ _ hfm _; rw [firstMatch] at hfm; simp at hfm
+  | cons alt alts ihr =>
+    intro arms binds body ih hca hfm he
+    obtain ⟨tests, pbinds, jbody, tbody, tail, hpp, hcb, hctail, rfl⟩ :=
+      compileFoldAlts_cons_inv hca
+    rw [firstMatch] at hfm
+    split at hfm
+    · rename_i binds' hmp
+      simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+      obtain ⟨rfl, rfl⟩ := hfm
+      obtain ⟨htests, hpaths⟩ :=
+        foldPatParts_matched hsig ht hfind hft hpp hscrut hmp
+      have hbinds := foldPatParts_binds hbind hft hpp hmp
+      have hbody : EventuallyErr m jenv (Compile.compileExpr.apply
+          (Compile.Arm.mk tests (pbinds.map (·.1)) (pbinds.map (·.2.1)) jbody tbody))
+          err.code := by
+        have henv' : EnvTyped p (binds' ++ env) ((pbinds.map fun b => (b.1, b.2.2)) ++ ctx) :=
+          henv.append hbinds
+        have hcov' : EnvCovers (binds' ++ env) ((pbinds.map fun b => (b.1, b.2.2)) ++ ctx) :=
+          hcov.append hbinds
+        rw [Compile.compileExpr.apply]
+        split
+        · rename_i hempty
+          simp only [List.isEmpty_iff, List.map_eq_nil_iff] at hempty
+          subst hempty
+          have hb : binds' = [] := by
+            cases binds' with
+            | nil => rfl
+            | cons b bs => exact absurd hpaths (by simp [PathsAgree])
+          subst hb
+          exact ih alt (by simp) (by simpa using henv') (by simpa using hcov') hjenv
+            (by simpa using hcb) (by simpa using he) hne
+        · refine eventuallyErr_arrowCallN hpaths.eventuallyList ?_
+            (ih alt (by simp) henv' hcov' (hpaths.jsEnvAgrees hjenv) hcb he hne)
+          rw [hpaths.names]
+          simp [encodeList_eq]
+      cases tail with
+      | nil => rw [Compile.compileExpr.chain.eq_def]; exact hbody
+      | cons arm2 rest2 =>
+        rw [Compile.compileExpr.chain.eq_def]
+        cases htl : tests with
+        | nil => simpa [htl] using hbody
+        | cons tst ts =>
+          exact eventuallyErr_condT (eventually_andFold_true ts tst (htests tst (by rw [htl]; simp))
+            (fun x hx => htests x (by rw [htl]; simp [hx]))) hbody
+    · rename_i hmp
+      have hfail := foldPatParts_unmatched hsig ht hfind hov hft hpp hscrut hmp
+      cases alts with
+      | nil => rw [firstMatch] at hfm; simp at hfm
+      | cons alt2 rest2 =>
+        obtain ⟨tests2, pbinds2, jbody2, tbody2, tail2, hpp2, hcb2, hctail2, rfl⟩ :=
+          compileFoldAlts_cons_inv hctail
+        rw [Compile.compileExpr.chain.eq_def]
+        cases htl : tests with
+        | nil => exact absurd (htl ▸ hfail) (by simp [TestsFail])
+        | cons tst ts =>
+          refine eventuallyErr_condE (eventually_andFold_of_fail ts tst (htl ▸ hfail)) ?_
+          exact ihr _ binds body (fun a ha => ih a (by simp [ha])) hctail hfm he
+
+/-! ### Walking a fold that throws
+
+The mirror of `eventuallyFold_of_fold`, on the same strong induction over a bound for the value's size
+and carrying the same four walkers at once. Where that one carries a value across, this carries the
+thrown code, and the walk has one more shape to account for at every level: a subwalk that throws, with
+the walks before it having answered.
+
+`noMatchingAlternative` is not one of those shapes. `Exhaustive.foldFirstMatch_isSome` says an
+alternative matches the rebuilt node, which is what the compiler's `usefulFold` check bought. -/
+
+private theorem eventuallyErrFold_of_fold (p : Program) (m : Js.Module) (hsig : SignatureOk p)
+    (hprog : ProgramTyped p) {ctx : Compile.Ctx} {env : Env} {jenv : Js.JsEnv} {f : Nat}
+    {tn : String} {ta : List Ty} {result : Ty} {alts : List Alt} {arms : List Compile.Arm}
+    {t : TypeDef} {first : CtorDef} {rest : List CtorDef} {scrutE : Expr} {jfold : Js.Expr}
+    {tfold : Ty} {err : Err}
+    (ihok : ∀ alt ∈ alts, ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄
+      ⦃ty : Ty⦄ ⦃v' : Value⦄, EnvTyped p env' ctx' → JsEnvAgrees env' jenv' →
+      Compile.compileExpr p ctx' (Alt.body alt) = .ok (je, ty) →
+      evalExpr p f env' (Alt.body alt) = .ok v' → Eventually m jenv' je (encodeValue v'))
+    (ihb : ∀ alt ∈ alts, ∀ ⦃ctx' : Compile.Ctx⦄ ⦃env' : Env⦄ ⦃jenv' : Js.JsEnv⦄ ⦃je : Js.Expr⦄
+      ⦃ty : Ty⦄ ⦃err' : Err⦄, EnvTyped p env' ctx' → EnvCovers env' ctx' →
+      JsEnvAgrees env' jenv' → Compile.compileExpr p ctx' (Alt.body alt) = .ok (je, ty) →
+      evalExpr p f env' (Alt.body alt) = .error err' → Mirrorable err' →
+      EventuallyErr m jenv' je err'.code)
+    (haltsty : ∀ alt ∈ alts, TypeChecked (Alt.body alt))
+    (henv : EnvTyped p env ctx) (hcov : EnvCovers env ctx) (hjenv : JsEnvAgrees env jenv)
+    (ht : p.types.find? (·.name == tn) = some t) (hctors : t.ctors = first :: rest)
+    (hca : Compile.compileFoldAlts p ctx tn ta result alts = .ok arms)
+    (hsame : (arms.all fun a => a.ty == result) = true)
+    (hcf : Compile.compileExpr p ctx (.foldE scrutE tn ta result alts) = .ok (jfold, tfold))
+    (hne : Mirrorable err) : ∀ n : Nat,
+      (∀ v : Value, sizeOf v < n → Value.hasTy p v (.named tn ta) = true →
+        evalFold p f env tn ta alts v = .error err →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldJs m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) (encodeValue v)
+            = .error err.code)
+      ∧ (∀ xs : List Value, sizeOf xs < n → Value.hasElemTy p xs (.named tn ta) = true →
+        evalFoldList p f env tn ta alts xs = .error err →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldList m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) (encodeList xs)
+            = .error err.code)
+      ∧ (∀ v : Value, sizeOf v < n → Value.hasTy p v (.array (.named tn ta)) = true →
+        evalFoldListAt p f env tn ta alts v = .error err →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldListAt m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) (encodeValue v)
+            = .error err.code)
+      ∧ (∀ (fields : List (String × Value)) (es : List (String × Js.JsValue)) (fs : List Field),
+        sizeOf fields < n →
+        (∀ fd ∈ fs, ∀ v, lookupFieldV fields fd.name = some v → Value.hasTy p v fd.ty = true) →
+        (∀ fd ∈ fs, Js.lookupField es fd.name = (lookupFieldV fields fd.name).map encodeValue) →
+        evalFoldFields p f env tn ta alts fields fs = .error err →
+        ∃ g, ∀ g', g ≤ g' →
+          Js.evalFoldPairs m g' jenv (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+            Compile.scrutName (Compile.compileExpr.chain arms) es
+            (fs.map fun fd => (fd.name, Compile.jsFoldKind (foldKindOf tn ta fd.ty)))
+            = .error err.code) := by
+  have hok := eventuallyFold_of_fold p m hsig hprog ihok haltsty henv hjenv ht hctors hca hsame
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n IH =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · intro v hv hvt he
+      cases v with
+      | obj ctor fields =>
+        obtain ⟨t', c, ht', hc, hft⟩ := hasTy_named_fields hvt
+        obtain rfl : t = t' := by
+          have hts : p.types.find? (·.name == tn) = some t' := ht'
+          rw [ht] at hts
+          exact Option.some.inj hts
+        have hbind : (p.types.find? (·.name == tn)).bind (fun td => td.findAt? ta ctor)
+            = some c := by rw [ht]; exact hc
+        have hnd := hprog.fieldNames tn ta t ht' c (List.mem_of_find?_eq_some hc)
+        have hlook := hasTy_of_lookupFieldV fields c.fields hft hnd
+        obtain ⟨c0, hfirst⟩ := findAt_first ta hctors
+        have hkeyc : keyFor ctor = keyFor first.name := foldKey_eq hsig ht hfirst hvt
+        have hnotk := ctorFields_not_key hsig ht hc
+        have hes : ∀ fd ∈ c.fields,
+            Js.lookupField ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields) fd.name
+              = (lookupFieldV fields fd.name).map encodeValue := by
+          intro fd hfd
+          rw [Js.lookupField, List.find?_cons,
+            beq_eq_false_iff_ne.mpr (fun hq => hnotk fd hfd hq.symm)]
+          exact lookupField_encodeFields fields fd.name
+        have hlk : Js.lookupField ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields)
+            (keyFor first.name) = some (.str ctor) := by
+          rw [Js.lookupField, List.find?_cons, ← hkeyc, beq_self_eq_true]
+          rfl
+        rw [evalFold_obj] at he
+        simp only [hbind, bind, Except.bind] at he
+        split at he
+        · rename_i e0 hfs
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          obtain ⟨g1, hg1⟩ := (IH (sizeOf fields + 1)
+              (by simp only [Value.obj.sizeOf_spec] at hv; omega)).2.2.2
+            fields ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields) c.fields
+            (by omega) hlook hes hfs
+          refine ⟨g1, fun g' hg => ?_⟩
+          rw [encodeValue, Js.evalFoldJs_obj]
+          simp only [hlk, foldSpecOf_find ht hc, bind, Except.bind, hg1 g' hg]
+        rename_i fs hfs
+        have hfsty : Value.hasFieldTys p fs (Compile.foldFieldTys tn ta result c.fields) = true :=
+          hasFieldTys_of_evalFoldFields hprog f haltsty henv hca hsame hlook hfs
+        obtain ⟨g1, hg1⟩ := (hok (sizeOf fields + 1)).2.2.2
+          fields ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fields) c.fields fs
+          (by omega) hlook hes hfs
+        have hmap := mapSetAll_encodeFields (result := result) hsig ht hc hfsty hkeyc.symm
+        have hnode : Js.JsValue.obj ((keyFor ctor, Js.JsValue.str ctor) :: encodeFields fs)
+            = encodeValue (.obj ctor fs) := by rw [encodeValue]
+        split at he
+        · rename_i binds body hfm
+          obtain ⟨g2, hg2⟩ := eventuallyErr_foldChain p m hsig henv hcov
+            (hjenv.consScrut (encodeValue (.obj ctor fs))) ht hc hvt hfsty
+            (eventually_ident (by simp)) hne alts arms binds body ihb hca hfm he
+          refine ⟨max g1 g2, fun g' hg => ?_⟩
+          rw [encodeValue, Js.evalFoldJs_obj]
+          simp only [hlk, foldSpecOf_find ht hc, bind, Except.bind, hg1 g' (by omega)]
+          rw [hmap, hnode]
+          exact hg2 g' (by omega)
+        · rename_i hnone
+          exact absurd (Exhaustive.foldFirstMatch_isSome hcf ht hc
+            (Exhaustive.valuesTyped_of_hasFieldTys hfsty)) (by rw [hnone]; simp)
+      | _ => rw [Value.hasTy.eq_def] at hvt; simp at hvt
+    · intro xs
+      induction xs with
+      | nil => intro _ _ he; rw [evalFoldList_nil] at he; simp at he
+      | cons x rst ihx =>
+        intro hxs hxt he
+        rw [hasElemTy_cons, Bool.and_eq_true] at hxt
+        rw [evalFoldList_cons] at he
+        simp only [bind, Except.bind] at he
+        split at he
+        · rename_i e0 hy
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          obtain ⟨g1, hg1⟩ := (IH (sizeOf (x :: rst)) hxs).1 x
+            (by simp only [List.cons.sizeOf_spec]; omega) hxt.1 hy
+          refine ⟨g1, fun g' hg => ?_⟩
+          rw [encodeList, Js.evalFoldList_cons]
+          simp only [bind, Except.bind, hg1 g' hg]
+        rename_i y hy
+        split at he
+        · rename_i e0 hys
+          obtain rfl : err = e0 := (Except.error.inj he).symm
+          obtain ⟨g1, hg1⟩ := (hok (sizeOf (x :: rst))).1 x y
+            (by simp only [List.cons.sizeOf_spec]; omega) hxt.1 hy
+          obtain ⟨g2, hg2⟩ := ihx (by simp only [List.cons.sizeOf_spec] at hxs; omega) hxt.2 hys
+          refine ⟨max g1 g2, fun g' hg => ?_⟩
+          rw [encodeList, Js.evalFoldList_cons]
+          simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+        · simp at he
+    · intro v hv hvt he
+      obtain ⟨xs, rfl⟩ := hasTy_array_inv hvt
+      rw [hasTy_array] at hvt
+      rw [evalFoldListAt_arr] at he
+      obtain ⟨g1, hg1⟩ := (IH (sizeOf xs + 1)
+        (by simp only [Value.arr.sizeOf_spec] at hv; omega)).2.1 xs (by omega) hvt he
+      refine ⟨g1, fun g' hg => ?_⟩
+      rw [encodeValue, Js.evalFoldListAt_arr]
+      exact hg1 g' hg
+    · intro fields es fs
+      induction fs with
+      | nil => intro _ _ _ he; rw [evalFoldFields_nil] at he; simp at he
+      | cons fd frest ihr =>
+        intro hfl hall hlk he
+        have hrest : ∀ fd' ∈ frest, ∀ w, lookupFieldV fields fd'.name = some w →
+            Value.hasTy p w fd'.ty = true := fun fd' hfd' => hall fd' (by simp [hfd'])
+        have hlkr : ∀ fd' ∈ frest,
+            Js.lookupField es fd'.name = (lookupFieldV fields fd'.name).map encodeValue :=
+          fun fd' hfd' => hlk fd' (by simp [hfd'])
+        simp only [List.map_cons]
+        match hl : lookupFieldV fields fd.name with
+        | none =>
+          rw [evalFoldFields_cons_none _ _ _ _ _ _ _ _ _ hl] at he
+          obtain rfl : err = Err.typeError s!"no field named {fd.name}" :=
+            (Except.error.inj he).symm
+          have hjl : Js.lookupField es fd.name = none := by rw [hlk fd (by simp), hl]; rfl
+          exact ⟨0, fun g' _ => by
+            rw [Js.evalFoldPairs_cons_none _ _ _ _ _ _ _ _ _ _ _ hjl]; rfl⟩
+        | some v =>
+          have hlt := sizeOf_lookupFieldV fields fd.name hl
+          have hvt : Value.hasTy p v fd.ty = true := hall fd (by simp) v hl
+          have hjl : Js.lookupField es fd.name = some (encodeValue v) := by
+            rw [hlk fd (by simp), hl]; rfl
+          rw [evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ hl] at he
+          cases hk : foldKindOf tn ta fd.ty with
+          | plain =>
+            simp only [hk, bind, Except.bind] at he
+            split at he
+            · rename_i e0 hps
+              obtain rfl : err = e0 := (Except.error.inj he).symm
+              obtain ⟨g1, hg1⟩ := ihr hfl hrest hlkr hps
+              refine ⟨g1, fun g' hg => ?_⟩
+              rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+                show Compile.jsFoldKind FoldKind.plain = Js.FoldKind.plain from rfl]
+              simp only [bind, Except.bind, hg1 g' hg]
+            · simp at he
+          | self =>
+            simp only [hk, bind, Except.bind] at he
+            split at he
+            · rename_i e0 hy
+              obtain rfl : err = e0 := (Except.error.inj he).symm
+              obtain ⟨g1, hg1⟩ := (IH (sizeOf fields) hfl).1 v hlt
+                (ty_of_foldKindOf_self hk ▸ hvt) hy
+              refine ⟨g1, fun g' hg => ?_⟩
+              rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+                show Compile.jsFoldKind FoldKind.self = Js.FoldKind.self from rfl]
+              simp only [bind, Except.bind, hg1 g' hg]
+            rename_i y hy
+            split at he
+            · rename_i e0 hps
+              obtain rfl : err = e0 := (Except.error.inj he).symm
+              obtain ⟨g1, hg1⟩ := (hok (sizeOf fields)).1 v y hlt
+                (ty_of_foldKindOf_self hk ▸ hvt) hy
+              obtain ⟨g2, hg2⟩ := ihr hfl hrest hlkr hps
+              refine ⟨max g1 g2, fun g' hg => ?_⟩
+              rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+                show Compile.jsFoldKind FoldKind.self = Js.FoldKind.self from rfl]
+              simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+            · simp at he
+          | list =>
+            simp only [hk, bind, Except.bind] at he
+            split at he
+            · rename_i e0 hys
+              obtain rfl : err = e0 := (Except.error.inj he).symm
+              obtain ⟨g1, hg1⟩ := (IH (sizeOf fields) hfl).2.2.1 v hlt
+                (ty_of_foldKindOf_list hk ▸ hvt) hys
+              refine ⟨g1, fun g' hg => ?_⟩
+              rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+                show Compile.jsFoldKind FoldKind.list = Js.FoldKind.list from rfl]
+              simp only [bind, Except.bind, hg1 g' hg]
+            rename_i ys hys
+            split at he
+            · rename_i e0 hps
+              obtain rfl : err = e0 := (Except.error.inj he).symm
+              obtain ⟨g1, hg1⟩ := (hok (sizeOf fields)).2.2.1 v ys hlt
+                (ty_of_foldKindOf_list hk ▸ hvt) hys
+              obtain ⟨g2, hg2⟩ := ihr hfl hrest hlkr hps
+              refine ⟨max g1 g2, fun g' hg => ?_⟩
+              rw [Js.evalFoldPairs_cons_some _ _ _ _ _ _ _ _ _ _ _ hjl,
+                show Compile.jsFoldKind FoldKind.list = Js.FoldKind.list from rfl]
+              simp only [bind, Except.bind, hg1 g' (by omega), hg2 g' (by omega)]
+            · simp at he
 
 /-- The same for a callee that throws. -/
 abbrev DeclTraps (p : Program) (m : Js.Module) (f : Nat) : Prop :=
@@ -8579,5 +9681,26 @@ theorem fragment_traps_succ (p : Program) (m : Js.Module) (hsig : SignatureOk p)
         (fun alt ha => ihalts alt ha) hca hfm he
     · rename_i hnone
       exact absurd (Exhaustive.firstMatch_isSome hc hcs hst) (by rw [hnone]; simp)
+  | foldE hscrut halts =>
+    rename_i scrutE tn ta result alts
+    have ihscrut := ih hscrut
+    have ihalts := fun a ha => ih (halts a ha)
+    have ihaalts := fun a ha => iha (halts a ha)
+    intro ctx env jenv je ty err henv hcov hjenv hc he hne
+    obtain ⟨jscrut, arms, t, first, rest, hcs, hca, hsame, ht, hctors, rfl, rfl⟩ :=
+      compileExpr_foldE_inv hc
+    rw [evalExpr_foldE] at he
+    simp only [bind, Except.bind] at he
+    split at he
+    · rename_i e0 hse
+      obtain rfl : err = e0 := (Except.error.inj he).symm
+      exact eventuallyErr_foldJs (ihscrut henv hcov hjenv hcs hse hne)
+    rename_i sv hsv
+    have hst := typeSound p hprog f ctx env scrutE jscrut (.named tn ta) sv
+      hscrut.typeChecked henv hcs hsv
+    refine eventuallyErr_foldJs_walk (iha hscrut henv hjenv hcs hsv) ?_
+    exact (eventuallyErrFold_of_fold p m hsig hprog (fun alt ha => ihaalts alt ha)
+      (fun alt ha => ihalts alt ha) (fun alt ha => (halts alt ha).typeChecked) henv hcov hjenv
+      ht hctors hca hsame hc hne (sizeOf sv + 1)).1 sv (by omega) hst he
 
 end Lean2Js.Correct

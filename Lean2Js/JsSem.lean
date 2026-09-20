@@ -1088,6 +1088,82 @@ termination_by (fuel, 1, 0, 0, stmts.length + 1)
 
 end
 
+/-! ### Unfolding the fold walk
+
+The fold family recurses on the value rather than on the fuel, under the same five-component measure
+`eval` is defined by, so Lean does not hand back its equations as definitional unfoldings the way it
+does for a definition structural in its argument like `evalMapJs`. These state them once, so the
+agreement proof rewrites with a lemma where the map proofs rewrite with `Js.evalMapJs` itself.
+
+They are the twins of `Eval.evalFold_obj` and the five under it, against `JsValue` rather than `Value`
+and reading the spec the compiler emitted rather than the declaration the spec came from. -/
+
+theorem evalFoldJs_obj (m : Module) (f : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (es : List (String × JsValue)) :
+    evalFoldJs m f env key spec binder body (.obj es) =
+      (match lookupField es key with
+       | some (.str tag) =>
+         match (spec.find? (·.1 == tag)).map (·.2) with
+         | some fs => do
+           let ps ← evalFoldPairs m f env key spec binder body es fs
+           eval m f ((binder, .obj (mapSetAll [(key, .str tag)] ps)) :: env) body
+         | none => .error "typeError"
+       | _ => .error "typeError") := by
+  rw [evalFoldJs.eq_def]
+
+theorem evalFoldList_nil (m : Module) (f : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) :
+    evalFoldList m f env key spec binder body [] = .ok [] := by
+  rw [evalFoldList.eq_def]
+
+theorem evalFoldList_cons (m : Module) (f : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (x : JsValue) (rest : List JsValue) :
+    evalFoldList m f env key spec binder body (x :: rest) =
+      (do
+        let y ← evalFoldJs m f env key spec binder body x
+        let ys ← evalFoldList m f env key spec binder body rest
+        .ok (y :: ys)) := by
+  rw [evalFoldList.eq_def]
+
+theorem evalFoldListAt_arr (m : Module) (f : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (xs : List JsValue) :
+    evalFoldListAt m f env key spec binder body (.arr xs) =
+      evalFoldList m f env key spec binder body xs := by
+  rw [evalFoldListAt.eq_def]
+
+theorem evalFoldPairs_nil (m : Module) (f : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (es : List (String × JsValue)) :
+    evalFoldPairs m f env key spec binder body es [] = .ok [] := by
+  rw [evalFoldPairs.eq_def]
+
+theorem evalFoldPairs_cons_none (m : Module) (f : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (es : List (String × JsValue)) (n : String) (k : FoldKind)
+    (rest : FoldFields) (h : lookupField es n = none) :
+    evalFoldPairs m f env key spec binder body es ((n, k) :: rest) = .error "typeError" := by
+  rw [evalFoldPairs.eq_def]
+  repeat' split
+  all_goals simp_all
+
+theorem evalFoldPairs_cons_some (m : Module) (f : Nat) (env : JsEnv) (key : String) (spec : FoldSpec)
+    (binder : String) (body : Expr) (es : List (String × JsValue)) (n : String) (k : FoldKind)
+    (rest : FoldFields) {v : JsValue} (h : lookupField es n = some v) :
+    evalFoldPairs m f env key spec binder body es ((n, k) :: rest) =
+      (match k with
+       | .plain => do
+         let ps ← evalFoldPairs m f env key spec binder body es rest
+         .ok ((n, v) :: ps)
+       | .self => do
+         let y ← evalFoldJs m f env key spec binder body v
+         let ps ← evalFoldPairs m f env key spec binder body es rest
+         .ok ((n, y) :: ps)
+       | .list => do
+         let ys ← evalFoldListAt m f env key spec binder body v
+         let ps ← evalFoldPairs m f env key spec binder body es rest
+         .ok ((n, .arr ys) :: ps)) := by
+  rw [evalFoldPairs.eq_def]
+  repeat' split
+  all_goals simp_all
+
 /-- Calling an exported function at a stated amount of fuel. The model's fuel is what makes `eval` total;
 real JavaScript has none, so a claim about the generated code is stated for every large enough amount and
 `callFunction` fixes the one the shipped artifact is checked at. -/

@@ -42,6 +42,72 @@ theorem Refines.bind {α β : Type} {a a' : Except Err α} {k k' : α → Except
     exact hk v hne
 
 
+/-- More fuel does not change what a fold answers. The recursion inside a fold is on the value rather
+than on the fuel, so this is a separate induction — on a bound for the value's size, carrying all four
+walkers at once because they call each other. -/
+private theorem fold_refines (p : Program) (n : Nat)
+    (ih : ∀ (env : Env) (e : Expr), Refines (evalExpr p n env e) (evalExpr p (n + 1) env e))
+    (env : Env) (tn : String) (ta : List Ty) (alts : List Alt) : ∀ m : Nat,
+      (∀ v : Value, sizeOf v < m →
+        Refines (evalFold p n env tn ta alts v) (evalFold p (n+1) env tn ta alts v))
+      ∧ (∀ xs : List Value, sizeOf xs < m →
+        Refines (evalFoldList p n env tn ta alts xs) (evalFoldList p (n+1) env tn ta alts xs))
+      ∧ (∀ v : Value, sizeOf v < m →
+        Refines (evalFoldListAt p n env tn ta alts v) (evalFoldListAt p (n+1) env tn ta alts v))
+      ∧ (∀ (fields : List (String × Value)) (fs : List Field), sizeOf fields < m →
+        Refines (evalFoldFields p n env tn ta alts fields fs)
+          (evalFoldFields p (n+1) env tn ta alts fields fs)) := by
+  intro m
+  induction m using Nat.strongRecOn with
+  | _ m IH =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · intro v hv
+      cases v with
+      | obj ctor fields =>
+        rw [evalFold_obj, evalFold_obj]
+        have hfl := (IH (sizeOf fields + 1) (by
+          simp only [Value.obj.sizeOf_spec] at hv; omega)).2.2.2
+        split
+        · refine Refines.bind (hfl fields _ (by omega)) (fun fs => ?_)
+          split
+          · exact ih _ _
+          · exact Refines.rfl' _
+        · exact Refines.rfl' _
+      | _ => rw [evalFold.eq_def, evalFold.eq_def]; exact Refines.rfl' _
+    · intro xs hxs
+      induction xs with
+      | nil => rw [evalFoldList_nil, evalFoldList_nil]; exact Refines.rfl' _
+      | cons x rest ihx =>
+        rw [evalFoldList_cons, evalFoldList_cons]
+        have hv := (IH (sizeOf (x :: rest)) hxs).1
+        refine Refines.bind (hv x (by simp only [List.cons.sizeOf_spec]; omega)) (fun _ => ?_)
+        exact Refines.bind (ihx (by simp only [List.cons.sizeOf_spec] at hxs; omega))
+          (fun _ => Refines.rfl' _)
+    · intro v hv
+      cases v with
+      | arr xs =>
+        rw [evalFoldListAt_arr, evalFoldListAt_arr]
+        exact (IH (sizeOf xs + 1)
+          (by simp only [Value.arr.sizeOf_spec] at hv; omega)).2.1 xs (by omega)
+      | _ => rw [evalFoldListAt.eq_def, evalFoldListAt.eq_def]; exact Refines.rfl' _
+    · intro fields fs hfs
+      induction fs with
+      | nil => rw [evalFoldFields_nil, evalFoldFields_nil]; exact Refines.rfl' _
+      | cons fd rest ihr =>
+        match hl : lookupFieldV fields fd.name with
+        | none => rw [evalFoldFields_cons_none _ _ _ _ _ _ _ _ _ hl,
+            evalFoldFields_cons_none _ _ _ _ _ _ _ _ _ hl]; exact Refines.rfl' _
+        | some v =>
+          have hlt := sizeOf_lookupFieldV fields fd.name hl
+          rw [evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ hl,
+            evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ hl]
+          have hrec := IH (sizeOf fields) hfs
+          split
+          · exact Refines.bind ihr (fun _ => Refines.rfl' _)
+          · exact Refines.bind (hrec.1 v hlt) (fun _ => Refines.bind ihr (fun _ => Refines.rfl' _))
+          · exact Refines.bind (hrec.2.2.1 v hlt)
+              (fun _ => Refines.bind ihr (fun _ => Refines.rfl' _))
+
 theorem evalExpr_succ (p : Program) : ∀ (f : Nat) (env : Env) (e : Expr),
     Refines (evalExpr p f env e) (evalExpr p (f + 1) env e) := by
   intro f
@@ -168,6 +234,10 @@ theorem evalExpr_succ (p : Program) : ∀ (f : Nat) (env : Env) (e : Expr),
       split
       · exact ih _ _
       · exact Refines.rfl' _
+    | foldE scrut typeName tyArgs result alts =>
+      simp only [evalExpr_foldE]
+      refine Refines.bind (ih env scrut) (fun v => ?_)
+      exact (fold_refines p n ih env typeName tyArgs alts (sizeOf v + 1)).1 v (by omega)
     | noneE elem => simp only [evalExpr_noneE]; exact Refines.rfl' _
     | someE x => simp only [evalExpr_someE]; exact Refines.bind (ih env x) (fun _ => Refines.rfl' _)
     | okE err x => simp only [evalExpr_okE]; exact Refines.bind (ih env x) (fun _ => Refines.rfl' _)

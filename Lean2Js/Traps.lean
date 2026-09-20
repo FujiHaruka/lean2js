@@ -17,7 +17,8 @@ parameter is only ever bound to a declared name passed as an argument, so a call
 adds nothing the caller has not already counted.
 
 `noMatchingAlternative` is not among them. `Exhaustive` proves a `match` the compiler accepted has an arm
-for every value the entry check lets through, so the generated chain never runs off the end.
+for every value the entry check lets through, and a fold's alternatives one for every node its walk
+rebuilds, so the generated chain never runs off the end.
 
 This is not proved, and `emit` does not take it on trust: every vector generated for a declaration is
 checked to trap only with a code this reads off it.
@@ -76,7 +77,8 @@ def exprCodes (table : List (String × List String)) : Expr → List String
     exprCodes table a ++ exprCodes table b ++ exprCodes table c
   | .ctor _ _ _ args | .arrayLit _ args => exprCodesList table args
   | .dictLit _ _ entries => exprCodesEntries table entries
-  | .matchE scrut alts => exprCodes table scrut ++ exprCodesAlts table alts
+  | .matchE scrut alts | .foldE scrut _ _ _ alts =>
+    exprCodes table scrut ++ exprCodesAlts table alts
   | .call fn args =>
     (table.lookup fn).getD [] ++ exprCodesArgs table args ++ exprCodesList table args
 

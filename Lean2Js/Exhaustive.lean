@@ -706,4 +706,113 @@ theorem firstMatch_isSome {p : Program} {ctx : Compile.Ctx} {scrut : Expr} {alts
   obtain ⟨rfl, -⟩ : sv = w ∧ ws = [] := by simpa using heq
   exact firstMatch_isSome_of_mem halt hpv
 
+/-! ## What a compiled fold settles
+
+A fold's alternatives are not matched against the value the fold was handed but against the rebuilt
+node, whose fields that came round carry the fold's answers. That node is a value of no type the
+language writes, so `firstMatch_isSome` does not reach it and the compiler does not check its
+alternatives with `useful`: it checks them with `usefulFold`, at `foldHeads`, which is the same test
+with the one column's signature handed over rather than read off the declared type.
+
+Checking it at the declared type instead would not be conservative. Two types may declare constructors
+of the same name, so an alternative may name every constructor the declared type has, pass the test at
+that type, and still leave a rebuilt node no alternative matches. -/
+
+/-- The rebuilt node a fold's alternatives are matched against is covered by one of them.
+
+`covered_of_useful_false`'s twin at one column. A twin rather than an instance: what types the node's
+fields is the head list, and no `Ty` names it. -/
+theorem covered_of_usefulFold_false {p : Program}
+    {heads : List (Compile.Head × List (String × Ty))} {rows : List (List Pat)}
+    {ctor : String} {fields : List (String × Value)} {fs : List (String × Ty)}
+    (hu : Compile.usefulFold p.types heads rows .wild = false)
+    (hw : SameWidth rows 1)
+    (hmem : (Compile.Head.ctor ctor, fs) ∈ heads)
+    (hvs : ValuesTyped p (fields.map (·.2)) (fs.map (·.2))) :
+    Covers rows [.obj ctor fields] := by
+  have hlen : (fields.map (·.2)).length = (fs.map (·.2)).length := valuesTyped_length hvs
+  simp only [Compile.usefulFold] at hu
+  split at hu
+  · have hcol := (List.any_eq_false.mp hu) (Compile.Head.ctor ctor, fs) hmem
+    simp only [Bool.not_eq_true] at hcol
+    refine covers_of_specialize (hd := .ctor ctor) (v := .obj ctor fields)
+      (fieldVs := fields.map (·.2)) (restVs := []) ⟨rfl, rfl⟩ hlen.symm rows ?_
+    refine (by simpa using · : Covers _ (fields.map (·.2)) → Covers _ (fields.map (·.2) ++ []))
+      (covered_of_useful_false p _ _ (List.replicate (fs.map (·.2)).length .wild) (fs.map (·.2))
+        (fields.map (·.2)) hcol ?_ ?_ hvs)
+    · simpa using sameWidth_specialize (hd := Compile.Head.ctor ctor)
+        (arity := (fs.map (·.2)).length) (n := 0) (fun _ h => by simp at h) rows (by simpa using hw)
+    · rw [← hlen]; exact matchPats_replicate_wild (fields.map (·.2))
+  · refine covers_of_defaultRows rows ?_
+    cases hrows : defaultRows rows with
+    | nil => rw [hrows] at hu; simp at hu
+    | cons row _ =>
+      obtain rfl : row = [] :=
+        List.eq_nil_of_length_eq_zero (sameWidth_defaultRows rows hw row (by rw [hrows]; simp))
+      exact ⟨[], by simp, matchPats_nil⟩
+
+/-- The exhaustiveness check a compiled fold passed. -/
+theorem usefulFold_false_of_compile {p : Program} {ctx : Compile.Ctx} {scrut : Expr}
+    {tn : String} {ta : List Ty} {result : Ty} {alts : List Alt} {je : Js.Expr} {ty : Ty}
+    {t : TypeDef}
+    (hc : Compile.compileExpr p ctx (.foldE scrut tn ta result alts) = .ok (je, ty))
+    (ht : p.types.find? (·.name == tn) = some t) :
+    Compile.usefulFold p.types (Compile.foldHeads tn ta result t)
+      ((alts.map Alt.pat).map ([·])) .wild = false := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i scrutPair _
+  obtain ⟨jscrut, tscrut⟩ := scrutPair
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i hne
+  obtain rfl : tscrut = Ty.named tn ta := Ty.eq_of_not_bne (by simpa using hne)
+  split at hc
+  · simp at hc
+  rename_i _ t' ht'
+  obtain rfl : t' = t := by rw [ht] at ht'; exact (Option.some.inj ht').symm
+  split at hc
+  · simp at hc
+  rename_i _ first rest _
+  split at hc
+  · simp at hc
+  rename_i _ arms _
+  split at hc
+  · simp at hc
+  rename_i huseful
+  simpa using huseful
+
+/-- An alternative of a fold matches the rebuilt node. The chain the generated code walks ends in an arm
+it takes without a test, and this is what says the reference semantics takes an arm too. -/
+theorem foldFirstMatch_isSome {p : Program} {ctx : Compile.Ctx} {scrut : Expr}
+    {tn : String} {ta : List Ty} {result : Ty} {alts : List Alt} {je : Js.Expr} {ty : Ty}
+    {t : TypeDef} {c : CtorDef} {ctor : String} {fields : List (String × Value)}
+    (hc : Compile.compileExpr p ctx (.foldE scrut tn ta result alts) = .ok (je, ty))
+    (ht : p.types.find? (·.name == tn) = some t)
+    (hcf : t.findAt? ta ctor = some c)
+    (hvs : ValuesTyped p (fields.map (·.2))
+      ((Compile.foldFieldTys tn ta result c.fields).map (·.2))) :
+    (firstMatch alts (.obj ctor fields)).isSome = true := by
+  have hname : c.name = ctor := by
+    have := List.find?_some (p := fun c : CtorDef => c.name == ctor) hcf
+    simpa using this
+  have hmem : (Compile.Head.ctor ctor, Compile.foldFieldTys tn ta result c.fields)
+      ∈ Compile.foldHeads tn ta result t := by
+    rw [Compile.foldHeads]
+    exact List.mem_map.mpr ⟨c, List.mem_of_find?_eq_some hcf, by rw [hname]⟩
+  have hcov : Covers ((alts.map Alt.pat).map ([·])) [.obj ctor fields] := by
+    refine covered_of_usefulFold_false (usefulFold_false_of_compile hc ht) ?_ hmem hvs
+    intro row hrow
+    obtain ⟨pat, -, rfl⟩ := List.mem_map.mp hrow
+    simp
+  obtain ⟨row, hrow, hmatch⟩ := hcov
+  obtain ⟨pat, hpat, rfl⟩ := List.mem_map.mp hrow
+  obtain ⟨alt, halt, rfl⟩ := List.mem_map.mp hpat
+  obtain ⟨w, ws, heq, hpv, -⟩ := matchPats_cons_inv hmatch
+  obtain ⟨rfl, -⟩ : Value.obj ctor fields = w ∧ ws = [] := by simpa using heq
+  exact firstMatch_isSome_of_mem halt hpv
+
 end Lean2Js.Exhaustive

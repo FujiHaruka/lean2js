@@ -536,7 +536,9 @@ def evalExpr (p : Program) (fuel : Nat) (env : Env) (e : Expr) : Except Err Valu
       let a ← evalExpr p f env lo
       let b ← evalExpr p f env hi
       sliceStr s a b
-termination_by (fuel, 0, 0)
+    | .foldE scrut typeName tyArgs _ alts => do
+      evalFold p f env typeName tyArgs alts (← evalExpr p f env scrut)
+termination_by (fuel, 0, 0, 0, 0)
 
 def evalArgs (p : Program) (fuel : Nat) (env : Env) (es : List Expr) :
     Except Err (List Value) :=
@@ -546,7 +548,7 @@ def evalArgs (p : Program) (fuel : Nat) (env : Env) (es : List Expr) :
     let v ← evalExpr p fuel env e
     let vs ← evalArgs p fuel env rest
     .ok (v :: vs)
-termination_by (fuel, 1, es.length)
+termination_by (fuel, 1, 0, 0, es.length)
 
 def evalMapItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (body : Expr)
     (xs : List Value) : Except Err (List Value) :=
@@ -556,7 +558,7 @@ def evalMapItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (body 
     let v ← evalExpr p fuel ((binder, x) :: env) body
     let vs ← evalMapItems p fuel env binder body rest
     .ok (v :: vs)
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 def evalFilterItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (body : Expr)
     (xs : List Value) : Except Err (List Value) :=
@@ -567,7 +569,7 @@ def evalFilterItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (bo
     | .bool true => do .ok (x :: (← evalFilterItems p fuel env binder body rest))
     | .bool false => evalFilterItems p fuel env binder body rest
     | _ => .error (.typeError "filter expects a Bool predicate")
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 /-- Stops at the first element the predicate accepts, so a predicate that would trap on a later element
 never sees it. -/
@@ -580,7 +582,7 @@ def evalFindItems (p : Program) (fuel : Nat) (env : Env) (binder : String) (body
     | .bool true => .ok (.obj "some" [("value", x)])
     | .bool false => evalFindItems p fuel env binder body rest
     | _ => .error (.typeError "find expects a Bool predicate")
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 def evalQuantItems (p : Program) (fuel : Nat) (env : Env) (op : QuantOp) (binder : String)
     (body : Expr) (xs : List Value) : Except Err Value :=
@@ -593,7 +595,73 @@ def evalQuantItems (p : Program) (fuel : Nat) (env : Env) (op : QuantOp) (binder
       | .all => if b then evalQuantItems p fuel env op binder body rest else .ok (.bool false)
       | .any => if b then .ok (.bool true) else evalQuantItems p fuel env op binder body rest
     | _ => .error (.typeError s!"{op.name} expects a Bool predicate")
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
+
+/-- A fold over a value of a declared type, from the leaves up. Each node is rebuilt with every field
+that came round replaced by the fold's answer for it, and the alternatives then read the rebuilt node
+exactly as a `match`'s do — so the walk is here and not in the subset.
+
+The recursion is on the value and not on the fuel, the way `evalMapItems` walks its list at the fuel it
+was handed. That is what keeps a fold one expression node however deep the value is, and so what keeps
+`Cost.cost` readable off the syntax.
+
+A value whose constructor the declared type does not name, and a field the declaration names that the
+value does not carry, are both refused rather than guessed at: a well-typed program reaches neither. -/
+def evalFold (p : Program) (fuel : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (v : Value) : Except Err Value :=
+  match v with
+  | .obj ctor fields =>
+    match (p.types.find? (·.name == typeName)).bind (fun td => td.findAt? tyArgs ctor) with
+    | some c => do
+      let fs ← evalFoldFields p fuel env typeName tyArgs alts fields c.fields
+      match firstMatch alts (.obj ctor fs) with
+      | some (binds, body) => evalExpr p fuel (binds ++ env) body
+      | none => .error .noMatchingAlternative
+    | none => .error (.typeError s!"fold expects a value of {typeName}")
+  | _ => .error (.typeError s!"fold expects a value of {typeName}")
+termination_by (fuel, 2, sizeOf v, 1, 0)
+
+def evalFoldList (p : Program) (fuel : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (xs : List Value) : Except Err (List Value) :=
+  match xs with
+  | [] => .ok []
+  | x :: rest => do
+    let y ← evalFold p fuel env typeName tyArgs alts x
+    let ys ← evalFoldList p fuel env typeName tyArgs alts rest
+    .ok (y :: ys)
+termination_by (fuel, 2, sizeOf xs, 2, 0)
+
+/-- A field the declaration gives a list of the type coming round. Anything but an array is a value no
+well-typed program builds, so the walk refuses it rather than folding something else. -/
+def evalFoldListAt (p : Program) (fuel : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (v : Value) : Except Err (List Value) :=
+  match v with
+  | .arr xs => evalFoldList p fuel env typeName tyArgs alts xs
+  | _ => .error (.typeError s!"fold expects an Array of {typeName}")
+termination_by (fuel, 2, sizeOf v, 3, 0)
+
+def evalFoldFields (p : Program) (fuel : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (fields : List (String × Value)) :
+    List Field → Except Err (List (String × Value))
+  | [] => .ok []
+  | fd :: rest =>
+    match h : lookupFieldV fields fd.name with
+    | none => .error (.typeError s!"no field named {fd.name}")
+    | some v =>
+      have := sizeOf_lookupFieldV fields fd.name h
+      match foldKindOf typeName tyArgs fd.ty with
+      | .plain => do
+        let ps ← evalFoldFields p fuel env typeName tyArgs alts fields rest
+        .ok ((fd.name, v) :: ps)
+      | .self => do
+        let y ← evalFold p fuel env typeName tyArgs alts v
+        let ps ← evalFoldFields p fuel env typeName tyArgs alts fields rest
+        .ok ((fd.name, y) :: ps)
+      | .list => do
+        let ys ← evalFoldListAt p fuel env typeName tyArgs alts v
+        let ps ← evalFoldFields p fuel env typeName tyArgs alts fields rest
+        .ok ((fd.name, .arr ys) :: ps)
+termination_by fs => (fuel, 2, sizeOf fields, 0, sizeOf fs)
 
 def evalReduceItems (p : Program) (fuel : Nat) (env : Env) (accName elemName : String)
     (body : Expr) (acc : Value) (xs : List Value) : Except Err Value :=
@@ -602,7 +670,7 @@ def evalReduceItems (p : Program) (fuel : Nat) (env : Env) (accName elemName : S
   | x :: rest => do
     let next ← evalExpr p fuel ((elemName, x) :: (accName, acc) :: env) body
     evalReduceItems p fuel env accName elemName body next rest
-termination_by (fuel, 1, xs.length)
+termination_by (fuel, 1, 0, 0, xs.length)
 
 end
 
@@ -668,6 +736,12 @@ theorem evalExpr_matchE (p : Program) (f : Nat) (env : Env) (scrut : Expr) (alts
       (do match firstMatch alts (← evalExpr p f env scrut) with
           | some (binds, body) => evalExpr p f (binds ++ env) body
           | none => .error .noMatchingAlternative) := by
+  rw [evalExpr.eq_def]
+
+theorem evalExpr_foldE (p : Program) (f : Nat) (env : Env) (scrut : Expr) (typeName : String)
+    (tyArgs : List Ty) (result : Ty) (alts : List Alt) :
+    evalExpr p (f + 1) env (.foldE scrut typeName tyArgs result alts) =
+      (do evalFold p f env typeName tyArgs alts (← evalExpr p f env scrut)) := by
   rw [evalExpr.eq_def]
 
 theorem evalExpr_okE (p : Program) (f : Nat) (env : Env) (err : Ty) (e : Expr) :
@@ -966,6 +1040,71 @@ theorem evalMapItems_cons (p : Program) (f : Nat) (env : Env) (binder : String) 
         let vs ← evalMapItems p f env binder body rest
         .ok (v :: vs)) := by
   rw [evalMapItems.eq_def]
+
+theorem evalFold_obj (p : Program) (f : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (ctor : String) (fields : List (String × Value)) :
+    evalFold p f env typeName tyArgs alts (.obj ctor fields) =
+      (match (p.types.find? (·.name == typeName)).bind (fun td => td.findAt? tyArgs ctor) with
+       | some c => do
+         let fs ← evalFoldFields p f env typeName tyArgs alts fields c.fields
+         match firstMatch alts (.obj ctor fs) with
+         | some (binds, body) => evalExpr p f (binds ++ env) body
+         | none => .error .noMatchingAlternative
+       | none => .error (.typeError s!"fold expects a value of {typeName}")) := by
+  rw [evalFold.eq_def]
+
+theorem evalFoldList_nil (p : Program) (f : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) : evalFoldList p f env typeName tyArgs alts [] = .ok [] := by
+  rw [evalFoldList.eq_def]
+
+theorem evalFoldList_cons (p : Program) (f : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (x : Value) (rest : List Value) :
+    evalFoldList p f env typeName tyArgs alts (x :: rest) =
+      (do
+        let y ← evalFold p f env typeName tyArgs alts x
+        let ys ← evalFoldList p f env typeName tyArgs alts rest
+        .ok (y :: ys)) := by
+  rw [evalFoldList.eq_def]
+
+theorem evalFoldListAt_arr (p : Program) (f : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (xs : List Value) :
+    evalFoldListAt p f env typeName tyArgs alts (.arr xs) =
+      evalFoldList p f env typeName tyArgs alts xs := by
+  rw [evalFoldListAt.eq_def]
+
+theorem evalFoldFields_nil (p : Program) (f : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (fields : List (String × Value)) :
+    evalFoldFields p f env typeName tyArgs alts fields [] = .ok [] := by
+  rw [evalFoldFields.eq_def]
+
+theorem evalFoldFields_cons_none (p : Program) (f : Nat) (env : Env) (typeName : String)
+    (tyArgs : List Ty) (alts : List Alt) (fields : List (String × Value)) (fd : Field)
+    (rest : List Field) (h : lookupFieldV fields fd.name = none) :
+    evalFoldFields p f env typeName tyArgs alts fields (fd :: rest) =
+      .error (.typeError s!"no field named {fd.name}") := by
+  rw [evalFoldFields.eq_def]
+  repeat' split
+  all_goals simp_all
+
+theorem evalFoldFields_cons_some (p : Program) (f : Nat) (env : Env) (typeName : String)
+    (tyArgs : List Ty) (alts : List Alt) (fields : List (String × Value)) (fd : Field)
+    (rest : List Field) {v : Value} (h : lookupFieldV fields fd.name = some v) :
+    evalFoldFields p f env typeName tyArgs alts fields (fd :: rest) =
+      (match foldKindOf typeName tyArgs fd.ty with
+       | .plain => do
+         let ps ← evalFoldFields p f env typeName tyArgs alts fields rest
+         .ok ((fd.name, v) :: ps)
+       | .self => do
+         let y ← evalFold p f env typeName tyArgs alts v
+         let ps ← evalFoldFields p f env typeName tyArgs alts fields rest
+         .ok ((fd.name, y) :: ps)
+       | .list => do
+         let ys ← evalFoldListAt p f env typeName tyArgs alts v
+         let ps ← evalFoldFields p f env typeName tyArgs alts fields rest
+         .ok ((fd.name, .arr ys) :: ps)) := by
+  rw [evalFoldFields.eq_def]
+  repeat' split
+  all_goals simp_all
 
 theorem evalFilterItems_nil (p : Program) (f : Nat) (env : Env) (binder : String) (body : Expr) :
     evalFilterItems p f env binder body [] = .ok [] := by

@@ -3178,7 +3178,8 @@ theorem compileBody_type (p : Program) :
   | .dictDelete _ _, ctx, acc, stmts, ty, hc
   | .strUn _ _, ctx, acc, stmts, ty, hc
   | .strBin _ _ _, ctx, acc, stmts, ty, hc
-  | .substring _ _ _, ctx, acc, stmts, ty, hc =>
+  | .substring _ _ _, ctx, acc, stmts, ty, hc
+  | .foldE _ _ _ _ _, ctx, acc, stmts, ty, hc =>
     compileFinish_type (by rwa [compileBody.eq_def] at hc)
 
 theorem compileBody_shape (p : Program) {e : Expr} (hfrag : InFragment e) :
@@ -3666,6 +3667,7 @@ theorem compileDecls_mem :
 at the type it is declared to return. This is what a proof that reaches a call needs about the callee. -/
 theorem programTyped_of_compileProgram {p : Program} {m : Js.Module}
     (hm : compileProgram p = .ok m) : ProgramTyped p := by
+  have htn := typesNamesOk_of_compileProgram hm
   rw [compileProgram] at hm
   simp only [bind, Except.bind] at hm
   split at hm; · exact (errNeOk hm).elim
@@ -3673,7 +3675,7 @@ theorem programTyped_of_compileProgram {p : Program} {m : Js.Module}
   split at hm; · exact (errNeOk hm).elim
   split at hm; · exact (errNeOk hm).elim
   rename_i funcs hfuncs
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, fun n args t hfind c hc => ((htn n args t hfind).2 c hc).2.2⟩
   · intro d hd
     obtain ⟨f, hf⟩ := compileDecls_mem p 0 p.decls funcs d hfuncs hd
     obtain ⟨stmts, ty, _, _, _, _, hcb, _, _, _, _, _, _, _, _, hret⟩ := compileDecl_shape hf

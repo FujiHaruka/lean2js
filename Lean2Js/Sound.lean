@@ -102,6 +102,9 @@ inductive TypeChecked : Expr → Prop where
   | fnRef (name : String) : TypeChecked (.fnRef name)
   | call {fn : String} {args : List Expr} :
       (∀ e ∈ args, TypeChecked e) → TypeChecked (.call fn args)
+  | foldE {scrut : Expr} {typeName : String} {tyArgs : List Ty} {result : Ty} {alts : List Alt} :
+      TypeChecked scrut → (∀ alt ∈ alts, TypeChecked (Alt.body alt)) →
+        TypeChecked (.foldE scrut typeName tyArgs result alts)
 
 mutual
 
@@ -119,6 +122,7 @@ theorem TypeChecked.all : ∀ e : Expr, TypeChecked e
   | .ctor typeName tyArgs ctorName args => .ctor typeName tyArgs ctorName (TypeChecked.allList args)
   | .proj e field => .proj field (TypeChecked.all e)
   | .matchE scrut alts => .matchE (TypeChecked.all scrut) (TypeChecked.allAlts alts)
+  | .foldE scrut _ _ _ alts => .foldE (TypeChecked.all scrut) (TypeChecked.allAlts alts)
   | .noneE elem => .noneE elem
   | .someE x => .someE (TypeChecked.all x)
   | .okE _ x => .okE (TypeChecked.all x)
@@ -948,6 +952,72 @@ theorem hasFieldTys_find {p : Program} :
       | false =>
         rw [hk] at hf ht
         exact ih tys' k v t hrest hf ht
+
+/-- A field the fold walks into is the type coming round, at the arguments the fold names. `foldKindOf`
+is read by the evaluator and by the emitter alike, so what it answers is what both walk. -/
+theorem ty_of_foldKindOf_self {tn : String} {ta : List Ty} {ty : Ty}
+    (h : foldKindOf tn ta ty = .self) : ty = .named tn ta := by
+  rw [foldKindOf.eq_def] at h
+  split at h
+  · split at h
+    · rename_i hb
+      simp only [Bool.and_eq_true, beq_iff_eq] at hb
+      rw [hb.1, hb.2]
+    · simp at h
+  · split at h <;> simp at h
+  · simp at h
+
+theorem ty_of_foldKindOf_list {tn : String} {ta : List Ty} {ty : Ty}
+    (h : foldKindOf tn ta ty = .list) : ty = .array (.named tn ta) := by
+  rw [foldKindOf.eq_def] at h
+  split at h
+  · split at h <;> simp at h
+  · split at h
+    · rename_i hb
+      simp only [Bool.and_eq_true, beq_iff_eq] at hb
+      rw [hb.1, hb.2]
+    · simp at h
+  · simp at h
+
+/-- Reading a field out of a value by name gives the type the declaration puts at that name. `hasFieldTys`
+lines the value's fields up with the declared ones in order, and the names being apart is what makes the
+lookup land on the same one. -/
+theorem hasTy_of_lookupFieldV {p : Program} :
+    ∀ (fields : List (String × Value)) (fs : List Field),
+      Value.hasFieldTys p fields (fs.map fun f => (f.name, f.ty)) = true →
+      (fs.map (·.name)).Nodup →
+      ∀ fd ∈ fs, ∀ v, lookupFieldV fields fd.name = some v → Value.hasTy p v fd.ty = true := by
+  intro fields
+  induction fields with
+  | nil =>
+    intro fs h _ fd hfd v _
+    cases fs with
+    | nil => simp at hfd
+    | cons => simp [Value.hasFieldTys] at h
+  | cons kv rest ihr =>
+    intro fs h hnd fd hfd v hlk
+    obtain ⟨key, value⟩ := kv
+    cases fs with
+    | nil => simp [Value.hasFieldTys] at h
+    | cons f0 fsr =>
+      simp only [List.map_cons] at h hnd
+      rw [hasFieldTys_cons] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨hkey, hval⟩, hrest⟩ := h
+      have hkn : key = f0.name := beq_iff_eq.mp hkey
+      subst hkn
+      simp only [List.nodup_cons] at hnd
+      rw [lookupFieldV] at hlk
+      rcases List.mem_cons.mp hfd with rfl | hfdr
+      · simp only [List.find?_cons, beq_self_eq_true, Option.map_some,
+          Option.some.injEq] at hlk
+        exact hlk ▸ hval
+      · have hne : (f0.name == fd.name) = false := by
+          simp only [beq_eq_false_iff_ne, ne_eq]
+          intro heq
+          exact hnd.1 (heq ▸ List.mem_map.mpr ⟨fd, hfdr, rfl⟩)
+        simp only [List.find?_cons, hne] at hlk
+        exact ihr fsr hrest hnd.2 fd hfdr v hlk
 
 theorem hasFieldTys_find_some {p : Program} :
     ∀ (fields : List (String × Value)) (tys : List (String × Ty)) (k : String) (t : Ty),
@@ -1908,6 +1978,46 @@ theorem matchPats_binds {p : Program} : ∀ {tys : List Ty} {paths : List Js.Exp
 
 end
 
+/-- A fold's alternative binds what the compiler compiled its arm against. The rebuilt node carries the
+answer for every field that came round, so the types the binders take are `foldFieldTys`' and not the
+declared ones; everything nested inside a field reads through `patPartsList` unchanged. -/
+theorem foldPatParts_binds {p : Program} {tn : String} {ta : List Ty} {result : Ty}
+    {path : Js.Expr} {pat : Pat} {ctor : String} {fields : List (String × Value)} {c : CtorDef}
+    {tests : List Js.Expr} {pbinds : List (String × Js.Expr × Ty)} {binds : Env}
+    (hfind : (p.types.find? (·.name == tn)).bind (fun t => t.findAt? ta ctor) = some c)
+    (hv : Value.hasFieldTys p fields (Compile.foldFieldTys tn ta result c.fields) = true)
+    (hpp : Compile.foldPatParts p.types tn ta result path pat = .ok (tests, pbinds))
+    (hm : matchPat pat (.obj ctor fields) = some binds) :
+    BindsAgree p binds (pbinds.map fun b => (b.1, b.2.2)) := by
+  cases pat with
+  | wild =>
+    rw [Compile.foldPatParts] at hpp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+    rw [matchPat] at hm
+    simp only [Option.some.injEq] at hm
+    subst hm
+    simp [← hpp.2, BindsAgree]
+  | bind _ => rw [Compile.foldPatParts] at hpp; simp at hpp
+  | lit _ => rw [Compile.foldPatParts] at hpp; simp at hpp
+  | ctor name args =>
+    rw [matchPat] at hm
+    split at hm
+    · rename_i hname
+      obtain rfl : name = ctor := by simpa using hname
+      rw [Compile.foldPatParts] at hpp
+      simp only [hfind] at hpp
+      split at hpp
+      · simp at hpp
+      simp only [bind, Except.bind] at hpp
+      split at hpp
+      · simp at hpp
+      rename_i parts hpl
+      obtain ⟨tests', pbinds'⟩ := parts
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hpp
+      rw [← hpp.2]
+      exact matchPats_binds (valuesTyped_of_hasFieldTys hv) hpl hm
+    · simp at hm
+
 theorem firstMatch_mem {alts : List Alt} {sv : Value} {binds : Env} {body : Expr}
     (h : firstMatch alts sv = some (binds, body)) : ∃ alt ∈ alts, body = Alt.body alt := by
   induction alts with
@@ -1962,6 +2072,51 @@ theorem compileAlts_firstMatch {p : Program} {ctx : Compile.Ctx} {tscrut : Ty} {
     · obtain ⟨arm, bctx, hmem, hb, hcc⟩ := ihr tail binds body hctail hfm
       exact ⟨arm, bctx, by simp [hmem], hb, hcc⟩
 
+/-- The arm a fold's rebuilt node fell to is one the compiler compiled, against the context the pattern's
+binders give it. `compileAlts_firstMatch` over `foldPatParts`. -/
+theorem compileFoldAlts_firstMatch {p : Program} {ctx : Compile.Ctx} {tn : String} {ta : List Ty}
+    {result : Ty} {ctor : String} {fields : List (String × Value)} {c : CtorDef}
+    (hfind : (p.types.find? (·.name == tn)).bind (fun t => t.findAt? ta ctor) = some c)
+    (hv : Value.hasFieldTys p fields (Compile.foldFieldTys tn ta result c.fields) = true) :
+    ∀ (alts : List Alt) (arms : List Compile.Arm) (binds : Env) (body : Expr),
+      Compile.compileFoldAlts p ctx tn ta result alts = .ok arms →
+      firstMatch alts (.obj ctor fields) = some (binds, body) →
+      ∃ (arm : Compile.Arm) (bctx : Compile.Ctx), arm ∈ arms ∧ BindsAgree p binds bctx ∧
+        Compile.compileExpr p (bctx ++ ctx) body = .ok (arm.body, arm.ty) := by
+  intro alts
+  induction alts with
+  | nil => intro arms binds body _ hfm; rw [firstMatch] at hfm; simp at hfm
+  | cons alt rest ihr =>
+    intro arms binds body hca hfm
+    obtain ⟨pat, abody⟩ := alt
+    rw [Compile.compileFoldAlts] at hca
+    simp only [bind, Except.bind] at hca
+    split at hca
+    · simp at hca
+    rename_i parts hpp
+    obtain ⟨tests, pbinds⟩ := parts
+    split at hca
+    · simp at hca
+    split at hca
+    · simp at hca
+    rename_i bodyPair hcb
+    obtain ⟨jbody, tbody⟩ := bodyPair
+    simp only at hcb
+    split at hca
+    · simp at hca
+    rename_i tail hctail
+    simp only [Except.ok.injEq] at hca
+    subst hca
+    rw [firstMatch] at hfm
+    split at hfm
+    · rename_i binds' hmp
+      simp only [Option.some.injEq, Prod.mk.injEq] at hfm
+      obtain ⟨rfl, rfl⟩ := hfm
+      exact ⟨_, pbinds.map fun b => (b.1, b.2.2), List.Mem.head _,
+        foldPatParts_binds hfind hv hpp hmp, hcb⟩
+    · obtain ⟨arm, bctx, hmem, hb, hcc⟩ := ihr tail binds body hctail hfm
+      exact ⟨arm, bctx, by simp [hmem], hb, hcc⟩
+
 theorem compileExpr_matchE_inv {p : Program} {ctx : Compile.Ctx} {scrut : Expr} {alts : List Alt}
     {je : Js.Expr} {ty : Ty}
     (hc : Compile.compileExpr p ctx (.matchE scrut alts) = .ok (je, ty)) :
@@ -1992,6 +2147,53 @@ theorem compileExpr_matchE_inv {p : Program} {ctx : Compile.Ctx} {scrut : Expr} 
   simp only [Bool.not_eq_true', Bool.not_eq_false] at hsame
   simp only [Except.ok.injEq, Prod.mk.injEq] at hc
   exact ⟨jscrut, tscrut, arm0, rest, hcs, hca, hsame, hc.2.symm, hc.1.symm⟩
+
+/-- What the compiler had in hand where it built a fold: a scrutinee at the type the fold names, a type
+with at least one constructor to read the key off, arms it compiled, and every one of them answering at
+the fold's result type. -/
+theorem compileExpr_foldE_inv {p : Program} {ctx : Compile.Ctx} {scrut : Expr} {tn : String}
+    {ta : List Ty} {result : Ty} {alts : List Alt} {je : Js.Expr} {ty : Ty}
+    (hc : Compile.compileExpr p ctx (.foldE scrut tn ta result alts) = .ok (je, ty)) :
+    ∃ (jscrut : Js.Expr) (arms : List Compile.Arm) (t : TypeDef) (first : CtorDef)
+      (rest : List CtorDef),
+      Compile.compileExpr p ctx scrut = .ok (jscrut, .named tn ta)
+      ∧ Compile.compileFoldAlts p ctx tn ta result alts = .ok arms
+      ∧ (arms.all fun a => a.ty == result) = true
+      ∧ p.types.find? (·.name == tn) = some t
+      ∧ t.ctors = first :: rest
+      ∧ je = .foldJs jscrut (keyFor first.name) (Compile.foldSpecOf p.types tn ta)
+          Compile.scrutName (Compile.compileExpr.chain arms)
+      ∧ ty = result := by
+  simp only [Compile.compileExpr, bind, Except.bind] at hc
+  split at hc
+  · simp at hc
+  rename_i scrutPair hcs
+  obtain ⟨jscrut, tscrut⟩ := scrutPair
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i hne
+  obtain rfl : tscrut = Ty.named tn ta := Ty.eq_of_not_bne (by simpa using hne)
+  split at hc
+  · simp at hc
+  rename_i _ t ht
+  split at hc
+  · simp at hc
+  rename_i _ first rest hctors
+  split at hc
+  · simp at hc
+  rename_i _ arms hca
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  split at hc
+  · simp at hc
+  rename_i hall
+  simp only [Bool.not_eq_true', Bool.not_eq_false] at hall
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hc
+  exact ⟨jscrut, arms, t, first, rest, hcs, hca, hall, ht, hctors, hc.1.symm, hc.2.symm⟩
 
 /-! ### Walking a traversal
 
@@ -2154,6 +2356,158 @@ structure ProgramTyped (p : Program) : Prop where
     Compile.compileExpr p (d.params.map fun param => (param.name, param.ty)) d.body
       = .ok (je, d.ret)
   names : ∀ d ∈ p.decls, isReserved d.name = false
+  fieldNames : ∀ (n : String) (args : List Ty) (t : TypeDef), p.findType? n = some t →
+    ∀ c ∈ t.ctorsAt args, (c.fields.map (·.name)).Nodup
+
+/-! ### Walking a fold
+
+A fold recurses on the value rather than on the expression, so its four walkers need an induction of
+their own: one strong induction on a bound for the value's size, carrying all four at once because they
+call each other. The arms run at the fold's own fuel, so the fuel induction's hypothesis is what types
+their bodies. -/
+
+private theorem hasTy_of_fold {p : Program} (hprog : ProgramTyped p) {f : Nat}
+    {ctx : Compile.Ctx} {env : Env} {tn : String} {ta : List Ty} {result : Ty}
+    {alts : List Alt} {arms : List Compile.Arm}
+    (ih : ∀ (ctx : Compile.Ctx) (env : Env) (e : Expr) (je : Js.Expr) (ty : Ty) (v : Value),
+      TypeChecked e → EnvTyped p env ctx → Compile.compileExpr p ctx e = .ok (je, ty) →
+      evalExpr p f env e = .ok v → Value.hasTy p v ty = true)
+    (halts : ∀ alt ∈ alts, TypeChecked (Alt.body alt)) (henv : EnvTyped p env ctx)
+    (hca : Compile.compileFoldAlts p ctx tn ta result alts = .ok arms)
+    (hsame : (arms.all fun a => a.ty == result) = true) : ∀ m : Nat,
+      (∀ (v w : Value), sizeOf v < m → Value.hasTy p v (.named tn ta) = true →
+        evalFold p f env tn ta alts v = .ok w → Value.hasTy p w result = true)
+      ∧ (∀ (xs ws : List Value), sizeOf xs < m →
+        Value.hasElemTy p xs (.named tn ta) = true →
+        evalFoldList p f env tn ta alts xs = .ok ws → Value.hasElemTy p ws result = true)
+      ∧ (∀ (v : Value) (ws : List Value), sizeOf v < m →
+        Value.hasTy p v (.array (.named tn ta)) = true →
+        evalFoldListAt p f env tn ta alts v = .ok ws → Value.hasElemTy p ws result = true)
+      ∧ (∀ (fields : List (String × Value)) (fs : List Field) (ps : List (String × Value)),
+        sizeOf fields < m →
+        (∀ fd ∈ fs, ∀ v, lookupFieldV fields fd.name = some v → Value.hasTy p v fd.ty = true) →
+        evalFoldFields p f env tn ta alts fields fs = .ok ps →
+        Value.hasFieldTys p ps (Compile.foldFieldTys tn ta result fs) = true) := by
+  intro m
+  induction m using Nat.strongRecOn with
+  | _ m IH =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · intro v w hv hvt hw
+      cases v with
+      | obj ctor fields =>
+        obtain ⟨t, c, ht, hc, hft⟩ := hasTy_named_fields hvt
+        have hbind : (p.types.find? (·.name == tn)).bind (fun td => td.findAt? ta ctor) = some c := by
+          have hts : p.types.find? (·.name == tn) = some t := ht
+          rw [hts]; simpa using hc
+        rw [evalFold_obj] at hw
+        simp only [hbind, bind, Except.bind] at hw
+        split at hw
+        · simp at hw
+        rename_i fs hfs
+        have hnd := hprog.fieldNames tn ta t ht c (List.mem_of_find?_eq_some hc)
+        have hfsty := (IH (sizeOf fields + 1)
+            (by simp only [Value.obj.sizeOf_spec] at hv; omega)).2.2.2
+          fields c.fields fs (by omega) (hasTy_of_lookupFieldV fields c.fields hft hnd) hfs
+        split at hw
+        · rename_i binds body hfm
+          obtain ⟨alt, halt, rfl⟩ := firstMatch_mem hfm
+          obtain ⟨arm, bctx, hmem, hb, hcc⟩ :=
+            compileFoldAlts_firstMatch hbind hfsty alts arms binds _ hca hfm
+          have harmty : arm.ty = result := Ty.eq_of_beq (List.all_eq_true.mp hsame arm hmem)
+          exact harmty ▸ ih (bctx ++ ctx) (binds ++ env) (Alt.body alt) arm.body arm.ty w
+            (halts alt halt) (henv.append hb) hcc hw
+        · simp at hw
+      | _ => rw [evalFold.eq_def] at hw; simp at hw
+    · intro xs
+      induction xs with
+      | nil =>
+        intro ws _ _ hw
+        rw [evalFoldList_nil] at hw
+        simp only [Except.ok.injEq] at hw
+        exact hw ▸ hasElemTy_nil p result
+      | cons x rest ihx =>
+        intro ws hxs hxt hw
+        rw [evalFoldList_cons] at hw
+        simp only [bind, Except.bind] at hw
+        split at hw
+        · simp at hw
+        rename_i y hy
+        split at hw
+        · simp at hw
+        rename_i ys hys
+        simp only [Except.ok.injEq] at hw
+        subst hw
+        rw [hasElemTy_cons, Bool.and_eq_true] at hxt
+        rw [hasElemTy_cons, Bool.and_eq_true]
+        refine ⟨(IH (sizeOf (x :: rest)) hxs).1 x y
+          (by simp only [List.cons.sizeOf_spec]; omega) hxt.1 hy, ?_⟩
+        exact ihx ys (by simp only [List.cons.sizeOf_spec] at hxs; omega) hxt.2 hys
+    · intro v ws hv hvt hw
+      cases v with
+      | arr xs =>
+        rw [evalFoldListAt_arr] at hw
+        rw [hasTy_array] at hvt
+        exact (IH (sizeOf xs + 1)
+          (by simp only [Value.arr.sizeOf_spec] at hv; omega)).2.1 xs ws (by omega) hvt hw
+      | _ => rw [evalFoldListAt.eq_def] at hw; simp at hw
+    · intro fields fs
+      induction fs with
+      | nil =>
+        intro ps _ _ hw
+        rw [evalFoldFields_nil] at hw
+        simp only [Except.ok.injEq] at hw
+        subst hw
+        rw [Compile.foldFieldTys]
+        exact hasFieldTys_nil p
+      | cons fd rest ihr =>
+        intro ps hfl hall hw
+        have hrest : ∀ fd' ∈ rest, ∀ w, lookupFieldV fields fd'.name = some w →
+            Value.hasTy p w fd'.ty = true := fun fd' hfd' => hall fd' (by simp [hfd'])
+        match hl : lookupFieldV fields fd.name with
+        | none => rw [evalFoldFields_cons_none _ _ _ _ _ _ _ _ _ hl] at hw; simp at hw
+        | some v =>
+          have hlt := sizeOf_lookupFieldV fields fd.name hl
+          have hvt : Value.hasTy p v fd.ty = true := hall fd (by simp) v hl
+          rw [evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ hl] at hw
+          rw [Compile.foldFieldTys]
+          cases hk : foldKindOf tn ta fd.ty with
+          | plain =>
+            simp only [hk, bind, Except.bind] at hw
+            split at hw
+            · simp at hw
+            rename_i ps' hps
+            simp only [Except.ok.injEq] at hw
+            subst hw
+            simp only [hasFieldTys_cons, Bool.and_eq_true, beq_self_eq_true, true_and]
+            exact ⟨hvt, ihr ps' hfl hrest hps⟩
+          | self =>
+            simp only [hk, bind, Except.bind] at hw
+            split at hw
+            · simp at hw
+            rename_i y hy
+            split at hw
+            · simp at hw
+            rename_i ps' hps
+            simp only [Except.ok.injEq] at hw
+            subst hw
+            simp only [hasFieldTys_cons, Bool.and_eq_true, beq_self_eq_true, true_and]
+            exact ⟨(IH (sizeOf fields) hfl).1 v y hlt (ty_of_foldKindOf_self hk ▸ hvt) hy,
+              ihr ps' hfl hrest hps⟩
+          | list =>
+            simp only [hk, bind, Except.bind] at hw
+            split at hw
+            · simp at hw
+            rename_i ys hys
+            split at hw
+            · simp at hw
+            rename_i ps' hps
+            simp only [Except.ok.injEq] at hw
+            subst hw
+            simp only [hasFieldTys_cons, Bool.and_eq_true, beq_self_eq_true, true_and]
+            refine ⟨?_, ihr ps' hfl hrest hps⟩
+            rw [hasTy_array]
+            exact (IH (sizeOf fields) hfl).2.2.1 v ys hlt
+              (ty_of_foldKindOf_list hk ▸ hvt) hys
 
 /-- If the compiler judged an expression to have type `T` and `eval` returns a value, the value satisfies
 `T`. -/
@@ -2957,6 +3311,16 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
       rw [← hc.2, hasTy_fn, hfind]
       simp only [tyList_beq_refl, Bool.true_and]
       exact Ty.beq_refl _
+    | foldE hscrut halts =>
+      rename_i scrutE typeName tyArgs result alts
+      obtain ⟨jscrut, arms, -, -, -, hcs, hca, hsame, -, -, -, rfl⟩ := compileExpr_foldE_inv hc
+      rw [evalExpr_foldE] at he
+      simp only [bind, Except.bind] at he
+      split at he
+      · simp at he
+      rename_i sv hsv
+      have hst := ih ctx env scrutE jscrut (.named typeName tyArgs) sv hscrut henv hcs hsv
+      exact (hasTy_of_fold hprog ih halts henv hca hsame (sizeOf sv + 1)).1 sv v (by omega) hst he
     | call hargs =>
       rename_i fn args
       rw [evalExpr_call] at he
@@ -3045,5 +3409,22 @@ theorem typeSound (p : Program) (hprog : ProgramTyped p) :
             (paramsTyped_of_args (fun e je t w' hchk' => ih ctx env e je t w' hchk' henv) args js vs
               d'.params hargs hcs hvs (by simpa using hall) (by simpa using hlen))) (hdd ▸ hjb)
           (hdd ▸ he)
+
+/-- The node a fold's walk rebuilt carries the fields `Compile.foldFieldTys` names: each one that came
+round holds the fold's answer for it, and the rest hold what they held. A fold's alternatives are
+compiled against exactly that, so it is what a proof about the arms needs of the node they run on —
+`hasTy_of_fold`'s fourth walker, at the fuel `typeSound` was proved for. -/
+theorem hasFieldTys_of_evalFoldFields {p : Program} (hprog : ProgramTyped p) (f : Nat)
+    {ctx : Compile.Ctx} {env : Env} {tn : String} {ta : List Ty} {result : Ty}
+    {alts : List Alt} {arms : List Compile.Arm} {fields : List (String × Value)}
+    {fs : List Field} {ps : List (String × Value)}
+    (halts : ∀ alt ∈ alts, TypeChecked (Alt.body alt)) (henv : EnvTyped p env ctx)
+    (hca : Compile.compileFoldAlts p ctx tn ta result alts = .ok arms)
+    (hsame : (arms.all fun a => a.ty == result) = true)
+    (hfields : ∀ fd ∈ fs, ∀ v, lookupFieldV fields fd.name = some v → Value.hasTy p v fd.ty = true)
+    (hfs : evalFoldFields p f env tn ta alts fields fs = .ok ps) :
+    Value.hasFieldTys p ps (Compile.foldFieldTys tn ta result fs) = true :=
+  (hasTy_of_fold hprog (typeSound p hprog f) halts henv hca hsame (sizeOf fields + 1)).2.2.2
+    fields fs ps (by omega) hfields hfs
 
 end Lean2Js

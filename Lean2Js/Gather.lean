@@ -117,7 +117,7 @@ private def subterms : Core.Expr → List Core.Expr
     [a, b, c]
   | .call _ args | .ctor _ _ _ args | .arrayLit _ args => args
   | .dictLit _ _ entries => entries.map (·.2)
-  | .matchE scrut alts => scrut :: alts.map (·.2)
+  | .matchE scrut alts | .foldE scrut _ _ _ alts => scrut :: alts.map (·.2)
 
 /-- The pairs `(later, earlier)` a program has to respect: a body comes after everything it calls or names
 with `@`, and a callee comes after every declaration a call hands it with `@`, which is what `Cost.progOk`

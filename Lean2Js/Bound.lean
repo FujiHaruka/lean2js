@@ -159,6 +159,10 @@ def repeatBound (env : Env) : Expr → Option Int
     | _, _ => none
   | .letE n _ v b => repeatBound ((n, rangeOf env v) :: Env.without env [n]) b
   | .matchE _ alts => repeatBoundAlts env alts
+  -- Not the max over the arms the way `matchE` is: a fold's arm runs once per node and can append the
+  -- answers for the children, so the copies multiply with a depth the text does not say. Declining is
+  -- what refuses a `Str.repeat` reading a fold's result.
+  | .foldE _ _ _ _ _ => none
   | _ => some 1
 
 def repeatBoundAlts (env : Env) : List Alt → Option Int
@@ -227,7 +231,8 @@ def unboundedIn (factor : Int) (env : Env) : Expr → Option (Sized × Option In
       unboundedIn (factor * times env a) (Env.without env [acc, x]) b
   | .ctor _ _ _ args | .arrayLit _ args | .call _ args => unboundedInList factor env args
   | .dictLit _ _ entries => unboundedInEntries factor env entries
-  | .matchE scrut alts => unboundedIn factor env scrut <|> unboundedInAlts factor env alts
+  | .matchE scrut alts | .foldE scrut _ _ _ alts =>
+    unboundedIn factor env scrut <|> unboundedInAlts factor env alts
 
 def unboundedInList (factor : Int) (env : Env) : List Expr → Option (Sized × Option Int)
   | [] => none

@@ -40,7 +40,8 @@ def exprDepth : Expr → Nat
     1 + max (exprDepth a) (max (exprDepth b) (exprDepth c))
   | .call _ args | .ctor _ _ _ args | .arrayLit _ args => 1 + exprDepthList args
   | .dictLit _ _ entries => 1 + exprDepthEntries entries
-  | .matchE scrut alts => 1 + max (exprDepth scrut) (exprDepthAlts alts)
+  | .matchE scrut alts | .foldE scrut _ _ _ alts =>
+    1 + max (exprDepth scrut) (exprDepthAlts alts)
 
 def exprDepthList : List Expr → Nat
   | [] => 0
@@ -129,7 +130,8 @@ def bodyOk (p : Program) (i : Nat) (fns : List String) : Expr → Bool
     bodyOk p i fns a && bodyOk p i fns b && bodyOk p i fns c
   | .ctor _ _ _ args | .arrayLit _ args => bodyOkList p i fns args
   | .dictLit _ _ entries => bodyOkEntries p i fns entries
-  | .matchE scrut alts => bodyOk p i fns scrut && bodyOkAlts p i fns alts
+  | .matchE scrut alts | .foldE scrut _ _ _ alts =>
+    bodyOk p i fns scrut && bodyOkAlts p i fns alts
   | .call fn args =>
     match declAt? p fn with
     | some (j, d) =>
@@ -357,6 +359,17 @@ theorem noFnFields_iff : ∀ (es : List (String × Value)),
 
 theorem noFn_arr {xs : List Value} (h : ∀ v ∈ xs, noFn v = true) : noFn (.arr xs) = true := by
   rw [noFn]; exact (noFnList_iff xs).mpr h
+
+theorem noFn_lookupFieldV {fields : List (String × Value)} {k : String} {v : Value}
+    (h : ∀ e ∈ fields, noFn e.2 = true) (hl : lookupFieldV fields k = some v) : noFn v = true := by
+  rw [lookupFieldV] at hl
+  cases hf : fields.find? (·.1 == k) with
+  | none => rw [hf] at hl; simp at hl
+  | some e =>
+    rw [hf] at hl
+    simp only [Option.map_some, Option.some.injEq] at hl
+    subst hl
+    exact h e (List.mem_of_find?_eq_some hf)
 
 theorem noFn_obj {c : String} {fs : List (String × Value)} (h : ∀ e ∈ fs, noFn e.2 = true) :
     noFn (.obj c fs) = true := by
@@ -1151,6 +1164,95 @@ theorem eval_safe (p : Program) (hp : declsOk p 0 p.decls = true) :
         refine Safe.bind' (ih i fns ((bn, x) :: (an, acc) :: env') body hbb
           (envOk_cons (hxs x (List.mem_cons_self ..)) (envOk_cons hacc henv')) hfb) (fun v hv => ?_)
         exact ihx v (fun w hw => hxs w (List.mem_cons_of_mem _ hw)) hv
+    have hfoldI : ∀ (tn : String) (ta : List Ty) (alts : List Alt),
+        bodyOkAlts p i fns alts = true → exprDepthAlts alts + i * callStep p ≤ n →
+        ∀ m : Nat,
+          (∀ v : Value, sizeOf v < m → noFn v = true →
+            Safe (evalFold p n env tn ta alts v) (fun w => noFn w = true))
+          ∧ (∀ xs : List Value, sizeOf xs < m → (∀ x ∈ xs, noFn x = true) →
+            Safe (evalFoldList p n env tn ta alts xs) (fun ws => ∀ w ∈ ws, noFn w = true))
+          ∧ (∀ v : Value, sizeOf v < m → noFn v = true →
+            Safe (evalFoldListAt p n env tn ta alts v) (fun ws => ∀ w ∈ ws, noFn w = true))
+          ∧ (∀ (fields : List (String × Value)) (fs : List Field), sizeOf fields < m →
+            (∀ e ∈ fields, noFn e.2 = true) →
+            Safe (evalFoldFields p n env tn ta alts fields fs)
+              (fun ps => ∀ e ∈ ps, noFn e.2 = true)) := by
+      intro tn ta alts hba hfa m
+      induction m using Nat.strongRecOn with
+      | _ m IH =>
+        refine ⟨?_, ?_, ?_, ?_⟩
+        · intro v hv hnv
+          cases v with
+          | obj ctor fields =>
+            rw [evalFold_obj]
+            have hfields : ∀ e ∈ fields, noFn e.2 = true :=
+              (noFnFields_iff fields).mp (by rwa [noFn] at hnv)
+            have hfl := (IH (sizeOf fields + 1)
+              (by simp only [Value.obj.sizeOf_spec] at hv; omega)).2.2.2
+            split
+            · refine Safe.bind' (hfl fields _ (by omega) hfields) (fun fs hfs => ?_)
+              cases hfm : firstMatch alts (Value.obj ctor fs) with
+              | none => exact safe_noMatch
+              | some bb =>
+                obtain ⟨binds, body⟩ := bb
+                obtain ⟨alt, halt, rfl⟩ := firstMatch_body hfm
+                exact ih i fns (binds ++ env) alt.2 (bodyOkAlts_mem hba halt)
+                  (envOk_append (firstMatch_noFn (noFn_obj hfs) hfm) henv)
+                  (by have := exprDepthAlts_mem halt; omega)
+            · exact safe_typeError _
+          | _ => rw [evalFold.eq_def]; exact safe_typeError _
+        · intro xs
+          induction xs with
+          | nil => intro _ _; rw [evalFoldList_nil]; exact Safe.ok' (by simp)
+          | cons x rest ihx =>
+            intro hxs hnxs
+            rw [evalFoldList_cons]
+            have hv := (IH (sizeOf (x :: rest)) hxs).1
+            refine Safe.bind' (hv x (by simp only [List.cons.sizeOf_spec]; omega)
+              (hnxs x (List.mem_cons_self ..))) (fun y hy => ?_)
+            refine Safe.bind' (ihx (by simp only [List.cons.sizeOf_spec] at hxs; omega)
+              (fun w hw => hnxs w (List.mem_cons_of_mem _ hw))) (fun ys hys => ?_)
+            refine Safe.ok' (fun w hw => ?_)
+            rcases List.mem_cons.mp hw with rfl | hw
+            · exact hy
+            · exact hys w hw
+        · intro v hv hnv
+          cases v with
+          | arr xs =>
+            rw [evalFoldListAt_arr]
+            exact (IH (sizeOf xs + 1)
+              (by simp only [Value.arr.sizeOf_spec] at hv; omega)).2.1 xs (by omega)
+              ((noFnList_iff xs).mp (by rwa [noFn] at hnv))
+          | _ => rw [evalFoldListAt.eq_def]; exact safe_typeError _
+        · intro fields fs hfs hnf
+          induction fs with
+          | nil => rw [evalFoldFields_nil]; exact Safe.ok' (by simp)
+          | cons fd rest ihr =>
+            match hl : lookupFieldV fields fd.name with
+            | none => rw [evalFoldFields_cons_none _ _ _ _ _ _ _ _ _ hl]; exact safe_typeError _
+            | some v =>
+              have hlt := sizeOf_lookupFieldV fields fd.name hl
+              have hnv := noFn_lookupFieldV hnf hl
+              rw [evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ hl]
+              have hrec := IH (sizeOf fields) hfs
+              split
+              · refine Safe.bind' ihr (fun ps hps => ?_)
+                refine Safe.ok' (fun e he => ?_)
+                rcases List.mem_cons.mp he with rfl | he
+                · exact hnv
+                · exact hps e he
+              · refine Safe.bind' (hrec.1 v hlt hnv) (fun y hy => ?_)
+                refine Safe.bind' ihr (fun ps hps => ?_)
+                refine Safe.ok' (fun e he => ?_)
+                rcases List.mem_cons.mp he with rfl | he
+                · exact hy
+                · exact hps e he
+              · refine Safe.bind' (hrec.2.2.1 v hlt hnv) (fun ys hys => ?_)
+                refine Safe.bind' ihr (fun ps hps => ?_)
+                refine Safe.ok' (fun e he => ?_)
+                rcases List.mem_cons.mp he with rfl | he
+                · exact noFn_arr hys
+                · exact hps e he
     cases e with
     | lit l => rw [evalExpr_lit]; exact Safe.ok' (noFn_litValue l)
     | var name =>
@@ -1290,6 +1392,11 @@ theorem eval_safe (p : Program) (hp : declsOk p 0 p.decls = true) :
         exact ih i fns (binds ++ env) alt.2 (bodyOkAlts_mem hb.2 halt)
           (envOk_append (firstMatch_noFn hsv hfm) henv)
           (by have := exprDepthAlts_mem halt; omega)
+    | foldE scrut typeName tyArgs result alts =>
+      rw [bodyOk, Bool.and_eq_true] at hb; rw [exprDepth] at hf
+      rw [evalExpr_foldE]
+      refine Safe.bind' (ih i fns env scrut hb.1 henv (by omega)) (fun sv hsv => ?_)
+      exact (hfoldI typeName tyArgs alts hb.2 (by omega) (sizeOf sv + 1)).1 sv (by omega) hsv
     | noneE elem => rw [evalExpr_noneE]; exact Safe.ok' (noFn_obj (by simp))
     | someE x =>
       rw [bodyOk] at hb; rw [exprDepth] at hf

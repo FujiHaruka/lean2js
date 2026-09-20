@@ -100,6 +100,11 @@ def includes (s needle : Expr) : Expr := .strBin .includes s needle
 def split (s sep : Expr) : Expr := .strBin .split s sep
 def substring (s lo hi : Expr) : Expr := .substring s lo hi
 
+/-- A fold over a value of a declared type. What the alternatives are handed is the node with every
+field that came round replaced by the answer for it, so `result` is part of the form. -/
+def foldOn (scrut : Expr) (typeName : String) (tyArgs : List Ty) (result : Ty)
+    (alts : List Alt) : Expr := .foldE scrut typeName tyArgs result alts
+
 def pWild : Pat := .wild
 def pBind (name : String) : Pat := .bind name
 def pBool (b : Bool) : Pat := .lit (.bool b)

@@ -437,12 +437,49 @@ inductive Expr where
   | strUn (op : StrUnOp) (e : Expr)
   | strBin (op : StrBinOp) (lhs rhs : Expr)
   | substring (s lo hi : Expr)
+  /-- A fold over a value of a declared type, from the leaves up. The alternatives are a `match`'s: what
+  they are handed is the node with each field that came round already replaced by the fold's answer for
+  it, so an arm reads a node of the shape the type declares and the walk is not spelled in the subset.
+
+  The form carries no spec. Which of a constructor's fields come round is read off the program's own
+  `TypeDef`: a field declared at `.named typeName tyArgs` is folded, one at `.array (.named typeName
+  tyArgs)` is folded elementwise, and anything else is passed through — so the evaluator and the emitter
+  cannot disagree about which field comes round.
+
+  Iteration is vocabulary here rather than recursion, the way `.map` and `.foldl` are: the walk lives
+  inside one `evalExpr` arm and is measured on the value, so a fold costs one expression node however
+  deep the value is and `Cost.cost` stays syntactic.
+
+  `result` is what the fold answers with, and the form carries it because the arms cannot be typed
+  without it: a pattern that names a field which came round binds the *answer* for that field and not
+  the field, so the types a `match` reads off the declared type are the wrong ones here. -/
+  | foldE (scrut : Expr) (typeName : String) (tyArgs : List Ty) (result : Ty)
+      (alts : List (Pat × Expr))
   deriving Repr, BEq, Inhabited
 
 abbrev Alt := Pat × Expr
 
 def Alt.pat (a : Alt) : Pat := a.1
 def Alt.body (a : Alt) : Expr := a.2
+
+/-- How a fold carries one of a constructor's fields: the declared type coming round, a list of it
+coming round, or neither. -/
+inductive FoldKind where
+  | self
+  | list
+  | plain
+  deriving Repr, BEq, Inhabited, DecidableEq
+
+/-- Which of a constructor's fields a fold over `typeName tyArgs` goes into, read off the field's own
+declared type. This is the one test: the evaluator walks by it and the emitter writes its spec from it,
+so the two cannot disagree about which field comes round.
+
+Only the type at the same arguments comes round. `Tree Int` inside `Tree String` is a different type and
+a fold over one does not descend into the other. -/
+def foldKindOf (typeName : String) (tyArgs : List Ty) : Ty → FoldKind
+  | .named n as => if n == typeName && as == tyArgs then .self else .plain
+  | .array (.named n as) => if n == typeName && as == tyArgs then .list else .plain
+  | _ => .plain
 
 structure Param where
   name : String

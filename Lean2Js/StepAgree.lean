@@ -255,6 +255,179 @@ theorem reduceItems {p : Program} {f : Nat} (ih : Sim p f) (env : Env) (accName 
     rw [hv] at hne hok herr
     exact ihr v t hne hok herr
 
+/-! ### The walk a fold takes
+
+A fold recurses on the value rather than on the expression, so the machine's walk over a node needs an
+induction of its own: one strong induction on a bound for the value's size, carrying the node walk, the
+field walk and the element walk at once because they call each other. Each carries the continuation the
+way `mapItems` carries it along a list — the state the field walk hands its answer to is the field walk
+itself with nothing left to walk. -/
+
+theorem foldWalk {p : Program} {f : Nat} (ih : Sim p f) (env : Env) (tn : String) (ta : List Ty)
+    (alts : List Alt) : ∀ m : Nat,
+      (∀ (v : Value) (k : List Frame) (t : State), sizeOf v < m →
+        evalFold p f env tn ta alts v ≠ .error .outOfFuel →
+        (∀ w, evalFold p f env tn ta alts v = .ok w → Reaches p (.finish w k) t) →
+        (∀ err, evalFold p f env tn ta alts v = .error err → t = .done (.error err)) →
+        Reaches p (beginFold p tn ta alts env v k) t)
+      ∧ (∀ (ctor : String) (fields done : List (String × Value)) (rest : List Field)
+          (k : List Frame) (t : State), sizeOf fields < m →
+        evalFoldFields p f env tn ta alts fields rest ≠ .error .outOfFuel →
+        (∀ ps, evalFoldFields p f env tn ta alts fields rest = .ok ps →
+          Reaches p (continueFoldFields tn ta alts env ctor fields (done ++ ps) [] k) t) →
+        (∀ err, evalFoldFields p f env tn ta alts fields rest = .error err →
+          t = .done (.error err)) →
+        Reaches p (continueFoldFields tn ta alts env ctor fields done rest k) t)
+      ∧ (∀ (ctor : String) (fields done : List (String × Value)) (name : String)
+          (doneXs restXs : List Value) (rest : List Field) (k : List Frame) (t : State),
+        sizeOf restXs < m →
+        evalFoldList p f env tn ta alts restXs ≠ .error .outOfFuel →
+        (∀ ys, evalFoldList p f env tn ta alts restXs = .ok ys →
+          Reaches p (continueFoldFields tn ta alts env ctor fields
+            (done ++ [(name, .arr (doneXs ++ ys))]) rest k) t) →
+        (∀ err, evalFoldList p f env tn ta alts restXs = .error err →
+          t = .done (.error err)) →
+        Reaches p (continueFoldElems tn ta alts env ctor fields done name doneXs restXs rest k) t) := by
+  intro m
+  induction m using Nat.strongRecOn with
+  | _ m IH =>
+    refine ⟨?_, ?_, ?_⟩
+    · intro v k t hv hne hok herr
+      cases v with
+      | obj ctor fields =>
+        rw [evalFold_obj] at hne hok herr
+        rw [beginFold]
+        split
+        · next c hfind =>
+          simp only [hfind, bind, Except.bind] at hne hok herr
+          refine (IH (sizeOf fields + 1)
+              (by simp only [Value.obj.sizeOf_spec] at hv; omega)).2.1
+            ctor fields [] c.fields k t (by omega)
+            (fun h => hne (by rw [h] <;> rfl)) (fun ps hps => ?_)
+            (fun err he => herr err (by rw [he] <;> rfl))
+          rw [hps] at hne hok herr
+          rw [List.nil_append, continueFoldFields]
+          simp only at hne hok herr
+          split
+          · next binds body hfm =>
+            simp only [hfm] at hne hok herr
+            refine (ih (binds ++ env) body k hne).trans ?_
+            cases hx : evalExpr p f (binds ++ env) body with
+            | ok w => rw [hx] at hok; exact hok w rfl
+            | error e => rw [hx] at herr; rw [herr e rfl]; exact Reaches.refl
+          · next hfm =>
+            simp only [hfm] at herr
+            rw [herr _ rfl, State.fail]
+            exact Reaches.refl
+        · next hfind =>
+          simp only [hfind] at herr
+          rw [herr _ rfl, State.fail]
+          exact Reaches.refl
+      | _ =>
+        rw [evalFold.eq_def] at herr
+        simp only at herr
+        rw [herr _ rfl]
+        exact Reaches.refl
+    · intro ctor fields done rest
+      induction rest generalizing done with
+      | nil =>
+        intro k t _ _ hok _
+        have h := hok [] (evalFoldFields_nil p f env tn ta alts fields)
+        rwa [List.append_nil] at h
+      | cons fd more ihr =>
+        intro k t hfl hne hok herr
+        match hl : lookupFieldV fields fd.name with
+        | none =>
+          rw [evalFoldFields_cons_none _ _ _ _ _ _ _ _ _ hl] at herr
+          rw [continueFoldFields]
+          simp only [hl]
+          rw [herr _ rfl, State.fail]
+          exact Reaches.refl
+        | some v =>
+          have hlt := sizeOf_lookupFieldV fields fd.name hl
+          rw [evalFoldFields_cons_some _ _ _ _ _ _ _ _ _ hl] at hne hok herr
+          rw [continueFoldFields]
+          simp only [hl]
+          cases hk : foldKindOf tn ta fd.ty with
+          | plain =>
+            simp only [hk, bind, Except.bind] at hne hok herr
+            simp only []
+            refine ihr (done ++ [(fd.name, v)]) k t hfl
+              (fun h => hne (by rw [h] <;> rfl)) (fun ps hps => ?_)
+              (fun err he => herr err (by rw [he] <;> rfl))
+            have h := hok ((fd.name, v) :: ps) (by rw [hps] <;> rfl)
+            rwa [List.append_assoc, List.singleton_append]
+          | self =>
+            simp only [hk, bind, Except.bind] at hne hok herr
+            simp only []
+            refine Reaches.head ?_
+            simp only [step]
+            refine (IH (sizeOf fields) hfl).1 v
+              (.foldFieldK tn ta alts env ctor fields done fd.name more :: k) t hlt
+              (fun h => hne (by rw [h] <;> rfl)) (fun w hw => ?_)
+              (fun err he => herr err (by rw [he] <;> rfl))
+            rw [hw] at hne hok herr
+            simp only at hne hok herr
+            refine Reaches.head ?_
+            simp only [step]
+            refine ihr (done ++ [(fd.name, w)]) k t hfl
+              (fun h => hne (by rw [h] <;> rfl)) (fun ps hps => ?_)
+              (fun err he => herr err (by rw [he] <;> rfl))
+            have h := hok ((fd.name, w) :: ps) (by rw [hps] <;> rfl)
+            rwa [List.append_assoc, List.singleton_append]
+          | list =>
+            simp only [hk, bind, Except.bind] at hne hok herr
+            simp only []
+            cases v with
+            | arr xs =>
+              rw [evalFoldListAt_arr] at hne hok herr
+              refine (IH (sizeOf fields) hfl).2.2 ctor fields done fd.name [] xs more k t
+                (by simp only [Value.arr.sizeOf_spec] at hlt; omega)
+                (fun h => hne (by rw [h] <;> rfl)) (fun ys hys => ?_)
+                (fun err he => herr err (by rw [he] <;> rfl))
+              rw [hys] at hne hok herr
+              simp only [List.nil_append] at hne hok herr ⊢
+              refine ihr (done ++ [(fd.name, Value.arr ys)]) k t hfl
+                (fun h => hne (by rw [h] <;> rfl)) (fun ps hps => ?_)
+                (fun err he => herr err (by rw [he] <;> rfl))
+              have h := hok ((fd.name, Value.arr ys) :: ps) (by rw [hps] <;> rfl)
+              rwa [List.append_assoc, List.singleton_append]
+            | _ =>
+              rw [evalFoldListAt.eq_def] at herr
+              simp only at herr
+              rw [herr _ rfl, State.fail]
+              exact Reaches.refl
+    · intro ctor fields done name doneXs restXs
+      induction restXs generalizing doneXs with
+      | nil =>
+        intro rest k t _ _ hok _
+        have h := hok [] (evalFoldList_nil p f env tn ta alts)
+        rw [List.append_nil] at h
+        rw [continueFoldElems]
+        exact h
+      | cons x more ihx =>
+        intro rest k t hxs hne hok herr
+        rw [evalFoldList_cons] at hne hok herr
+        simp only [bind, Except.bind] at hne hok herr
+        rw [continueFoldElems]
+        refine Reaches.head ?_
+        simp only [step]
+        refine (IH (sizeOf (x :: more)) hxs).1 x
+          (.foldElemK tn ta alts env ctor fields done name doneXs more rest :: k) t
+          (by simp only [List.cons.sizeOf_spec]; omega)
+          (fun h => hne (by rw [h] <;> rfl)) (fun w hw => ?_)
+          (fun err he => herr err (by rw [he] <;> rfl))
+        rw [hw] at hne hok herr
+        simp only at hne hok herr
+        refine Reaches.head ?_
+        simp only [step]
+        refine ihx (doneXs ++ [w]) rest k t
+          (by simp only [List.cons.sizeOf_spec] at hxs; omega)
+          (fun h => hne (by rw [h] <;> rfl)) (fun ys hys => ?_)
+          (fun err he => herr err (by rw [he] <;> rfl))
+        have h := hok (w :: ys) (by rw [hys] <;> rfl)
+        rwa [List.append_assoc, List.singleton_append]
+
 theorem step_bin {p : Program} {env : Env} {op : BinOp} {lhs rhs : Expr} {k : List Frame}
     (hop : op ≠ .and) (hor : op ≠ .or) :
     step p (.eval env (.bin op lhs rhs) k) = .eval env lhs (.binL op rhs env :: k) := by
@@ -396,6 +569,15 @@ theorem sim (p : Program) : ∀ f, Sim p f
       · next hm =>
         simp only [hm, outcome, State.fail]
         exact Reaches.refl
+    | foldE scrut typeName tyArgs result alts =>
+      rw [evalExpr_foldE] at hne ⊢
+      refine Reaches.head (sub ih (fun h => hne (by rw [h] <;> rfl)) (fun v hv => ?_)
+        (fun err he => by rw [he] <;> rfl))
+      rw [hv] at hne ⊢
+      simp only [step, bind, Except.bind] at hne ⊢
+      exact (foldWalk ih env typeName tyArgs alts (sizeOf v + 1)).1 v k _ (by omega) hne
+        (fun w hw => by rw [hw]; exact Reaches.refl)
+        (fun err he => by rw [he] <;> rfl)
     | noneE elem =>
       rw [evalExpr_noneE]
       exact Reaches.head Reaches.refl

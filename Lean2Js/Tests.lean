@@ -132,6 +132,67 @@ private def nested (alts : List Alt) : Decl :=
 #guard !(Compile.compileDeclared {
     types := [struct "Tagged" [("tag", Ty.int53)]], decls := [] }).isOk
 
+/-! ## What a fold's alternatives are read at
+
+A fold's alternatives are matched against the rebuilt node, whose fields that came round carry the
+answers for them. Reading them at the declared type instead is not conservative: two types may declare
+constructors of the same name, so alternatives that name every head the declared type has can still
+leave a rebuilt node uncovered. `Tree` and `Twig` are that pair. -/
+
+private def Tree : TypeDef :=
+  enum "Tree" [("leaf", []), ("node", [("kid", Ty.named "Tree" [])])]
+
+private def Twig : TypeDef :=
+  enum "Twig" [("leaf", []), ("node", [("kid", Ty.int53)]), ("stub", [])]
+
+private def withTrees (d : Decl) : Bool :=
+  (Compile.compileDeclared { types := [Tree, Twig], decls := [d] }).isOk
+
+private def shrink (alts : List Alt) : Decl :=
+  decl "shrink" [("t", .named "Tree" [])] (.named "Twig" [])
+    (foldOn (v "t") "Tree" [] (.named "Twig" []) alts)
+
+private def prune (alts : List Alt) : Decl :=
+  decl "prune" [("t", .named "Tree" [])] (.named "Tree" [])
+    (foldOn (v "t") "Tree" [] (.named "Tree" []) alts)
+
+-- Fold `node(leaf)` and the `leaf` arm answers `stub`, so the rebuilt node is `node(kid: stub)`, which
+-- no alternative below matches. Every head `Tree` has is named, so reading the folded column at `Tree`
+-- would have let this through.
+#guard !withTrees (shrink
+  [ alt "leaf" [] (ctor "Twig" [] "stub" []),
+    altP (pCtor "node" [pCtor "leaf" []]) (ctor "Twig" [] "leaf" []),
+    altP (pCtor "node" [pCtor "node" [pBind "k"]]) (ctor "Twig" [] "node" [v "k"]) ])
+
+-- The same fold with the alternative the rebuilt node needs.
+#guard withTrees (shrink
+  [ alt "leaf" [] (ctor "Twig" [] "stub" []),
+    altP (pCtor "node" [pCtor "leaf" []]) (ctor "Twig" [] "leaf" []),
+    altP (pCtor "node" [pCtor "node" [pBind "k"]]) (ctor "Twig" [] "node" [v "k"]),
+    altP (pCtor "node" [pCtor "stub" []]) (ctor "Twig" [] "stub" []) ])
+
+-- A wildcard at the folded column covers whatever the answer for it is.
+#guard withTrees (shrink
+  [ alt "leaf" [] (ctor "Twig" [] "stub" []),
+    altP (pCtor "node" [pWild]) (ctor "Twig" [] "leaf" []) ])
+
+#guard !withTrees (shrink [alt "leaf" [] (ctor "Twig" [] "stub" [])])
+
+-- An alternative no rebuilt node reaches is refused, at the same columns.
+#guard !withTrees (shrink
+  [ alt "leaf" [] (ctor "Twig" [] "stub" []),
+    altP (pCtor "node" [pBind "k"]) (v "k"),
+    altP (pCtor "node" [pCtor "leaf" []]) (ctor "Twig" [] "leaf" []) ])
+
+-- The node itself is not a value of any type the language writes, so it cannot be named.
+#guard !withTrees (shrink [altP (pBind "whole") (ctor "Twig" [] "stub" [])])
+
+-- A fold to the type it walks reads every folded column at the declared type, which is what it is.
+#guard withTrees (prune
+  [ alt "leaf" [] (ctor "Tree" [] "leaf" []),
+    altP (pCtor "node" [pCtor "leaf" []]) (ctor "Tree" [] "leaf" []),
+    altP (pCtor "node" [pCtor "node" [pBind "k"]]) (v "k") ])
+
 /-! ## The key a type's constructors are told apart by
 
 `tag` unless the author wrote `@[discriminator "..."]` above the type. What a type declares has to be a

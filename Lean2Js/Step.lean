@@ -67,6 +67,16 @@ inductive Frame where
   | sortArrK (binder : String) (body : Expr) (env : Env)
   | sortK (binder : String) (body : Expr) (env : Env) (done : List (Value × Value)) (elem : Value)
       (rest : List Value)
+  /-- A value is about to be walked as one node of a fold. -/
+  | foldScrutK (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+  /-- The answer for a field that came round has arrived; `done` is what the node has so far. -/
+  | foldFieldK (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+      (ctor : String) (fields : List (String × Value)) (done : List (String × Value))
+      (name : String) (rest : List Field)
+  /-- The answer for one element of a field that came round as a list has arrived. -/
+  | foldElemK (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+      (ctor : String) (fields : List (String × Value)) (done : List (String × Value))
+      (name : String) (doneXs restXs : List Value) (rest : List Field)
   deriving Inhabited
 
 inductive State where
@@ -136,6 +146,62 @@ def continueReduce (accName elemName : String) (body : Expr) (env : Env)
     .eval ((elemName, x) :: (accName, acc) :: env) body
       (.reduceK accName elemName body env more :: k)
 
+/-! ### The walk a fold takes
+
+A node is walked one declared field at a time. A field that came round is handed back to the machine as
+a value to walk rather than walked here, so these two recur on the field list and on the element list
+alone and the descent into the value is a transition — which is what keeps `step` a structural match. -/
+
+mutual
+
+def continueFoldFields (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+    (ctor : String) (fields : List (String × Value)) (done : List (String × Value))
+    (rest : List Field) (k : List Frame) : State :=
+  match rest with
+  | [] =>
+    match firstMatch alts (.obj ctor done) with
+    | some (binds, body) => .eval (binds ++ env) body k
+    | none => .fail .noMatchingAlternative
+  | fd :: more =>
+    match lookupFieldV fields fd.name with
+    | none => .fail (.typeError s!"no field named {fd.name}")
+    | some v =>
+      match foldKindOf typeName tyArgs fd.ty with
+      | .plain =>
+        continueFoldFields typeName tyArgs alts env ctor fields (done ++ [(fd.name, v)]) more k
+      | .self =>
+        .apply v (.foldScrutK typeName tyArgs alts env
+          :: .foldFieldK typeName tyArgs alts env ctor fields done fd.name more :: k)
+      | .list =>
+        match v with
+        | .arr xs =>
+          continueFoldElems typeName tyArgs alts env ctor fields done fd.name [] xs more k
+        | _ => .fail (.typeError s!"fold expects an Array of {typeName}")
+termination_by (sizeOf rest, 0)
+
+def continueFoldElems (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+    (ctor : String) (fields : List (String × Value)) (done : List (String × Value))
+    (name : String) (doneXs restXs : List Value) (rest : List Field) (k : List Frame) : State :=
+  match restXs with
+  | [] =>
+    continueFoldFields typeName tyArgs alts env ctor fields (done ++ [(name, .arr doneXs)]) rest k
+  | x :: more =>
+    .apply x (.foldScrutK typeName tyArgs alts env
+      :: .foldElemK typeName tyArgs alts env ctor fields done name doneXs more rest :: k)
+termination_by (sizeOf rest, 1)
+
+end
+
+/-- Opens one node of the walk: the constructor the value carries decides which fields come round. -/
+def beginFold (p : Program) (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+    (v : Value) (k : List Frame) : State :=
+  match v with
+  | .obj ctor fields =>
+    match (p.types.find? (·.name == typeName)).bind (fun td => td.findAt? tyArgs ctor) with
+    | some c => continueFoldFields typeName tyArgs alts env ctor fields [] c.fields k
+    | none => .fail (.typeError s!"fold expects a value of {typeName}")
+  | _ => .fail (.typeError s!"fold expects a value of {typeName}")
+
 def step (p : Program) : State → State
   | .done r => .done r
   | .eval env e k =>
@@ -161,6 +227,8 @@ def step (p : Program) : State → State
         (fun done rest => .ctorK typeName ctorName done rest env)
     | .proj e field => .eval env e (.projK field :: k)
     | .matchE scrut alts => .eval env scrut (.matchK alts env :: k)
+    | .foldE scrut typeName tyArgs _ alts =>
+      .eval env scrut (.foldScrutK typeName tyArgs alts env :: k)
     | .noneE _ => .finish (.obj "none" []) k
     | .someE e => .eval env e (.someK :: k)
     | .okE _ e => .eval env e (.okK :: k)
@@ -248,6 +316,12 @@ def step (p : Program) : State → State
       match firstMatch alts v with
       | some (binds, body) => .eval (binds ++ env) body k
       | none => .fail .noMatchingAlternative
+    | .foldScrutK typeName tyArgs alts env => beginFold p typeName tyArgs alts env v k
+    | .foldFieldK typeName tyArgs alts env ctor fields done name rest =>
+      continueFoldFields typeName tyArgs alts env ctor fields (done ++ [(name, v)]) rest k
+    | .foldElemK typeName tyArgs alts env ctor fields done name doneXs restXs rest =>
+      continueFoldElems typeName tyArgs alts env ctor fields done name (doneXs ++ [v]) restXs
+        rest k
     | .boolK =>
       match v with
       | .bool b => .finish (.bool b) k

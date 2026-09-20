@@ -34,6 +34,27 @@ inductive Value where
   | fn (name : String)
   deriving Repr, Inhabited
 
+/-- A constructor value's field by name. Everything that walks a value asks for a key rather than for a
+position, because the field order a value carries is the declaration's and not the caller's. -/
+def lookupFieldV (fields : List (String × Value)) (k : String) : Option Value :=
+  (fields.find? (·.1 == k)).map (·.2)
+
+theorem sizeOf_lookupFieldV (fields : List (String × Value)) (k : String) {v : Value}
+    (h : lookupFieldV fields k = some v) : sizeOf v < sizeOf fields := by
+  induction fields with
+  | nil => simp [lookupFieldV] at h
+  | cons e rest ih =>
+    by_cases hk : e.1 == k
+    · simp only [lookupFieldV, List.find?, hk, Option.map_some, Option.some.injEq] at h
+      subst h
+      have : sizeOf e.2 < sizeOf e := by cases e; simp; omega
+      simp only [List.cons.sizeOf_spec]
+      omega
+    · simp only [lookupFieldV, List.find?, hk] at h ih
+      have := ih h
+      simp only [List.cons.sizeOf_spec]
+      omega
+
 inductive Err where
   | divByZero
   | int53Overflow

@@ -182,6 +182,43 @@ def signature (types : List TypeDef) : Ty → Option (List (Head × List (String
   | .bool => some [(.lit (.bool true), []), (.lit (.bool false), [])]
   | _ => none
 
+/-- A constructor's fields as a fold's alternative sees them: a field that came round is bound to the
+answer for it and not to the field, so it is typed at the fold's result. -/
+def foldFieldTys (typeName : String) (tyArgs : List Ty) (result : Ty) :
+    List Field → List (String × Ty)
+  | [] => []
+  | f :: rest =>
+    let t := match foldKindOf typeName tyArgs f.ty with
+      | .self => result
+      | .list => .array result
+      | .plain => f.ty
+    (f.name, t) :: foldFieldTys typeName tyArgs result rest
+
+/-- Retyping a constructor's fields for a fold's alternative leaves their names alone, so the paths the
+alternative reads are the declared field names — the same ones `patParts` reads. -/
+theorem foldFieldTys_map_fst (typeName : String) (tyArgs : List Ty) (result : Ty) :
+    ∀ fs : List Field,
+      (foldFieldTys typeName tyArgs result fs).map (·.1) = fs.map (·.name)
+  | [] => by rw [foldFieldTys]; rfl
+  | f :: rest => by
+    rw [foldFieldTys]
+    simp only [List.map_cons, List.cons.injEq, true_and]
+    exact foldFieldTys_map_fst typeName tyArgs result rest
+
+def jsFoldKind : FoldKind → Js.FoldKind
+  | .self => .self
+  | .list => .list
+  | .plain => .plain
+
+/-- What `__fold` is told about the declared type: its constructors by name, each with which of its
+fields come round. Read off the same `foldKindOf` the evaluator walks by. -/
+def foldSpecOf (types : List TypeDef) (typeName : String) (tyArgs : List Ty) : Js.FoldSpec :=
+  match types.find? (·.name == typeName) with
+  | none => []
+  | some t =>
+    (t.ctorsAt tyArgs).map fun c =>
+      (c.name, c.fields.map fun f => (f.name, jsFoldKind (foldKindOf typeName tyArgs f.ty)))
+
 def fieldTysOf (sig : Option (List (Head × List (String × Ty)))) (h : Head) : List Ty :=
   match sig with
   | some heads => (((heads.find? (·.1 == h)).map (·.2)).getD []).map (·.2)
@@ -273,6 +310,55 @@ private def firstUnreachable (types : List TypeDef) (ty : Ty) (seen : List (List
       firstUnreachable types ty (seen ++ [[pat]]) (i + 1) rest
     else some i
 
+/-- The constructors of the type a fold walks, each carrying its fields at the types a fold's
+alternative reads them: a field that came round is bound to the answer for it. This is the signature the
+alternatives are type-checked against, and `signature` cannot give it — the rebuilt node is the declared
+type with every folded field replaced by the answer for it, which is not a type this language writes. -/
+def foldHeads (typeName : String) (tyArgs : List Ty) (result : Ty) (t : TypeDef) :
+    List (Head × List (String × Ty)) :=
+  (t.ctorsAt tyArgs).map fun c => (.ctor c.name, foldFieldTys typeName tyArgs result c.fields)
+
+/-- `useful` of one column whose signature is handed over rather than read off its type.
+
+A fold's alternatives are matched against the rebuilt node, so the column they sit at has `foldHeads`
+and not `signature`. Reading it at the declared type instead is not conservative: two types may declare
+constructors of the same name, so a nested pattern typed at the fold's result can name every constructor
+the declared type has and still leave a rebuilt node uncovered. Below the one column the types are
+ordinary and `useful` takes over.
+
+Each branch is `useful`'s own step at one column with `signature types ty` replaced by `some heads`, so
+what it settles is the same thing: a head no row names sends the rows through `defaultRows`, where only
+a row that is wild at the column survives. Where that step leaves no column, it is written as the
+`.isEmpty` `useful` answers there rather than as a call at a budget that would have to be unfolded. -/
+def usefulFold (types : List TypeDef) (heads : List (Head × List (String × Ty)))
+    (rows : List (List Pat)) : Pat → Bool
+  | .lit l => (specialize (.lit l) 0 rows).isEmpty
+  | .ctor name args =>
+    let ftys := fieldTysOf (some heads) (.ctor name)
+    useful types (usefulBudget types ftys) (specialize (.ctor name) ftys.length rows) args ftys
+  | _ =>
+    let seen := rows.filterMap fun row =>
+      match row with
+      | pat :: _ => headOf pat
+      | [] => none
+    if heads.all fun (h, _) => seen.contains h then
+      heads.any fun (h, fields) =>
+        let ftys := fields.map (·.2)
+        useful types (usefulBudget types ftys) (specialize h ftys.length rows)
+          (List.replicate ftys.length .wild) ftys
+    else (defaultRows rows).isEmpty
+
+/-- The index of the first alternative of a fold no rebuilt node can reach. `firstUnreachable`'s twin,
+reading the folded columns at the types the alternatives bind them at. -/
+private def firstUnreachableFold (types : List TypeDef)
+    (heads : List (Head × List (String × Ty))) (seen : List (List Pat)) (i : Nat) :
+    List Pat → Option Nat
+  | [] => none
+  | pat :: rest =>
+    if usefulFold types heads seen pat then
+      firstUnreachableFold types heads (seen ++ [[pat]]) (i + 1) rest
+    else some i
+
 /-- One lowered `match` arm: what the generated code tests before taking it, the names it binds and where
 it reads each from, and the body under those bindings. -/
 structure Arm where
@@ -345,6 +431,31 @@ def patPartsList [Discriminators] (types : List TypeDef) (tys : List Ty) (paths 
 termination_by pats => sizeOf pats
 
 end
+
+/-- The top of a fold's alternative. Only the fields are typed differently from a `match`'s, and only at
+this one level — what a folded field binds is an ordinary type, so anything nested inside reads through
+`patPartsList` unchanged.
+
+Naming the node itself is refused rather than typed: the rebuilt node is the declared type with every
+field that came round replaced by the answer for it, and that is not a type this language can write. -/
+def foldPatParts [Discriminators] (types : List TypeDef) (typeName : String) (tyArgs : List Ty)
+    (result : Ty) (path : Js.Expr) :
+    Pat → Except String (List Js.Expr × List (String × Js.Expr × Ty))
+  | .wild => .ok ([], [])
+  | .bind _ =>
+    .error "a fold's alternative may name a constructor's fields but not the node itself"
+  | .lit _ => .error "a fold is over a declared type, so its alternatives match on constructors"
+  | .ctor name args =>
+    match (types.find? (·.name == typeName)).bind (fun t => t.findAt? tyArgs name) with
+    | none => .error s!"{(Ty.named typeName tyArgs).render} has no constructor {name}"
+    | some c =>
+      let fields := foldFieldTys typeName tyArgs result c.fields
+      if fields.length != args.length then
+        .error s!"{name} binds {fields.length} fields but the pattern names {args.length}"
+      else do
+        let (tests, binds) ← patPartsList types (fields.map (·.2))
+          (fields.map fun f => Js.Expr.member path f.1) args
+        .ok (.binary "===" (.member path (keyFor name)) (.str name) :: tests, binds)
 
 /-- Whether a type's fields can reach `target` through the declarations they name. Type arguments are
 searched too, so `Tree (Tree Int53)` is caught the same way a field of type `Tree` is. -/
@@ -610,6 +721,32 @@ def compileExpr [Discriminators] (p : Program) (ctx : Ctx) (e : Expr) : Except S
           if !arms.all (fun a => a.ty == arm.ty) then
             .error "match alternatives disagree on their result type"
           else .ok (.arrowCall [scrutName] (chain arms) [jscrut], arm.ty)
+  | .foldE scrut typeName tyArgs result alts => do
+    let (jscrut, tscrut) ← compileExpr p ctx scrut
+    wfTy p [] result
+    if tscrut != Ty.named typeName tyArgs then
+      .error s!"fold expects a {(Ty.named typeName tyArgs).render}, not {tscrut.render}"
+    else
+      match p.types.find? (·.name == typeName) with
+      | none => .error s!"no type named {typeName} to fold over"
+      | some t =>
+        match t.ctors with
+        | [] => .error s!"{typeName} has no constructors to fold over"
+        | first :: _ => do
+          let arms ← compileFoldAlts p ctx typeName tyArgs result alts
+          let pats := alts.map Alt.pat
+          let heads := foldHeads typeName tyArgs result t
+          if usefulFold p.types heads (pats.map ([·])) .wild then
+            .error s!"fold on {tscrut.render} is not exhaustive"
+          else
+            match firstUnreachableFold p.types heads [] 0 pats with
+            | some i => .error s!"fold alternative {i + 1} is unreachable"
+            | none =>
+              if !arms.all (fun a => a.ty == result) then
+                .error s!"every alternative of a fold over {typeName} must answer with {result.render}"
+              else
+                .ok (.foldJs jscrut (keyFor first.name) (foldSpecOf p.types typeName tyArgs)
+                  scrutName (chain arms), result)
   | .noneE elem => do
     wfTy p [] elem
     .ok (objOf "none" [], .option elem)
@@ -840,6 +977,20 @@ def compileAlts [Discriminators] (p : Program) (ctx : Ctx) (ty : Ty) (alts : Lis
     } :: tail)
 termination_by sizeOf alts
 
+def compileFoldAlts [Discriminators] (p : Program) (ctx : Ctx) (typeName : String)
+    (tyArgs : List Ty) (result : Ty) (alts : List Alt) : Except String (List Arm) :=
+  match alts with
+  | [] => .ok []
+  | (pat, body) :: rest => do
+    let (tests, binds) ← foldPatParts p.types typeName tyArgs result (.ident scrutName) pat
+    validateDistinct "pattern" (binds.map (·.1))
+    let (jbody, tbody) ← compileExpr p ((binds.map fun b => (b.1, b.2.2)) ++ ctx) body
+    let tail ← compileFoldAlts p ctx typeName tyArgs result rest
+    .ok ({
+      tests, names := binds.map (·.1), paths := binds.map (·.2.1), body := jbody, ty := tbody
+    } :: tail)
+termination_by sizeOf alts
+
 end
 
 /-- Unfolds a tail `let` into a `const` statement. A `let` appearing mid-expression has to be wrapped in
@@ -1015,7 +1166,7 @@ private def callsPrecede (p : Program) (limit : Nat) : Expr → Except String Un
     callsPrecedeList p limit args
   | .ctor _ _ _ args | .arrayLit _ args => callsPrecedeList p limit args
   | .dictLit _ _ entries => callsPrecedeValues p limit entries
-  | .matchE scrut alts => do
+  | .matchE scrut alts | .foldE scrut _ _ _ alts => do
     callsPrecede p limit scrut
     callsPrecedeAlts p limit alts
 

@@ -685,6 +685,15 @@ theorem renderable_check {d : Js.TyDesc} {e : Js.Expr} (he : RenderableExpr e = 
 theorem renderable_out {d : Js.TyDesc} {e : Js.Expr} (he : RenderableExpr e = true) :
     RenderableExpr (.out d e) = true := by rw [RenderableExpr]; exact he
 
+/-- A fold's call is readable back where its scrutinee and its arm chain are. The key it indexes by and
+the spec it hands `__fold` are read off the declared type rather than written by an author, and the
+reader takes both back from the text without a name of its own. -/
+theorem renderable_foldJs {scrut : Js.Expr} {key : String} {spec : Js.FoldSpec} {b : String}
+    {body : Js.Expr} (hs : RenderableExpr scrut = true) (hb : okName b = true)
+    (hy : RenderableExpr body = true) :
+    RenderableExpr (.foldJs scrut key spec b body) = true := by
+  rw [RenderableExpr]; simp [hs, hb, hy]
+
 /-- The entry's walk out is renderable either way: where it emits nothing the expression is the call
 itself, and where it emits the walk it is the call inside one more form. -/
 theorem renderable_retWalk {d : Js.TyDesc} {e : Js.Expr} (he : RenderableExpr e = true) :
@@ -797,6 +806,57 @@ theorem renderablePairs_cons {k : String} {v : Js.Expr} {rest : List (String × 
     (hv : RenderableExpr v = true) (hr : RenderablePairs rest = true) :
     RenderablePairs ((k, v) :: rest) = true := by rw [RenderablePairs]; simp [hv, hr]
 
+/-- A fold's alternative reads the paths a `match`'s reads. Only the types its binders carry move — a
+field that came round is bound to the answer for it — and a type is not something the reader sees. -/
+theorem renderable_foldPatParts {p : Program} (hfn : FieldNamesOk p) {typeName : String}
+    {tyArgs : List Ty} {result : Ty} {path : Js.Expr} {pat : Pat}
+    (hpath : RenderableExpr path = true) :
+    ∀ tests binds, foldPatParts p.types typeName tyArgs result path pat = .ok (tests, binds) →
+      RenderableList tests = true ∧ BindsOk binds = true := by
+  intro tests binds h
+  cases pat with
+  | wild =>
+    rw [foldPatParts] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨renderableList_nil, rfl⟩
+  | bind _ => rw [foldPatParts] at h; exact (errNotOk h).elim
+  | lit _ => rw [foldPatParts] at h; exact (errNotOk h).elim
+  | ctor name args =>
+    rw [foldPatParts] at h
+    cases hfind : (p.types.find? (·.name == typeName)).bind
+        (fun t => t.findAt? tyArgs name) with
+    | none => rw [hfind] at h; exact (errNotOk h).elim
+    | some c =>
+      simp only [hfind] at h
+      obtain ⟨t, ht, hc⟩ := Option.bind_eq_some_iff.1 hfind
+      have hcmem : c ∈ t.ctorsAt tyArgs := List.mem_of_find?_eq_some hc
+      have hnames : ∀ x ∈ foldFieldTys typeName tyArgs result c.fields, okName x.1 = true := by
+        intro x hx
+        have hx' : x.1 ∈ (foldFieldTys typeName tyArgs result c.fields).map (·.1) :=
+          List.mem_map_of_mem hx
+        rw [foldFieldTys_map_fst] at hx'
+        obtain ⟨f, hf, hfx⟩ := List.mem_map.1 hx'
+        exact hfx ▸ okName_of_ctorsAt hfn ht hcmem hf
+      have hpaths : ((foldFieldTys typeName tyArgs result c.fields).map
+          fun f => Js.Expr.member path f.1).all RenderableExpr = true := by
+        refine List.all_eq_true.2 fun x hx => ?_
+        obtain ⟨f, hf, rfl⟩ := List.mem_map.1 hx
+        rw [RenderableExpr]
+        simp [hpath, hnames f hf]
+      split at h
+      · exact (errNotOk h).elim
+      obtain ⟨⟨rtests, rbinds⟩, hrec, h⟩ := bind_ok h
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨htests, hbinds⟩ := (renderable_patParts hfn).2 _ _ args hpaths rtests rbinds hrec
+      refine ⟨?_, hbinds⟩
+      have hmem : RenderableExpr (Js.Expr.member path (keyFor name)) = true := by
+        rw [RenderableExpr]; simp [hpath, keyFor_okName name]
+      have hstr : RenderableExpr (Js.Expr.str name) = true := by rw [RenderableExpr]
+      rw [RenderableList, RenderableExpr]
+      simp [hmem, hstr, htests, show okOp "===" = true by decide]
+
 /-! ## Every expression the compiler builds
 
 The recursion is `compileExpr`'s own: the names it picks up come from the scope and from the declarations,
@@ -817,6 +877,9 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
         ∀ j t, compileExpr p ctx e = .ok (j, t) → RenderableExpr j = true)
     ∧ (∀ (ctx : Ctx) (entries : List (String × Expr)), CtxOk ctx →
         ∀ js, compileValues p ctx entries = .ok js → RenderableList (js.map (·.1)) = true)
+    ∧ (∀ (ctx : Ctx) (typeName : String) (tyArgs : List Ty) (result : Ty) (alts : List Alt),
+        CtxOk ctx → ∀ arms, compileFoldAlts p ctx typeName tyArgs result alts = .ok arms →
+          arms.all ArmOk = true)
     ∧ (∀ (ctx : Ctx) (ty : Ty) (alts : List Alt), CtxOk ctx →
         ∀ arms, compileAlts p ctx ty alts = .ok arms → arms.all ArmOk = true)
     ∧ (∀ (ctx : Ctx) (es : List Expr), CtxOk ctx →
@@ -1100,6 +1163,33 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
                   exact renderable_of_ok h
                     (renderable_arrowCall (by decide) (renderable_chain _ harmsok)
                     (renderableList_cons (ihs hctx jscrut tscrut hsc) renderableList_nil))))))
+  -- 28b: a fold
+  · intro ctx scrut typeName tyArgs result alts ihs iha hctx j t h
+    rw [compileExpr] at h
+    peel h
+    all_goals
+      (obtain ⟨⟨jscrut, tscrut⟩, hsc, h⟩ := bind_ok h
+       try simp only at h
+       obtain ⟨_, _, h⟩ := bind_ok h
+       try simp only at h
+       split at h <;> peel h
+       all_goals
+         (split at h <;> peel h
+          all_goals
+            (split at h <;> peel h
+             all_goals
+               (obtain ⟨arms, harms, h⟩ := bind_ok h
+                try simp only at h
+                have harmsok := iha hctx arms harms
+                split at h <;> peel h
+                all_goals
+                  (split at h <;> peel h
+                   all_goals
+                     (split at h <;> peel h
+                      all_goals
+                        exact renderable_of_ok h
+                          (renderable_foldJs (ihs hctx jscrut tscrut hsc) (by decide)
+                            (renderable_chain _ harmsok))))))))
   -- 29, 30, 31, 32: the built-in constructors
   · intro ctx elem _ j t h
     rw [compileExpr] at h
@@ -1489,7 +1579,43 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     subst h
     simp only [List.map_cons]
     exact renderableList_cons (ihe hctx je te he) (ihr hctx tail htail)
-  -- 56, 57: the alternatives of a match
+  -- 56, 57: the alternatives of a fold
+  · intro ctx typeName tyArgs result _ arms h
+    rw [compileFoldAlts] at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    rfl
+  · intro ctx typeName tyArgs result pat body rest ihbody ihrest hctx arms h
+    rw [compileFoldAlts] at h
+    obtain ⟨⟨tests, binds⟩, hpp, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨_, _, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨⟨jbody, tbody⟩, hb, h⟩ := bind_ok h
+    try simp only at h
+    obtain ⟨tail, htail, h⟩ := bind_ok h
+    try simp only at h
+    simp only [Except.ok.injEq] at h
+    subst h
+    obtain ⟨htests, hbinds⟩ := renderable_foldPatParts hfn
+      (renderable_ident (by decide)) tests binds hpp
+    have hnames : (binds.map (·.1)).all okName = true := by
+      refine List.all_eq_true.2 fun x hx => ?_
+      obtain ⟨b, hb', rfl⟩ := List.mem_map.1 hx
+      have hb2 := List.all_eq_true.1 hbinds b hb'
+      simp only [Bool.and_eq_true] at hb2
+      exact okName_of_okCallee hb2.1
+    have hpaths : RenderableList (binds.map (·.2.1)) = true := by
+      refine renderableList_of_all _ (List.all_eq_true.2 fun x hx => ?_)
+      obtain ⟨b, hb', rfl⟩ := List.mem_map.1 hx
+      have hb2 := List.all_eq_true.1 hbinds b hb'
+      simp only [Bool.and_eq_true] at hb2
+      exact hb2.2
+    simp only [List.all_cons, Bool.and_eq_true]
+    refine ⟨?_, ihrest hctx tail htail⟩
+    simp only [ArmOk, Bool.and_eq_true]
+    exact ⟨⟨⟨htests, hnames⟩, hpaths⟩, ihbody binds (ctxOk_append hbinds hctx) jbody tbody hb⟩
+  -- 58, 59: the alternatives of a match
   · intro ctx ty _ arms h
     rw [compileAlts] at h
     simp only [Except.ok.injEq] at h
@@ -1525,7 +1651,7 @@ theorem renderable_compiled {p : Program} (hp : DeclNamesOk p) (hfn : FieldNames
     refine ⟨?_, ihrest hctx tail htail⟩
     simp only [ArmOk, Bool.and_eq_true]
     exact ⟨⟨⟨htests, hnames⟩, hpaths⟩, ihbody binds (ctxOk_append hbinds hctx) jbody tbody hb⟩
-  -- 58, 59: the arguments of a call
+  -- 60, 61: the arguments of a call
   · intro ctx _ js h
     rw [compileArgs] at h
     simp only [Except.ok.injEq] at h
