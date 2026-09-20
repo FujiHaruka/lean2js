@@ -766,3 +766,96 @@ Then the trap direction again, against `EventuallyErr`.
 **Iterate one module at a time with `lake env lean Lean2Js/<M>.lean`.** It needs only that module's
 imports built, and it answers in seconds where `lake build` takes minutes: Renderable 3.3s, StepAgree
 10.2s, Sound 11.6s, Correct 16.5s. Three modules fitted in one leg because of it.
+
+### Phase 5's agreement direction, written on 2026-09-21: `Correct`'s trap case is the whole of what is left in Lean
+
+**Measured by writing it.** `fragment_correct_succ`'s `foldE` case is written and builds, with every
+module's warning count unchanged. The patch at `~/.claude/handoffs/-Users-haruka-dev-lean2js-foldE.patch`
+now carries 16 files and 2086 inserted lines — `Correct` alone gained 747. What is left in Lean is
+`fragment_traps_succ`'s `foldE` case, and one fact about exhaustiveness that the section above priced at
+zero and that is not zero.
+
+**The table above, corrected where writing it disagreed.**
+
+**1. `compileExpr_foldE_inv` had to become the full inversion.** It gave the scrutinee, the arms, the
+result type — and not the shape of `je`. The agreement proof needs `je`, so it now also gives the type
+declaration, its first constructor, and
+`je = .foldJs jscrut (keyFor first.name) (foldSpecOf p.types tn ta) scrutName (chain arms)`. One use
+site in `Sound.typeSound` takes five `-` placeholders for what it does not read.
+
+**2. `hasTy_of_fold` is `private`, and the agreement proof needs its fourth walker.** The node the arms
+run on is the rebuilt one, so `eventually_foldChain` needs
+`hasFieldTys ps (foldFieldTys tn ta result c.fields)` of it. `Sound.hasFieldTys_of_evalFoldFields` is the
+public corollary: `hasTy_of_fold` instantiated at `typeSound p hprog f`, which is exactly the `ih` it
+asks for, so it costs four lines and no new induction.
+
+**3. `evalFoldPairs` is handed the node's whole entry list, tag entry included.** The fourth walker's
+statement cannot be about `encodeFields fields`: `evalFoldJs` passes `es`, and `es` carries
+`(keyFor ctor, .str ctor)` first. It is stated over an arbitrary `es` with
+`∀ fd ∈ fs, Js.lookupField es fd.name = (lookupFieldV fields fd.name).map encodeValue` — the same `pre`
+trick `lookupsAgree_of_hasFieldTys` uses, and the node supplies it from `ctorFields_not_key`.
+
+**4. `foldFieldTys_map_fst` moved from `Renderable` to `Compile`.** `Correct` imports `Agree` and
+`Exhaustive`, and `Renderable` is in neither chain. It belongs next to `foldFieldTys` anyway, and
+`Renderable`'s two uses resolve unchanged because both files are in `namespace Compile`.
+
+**5. `JsSem` gained the six unfolding lemmas the table priced, and a seventh.** `evalFoldJs_obj`,
+`evalFoldList_nil` / `_cons`, `evalFoldListAt_arr`, `evalFoldPairs_nil` / `_cons_none` / `_cons_some`,
+copied from `Eval.lean`'s twins with `rw [·.eq_def]` and, for the two `cons` arms,
+`repeat' split; all_goals simp_all`.
+
+**What the writing turned on, so it is not paid twice.**
+
+- **`rw [h] at hyp` leaves `foldPatParts`' `let fields := …` unexpanded, and `split` does too.** Only
+  `simp only [h] at hyp` zeta-expands it, and the `if` under that `let` cannot be split until it has
+  been. `foldPatParts_unmatched` therefore reads the lookup with
+  `match hbind' : (p.types.find? …).bind … with`, the way `Sound.hasTy_of_fold` reads `lookupFieldV`,
+  rather than with `split`.
+- **`obtain rfl : a = b` eliminates `b`.** `obtain rfl : name = ctor` takes the theorem's `ctor` away and
+  leaves the case's `name`, so anything stated in terms of `ctor` has to be built before it.
+- **`cases hk : foldKindOf tn ta fd.ty` substitutes the scrutinee into the goal**, so the head field's
+  kind is already `jsFoldKind FoldKind.plain` there. Unfolding `jsFoldKind` with `simp only` also
+  unfolds it inside the `List.map` over the remaining fields, which is what the induction hypothesis is
+  stated with — `rw [show jsFoldKind FoldKind.plain = Js.FoldKind.plain from rfl]` reduces the head
+  alone.
+- **An equation cannot be rewritten into `∃ g, ∀ g' ≥ g, …` before the fuel is fixed.** Every
+  `rw [Js.evalFoldPairs_cons_some …]` goes after its `refine ⟨_, fun g' hg => ?_⟩`, not before.
+- **`Option.some_bind` is not a lemma in this toolchain**; `(some t).bind f = f t` is `rfl`, so
+  `rw [ht]; exact hfind` is what turns a `findAt?` into the `bind` form and back.
+- **`signatureOk_key` cannot infer `heads`** — pass
+  `(t.ctorsAt ta).map fun c => (Head.ctor c.name, c.fields.map fun f => (f.name, f.ty))` explicitly, and
+  `Compile.signature p.types (.named tn ta) = some that` is `simp only [Compile.signature, ht,
+  Option.map_some]`.
+- **`Head.ctor a == Head.ctor b` is `a == b` by `rfl`**, which is what lets `heads_find_of_findAt` read a
+  constructor lookup as a head lookup.
+
+**The trap direction, and the one thing that is not a copy.** `fragment_traps_succ`'s `foldE` case wants
+the mirror of everything above — an `EventuallyErr` walk, `eventuallyErr_foldChain`, and wrappers for a
+fold whose scrutinee or whose walk throws. Those are copies. **`noMatchingAlternative` is not.**
+
+`fragment_traps_succ`'s `matchE` case discharges it with
+`Exhaustive.firstMatch_isSome hc hcs hst`, which goes through `Covers` and needs
+`Value.hasTy p sv tscrut = true`. **The rebuilt node is not a value of the declared type** — every field
+that came round carries `result` — so that lemma does not apply, and there is no fold twin of it.
+
+The gap is real and it is in the compiler, not only in the proof: `compileExpr`'s `foldE` arm runs
+`useful p.types (usefulBudget p.types [tscrut]) (pats.map ([·])) [.wild] [tscrut]` at the **declared**
+type, while `compileFoldAlts` → `foldPatParts` type-checks the nested patterns at **`foldFieldTys`**. The
+two read the folded columns at different types.
+
+Reading `useful`, the disagreement looks conservative rather than unsound, and that is what the next leg
+should measure rather than assume. At a folded column `useful` sees the declared type, so a row whose
+pattern there is a constructor or a literal of `result` contributes a head that is not among the declared
+type's, `heads.all (seen.contains ·)` fails, and `defaultRows` drops that row — leaving only rows that are
+wildcards at the folded columns, which are exactly the rows that also match the rebuilt node. So coverage
+at the declared type ought to give coverage at the rebuilt node. **The case that is not obviously safe is
+a fold whose `result` is the type being folded**, where the two head sets coincide.
+
+**What to do first, in order.**
+
+| | |
+| --- | --- |
+| Measure the gap | Compile a fold whose alternatives use a constructor of `result` at a folded column, and a fold from a type to itself. Does `compileExpr` accept it, and does `firstMatch` on the rebuilt node answer `none`? Cheap, and it decides the next two rows |
+| If conservative | Prove `Exhaustive.foldFirstMatch_isSome`: coverage at the declared type transfers to the rebuilt node, because only rows wildcard at the folded columns survive `defaultRows`. The plan's "`Exhaustive` needs nothing" is wrong by exactly this theorem |
+| If not | Tighten `compileExpr`'s `foldE` arm to check exhaustiveness at the types `foldPatParts` uses. No shipped program folds yet, so nothing regenerates — but `docs/guarantees.md` moves with it |
+| Then | `fragment_traps_succ`'s `foldE` case, mirroring the agreement direction above |
