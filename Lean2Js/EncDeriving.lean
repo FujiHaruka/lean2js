@@ -305,15 +305,16 @@ private def recHasTyAlt (typeDefId toValueId acceptsVId hasTyId hasTysId hp : Id
 
 /-- What the fold is handed for one constructor: the constructor's own field types, with a field that
 came round replaced by the answer for it, answering the fold's own type. -/
+private def algebraArgTy (beta : Ident) (lt : Term) : FieldKind → TermElabM Term
+  | .plain => pure lt
+  | .selfDirect => `($beta)
+  | .selfList => `(List $beta)
+
 private def algebraTy (beta : Ident) (leanTys : Array Term) (kinds : Array FieldKind) :
     TermElabM Term := do
   let mut ty ← `($beta)
   for (lt, k) in (leanTys.zip kinds).reverse do
-    let arg ← match k with
-      | .plain => pure lt
-      | .selfDirect => `($beta)
-      | .selfList => `(List $beta)
-    ty ← `($arg → $ty)
+    ty ← `($(← algebraArgTy beta lt k) → $ty)
   return ty
 
 /-- One arm of the generated fold: the constructor's own function, applied to the fields with every one
@@ -362,6 +363,232 @@ private def recHasTysAlts (p acceptsVsId hasTyId hasTysId hp : Ident) :
             $hasTysId $hp (And.right $h)]
           rfl)]
 
+/-! ### The certificate that the subset's walk computes the fold
+
+`T.fold` is written per type, so the theorem that the subset's walk computes it is too: `denotes_foldE`
+abstracts the walk and asks for that theorem as `hw`, and it is the one step of a fold's descent that
+cannot be proved once for every program.
+
+What is generated is an induction over the type, in a `mutual` block with the `List T` half — the move
+`ofValue_toValue` / `ofValues_map` already makes. One constructor's case reads the node, then its fields
+left to right, then which alternative fires, and hands what is left to that constructor's own hypothesis.
+A field that comes round splits on whether its walk answered, so every step after it sits inside that
+split, which is why a case is assembled from its last field back. -/
+
+/-- The value a constructor's field carries in the node the walk was handed. -/
+private def fieldValue (toValueId x : Ident) : FieldKind → TermElabM Term
+  | .plain => `(Lean2Js.Enc.toValue $x)
+  | .selfDirect => `($toValueId $x)
+  | .selfList => `(Lean2Js.Value.arr (List.map $toValueId $x))
+
+/-- The value the rebuilt node carries for it: a field that came round carries the walk's answer for it
+rather than the field itself. -/
+private def walkedValue (x y : Ident) : FieldKind → TermElabM Term
+  | .plain => `(Lean2Js.Enc.toValue $x)
+  | .selfDirect => `($y)
+  | .selfList => `(Lean2Js.Value.arr $y)
+
+/-- The constructor as the declared type carries it, which is what the node's lookup answers. -/
+private def ctorDefStx (s : CtorShape) : TermElabM Term := do
+  let fields ← s.fields.mapM fun (nm, ty) => `({ name := $(⟨Syntax.mkStrLit nm⟩), ty := $ty })
+  `({ name := $(ctorLit s), fields := [$fields,*] })
+
+/-- One alternative of the list a fold is reified to: the constructor, with every field bound. Binding
+every field is a wildcard at every column the fold goes into, so the exhaustiveness the compiler checks
+passes by construction and the certificate is proved against the alternatives `Reify` writes. -/
+private def foldAltsEntry (s : CtorShape) (b : Ident) : TermElabM Term := do
+  let pats ← s.fields.mapM fun (nm, _) => `(Lean2Js.Core.Pat.bind $(⟨Syntax.mkStrLit nm⟩))
+  `((Lean2Js.Core.Pat.ctor $(ctorLit s) [$pats,*], $b))
+
+/-- What the certificate asks of one constructor: the alternative's body, under the bindings the fold
+makes, denotes that constructor's own function applied to the fields with every one that came round
+already walked. It is what `Reify`'s reading of the algebra's lambda hands over. -/
+private def foldHypBinder (p env beta b fi h : Ident) (leanTys : Array Term) (s : CtorShape) :
+    TermElabM (TSyntax ``Lean.Parser.Term.bracketedBinderF) := do
+  let as : Array Ident := s.fields.mapIdx fun j _ => mkIdent (Name.mkSimple s!"a{j}")
+  let mut envStx ← `($env)
+  for j in (List.range s.fields.size).reverse do
+    let nmLit : Term := ⟨Syntax.mkStrLit s.fields[j]!.1⟩
+    envStx ← `(($nmLit, Lean2Js.Enc.toValue $(as[j]!)) :: $envStx)
+  if s.fields.isEmpty then
+    `(Lean.Parser.Term.bracketedBinderF| ($h : Lean2Js.Denote.Denotes $p $envStx $b $fi))
+  else
+    let binders ← (as.zip (leanTys.zip s.kinds)).mapM fun (a, lt, k) => do
+      `(Lean.Parser.Term.bracketedBinderF| ($a : $(← algebraArgTy beta lt k)))
+    `(Lean.Parser.Term.bracketedBinderF|
+        ($h : ∀ $binders*, Lean2Js.Denote.Denotes $p $envStx $b ($fi $as*)))
+
+/-- The names the generated theorem's own binders carry, gathered so that a recursive call can hand them
+all back in order. -/
+private structure FoldCertIds where
+  p : Ident
+  env : Ident
+  nameLit : Term
+  typeDefId : Ident
+  toValueId : Ident
+  foldId : Ident
+  foldListId : Ident
+  foldAltsId : Ident
+  denotesFoldId : Ident
+  denotesFoldListId : Ident
+  algebra : Array Ident
+  bodies : Array Ident
+  hyps : Array Ident
+
+/-- Everything the theorem was given, in the order it takes it. A recursive call spells it out because
+the block is generated rather than written under a `variable`. -/
+private def certArgs (ids : FoldCertIds) : Array Term :=
+  #[ids.p, ids.env] ++ ids.algebra ++ ids.bodies ++ #[mkIdent `htd] ++ ids.hyps
+    |>.map fun i => ⟨i.raw⟩
+
+/-- The alternatives, as the case reads them back. -/
+private def altsTerm (ids : FoldCertIds) : TermElabM Term :=
+  `($(ids.foldAltsId) $(ids.bodies)*)
+
+/-- One constructor's case. -/
+private def foldCaseTac (ids : FoldCertIds) (shapes : Array CtorShape) (i : Nat) :
+    TermElabM (TSyntax ``Lean.Parser.Tactic.tacticSeq) := do
+  let s := shapes[i]!
+  let bs := binders s
+  let n := s.fields.size
+  let h := mkIdent `h
+  let f := mkIdent `f
+  let hf := mkIdent `hf
+  let v := mkIdent `v
+  let htd := mkIdent `htd
+  let alts ← altsTerm ids
+  let ys : Array Ident := s.fields.mapIdx fun j _ => mkIdent (Name.mkSimple s!"y{j}")
+  let hys : Array Ident := s.fields.mapIdx fun j _ => mkIdent (Name.mkSimple s!"hy{j}")
+  let fieldVals ← (bs.zip s.kinds).mapM fun (x, k) => fieldValue ids.toValueId x k
+  let walkedVals ← (bs.zip (ys.zip s.kinds)).mapM fun (x, y, k) => walkedValue x y k
+  let entries ← (s.fields.zip fieldVals).mapM fun ((nm, _), val) =>
+    `(($(⟨Syntax.mkStrLit nm⟩), $val))
+  let fieldsLit ← `([$entries,*])
+  -- the arm, the induction hypotheses and the constructor's own hypothesis
+  let mapCons ← `(List.map_cons)
+  let consAppend ← `(List.cons_append)
+  let fieldsNil ← `(Lean2Js.evalFoldFields_nil)
+  let listAtArr ← `(Lean2Js.evalFoldListAt_arr)
+  let armArgs ← simpArgs (#[← `(Lean2Js.Core.Alt.pat), ← `(Lean2Js.Core.Alt.body)]
+    ++ (if n == 0 then #[] else #[mapCons]) ++ #[← `(List.map_nil)])
+  let mut tail : Array (TSyntax `tactic) := #[
+    ← `(tactic| rw [$(ids.foldAltsId):ident, Lean2Js.firstMatch, Lean2Js.matchPat.eq_def] at $h:ident),
+    ← `(tactic| simp only [$armArgs,*] at $h:ident)]
+  for _ in [0:i] do
+    tail := tail.push
+      (← `(tactic| rw [if_neg (by simp), Lean2Js.firstMatch, Lean2Js.matchPat.eq_def] at $h:ident))
+    tail := tail.push (← `(tactic| simp only [$armArgs,*] at $h:ident))
+  let nmLits : Array Term := s.fields.map fun (nm, _) => ⟨Syntax.mkStrLit nm⟩
+  let bindPats ← nmLits.mapM fun nm => `(Lean2Js.Core.Pat.bind $nm)
+  let bindArgs ← simpArgs (#[← `(beq_self_eq_true), ← `(if_true), ← `(List.zip), ← `(List.zipWith)]
+    ++ (if n == 0 then #[] else #[consAppend]) ++ #[← `(List.nil_append)])
+  tail := tail.push (← `(tactic| rw [show ([$bindPats,*] : List Lean2Js.Core.Pat)
+      = [$nmLits,*].map Lean2Js.Core.Pat.bind from rfl,
+    Lean2Js.Denote.matchPats_binds [$nmLits,*] [$walkedVals,*] rfl] at $h:ident))
+  tail := tail.push (← `(tactic| simp only [$bindArgs,*] at $h:ident))
+  let args := certArgs ids
+  for j in [0:n] do
+    let cite := match s.kinds[j]! with
+      | .plain => none
+      | .selfDirect => some ids.denotesFoldId
+      | .selfList => some ids.denotesFoldListId
+    if let some c := cite then
+      tail := tail.push (← `(tactic|
+        rw [$c:ident $args* $(bs[j]!) $hf $(ys[j]!) $(hys[j]!)] at $h:ident))
+  let appArgs ← (bs.zip s.kinds).mapM fun (x, k) => match k with
+    | .plain => `($x)
+    | .selfDirect => `($(ids.foldId) $(ids.algebra)* $x)
+    | .selfList => `($(ids.foldListId) $(ids.algebra)* $x)
+  tail := tail.push (← `(tactic| rw [$(ids.foldId):ident]))
+  tail := tail.push (←
+    if appArgs.isEmpty then `(tactic| exact $(ids.hyps[i]!) $hf $v $h)
+    else `(tactic| exact $(ids.hyps[i]!) $appArgs* $hf $v $h))
+  -- the fields, from the last back, so that a split wraps everything after it
+  let mut acc := tail
+  for j in (List.range n).reverse do
+    let nmLit : Term := ⟨Syntax.mkStrLit s.fields[j]!.1⟩
+    let tyStx := s.fields[j]!.2
+    let last := j + 1 == n
+    let kindName ← match s.kinds[j]! with
+      | .plain => `(Lean2Js.Core.FoldKind.plain)
+      | .selfDirect => `(Lean2Js.Core.FoldKind.self)
+      | .selfList => `(Lean2Js.Core.FoldKind.list)
+    let fieldArgs ← simpArgs (#[← `(show Lean2Js.Core.foldKindOf $(ids.nameLit) [] $tyStx
+          = $kindName from rfl)]
+      ++ (if s.kinds[j]! == .selfList then #[listAtArr] else #[])
+      ++ (if last then #[fieldsNil] else #[])
+      ++ #[← `(bind), ← `(Except.bind)])
+    let flat : Array (TSyntax `tactic) := #[
+      ← `(tactic| rw [Lean2Js.evalFoldFields_cons_some _ _ _ _ _ _ _ _ _
+            (show Lean2Js.lookupFieldV $fieldsLit $nmLit = some $(fieldVals[j]!) from rfl)] at $h:ident),
+      ← `(tactic| simp only [$fieldArgs,*] at $h:ident)]
+    if s.kinds[j]! == .plain then
+      acc := flat ++ acc
+    else
+      let scrut ← match s.kinds[j]! with
+        | .selfList => `(Lean2Js.evalFoldList $(ids.p) $f $(ids.env) $(ids.nameLit) [] $alts
+              (List.map $(ids.toValueId) $(bs[j]!)))
+        | _ => `(Lean2Js.evalFold $(ids.p) $f $(ids.env) $(ids.nameLit) [] $alts
+              ($(ids.toValueId) $(bs[j]!)))
+      let innerTacs : Array (TSyntax `tactic) := #[
+        ← `(tactic| rw [$(hys[j]!):ident] at $h:ident),
+        ← `(tactic| simp only at $h:ident)] ++ acc
+      let inner ← `(Lean.Parser.Tactic.tacticSeq| $[$innerTacs]*)
+      let split ← `(tactic|
+        cases $(hys[j]!):ident : $scrut with
+        | error err => rw [$(hys[j]!):ident] at $h:ident; simp at $h:ident
+        | ok $(ys[j]!):ident => $inner:tacticSeq)
+      acc := flat ++ #[split]
+  -- the node
+  let headArgs ← simpArgs (#[← `(Option.bind),
+      ← `(show $(ids.typeDefId).findAt? [] $(ctorLit s) = some $(← ctorDefStx s) from rfl)]
+    ++ (if n == 0 then #[fieldsNil] else #[])
+    ++ #[← `(bind), ← `(Except.bind)])
+  let head : Array (TSyntax `tactic) := #[
+    ← `(tactic| rw [$(ids.toValueId):ident, Lean2Js.evalFold_obj] at $h:ident),
+    ← `(tactic| rw [Lean2Js.Core.Program.findType?] at $htd:ident),
+    ← `(tactic| rw [$htd:ident] at $h:ident),
+    ← `(tactic| simp only [$headArgs,*] at $h:ident)]
+  `(Lean.Parser.Tactic.tacticSeq| $[$(head ++ acc)]*)
+
+/-- The `List T` half's two cases, which do not depend on what the constructors look like. -/
+private def foldListCaseAlts (ids : FoldCertIds) :
+    TermElabM (Array (TSyntax ``matchAltExpr)) := do
+  let h := mkIdent `h
+  let f := mkIdent `f
+  let hf := mkIdent `hf
+  let vs := mkIdent `vs
+  let y := mkIdent `y
+  let ys := mkIdent `ys
+  let w := mkIdent `w
+  let ws := mkIdent `ws
+  let hy := mkIdent `hy
+  let hr := mkIdent `hr
+  let alts ← altsTerm ids
+  let args := certArgs ids
+  return #[
+    ← `(matchAltExpr| | [], $f, $hf, $vs, $h => by
+          rw [List.map_nil, Lean2Js.evalFoldList_nil] at $h:ident
+          simp only [Except.ok.injEq] at $h:ident
+          rw [← $h:ident, $(ids.foldListId):ident]
+          rfl),
+    ← `(matchAltExpr| | $y:ident :: $ys:ident, $f, $hf, $vs, $h => by
+          rw [List.map_cons, Lean2Js.evalFoldList_cons] at $h:ident
+          cases $hy:ident : Lean2Js.evalFold $(ids.p) $f $(ids.env) $(ids.nameLit) [] $alts
+              ($(ids.toValueId) $y) with
+          | error err => rw [$hy:ident] at $h:ident; simp [bind, Except.bind] at $h:ident
+          | ok $w:ident =>
+            cases $hr:ident : Lean2Js.evalFoldList $(ids.p) $f $(ids.env) $(ids.nameLit) [] $alts
+                (List.map $(ids.toValueId) $ys) with
+            | error err => rw [$hy:ident, $hr:ident] at $h:ident; simp [bind, Except.bind] at $h:ident
+            | ok $ws:ident =>
+              rw [$hy:ident, $hr:ident] at $h:ident
+              simp only [bind, Except.bind, Except.ok.injEq] at $h:ident
+              rw [← $h:ident, $(ids.denotesFoldId):ident $args* $y $hf $w $hy,
+                $(ids.denotesFoldListId):ident $args* $ys $hf $ws $hr,
+                $(ids.foldListId):ident]
+              rfl)]
+
 private def encHandler (types : Array Name) : CommandElabM Bool := do
   let [t] := types.toList | return false
   let indVal ← liftCoreM <| getConstInfoInduct t
@@ -401,6 +628,9 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
     let hasTysId := mkIdent (t ++ `toValues_hasTy)
     let foldId := mkIdent (t ++ `fold)
     let foldListId := mkIdent (t ++ `foldList)
+    let foldAltsId := mkIdent (t ++ `foldAlts)
+    let denotesFoldId := mkIdent (t ++ `denotes_fold)
+    let denotesFoldListId := mkIdent (t ++ `denotes_foldList)
     let p := mkIdent `p
     let hp := mkIdent `hp
     let cmds ← liftTermElabM do
@@ -427,6 +657,25 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
       let x := mkIdent `x
       let v := mkIdent `v
       let xs := mkIdent `xs
+      let env := mkIdent `env
+      let f := mkIdent `f
+      let hf := mkIdent `hf
+      let htd := mkIdent `htd
+      let h := mkIdent `h
+      let bodies : Array Ident := shapes.mapIdx fun i _ => mkIdent (Name.mkSimple s!"b{i}")
+      let hyps : Array Ident := shapes.mapIdx fun i _ => mkIdent (Name.mkSimple s!"h{i}")
+      let bodyBinders ← bodies.mapM fun b =>
+        `(Lean.Parser.Term.bracketedBinderF| ($b : Lean2Js.Core.Expr))
+      let hypBinders ← (hyps.zip (bodies.zip (shapes.zip (algebra.zip leanTys)))).mapM
+        fun (hi, b, s, fi, lts) => foldHypBinder p env beta b fi hi lts s
+      let foldAltEntries ← (shapes.zip bodies).mapM fun (s, b) => foldAltsEntry s b
+      let ids : FoldCertIds :=
+        { p, env, nameLit, typeDefId, toValueId, foldId, foldListId, foldAltsId,
+          denotesFoldId, denotesFoldListId, algebra, bodies, hyps }
+      let certAlts ← shapes.mapIdxM fun i s => do
+        `(matchAltExpr| | $(← ctorPat s):term, $f, $hf, $v, $h => by
+            $(← foldCaseTac ids shapes i):tacticSeq)
+      let listAlts ← foldListCaseAlts ids
       return #[
         ← `(command| def $(head `typeDef) : Lean2Js.Core.TypeDef :=
               { name := $nameLit, params := [], ctors := [$ctorDefs,*],
@@ -490,6 +739,29 @@ private def encHandler (types : Array Name) : CommandElabM Bool := do
               match $xs:ident with
               | [] => []
               | y :: ys => $foldId $algebra* y :: $foldListId $algebra* ys
+            end),
+        ← `(command| def $(head `foldAlts) $bodyBinders* : List Lean2Js.Core.Alt :=
+              [$foldAltEntries,*]),
+        ← `(command| mutual
+            theorem $(head `denotes_fold) ($p : Lean2Js.Core.Program) ($env : Lean2Js.Env)
+                {$beta : Type} [Lean2Js.Enc $beta] $algebraBinders* $bodyBinders*
+                ($htd : Lean2Js.Core.Program.findType? $p $nameLit = some $typeDefId)
+                $hypBinders* :
+                ∀ ($x : $typeId) {$f : Nat}, $f ≤ Lean2Js.defaultFuel → ∀ ($v : Lean2Js.Value),
+                  Lean2Js.evalFold $p $f $env $nameLit [] ($foldAltsId $bodies*) ($toValueId $x)
+                      = Except.ok $v →
+                  $v = Lean2Js.Enc.toValue ($foldId $algebra* $x)
+              $certAlts:matchAlt*
+            theorem $(head `denotes_foldList) ($p : Lean2Js.Core.Program) ($env : Lean2Js.Env)
+                {$beta : Type} [Lean2Js.Enc $beta] $algebraBinders* $bodyBinders*
+                ($htd : Lean2Js.Core.Program.findType? $p $nameLit = some $typeDefId)
+                $hypBinders* :
+                ∀ ($xs : List $typeId) {$f : Nat}, $f ≤ Lean2Js.defaultFuel →
+                  ∀ ($v : List Lean2Js.Value),
+                    Lean2Js.evalFoldList $p $f $env $nameLit [] ($foldAltsId $bodies*)
+                        (List.map $toValueId $xs) = Except.ok $v →
+                    $v = List.map Lean2Js.Enc.toValue ($foldListId $algebra* $xs)
+              $listAlts:matchAlt*
             end)
       ]
     cmds.forM elabCommand

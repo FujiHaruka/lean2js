@@ -193,6 +193,39 @@ private def prune (alts : List Alt) : Decl :=
     altP (pCtor "node" [pCtor "leaf" []]) (ctor "Tree" [] "leaf" []),
     altP (pCtor "node" [pCtor "node" [pBind "k"]]) (v "k") ])
 
+/-! ## The shapes `deriving Enc` writes a fold's certificate for
+
+The certificate is generated per type, so a shape no type here declares has nothing else checking that
+the generator reaches it. `Example.Category` carries a plain field and a list of the type coming round;
+a constructor with no fields, a field that is the type itself, and both of those in one constructor are
+here. Nothing reads these types: that `deriving Enc` writes their fold, their alternatives and their
+certificate at all is what they pin. -/
+
+namespace Walked
+
+inductive Chain where
+  | tip
+  | link (label : String) (next : Chain)
+  deriving Enc
+
+inductive Shape where
+  | dot
+  | pair (left : Shape) (right : Shape)
+  | many (tag : String) (parts : List Shape) (spare : Shape)
+  deriving Enc
+
+example := @Chain.denotes_fold
+example := @Shape.denotes_fold
+
+#guard Chain.foldAlts (.var "a") (.var "b")
+  == [ (Pat.ctor "tip" [], Expr.var "a"),
+       (Pat.ctor "link" [.bind "label", .bind "next"], Expr.var "b") ]
+
+#guard Shape.fold 1 (fun l r => l + r) (fun _ ps s => Arr.sum ps + s)
+  (.many "top" [.dot, .pair .dot .dot] .dot) == 4
+
+end Walked
+
 /-! ## The key a type's constructors are told apart by
 
 `tag` unless the author wrote `@[discriminator "..."]` above the type. What a type declares has to be a

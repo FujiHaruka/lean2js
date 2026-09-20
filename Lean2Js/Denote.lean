@@ -122,7 +122,9 @@ walk has to be a name — and a name per type, because the algebra has one funct
 `deriving Enc` writes that name beside the encoding and marks it with the type it walks, so that the
 walk is found by the mark rather than by a suffix an author's own `Category.fold` would also carry.
 
-Nothing reads the mark yet. This is the definition the certificate will be about. -/
+Beside the fold it writes the alternatives a fold is reified to and the certificate that the subset's
+walk over them computes it. `Reify` does not read any of it yet: what is here is the definition and the
+theorem, landed and checked before anything cites them. -/
 
 private def catalogue : Example.Category :=
   .group "root" [.leaf "socks", .group "tools" [.leaf "saw", .leaf "plane"]]
@@ -138,34 +140,31 @@ open Lean in
 #eval show Elab.Command.CommandElabM (Option String) from
   return Lean2Js.Enc.foldOf? (← getEnv) ``Example.Category.fold
 
-/-! The alternatives a fold will be reified to: one per constructor, in declaration order, every field
-bound. `matchPat` is well-founded and does not reduce on its own, so which arm fires is read through
-`matchPats_binds` and the equation lemmas rather than by `rfl` — these two pin that reading, and they
-are the shape the per-type walk will be generated in. -/
+/-! The alternatives: one per constructor, in declaration order, every field bound. An author writes no
+`match` to fold, so there is no matcher to read them off — `Reify` writes them, and binding every field
+is what makes them exhaustive at every column the walk goes into. -/
 
-private def catAlts : List Alt :=
-  [ (.ctor "leaf" [.bind "name"], .var "name"),
-    (.ctor "group" [.bind "name", .bind "children"], .var "name") ]
+#guard Example.Category.foldAlts (.var "count") (.var "total")
+  == [ (Pat.ctor "leaf" [.bind "name"], Expr.var "count"),
+       (Pat.ctor "group" [.bind "name", .bind "children"], Expr.var "total") ]
 
-example (n : Value) :
-    firstMatch catAlts (.obj "leaf" [("name", n)]) = some ([("name", n)], .var "name") := by
-  rw [catAlts, firstMatch, matchPat.eq_def]
-  simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]
-  rw [show ([Pat.bind "name"] : List Pat) = ["name"].map Pat.bind from rfl,
-    matchPats_binds ["name"] [n] rfl]
-  simp
+/-! And the two halves meeting, which is what a reified fold will be: the plumbing takes the scrutinee
+and a walk, `deriving Enc` wrote the walk for the type that has one, and the alternatives the walk was
+proved about are the ones `Reify` writes. Nothing here knows what the bodies are — only that each
+denotes its constructor's own function, which is what reifying the algebra's lambda hands over. -/
 
-example (n : Value) (cs : List Value) :
-    firstMatch catAlts (.obj "group" [("name", n), ("children", .arr cs)])
-      = some ([("name", n), ("children", .arr cs)], .var "name") := by
-  rw [catAlts, firstMatch, matchPat.eq_def]
-  simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]
-  rw [if_neg (by simp), firstMatch, matchPat.eq_def]
-  simp only [Alt.pat, Alt.body, List.map_cons, List.map_nil]
-  rw [show ([Pat.bind "name", Pat.bind "children"] : List Pat)
-      = ["name", "children"].map Pat.bind from rfl,
-    matchPats_binds ["name", "children"] [n, .arr cs] rfl]
-  simp
+example (env : Env) (scrut b0 b1 : Expr) (c : Example.Category)
+    (f0 : String → Int) (f1 : String → List Int → Int)
+    (hs : Denotes Example.program env scrut c)
+    (h0 : ∀ name : String, Denotes Example.program (("name", toValue name) :: env) b0 (f0 name))
+    (h1 : ∀ (name : String) (children : List Int),
+      Denotes Example.program (("name", toValue name) :: ("children", toValue children) :: env) b1
+        (f1 name children)) :
+    Denotes Example.program env
+      (.foldE scrut "Category" [] .int53 (Example.Category.foldAlts b0 b1))
+      (Example.Category.fold f0 f1 c) :=
+  denotes_foldE Example.program env scrut "Category" [] .int53 _ c _ hs
+    fun hf v h => Example.Category.denotes_fold Example.program env f0 f1 b0 b1 rfl h0 h1 c hf v h
 
 /-! ### What the walk refuses
 
