@@ -125,8 +125,12 @@ function describeValue(value) {
       return `${value.ctor}{${Object.keys(value.fields).join(",")}}`;
     case "arr":
       return `[${value.v.map(describeValue).join(",")}]`;
+    // A Map and a plain object are told apart here for the reason `agrees` tells them apart: which of
+    // the two a value is, is what the declared type decides.
     case "dict":
-      return `{${value.v.map(([key]) => key).join(",")}}`;
+      return `Map{${value.v.map(([key]) => key).join(",")}}`;
+    case "jsobj":
+      return `{${Object.keys(value.v).join(",")}}`;
     default:
       return `${value.v}`;
   }
@@ -152,7 +156,13 @@ for (const [index, vector] of vectors.entries()) {
     failures.push(`${call}: ${vector.fn} is not exported`);
     continue;
   }
-  const args = vector.args.map((arg, i) => reshape(vector.shapes?.[i] ?? "canonical", decode(arg)));
+  // An `asObject` argument arrives as the JavaScript value itself rather than as the `Value`: whether a
+  // dictionary in it crosses as a plain object is the declared type's to say, and the types are on the
+  // Lean side. Every other argument is built here, so the two sides read a canonical one independently.
+  const args = vector.args.map((arg, i) => {
+    const shape = vector.shapes?.[i] ?? "canonical";
+    return shape === "asObject" ? decodeJs(arg) : reshape(shape, decode(arg));
+  });
   let returned;
   try {
     returned = fn(...args);

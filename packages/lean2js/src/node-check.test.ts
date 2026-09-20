@@ -74,9 +74,39 @@ describe("the script emit runs on Node", () => {
     ]);
     expect(run.stdout).toContain("2 vectors agree");
   });
+
+  it("builds an asObject argument as the JavaScript value rather than as the Value", () => {
+    const run = check(
+      'export function f(d) { return d instanceof Map ? "map" : ' +
+        'Object.entries(d).map(([k, v]) => k + v).join(","); }',
+      [
+        // The entries are read as well as the keys: reading this argument with the decoder for a
+        // `Value` leaves each entry the `{t, v}` pair it was written as, and the keys alone would not
+        // see it.
+        vector({
+          args: [{ t: "jsobj", v: { a: int53(1), b: int53(2) } }],
+          shapes: ["asObject"],
+          value: { t: "string", v: "a1,b2" },
+        }),
+        vector({ args: [{ t: "dict", v: [["a", int53(1)]] }], value: { t: "string", v: "map" } }),
+      ],
+    );
+    expect(run.stdout).toContain("2 vectors agree");
+  });
 });
 
 describe("a module that disagrees", () => {
+  it("fails on a Map where a plain object was due, and the other way round", () => {
+    const asMap = 'export function f() { return new Map([["a", 1]]); }';
+    const asObject = "export function f() { return { a: 1 }; }";
+    const object = vector({ args: [], value: { t: "jsobj", v: { a: int53(1) } } });
+    const map = vector({ args: [], value: { t: "dict", v: [["a", int53(1)]] } });
+    expect(check(asMap, [object]).status).toBe(1);
+    expect(check(asObject, [map]).status).toBe(1);
+    expect(check(asMap, [map]).status).toBe(0);
+    expect(check(asObject, [object]).status).toBe(0);
+  });
+
   it("fails on a wrong value", () => {
     const run = check("export function f() { return 2; }", [vector()]);
     expect(run.status).toBe(1);

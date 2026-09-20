@@ -38,6 +38,17 @@ what decides which compiler your artifact was built by.
   the three used to read as the same value — and which of them comes back is exactly what the declared
   type decides.
 
+- **An argument written as a plain object is in the vectors.** A `Dict.Obj V` parameter accepts either
+  a `Map` or a plain object, and every vector used to offer it a `Map`: the half a consumer of a
+  generated package actually writes was proved and run by nothing. A parameter whose type reaches such a
+  dictionary is now offered the object spelling too, at `{}` and at `{"a": 1}` both, an empty object
+  against an empty `Map` being the pair the check on Node could not tell apart until it was taught to.
+
+  The spelling cannot be a perturbation of an encoded argument, the way reversing an object's fields is.
+  Whether a dictionary crosses as an object is the declared type's to say and an encoded value no longer
+  carries the type, so the argument is read through its declared type instead — and, since the check on
+  Node reads no types, an argument written this way crosses to it as the JavaScript value itself.
+
 - **A call through a function value is read back in.** A declaration's entry hands its result back
   through the type it was declared at, so the one call inside a package that goes to an entry — a call
   through a function-typed parameter — now reads that result back the way it reads an argument. The

@@ -309,9 +309,12 @@ theorem encodeAt_eq_encodeValue [Discriminators] {p : Program} (hp : p.typesNoDi
     {ty : Ty} (hty : Ty.noDictObj ty = true) (v : Value) : encodeAt p ty v = encodeValue v :=
   (encodeAt_all hp).1 ty v hty
 
-/-- What `ArgShape` names, applied to an encoded argument. Reversing an object's keys and giving it a key
-no type declares are both things the `.d.ts` admits and `encodeValue` never writes. A dictionary's keys
-are left where they are: they are a `Map`'s, and no order is declared for them. -/
+/-- What the three perturbing shapes name, applied to an encoded argument. Reversing an object's keys
+and giving it a key no type declares are both things the `.d.ts` admits and `encodeValue` never writes.
+A dictionary's keys are left where they are: they are a `Map`'s, and no order is declared for them.
+
+`asObject` leaves an encoded value alone, because it is not a perturbation of one: `encodeArg` reads the
+argument through its declared type instead, and never routes that shape here. -/
 partial def reshapeJs (shape : ArgShape) : Js.JsValue → Js.JsValue
   | .obj fields =>
     let inner := fields.map fun (k, v) => (k, reshapeJs shape v)
@@ -319,14 +322,26 @@ partial def reshapeJs (shape : ArgShape) : Js.JsValue → Js.JsValue
     | .canonical => .obj inner
     | .reversed => .obj inner.reverse
     | .extraKey => .obj (inner ++ [(extraKeyName, .bool true)])
+    | .asObject => .obj inner
   | .arr xs => .arr (xs.map (reshapeJs shape))
   | .dict entries => .dict (entries.map fun (k, v) => (k, reshapeJs shape v))
   | v => v
 
-/-- The arguments the generated code is called with: each `Value` encoded, then written the way the
-vector says a caller may write it. -/
-def TestVector.jsArgs [Discriminators] (v : TestVector) : List Js.JsValue :=
-  v.args.zipIdx.map fun (a, i) => reshapeJs (v.shapeAt i) (encodeValue a)
+/-- The JavaScript value a vector offers as one argument. Three of the four shapes perturb the canonical
+encoding and are applied to it; `asObject` is a second encoding — the argument read through the type it
+was declared at, which is what writes a `Dict.Obj` argument as the plain object a consumer would write.
+
+Reshaping an encoded value could not do it. Whether a dictionary crosses as an object is the declared
+type's to say and an encoded value no longer carries the type, so turning every `Map` into an object
+would be refused at a `Dict` parameter — and the vector says the call returns. -/
+def encodeArg [Discriminators] (p : Program) : ArgShape → Ty → Value → Js.JsValue
+  | .asObject, ty, a => encodeAt p ty a
+  | shape, _, a => reshapeJs shape (encodeValue a)
+
+/-- The arguments the generated code is called with: each `Value` written the way the vector says a
+caller may write it. -/
+def TestVector.jsArgs [Discriminators] (p : Program) (v : TestVector) : List Js.JsValue :=
+  v.writtenArgs.map fun (shape, ty, a) => encodeArg p shape ty a
 
 /-- Whether the result of `eval` and the result of the model are the same. The expected value is read
 out through the declaration's return type, because that is what the entry hands back — `decl_correct`
@@ -363,7 +378,7 @@ def Disagreement.render (d : Disagreement) : String :=
 def disagreementsIn [Discriminators] (p : Program) (m : Js.Module) (vectors : List TestVector) :
     List Disagreement :=
   vectors.filterMap fun v =>
-    let actual := Js.callFunction m v.fn v.jsArgs
+    let actual := Js.callFunction m v.fn (v.jsArgs p)
     if agrees p v.ret v.expected actual then none
     else some { fn := v.fn, args := v.args, shapes := v.shapes, expected := v.expected, actual }
 
@@ -385,7 +400,12 @@ def checkAgreement (p : Program) (edgeLimit randomCount : Nat) : Except String U
 The vector's expected value is written as the **JavaScript value the entry must hand back**, which is
 `encodeAt` of what `eval` returned: a dictionary the declared type says crosses as a plain object is
 written as one. Writing the `Value` on its own instead was right only for as long as no declaration
-returned such a dictionary, and it was what left the walk on the way out unmeasured. -/
+returned such a dictionary, and it was what left the walk on the way out unmeasured.
+
+An `asObject` argument is written the same way and for the same reason: the check on Node reads no
+types, so which dictionaries in an argument cross as plain objects has to be decided here. Every other
+argument is written as the `Value` and encoded there, which is what keeps the two sides' readings of a
+canonical argument independent enough to disagree. -/
 
 partial def Js.JsValue.toJson : Js.JsValue → Json
   | .num i => .obj [("t", .str "num"), ("v", .num i)]
@@ -399,6 +419,10 @@ partial def Js.JsValue.toJson : Js.JsValue → Json
   | .fn name => .obj [("t", .str "fn"), ("v", .str name)]
 
 def TestVector.toJson [Discriminators] (p : Program) (v : TestVector) : Json :=
+  let args := v.writtenArgs.map fun (shape, ty, a) =>
+    match shape with
+    | .asObject => (encodeAt p ty a).toJson
+    | _ => Value.toJson a
   let outcome :=
     match v.expected with
     | .ok value => [("ok", Json.bool true), ("value", (encodeAt p v.ret value).toJson)]
@@ -406,7 +430,7 @@ def TestVector.toJson [Discriminators] (p : Program) (v : TestVector) : Json :=
   let shapes :=
     if v.shapes.all (· == .canonical) then []
     else [("shapes", Json.arr (v.shapes.map fun s => .str s.render))]
-  .obj ([("fn", .str v.fn), ("args", .arr (v.args.map Value.toJson))] ++ shapes ++ outcome)
+  .obj ([("fn", .str v.fn), ("args", .arr args)] ++ shapes ++ outcome)
 
 /-- Fuel is a device for keeping termination inside the proof, not part of the subset's semantics. Since
 nothing on the JS side corresponds to it, writing `outOfFuel` as an expected value would be the lie that

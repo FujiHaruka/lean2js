@@ -174,12 +174,15 @@ than it looks — the fields of an object are read by name, so their order is fr
 declaration does not name is accepted and dropped before the body sees it. **That the same value comes
 back for those spellings is inside the proofs too**: `{currency, amount}` and `{amount, currency}`
 normalise to the same value, and the agreement and trap statements carry them (`ArgsDecode`). The other
-spellings are in the vectors as well, under `shapes`, but what is checked there is that the Lean model and
-real JavaScript answer alike, not the range of spellings.
+spellings are in the vectors as well, under `shapes`: an object's fields back to front, an object
+carrying a key no type declares, and — where the declared type says a dictionary crosses as a plain
+object — that dictionary written as one rather than as a `Map`, which is the spelling a consumer of the
+package writes. What is checked there is that the Lean model and real JavaScript answer alike, not the
+range of spellings.
 
 ## What is checked rather than proved
 
-- **Every vector generated for the artifact** (<!--n:vectors-->45388<!--/n--> of them for this example) is
+- **Every vector generated for the artifact** (<!--n:vectors-->45402<!--/n--> of them for this example) is
   checked two ways before anything is written: `eval` against the model of the generated JavaScript
   ([`checkAgreement`]), and the assembled package, loaded into Node from a temporary directory, against
   real JavaScript. One disagreement and nothing is written to the output directory. What a vector is

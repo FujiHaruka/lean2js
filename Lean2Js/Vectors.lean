@@ -138,17 +138,24 @@ private def randomTuples (p : Program) (s : UInt64) (tys : List Ty) : Nat → Li
 /-- How an argument is written on the JS side. `encodeValue` puts the key the constructor's name is
 carried under first and the declared fields in declared order, but the `.d.ts` names no order and
 tolerates keys the type does not declare, so both of those readings need vectors of their own. Neither
-is a `Value`: the perturbation rides alongside the argument and is applied to its encoding. -/
+is a `Value`: the perturbation rides alongside the argument and is applied to its encoding.
+
+`asObject` is not a perturbation of the encoding but a second encoding: the argument read through the
+type it was declared at, so a dictionary the type says crosses as a plain object is written as one. It
+cannot be a perturbation, because whether a dictionary crosses as an object is the declared type's to
+say — turning every `Map` into an object would be refused at a `Dict` parameter. -/
 inductive ArgShape where
   | canonical
   | reversed
   | extraKey
+  | asObject
   deriving BEq, Repr, Inhabited
 
 def ArgShape.render : ArgShape → String
   | .canonical => "canonical"
   | .reversed => "reversed"
   | .extraKey => "extraKey"
+  | .asObject => "asObject"
 
 /-- The key `ArgShape.extraKey` adds. It is not an identifier, so no program can declare a field by that
 name and the key is undeclared whatever the program is. -/
@@ -157,6 +164,10 @@ def extraKeyName : String := "not a field"
 structure TestVector where
   fn : String
   args : List Value
+  /-- The types the parameters were declared at, in order. How an argument is written can depend on its
+  type — a dictionary at a `Dict.Obj` parameter crosses as a plain object — so the types travel with the
+  vector rather than being looked up by name again at each reader. -/
+  argTys : List Ty
   expected : Except Err Value
   /-- The declaration's return type. The entry hands its result back through it, so it is what decides
   whether a dictionary comes back as a `Map` or as a plain object, and both checkers read it rather than
@@ -165,6 +176,11 @@ structure TestVector where
   shapes : List ArgShape := []
 
 def TestVector.shapeAt (v : TestVector) (i : Nat) : ArgShape := v.shapes.getD i .canonical
+
+/-- Each argument with the type it was declared at and the way this vector says to write it. Pairing the
+three lists once here is what keeps a reader from having to default a type it could not find. -/
+def TestVector.writtenArgs (v : TestVector) : List (ArgShape × Ty × Value) :=
+  (v.args.zip v.argTys).zipIdx.map fun ((a, ty), i) => (v.shapeAt i, ty, a)
 
 /-- The key a constructor's name is carried under travels with the vector: the script on Node builds the
 argument the way the generated code expects it, and that is the type's own key rather than a fixed one. -/
@@ -187,7 +203,8 @@ def vectorsFor (p : Program) (d : Decl) (edgeLimit randomCount : Nat) (seed : UI
     List TestVector :=
   let tys := d.params.map (·.ty)
   let tuples := (edgeTuples p tys).take edgeLimit ++ randomTuples p seed tys randomCount
-  tuples.map fun args => { fn := d.name, args, expected := evalCall p d.name args, ret := d.ret }
+  tuples.map fun args =>
+    { fn := d.name, args, argTys := tys, expected := evalCall p d.name args, ret := d.ret }
 
 /-- Values to offer a parameter that did not ask for them. The shapes a hand-written checker is most
 likely to wave through are here on purpose: an Int53 past the safe range, a constructor value missing a
@@ -220,7 +237,7 @@ private def illTypedVectorsFor (p : Program) (d : Decl) (perParam : Nat) : List 
     tys.zipIdx.flatMap fun (ty, i) =>
       ((illTypedPool.filter fun v => !v.hasTy p ty && rejectedInJs v ty).take perParam).map fun bad =>
         let args := base.zipIdx.map fun (v, j) => if i == j then bad else v
-        { fn := d.name, args, expected := evalCall p d.name args, ret := d.ret }
+        { fn := d.name, args, argTys := tys, expected := evalCall p d.name args, ret := d.ret }
 
 /-- Whether reshaping an argument would change it: reversing needs an object carrying at least one field,
 adding a key needs only an object. Both look through arrays and dictionaries, since `__norm` does. -/
@@ -231,12 +248,47 @@ private partial def reshapable : Value → Bool × Bool
     es.foldl (fun acc e => let r := reshapable e.2; (acc.1 || r.1, acc.2 || r.2)) (false, false)
   | _ => (false, false)
 
+/-- Whether this value carries a dictionary with no entries, and whether it carries one with an entry.
+`reshapable`'s twin for the object spelling. The two are worth a vector each: `{}` and `{"a": 1}` are
+written differently by a caller, and an empty object against an empty `Map` is exactly the pair the
+check on Node could not tell apart until it was taught to. -/
+private partial def carriesDict : Value → Bool × Bool
+  | .dict es =>
+    es.foldl (fun acc e => let r := carriesDict e.2; (acc.1 || r.1, acc.2 || r.2))
+      (es.isEmpty, !es.isEmpty)
+  | .obj _ fields =>
+    fields.foldl (fun acc f => let r := carriesDict f.2; (acc.1 || r.1, acc.2 || r.2)) (false, false)
+  | .arr xs => xs.foldl (fun acc x => let r := carriesDict x; (acc.1 || r.1, acc.2 || r.2)) (false, false)
+  | _ => (false, false)
+
 /-- Whether a value of this type can hold an object at all. Nothing else is worth searching the tuples
 for, and a parameter that cannot hold one would otherwise cost a walk of the whole product. -/
 private def tyHasObj : Ty → Bool
   | .named _ _ | .option _ | .result _ _ => true
   | .array t => tyHasObj t
   | .dict t | .dictObj t => tyHasObj t
+  | _ => false
+
+/-- Whether a value of this type can carry a dictionary the declared type says crosses as a plain
+object. `tyHasObj`'s twin, and unlike it this one looks inside a declared type: the object spelling is
+worth offering exactly where the encoding differs somewhere in the argument, and for a structure with a
+`Dict.Obj` field that somewhere is a field. `Ty.noDictObj` is the type's own shape read on its own and
+stops at the type arguments, which is why it is not what gates this.
+
+Bounded by `namedDepth` the way the generator is: a type that names itself would otherwise be walked for
+ever. -/
+private partial def tyHasDictObj (p : Program) (depth : Nat) : Ty → Bool
+  | .named n args =>
+    match depth, p.findType? n with
+    | 0, _ => false
+    | _, none => false
+    | d + 1, some t =>
+      (t.ctorsAt args).any fun c => c.fields.any fun f => tyHasDictObj p d f.ty
+  | .option t => tyHasDictObj p depth t
+  | .result ok err => tyHasDictObj p depth ok || tyHasDictObj p depth err
+  | .array t => tyHasDictObj p depth t
+  | .dict t => tyHasDictObj p depth t
+  | .dictObj _ => true
   | _ => false
 
 /-- Calls each exported function with an argument the `.d.ts` admits and `encodeValue` would never write:
@@ -253,13 +305,18 @@ private def reshapedVectorsFor (p : Program) (d : Decl) : List TestVector :=
     match tuples.find? fun row => (row.getD i (.bool false)) |> changes with
     | none => []
     | some base =>
-      [{ fn := d.name, args := base, expected := evalCall p d.name base, ret := d.ret,
+      [{ fn := d.name, args := base, argTys := tys, expected := evalCall p d.name base,
+         ret := d.ret,
          shapes := base.zipIdx.map fun (_, j) => if i == j then s else ArgShape.canonical }]
   tys.zipIdx.flatMap fun (ty, i) =>
-    if tyHasObj ty then
+    (if tyHasObj ty then
       vectorAt i .reversed (fun v => (reshapable v).1)
         ++ vectorAt i .extraKey (fun v => (reshapable v).2)
-    else []
+    else [])
+      ++ (if tyHasDictObj p (namedDepth p) ty then
+        vectorAt i .asObject (fun v => (carriesDict v).1)
+          ++ vectorAt i .asObject (fun v => (carriesDict v).2)
+      else [])
 
 def allTestVectors (p : Program) (edgeLimit randomCount : Nat) : List TestVector :=
   let seeds := p.decls.zipIdx.map fun (_, i) => UInt64.ofNat (0x5EED + i * 7919)
