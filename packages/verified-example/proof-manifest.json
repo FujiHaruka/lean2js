@@ -13,7 +13,7 @@
   "artifacts": [
     {
       "file": "index.js",
-      "sha256": "c71e406fb1e91871fbc89d5c0ba8f961a7a5ab16e61d1adb63be6b0731b5abd2"
+      "sha256": "ae5c7e4526f915bbbf59141c6b37cf6d5aa9c52c13f03b657bf9b737454347cf"
     },
     {
       "file": "index.d.ts",
@@ -21,7 +21,7 @@
     },
     {
       "file": "README.md",
-      "sha256": "bcbea4a96a3df2cb0a6e95f099d3c2b06e3c295bc943575977c232da02d30893"
+      "sha256": "0b254bc61854b056c4434506d95843a1e112f62d2c2ef0f0e096cff4334eb754"
     },
     {
       "file": "package.json",
@@ -868,8 +868,8 @@
     },
     {
       "name": "steps_agree",
-      "statement": "steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :\n  ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args",
-      "doc": "The small-step machine, given enough steps, answers every call to a public function exactly as `eval`\ndoes."
+      "statement": "steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d)\n  (hpub : d.paramsCheckable = true) :\n  ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args",
+      "doc": "The small-step machine, given enough steps, answers exactly as `eval` does every call whose arguments\nthe entry check has a shape to read — which is every exported function, and every internal one that takes\nno function."
     },
     {
       "name": "no_rate_is_no_tax",

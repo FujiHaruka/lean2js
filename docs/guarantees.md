@@ -42,15 +42,25 @@ function of the same name returns the same value ([`decl_correct`]); where `eval
 throws **the same code** ([`decl_traps`]); an argument `eval` would not take becomes a `typeError` before
 the body runs ([`decl_refuses`]). The returning direction carries no "for arguments meeting the declared
 type" caveat — that the types match follows from `eval` having returned at all. The trapping direction
-assumes the declared type, and the refusing one assumes the declaration is public.
+assumes the declared type, and the refusing one assumes the entry check has a shape to read in every
+parameter (`Decl.paramsCheckable`). Every exported declaration has that, a function-typed parameter being
+the one kind that does not and the one kind that is never exported, so the refusing direction covers
+every call a consumer can make. The other two cover every declaration, exported or not.
 
 - **A declaration is two functions in the artifact, and the three directions are about the first.** The
-  entry, under the declared name, checks its arguments and hands them to a body under the `__b_` prefix
-  that checks nothing; a call from one declaration to another lands on that body, so the check is paid
-  where the value arrives from outside and not again at every call inside. The entry is what a consumer
-  imports and the only one `index.d.ts` names, and it is the function `decl_correct`, `decl_traps` and
-  `decl_refuses` speak of. A declaration passed by name rather than called resolves to the entry too, so
-  a higher-order call carries the check.
+  entry, under the declared name, checks each argument whose type has a shape to check and hands them to
+  a body under the `__b_` prefix that checks nothing. A call from one declaration to another lands on
+  that body — including a declaration named inside a `map` or a `reduce`, which the walk reads as an
+  ordinary call — so the check is paid where the value arrives from outside and not again at every call
+  inside. The entry is what a consumer imports and the only one `index.d.ts` names, and it is the
+  function `decl_correct`, `decl_traps` and `decl_refuses` speak of. The two kinds of declaration that
+  are not exported are the one whose author marked it `@[ship internal]` and the one that takes a
+  function; both still have an entry, and both are covered by the returning and trapping directions.
+- **One call inside the package goes back through an entry**: a call through a function-typed parameter.
+  The argument is a value holding a declaration's name, so calling it lands on that declaration's entry
+  and is checked again. Nothing a consumer supplies reaches such a parameter — a declaration taking a
+  function is never exported, and the argument has to name a declaration of the same package — so this
+  is a cost rather than a guarantee.
 - **Except for a dictionary holding the same key twice, all three directions speak for every spelling of
   the arguments the entry check accepts** (`ArgsDecode`) — the order of keys and keys the declaration does
   not name are carried by the same theorems as the canonical spelling. That one excluded shape exists only
@@ -64,7 +74,7 @@ assumes the declared type, and the refusing one assumes the declaration is publi
 - Running out of fuel on the `eval` side is in none of the directions ([`cost`] computes an upper bound on
   the fuel needed from the syntax alone, and [`progOk`] checks that calls only reach backwards; against
   the ceiling of <!--n:fuelCeiling-->10000<!--/n--> the artifact runs at, this example needs
-  <!--n:fuelNeeded-->2073<!--/n-->).
+  <!--n:fuelNeeded-->2090<!--/n-->).
 - **What that rests on**: the generated code may branch on the type of an operand because of type
   soundness ([`typeSound`]), and the last arm of a `match` may be taken without a test because of
   exhaustiveness ([`firstMatch_isSome`], the soundness of Maranget's usefulness check). The small-step

@@ -31,7 +31,7 @@ certificate is the only part of this that changes from one declaration to the ne
 theorem decl_ships (m : Js.Module) (hm : Compile.compileProgram Example.program = .ok m)
     (fn : String) (d : Decl) (jargs : List Js.JsValue) (args : List Value) {α : Type} [Enc α] (t : α)
     (hd : Example.program.find? fn = some d)
-    (hpub : d.isPublic = true)
+    (hpub : d.paramsCheckable = true)
     (htyped : _root_.Lean2Js.ParamsTyped Example.program d.params args)
     (hdec : Decl.ArgsDecode Example.program d.params jargs args)
     (hcert : Denotes Example.program (bindParams d.params args) d.body t) :

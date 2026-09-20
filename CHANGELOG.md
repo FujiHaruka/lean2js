@@ -6,6 +6,26 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- **`@[ship internal]`** ships a declaration without putting it in the package's API: other declarations
+  call it as they call any other, and it appears in neither `index.d.ts` nor the exports of `index.js`.
+  Until now the only ways to keep a helper off the published surface were to give it a function
+  parameter, which is a shape rather than an intention, or to mark it `@[expand]`, which writes the body
+  out at every call site and charges its depth to the fuel bound. The word is not `private`, because
+  Lean's own `private` takes the name out of the namespace and is what keeps a scaffolding lemma from
+  shipping as a claim. A declaration taking a function stays internal whatever is written above it.
+
+  Two things go with it: an internal declaration gets no vectors of its own, being uncallable from Node,
+  so its body is checked only through the exports that reach it and its entry not at all; and a theorem
+  still ships whatever it names, so a claim about an internal declaration reaches `proof-manifest.json`
+  like any other.
+
+  `Decl.isPublic` now answers only "may a consumer call this?", and `Decl.paramsCheckable` — the entry
+  check having a shape to read in every parameter — is what the refusing direction, the descent, the
+  fuel-free trapping direction and the small-step agreement ask for, which is all any of them ever used.
+  So the mark takes nothing out of the proofs: `steps_agree` and the four lemmas behind it hold of an
+  internal declaration exactly as they hold of an exported one. `steps_agree`'s published statement says
+  `paramsCheckable` where it said `isPublic`, and covers more than it did.
+
 - **The entry check runs at the boundary and only there.** A declaration now compiles to two functions:
   the entry a consumer imports, which checks its arguments and binds them under their declared names,
   and an unchecked body under the `__b_` prefix, which is where the compiled expression goes. A call
@@ -18,10 +38,12 @@ what decides which compiler your artifact was built by.
 
   Nothing a consumer sees moves. The exported name, its `.d.ts` line and its JSDoc are what they were,
   and `decl_correct`, `decl_traps` and `decl_refuses` are still statements about the function of the
-  declared name. A declaration passed by name resolves to the entry, so a higher-order call is checked
-  exactly as a consumer's is. The prefix is inside the reserved `__`, which `validateIdent` already
-  refuses, so no name a package can write reaches it. The cost is bytes: the example's `index.js` grew
-  from 53,396 to 62,812, the entry of a declaration nothing names being dead weight a bundler drops.
+  declared name. A declaration named inside a `map` or a `reduce` is an ordinary call and goes to the
+  body too; the one call that still goes through an entry is a call through a function-typed parameter,
+  whose argument is a value holding a declaration's name. Nothing a consumer supplies reaches such a
+  parameter, so that is a cost rather than a guarantee. The prefix is inside the reserved `__`, which
+  `validateIdent` already refuses, so no name a package can write reaches it. The cost is bytes: the example's `index.js` grew
+  from 53,396 to 63,009, the entry of a declaration nothing names being dead weight a bundler drops.
 
 - The civil calendar is in the subset, as `Cal`. `Cal.fromCivil` counts a date to days from
   1970-01-01 and `Cal.year` / `Cal.month` / `Cal.day` read a date back out of a day number, with

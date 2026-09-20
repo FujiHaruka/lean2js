@@ -38,6 +38,34 @@ ship_package
 - **A `@[ship] def` is monomorphic**: a declaration carries a list of parameter types and has nowhere to
   put a type variable.
 
+### `@[ship internal]`
+
+**Ships the declaration without putting it in the package's API.** Other declarations call it as they
+call any other, and it appears in neither `index.d.ts` nor the exports of `index.js`.
+
+```lean
+/-- The spelling two strings are compared under. -/
+@[ship internal]
+def comparable (s : String) : String := Str.lower (Str.trim s)
+
+@[ship]
+def isSpreadsheet (fileName : String) : Bool := Str.endsWith (comparable fileName) ".csv"
+```
+
+It is what to reach for when a helper is worth naming but is nobody else's business. The alternative is
+`@[expand]`, which writes the body out at every call site and charges the depth to the fuel bound; this
+one costs a function in `index.js` and nothing else.
+
+The word is not `private`: Lean's `private` takes the name out of the namespace, so `ship_package` never
+sees the `def` at all. `private` is for the lemmas the proofs lean on, and keeping them private is what
+stops them shipping as claims.
+
+Two things go with it. **A declaration nothing exports gets no vectors of its own** — vectors are
+generated per export, and Node cannot call what is not exported, so an internal declaration's body is
+checked only through the exports that reach it, and its entry not at all. And **a theorem still ships whatever it names**: a claim about an
+internal declaration goes into `proof-manifest.json` like any other, where a consumer reads it about a
+function they cannot call.
+
 ## `@[expand]`
 
 A `def` marked `@[expand]` is written out where it is called. The package ships no function for it: it
@@ -166,12 +194,21 @@ function __b_lineTotal(unitPrice, quantity) {
 ```
 
 **A call from one declaration to another goes to the body.** So the check is paid once, where the value
-arrives from outside, and not again at every call inside a traversal. A declaration passed by name
-rather than called — handed to `map` as a function — resolves to the entry instead, and is checked the
-way a consumer's call is.
+arrives from outside, and not again at every call inside a traversal. A declaration named inside a
+`map`, a `filter` or a `reduce` is an ordinary call and goes to the body like any other: `xs.map twice`
+is read as `xs.map (fun n => twice n)`, and the call in that body is the call.
+
+**The one call that pays it twice goes through a function parameter.** A declaration handed to another
+declaration's function-typed parameter arrives as a value holding its name, so calling it lands on that
+declaration's entry and is checked again — `priced rule amount` with `rule := tenPercentOff` compiles to
+`__b_priced(tenPercentOff, amount)` and a body of `rule(amount)`, which is `tenPercentOff`'s entry. That
+is the only way back through an entry from inside the package, and a consumer cannot reach it: a
+declaration taking a function is not exported, and the argument has to name a declaration of the same
+package.
 
 **What the check costs at the boundary is the price of the guarantee, and it stays.** It walks the
 argument once to see the shape and once to copy it, which is linear in the value: a cart of 20000 line
 items crossing the boundary costs around 400 µs on Node, against 20 µs for the `concat` it is doing.
-Pass large values across the boundary as few times as the work allows; once they are inside, calls
-between your declarations are free of it.
+Pass large values across the boundary as few times as the work allows; once they are inside, direct
+calls between your declarations are free of it, and only a call through a function parameter pays it
+again.

@@ -351,6 +351,8 @@ private def doubleAll : Decl :=
 
 #guard (decl "pure" [("amount", .int53)] .int53 (v "amount")).isPublic
 #guard !(decl "takesFn" [("f", .fn [.int53] .int53)] .int53 (call "f" [int53 0])).isPublic
+-- what `@[ship internal]` clears, and that it cannot be undone by the parameters being checkable
+#guard !{ decl "helper" [("amount", .int53)] .int53 (v "amount") with exported := false }.isPublic
 
 #guard compiles (decl "distance" [("n", .int53)] .int53 (abs' (v "n")))
 #guard compiles (decl "distance" [("n", .bigint)] .bigint (abs' (v "n")))

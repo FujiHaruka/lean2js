@@ -580,11 +580,13 @@ theorem encoded_values_fit_dts [Discriminators] (m : Js.Module) (hm : Compile.co
 
 ### steps_agree
 
-The small-step machine, given enough steps, answers every call to a public function exactly as `eval`
-does.
+The small-step machine, given enough steps, answers exactly as `eval` does every call whose arguments
+the entry check has a shape to read — which is every exported function, and every internal one that takes
+no function.
 
 ```lean
-theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d) (hpub : d.isPublic = true) :
+theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d)
+  (hpub : d.paramsCheckable = true) :
   ∃ n, ∀ (bound : Nat), n ≤ bound → stepCall program bound fn args = evalCall program fn args
 ```
 

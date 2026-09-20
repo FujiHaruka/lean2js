@@ -99,7 +99,7 @@ program needs grows with how deeply they nest. `Arr.contains` needs `BEq T` (`de
 **`Cal.year`, `Cal.month` and `Cal.day` each read the whole date out of the day number**, because the
 subset has no tuple to hand three answers back in. Asking for all three writes the arithmetic out three
 times, and what that costs is fuel: a body that reads a date is deep, and `Cost.cost` charges that depth
-once per declaration in the program. The example needs <!--n:fuelNeeded-->2073<!--/n--> of
+once per declaration in the program. The example needs <!--n:fuelNeeded-->2090<!--/n--> of
 <!--n:fuelCeiling-->10000<!--/n--> with six calendar functions in it.
 
 **A composite key is two sorts.** `Arr.sortByKey` takes one key, of type `Int` or `String`, and is

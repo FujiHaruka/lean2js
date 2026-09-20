@@ -162,10 +162,17 @@ the surrounding whitespace gone. -/
 @[ship]
 def storedCoupon (campaign entered : String) : String := Str.upper (Str.trim (campaign ++ entered))
 
+/-- The spelling two strings are compared under: the surrounding whitespace gone and the case levelled.
+Every comparison below goes through it and no consumer has any business calling it, which is what
+`@[ship internal]` says — it is compiled and called like any other declaration, and appears in neither
+`index.d.ts` nor the exports of `index.js`. -/
+@[ship internal]
+def comparable (s : String) : String := Str.lower (Str.trim s)
+
 /-- Whether a coupon belongs to a campaign, comparing the way the codes are stored. -/
 @[ship]
 def couponApplies (code campaign : String) : Bool :=
-  Str.startsWith (Str.lower (Str.trim code)) (Str.lower (Str.trim campaign))
+  Str.startsWith (comparable code) (comparable campaign)
 
 /-- How many columns a line of an uploaded file carries. An empty separator leaves the line whole rather
 than cutting it into characters. -/
@@ -180,8 +187,7 @@ def truncateLabel (label : String) (limit : Int) : String :=
 
 /-- Whether an uploaded file is a spreadsheet, compared the way the names are stored. -/
 @[ship]
-def isSpreadsheet (fileName : String) : Bool :=
-  Str.endsWith (Str.lower (Str.trim fileName)) ".csv"
+def isSpreadsheet (fileName : String) : Bool := Str.endsWith (comparable fileName) ".csv"
 
 /-- What a role may do in a day and in a month. -/
 @[ship]
@@ -939,8 +945,8 @@ theorem cartTotal_traps (m : Js.Module) (hm : Compile.compileProgram program = .
 /-! ### Refusing what the reference semantics refuses
 
 `Decl.decl_refuses` needs no `InFragment` either — the entry check does not look at the body. What it
-asks for instead is `isPublic`, which `decl_correct` does not: a declaration taking another by name has
-no boundary to check. -/
+asks for instead is `paramsCheckable`, which `decl_correct` does not: a declaration taking another by
+name has no boundary to check. -/
 
 /-- Whatever `add` is handed, if no reading of those JS values is a pair of `Int53`s, the generated
 function throws instead of computing. The one shape left out is a dictionary holding a key twice, which a
@@ -1028,10 +1034,11 @@ theorem encoded_values_fit_dts (m : Js.Module) (hm : Compile.compileProgram prog
   Dts.hasTy_tsSat program (Decl.typesNamesOk_of_compileProgram hm) v ty hv
 
 omit [Discriminators] in
-/-- The small-step machine, given enough steps, answers every call to a public function exactly as `eval`
-does. -/
+/-- The small-step machine, given enough steps, answers exactly as `eval` does every call whose arguments
+the entry check has a shape to read — which is every exported function, and every internal one that takes
+no function. -/
 theorem steps_agree (fn : String) (d : Decl) (args : List Value) (hd : program.find? fn = some d)
-    (hpub : d.isPublic = true) :
+    (hpub : d.paramsCheckable = true) :
     ∃ n, ∀ bound, n ≤ bound → stepCall program bound fn args = evalCall program fn args :=
   StepAgree.stepCall_agrees program_progOk program_cost_fits hd hpub
 

@@ -863,6 +863,16 @@ function __b_storedCoupon(campaign, entered) {
   return __upper(__trim((campaign + entered)));
 }
 
+/** comparable : (s : String) → String */
+function comparable(__p0) {
+  const s = __ck(__p0, ["string"]);
+  return __b_comparable(s);
+}
+
+function __b_comparable(s) {
+  return __lower(__trim(s));
+}
+
 /** couponApplies : (code : String, campaign : String) → Bool */
 export function couponApplies(__p0, __p1) {
   const code = __ck(__p0, ["string"]);
@@ -871,7 +881,7 @@ export function couponApplies(__p0, __p1) {
 }
 
 function __b_couponApplies(code, campaign) {
-  return __startsWith(__lower(__trim(code)), __lower(__trim(campaign)));
+  return __startsWith(__b_comparable(code), __b_comparable(campaign));
 }
 
 /** fieldCount : (row : String, separator : String) → Int53 */
@@ -903,7 +913,7 @@ export function isSpreadsheet(__p0) {
 }
 
 function __b_isSpreadsheet(fileName) {
-  return __endsWith(__lower(__trim(fileName)), ".csv");
+  return __endsWith(__b_comparable(fileName), ".csv");
 }
 
 /** limitsFor : (role : Role) → Dict Int53 */

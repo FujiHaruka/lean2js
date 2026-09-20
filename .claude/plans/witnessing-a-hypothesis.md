@@ -46,11 +46,24 @@ false at the first value tried.
 the way `readArtifact` already evaluates a `Core.Decl` out of a constant. A hypothesis with no
 `Decidable` instance is *not probed*, and lands in the same bucket as an unsamplable binder.
 
-**The open question, and the only one.** A sampled `Value` has to reach the elaborator as an `Expr`, and
-this repository has no `ToExpr Value` (`rg ToExpr` finds nothing). Two ways, and the first is likely
-cheaper: derive `ToExpr` for `Core.Value` and build the application directly; or go the way `Reify`
-already goes and build syntax, elaborating it. Settle this first — it decides how much of the rest is
-plumbing.
+**The open question, settled.** A sampled `Value` has to reach the elaborator as an `Expr`, and this
+repository has no `ToExpr Value`. **Derive it** — `deriving instance Lean.ToExpr for Lean2Js.Value`
+elaborates as it stands, with no hand-written instance and no help for the `UInt32` field, checked with
+`lake env lean` on a scratch file (2026-09-20):
+
+```
+#eval toExpr (Value.obj "Money" [("amount", .int53 5), ("currency", .str "JPY")])
+-- Lean2Js.Value.obj "Money" (List.cons … (Prod.mk … "amount" (Lean2Js.Value.int53 …)) …)
+#eval toExpr (Value.uint32 3)
+-- Lean2Js.Value.uint32 (OfNat.ofNat.{0} UInt32 3 (UInt32.instOfNat 3))
+```
+
+It cannot live in `Lean2Js/Value.lean`: that module is on the path a user's package imports and has no
+`import Lean`, and pulling the frontend in there would put it in every consumer's build. A new
+`Lean2Js/Reflect.lean`, imported by `Main.lean` alone, is where it goes. From an `Expr` of a `Value`,
+the binder's own value is `Enc.ofValue v |>.get!` applied at the binder's type, and a hypothesis is
+decided by synthesising `Decidable` for it and `whnf`-ing `decide h` — no tactic framework needed,
+since `readArtifact` is already in `MetaM`.
 
 ## What it says
 
@@ -74,7 +87,7 @@ package cannot re-run the search.
 
 | File | What moves |
 | --- | --- |
-| `Lean2Js/Value.lean` or a new `Lean2Js/Reflect.lean` | `ToExpr` for `Value`, if that is the route taken |
+| a new `Lean2Js/Reflect.lean`, imported by `Main.lean` alone | `deriving instance ToExpr for Value` |
 | `Main.lean` | the telescope walk, the sampling, the report; beside `readArtifact`, which already has the environment and the `MetaM` |
 | `Lean2Js/Vectors.lean` | nothing, if `edgeCases` is enough; a cap on the tuple count if it is not |
 | `docs/guarantees.md` | a bullet under **What is checked rather than proved** |

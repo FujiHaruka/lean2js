@@ -164,7 +164,7 @@ def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String
 | `inductive` and `structure` with `deriving Enc`, including one that names itself, type parameters, `Option T` / `Except E A` | `unsafe` / arbitrary FFI / pointers |
 | List traversals (`xs.map` / `filter` / `find?` / `all` / `any` / `foldl` / `Arr.slice` / `reverse` / `++`), `Arr.range n` for a body that runs a number of times, and `match` (nested, wildcard, literal) | Metaprogramming |
 | Arithmetic (`+` / `-` / `*` / `Int53.div` / `Int53.mod` / `Int53.abs` / `min` / `max`) | `Float` / IEEE 754 |
-| Pure `def`s marked `@[ship]` | Recursion in a `def` / non-termination / DOM access |
+| Pure `def`s marked `@[ship]`, and `@[ship internal]` for one the API should not name | Recursion in a `def` / non-termination / DOM access |
 | A lambda where a traversal takes one, and a declaration's name passed to a call | Functions as values: a function in a variable, a closure, a function type on the public boundary |
 | Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.join` / `Str.replace` / `Str.repeat` / `Str.padStart` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
 | `Dict V` (string keys, emitted as a `Map`) | Plain objects used as dictionaries |
@@ -183,7 +183,8 @@ Mathlib here** — `rfl`, `decide`, `simp`, `omega` and `cases` are what you pro
 those close.
 
 What carries a theorem down to the shipped JavaScript is the certificate `ship_package` wrote beside the
-declaration: it says the exported function computes this very `def`. The rest — agreement with the
+declaration: it says the function of that name in `index.js` computes this very `def` — the export,
+unless the declaration is `@[ship internal]`. The rest — agreement with the
 reference semantics, the same trap codes, refusal at the boundary — is proved once, about every program.
 
 **You do not write the list of theorems.** `lean2js` collects every public theorem in the manifest's
@@ -203,7 +204,7 @@ written and one beyond `propext`, `Classical.choice` or `Quot.sound` stops the e
   loaded into Node. One disagreement and nothing is written.
 - **Proved by you, and carried with the package.** Your theorems ship in `proof-manifest.json` with the
   axioms they rest on, each about a `def` of yours, and the certificate beside that declaration is what
-  makes it a claim about the export of the same name.
+  makes it a claim about the function of the same name in `index.js`.
 
 One caveat, and it is in the types: `Int53` and `UInt32` are both `number`, so TypeScript accepts a
 number that is not an integer, or is outside their range, and the call is refused at run time with

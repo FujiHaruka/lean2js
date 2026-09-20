@@ -3006,7 +3006,7 @@ theorem decl_traps_at_cost (p : Program) (m : Js.Module) (fn : String) (d : Decl
     (jargs : List Js.JsValue) (args : List Value) (err : Err)
     (hm : compileProgram p = .ok m)
     (hd : p.find? fn = some d)
-    (hpub : d.isPublic = true)
+    (hpub : d.paramsCheckable = true)
     (hok : Cost.progOk p = true)
     (hfuel : Cost.cost p ≤ defaultFuel)
     (htyped : ParamsTyped p d.params args)
@@ -3016,12 +3016,13 @@ theorem decl_traps_at_cost (p : Program) (m : Js.Module) (fn : String) (d : Decl
   decl_traps p m fn d jargs args err hm hd htyped hdec he
     (fun hc => Cost.evalCall_ne_outOfFuel hok hfuel hd hpub (hc ▸ he))
 
-/-! ## One public function refuses
+/-! ## The entry refuses
 
 The mirror of `decl_correct`. The entry check never looks at the body, so this direction does not ask
-for `InFragment`: it holds of every public declaration. What it does ask for is `isPublic` itself — a
-function-typed parameter is handed straight through, because JS offers no way to check a function's
-signature at run time. -/
+for `InFragment`. What it does ask for is `paramsCheckable` — a function-typed parameter is handed
+straight through, because JS offers no way to check a function's signature at run time. Every exported
+declaration satisfies it, and so does an internal one whose parameters have a shape: what the entry
+refuses does not depend on whether the entry is exported. -/
 
 /-- The arguments the reference semantics lets into the body: a decoding of the JS arguments whose
 length and types are the ones the declaration asked for. -/
@@ -3029,12 +3030,12 @@ def EvalAccepts (p : Program) (d : Decl) (jargs : List Js.JsValue) : Prop :=
   ∃ args, ArgsDecode p d.params jargs args ∧ d.params.length = args.length ∧
     ParamsTyped p d.params args
 
-theorem noFnParams_of_isPublic :
+theorem noFnParams_of_checkable :
     ∀ (params : List Param), (params.all fun param => !param.ty.isFn) = true → NoFnParams params
   | [], _ => trivial
   | param :: ps, h => by
     simp only [List.all_cons, Bool.and_eq_true] at h
-    exact ⟨by simpa using h.1, noFnParams_of_isPublic ps h.2⟩
+    exact ⟨by simpa using h.1, noFnParams_of_checkable ps h.2⟩
 
 /-- What a caller of an exported function cannot get past. If no decoding of the JS arguments is one the
 reference semantics would accept — the wrong number of them, or one whose shape breaks the declared type
@@ -3049,7 +3050,7 @@ theorem decl_refuses (p : Program) (m : Js.Module) (fn : String) (d : Decl)
     (jargs : List Js.JsValue)
     (hm : compileProgram p = .ok m)
     (hd : p.find? fn = some d)
-    (hpub : d.isPublic = true)
+    (hpub : d.paramsCheckable = true)
     (hk : Js.dictKeysDistinctList jargs = true)
     (hno : ¬ EvalAccepts p d jargs) :
     ∀ g, 2 ≤ g → Js.callFunctionAt m g fn jargs = .error "typeError" := by
@@ -3064,7 +3065,7 @@ theorem decl_refuses (p : Program) (m : Js.Module) (fn : String) (d : Decl)
   · rw [if_neg (by simp [rawParams_length, hlen])]
     rcases evalStmts_paramChecks_sound m p (typesNamesOk_of_compileProgram hm) g' d.params jargs 0
       checks _ _ hchecks
-      (noFnParams_of_isPublic d.params (by simpa [Decl.isPublic] using hpub)) hres hlen
+      (noFnParams_of_checkable d.params (by simpa [Decl.paramsCheckable] using hpub)) hres hlen
       (rawBound_bindAll d.params jargs 0 hlen) hk with hfail | ⟨args, hdec, htyped⟩
     · exact hfail
     · exact absurd ⟨args, hdec, hdec.length, htyped⟩ hno
@@ -3075,7 +3076,7 @@ theorem decl_refuses_call (p : Program) (m : Js.Module) (fn : String) (d : Decl)
     (jargs : List Js.JsValue)
     (hm : compileProgram p = .ok m)
     (hd : p.find? fn = some d)
-    (hpub : d.isPublic = true)
+    (hpub : d.paramsCheckable = true)
     (hk : Js.dictKeysDistinctList jargs = true)
     (hno : ¬ EvalAccepts p d jargs) :
     Js.callFunction m fn jargs = .error "typeError" :=

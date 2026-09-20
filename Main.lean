@@ -125,7 +125,7 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
   let mut certified : Array String := #[]
   let mut docs : Array (String × String) := #[]
   for (n, _) in members do
-    unless Core.Dsl.shipAttr.hasTag (← getEnv) n do continue
+    unless Core.Dsl.isShipped (← getEnv) n do continue
     let declName := Core.Dsl.declNameFor n
     unless (← getEnv).contains declName do
       throwError "{n} is marked `@[ship]` but {declName} is not in scope, so the walk never read \

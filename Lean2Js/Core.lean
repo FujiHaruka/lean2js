@@ -410,12 +410,16 @@ def TypeDef.ctorsAt (t : TypeDef) (args : List Ty) : List CtorDef :=
 def TypeDef.findAt? (t : TypeDef) (args : List Ty) (ctor : String) : Option CtorDef :=
   (t.ctorsAt args).find? (·.name == ctor)
 
-/-- One exported pure function. -/
+/-- One pure function the package carries. -/
 structure Decl where
   name : String
   params : List Param
   ret : Ty
   body : Expr
+  /-- Whether the author meant this declaration to be part of the package's API. `@[ship internal]`
+  clears it; a declaration whose `exported` is clear is compiled and callable from the others, and
+  named by neither `index.js`'s exports nor `index.d.ts`. -/
+  exported : Bool := true
   deriving Repr, BEq, Inhabited
 
 structure Program where
@@ -423,9 +427,16 @@ structure Program where
   decls : List Decl
   deriving Repr, Inhabited
 
-/-- A declaration that takes a function is internal. A function value cannot be checked at the boundary,
-so a declaration that would need one checked never reaches the boundary at all. -/
-def Decl.isPublic (d : Decl) : Bool := d.params.all fun param => !param.ty.isFn
+/-- Whether the entry check has something to read in every parameter. A function value has no shape to
+check, so a declaration taking one has nothing to refuse at the boundary — which is what the refusing
+direction, the descent and the small-step agreement each ask for, and all they ask for. Named apart from
+`isPublic` because the two answer different questions and a proof wants this one. -/
+def Decl.paramsCheckable (d : Decl) : Bool := d.params.all fun param => !param.ty.isFn
+
+/-- A declaration crosses the boundary when its author meant it to and the entry check can read its
+parameters. A declaration that takes a function is internal whatever the author wrote: a function value
+cannot be checked at the boundary, so one that would need one checked never reaches it at all. -/
+def Decl.isPublic (d : Decl) : Bool := d.exported && d.paramsCheckable
 
 def Program.publicDecls (p : Program) : List Decl := p.decls.filter Decl.isPublic
 

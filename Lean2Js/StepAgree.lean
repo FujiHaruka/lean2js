@@ -698,11 +698,11 @@ theorem stepCall_refines {p : Program} {bound : Nat} {fn : String} {args : List 
         obtain ⟨k, hk, hs⟩ := steps_of_run p bound _ _ rfl hstep
         exact (run_of_steps p k _ _ hs (max n bound) (by omega)).symm
 
-/-- For a program `lean2js` agrees to emit, the machine answers every call to a public function exactly as
-`eval` does, given enough steps. -/
+/-- For a program `lean2js` agrees to emit, the machine answers exactly as `eval` does, given enough
+steps, every call whose arguments the entry check can read. -/
 theorem stepCall_agrees {p : Program} {fn : String} {d : Decl} {args : List Value}
     (hp : Cost.progOk p = true) (hfuel : Cost.cost p ≤ defaultFuel)
-    (hd : p.find? fn = some d) (hpub : d.isPublic = true) :
+    (hd : p.find? fn = some d) (hpub : d.paramsCheckable = true) :
     ∃ n, ∀ bound, n ≤ bound → stepCall p bound fn args = evalCall p fn args :=
   stepCall_eventually (Cost.evalCall_ne_outOfFuel hp hfuel hd hpub)
 

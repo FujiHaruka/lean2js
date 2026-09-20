@@ -31,11 +31,16 @@ private def elaborationFailed (n : Name) : CoreM Bool := do
   return di.value.hasSorry
 
 /-- The walk runs here, on the `def` itself, so a `def` that leaves the subset is refused where it is
-written rather than wherever the package is assembled. -/
-private def readDeclaration (n : Name) : CoreM Unit := do
+written rather than wherever the package is assembled. `exported` is the only thing the mark decides:
+it rides on the declaration the walk read, so the program carries what the author wrote and nothing
+edits the declaration between the two. -/
+private def readDeclaration (n : Name) (exported : Bool) : CoreM Unit := do
   if ← elaborationFailed n then return
   let value ← MetaM.run' <| TermElabM.run' <| withoutErrToSorry <| withDeclName n do
-    let e ← elabTerm (← `(reify_decl% $(mkCIdent n))) (some (mkConst ``Core.Decl))
+    let stx ←
+      if exported then `(reify_decl% $(mkCIdent n))
+      else `({ reify_decl% $(mkCIdent n) with exported := false })
+    let e ← elabTerm stx (some (mkConst ``Core.Decl))
     synthesizeSyntheticMVarsNoPostponing
     instantiateMVars e
   addAndCompile (.defnDecl {
@@ -47,12 +52,33 @@ private def readDeclaration (n : Name) : CoreM Unit := do
 program only through the walk that proves what it denotes: there is no way to put an AST into a program by
 hand.
 
-The mark is not `@[export]`: Lean's own `@[export]` names a C symbol, and whether a declaration leaves the
-generated module is decided by its type (`Decl.isPublic`) rather than by anything written above it. -/
-initialize shipAttr : TagAttribute ←
-  registerTagAttribute `ship
-    "ship this `def`: the program carries the declaration read out of it, and its certificate"
-    (validate := readDeclaration) (applicationTime := .afterCompilation)
+`@[ship internal]` ships the declaration without putting it in the API: other declarations call it, and
+it is named by neither the exports of `index.js` nor `index.d.ts`. It is the way to keep a helper out of
+the published surface without paying `@[expand]`'s fuel at every call site. The word is not `private`:
+Lean's own `private` takes the name out of the namespace, so the walk never sees the `def` at all, and
+it is what keeps a scaffolding lemma from shipping as a claim.
+
+The mark is not `@[export]` either: Lean's own `@[export]` names a C symbol. A declaration taking a
+function stays internal whatever is written above it, because its type says so (`Decl.isPublic`). -/
+initialize shipAttr : ParametricAttribute Bool ←
+  registerParametricAttribute {
+    name := `ship
+    descr := "ship this `def`: the program carries the declaration read out of it, and its \
+      certificate. `@[ship internal]` ships it without putting it in the package's API."
+    applicationTime := .afterCompilation
+    getParam := fun n stx => do
+      let exported ←
+        if stx[1].isNone then pure true
+        else if stx[1][0].getId == `internal then pure false
+        else throwError "`@[ship {stx[1][0]}]` is not a mark this compiler knows; the only \
+          argument is `internal`, which ships the declaration without putting it in the \
+          package's API"
+      readDeclaration n exported
+      return exported
+  }
+
+/-- Whether `n` is one of the `def`s the package ships. -/
+def isShipped (env : Environment) (n : Name) : Bool := (shipAttr.getParam? env n).isSome
 
 /-- The constants a package is made of: those declared directly in `ns`, in the order they were written.
 Private ones and the ones Lean generates are left out, which is how a helper stays out of the package. -/
@@ -132,7 +158,7 @@ def shipped (ns : Name) : CoreM (Array Shipped) := do
   let members ← namespaceMembers ns
   let mut decls := #[]
   for (n, _) in members do
-    unless shipAttr.hasTag env n do continue
+    unless isShipped env n do continue
     let d := declNameFor n
     unless env.contains d do
       if ← elaborationFailed n then continue

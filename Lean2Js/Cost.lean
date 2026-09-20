@@ -1708,10 +1708,11 @@ theorem bindParams_noFn {p : Program} (ht : typesFirstOrder p = true) :
     · exact bindParams_noFn ht ps vs (fun q hq => hfo q (List.mem_cons_of_mem _ hq)) hall.2 e he
 
 /-- The fuel the artifact runs at is enough for every call the program can make: a program that passes
-`progOk` and whose `cost` fits in `defaultFuel` never answers a public call with `outOfFuel`. -/
+`progOk` and whose `cost` fits in `defaultFuel` never answers `outOfFuel` to a call whose arguments the
+entry check can read. -/
 theorem evalCall_ne_outOfFuel {p : Program} {fn : String} {d : Decl} {args : List Value}
     (hp : progOk p = true) (hfuel : cost p ≤ defaultFuel)
-    (hd : p.find? fn = some d) (hpub : d.isPublic = true) :
+    (hd : p.find? fn = some d) (hpub : d.paramsCheckable = true) :
     evalCall p fn args ≠ .error .outOfFuel := by
   rw [progOk] at hp
   simp only [Bool.and_eq_true] at hp
@@ -1730,7 +1731,7 @@ theorem evalCall_ne_outOfFuel {p : Program} {fn : String} {d : Decl} {args : Lis
         have hdp : declParamsOk d = true :=
           List.all_eq_true.mp hp.1.2 d (List.mem_of_find?_eq_some hd)
         have hnf : (!pm.ty.isFn) = true := by
-          rw [Decl.isPublic] at hpub
+          rw [Decl.paramsCheckable] at hpub
           exact List.all_eq_true.mp hpub pm hpm
         exact paramTyOk_firstOrder (List.all_eq_true.mp hdp pm hpm) (by simpa using hnf)
       refine (eval_safe p hp.1.1 defaultFuel j (declFns d) (bindParams d.params args) d.body

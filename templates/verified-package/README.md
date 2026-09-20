@@ -35,9 +35,9 @@ are reading are about the `index.js` beside them.
 ## What to change
 
 - **The `def`s in `MyLogic.lean`.** Replace `invoiceFor` and what it calls with your own, marking what
-  ships `@[ship]`. A `def` written below `ship_package` is not gathered, and `lean2js` refuses to write
-  a package that is missing it. What may go inside a marked `def` is
-  [`reference/README.md`](reference/README.md).
+  ships `@[ship]`, or `@[ship internal]` for a helper the package's API should not name. A `def` written
+  below `ship_package` is not gathered, and `lean2js` refuses to write a package that is missing it.
+  What may go inside a marked `def` is [`reference/README.md`](reference/README.md).
 - **Leave `ship_package` where it is.** It orders the declarations so every call reaches backwards,
   writes the certificate that makes each one a claim about your `def`, and makes `lake build` refuse a
   program past the fuel ceiling.
