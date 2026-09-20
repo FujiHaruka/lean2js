@@ -982,3 +982,52 @@ than a `cs.map (fold f)`, for the same reason `ofValue` / `ofValues` is one.
 **What is left is unchanged in shape and is the expensive half**: `denotes_fold`, generated per type by
 induction over the constructors with the list half in the same `mutual` block, and then `Reify` reading
 a call of a marked fold into `Core.Expr.foldE`. After that, `Example`, `Axioms` and the documents.
+
+### What `denotes_fold` and `Reify` cost, priced against the code on 2026-09-21
+
+**The alternatives are not the author's — `Reify` writes them.** This is the fact the earlier pricing
+missed, and it makes the expensive half much cheaper than "one more `denotes_matchE_*`".
+
+An author writes `Category.fold (fun n => 1) (fun n cs => 1 + Arr.sum cs) c`. There is no `match` in
+that term, so there is no matcher, no splitter, and none of the machinery `Reify.matched` needs. What
+`Reify` builds is one alternative per constructor, in declaration order, each with a pattern that *binds
+every field* — `(.ctor "group" [.bind "name", .bind "cs"], ⟦body⟧)` — and each body reified under those
+bindings.
+
+Three consequences, all of them cheapening:
+
+1. **`firstMatch` reduces.** Every pattern is a constructor applied to binds, the constructor names are
+   distinct and in declaration order, so `firstMatch alts (.obj cᵢ.name fs)` is the `i`-th alternative by
+   computation. One generated lemma per constructor, `by simp [firstMatch, matchPat, matchPats]` — the
+   same shape `Denote.lean`'s existing `#guard`s reduce by. None of `denotes_matchE_split`'s motive
+   trouble arises, because nothing is being split on.
+2. **The exhaustiveness check passes by construction**, and passes the *new* check too: a pattern that
+   binds every field is a wildcard at every folded column, which is the branch of `usefulFold` that only
+   needs the heads to be covered — and they are, one alternative per constructor.
+3. **`compileFoldAlts` type-checks against `foldFieldTys` for free**: a `.bind` is accepted at any type,
+   so the retyping the whole of `Compile.foldPatParts` exists for never has to be reasoned about on the
+   author's side.
+
+**The shape of what is generated.** `Denotes.lean` gains the plumbing, written once; `EncDeriving` gains
+the per-type walk, because `T.fold` is per type:
+
+| Where | What |
+| --- | --- |
+| `Denotes.lean` | `denotes_foldE`: the scrutinee denotes `x`, the walk lemma answers for the rest. `denotes_mapE`'s twin, with `evalFold_denotes` in place of `evalMapItems_denotes` |
+| `EncDeriving` | `T.denotes_fold`: `evalFold p f env "T" [] alts (toValue x) = .ok v → v = toValue (T.fold f₀ … fₙ x)`, by induction over `T` in a `mutual` block with the `List T` half — the same move `ofValue_toValue` / `ofValues_map` already makes |
+| `EncDeriving` | one `firstMatch` lemma per constructor, as above |
+| `Reify` | a branch on `foldOf? env n` beside the traversals. `n.getPrefix` is the Lean type, the attribute's parameter is the subset name, `T.typeDef` gives the field names the patterns bind, and each algebra argument is read with `lambdaBoundedTelescope` + `patternOf`, exactly as `matchArm` reads a match arm. An algebra argument that is not a lambda is refused the way `rulePassedOn` is |
+
+**The hypotheses `T.denotes_fold` asks for**, one per constructor: the alternative's body, under the
+bindings the fold makes, denotes `fᵢ` applied to the fields with every folded one already walked. That is
+what `Reify`'s reification of the algebra's lambda hands over, and it is the only place the induction
+hypothesis is used.
+
+**What has to be carried through the induction** is that `evalFoldFields` rebuilt the node from the
+answers, which is where `Sound.hasFieldTys_of_evalFoldFields` and the four walkers of `Eval` come back —
+but only in the `.ok` direction, so it is `eventuallyFold_of_fold`'s structure without the fuel
+existential. Budget it as the phase's one real induction, not as a step.
+
+**Measure first, again.** Before writing `T.denotes_fold`, write a `#guard` that `firstMatch` over
+generated alternatives picks the arm the constructor names — the whole plan above rests on that
+reducing, and it is one line to check.
