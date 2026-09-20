@@ -215,6 +215,98 @@ def Ty.isFn : Ty → Bool
   | .fn _ _ => true
   | _ => false
 
+mutual
+
+/-- Whether a type's own shape reaches no `dictObj`. Written through a list helper rather than
+`args.all` for the reason `Ty.beq` is: a structural recursion is what a proof can unfold.
+
+This says nothing about what a `named` type's fields hold — those come from the program, not from the
+type — so the reading a proof needs is this together with `Program.noDictObj`. -/
+def Ty.noDictObj : Ty → Bool
+  | .bool | .int53 | .uint32 | .string | .bigint | .var _ => true
+  | .named _ args => Ty.noDictObjList args
+  | .option t => Ty.noDictObj t
+  | .result ok err => Ty.noDictObj ok && Ty.noDictObj err
+  | .array t => Ty.noDictObj t
+  | .dict v => Ty.noDictObj v
+  | .dictObj _ => false
+  | .fn params ret => Ty.noDictObjList params && Ty.noDictObj ret
+
+def Ty.noDictObjList : List Ty → Bool
+  | [] => true
+  | t :: rest => Ty.noDictObj t && Ty.noDictObjList rest
+
+end
+
+mutual
+
+/-- Substituting types that reach no `dictObj` into a type that reaches none leaves one that reaches
+none. This is what carries `Ty.noDictObj` through `TypeDef.ctorsAt`, which is the only place a field's
+type is read at a use of the type it belongs to. -/
+theorem Ty.noDictObj_subst {sigma : List (String × Ty)}
+    (hs : ∀ pair ∈ sigma, Ty.noDictObj pair.2 = true) :
+    ∀ t : Ty, Ty.noDictObj t = true → Ty.noDictObj (Ty.subst sigma t) = true
+  | .bool, _ | .int53, _ | .uint32, _ | .string, _ | .bigint, _ => rfl
+  | .var n, _ => by
+    rw [Ty.subst]
+    cases hf : sigma.find? (·.1 == n) with
+    | none => simp [Ty.noDictObj]
+    | some pair => simpa using hs pair (List.mem_of_find?_eq_some hf)
+  | .named _ args, h => by
+    rw [Ty.subst, Ty.noDictObj]
+    rw [Ty.noDictObj] at h
+    exact Ty.noDictObjList_substArgs hs args h
+  | .option t, h => by
+    rw [Ty.subst, Ty.noDictObj]
+    rw [Ty.noDictObj] at h
+    exact Ty.noDictObj_subst hs t h
+  | .result ok err, h => by
+    rw [Ty.subst, Ty.noDictObj]
+    rw [Ty.noDictObj, Bool.and_eq_true] at h
+    rw [Ty.noDictObj_subst hs ok h.1, Ty.noDictObj_subst hs err h.2]; rfl
+  | .array t, h => by
+    rw [Ty.subst, Ty.noDictObj]
+    rw [Ty.noDictObj] at h
+    exact Ty.noDictObj_subst hs t h
+  | .dict v, h => by
+    rw [Ty.subst, Ty.noDictObj]
+    rw [Ty.noDictObj] at h
+    exact Ty.noDictObj_subst hs v h
+  | .dictObj _, h => by rw [Ty.noDictObj] at h; exact absurd h (by simp)
+  | .fn params ret, h => by
+    rw [Ty.subst, Ty.noDictObj]
+    rw [Ty.noDictObj, Bool.and_eq_true] at h
+    rw [Ty.noDictObjList_substArgs hs params h.1, Ty.noDictObj_subst hs ret h.2]; rfl
+
+theorem Ty.noDictObjList_substArgs {sigma : List (String × Ty)}
+    (hs : ∀ pair ∈ sigma, Ty.noDictObj pair.2 = true) :
+    ∀ ts : List Ty, Ty.noDictObjList ts = true →
+      Ty.noDictObjList (Ty.substArgs sigma ts) = true
+  | [], _ => by rw [Ty.substArgs, Ty.noDictObjList]
+  | t :: rest, h => by
+    rw [Ty.substArgs, Ty.noDictObjList]
+    rw [Ty.noDictObjList, Bool.and_eq_true] at h
+    rw [Ty.noDictObj_subst hs t h.1, Ty.noDictObjList_substArgs hs rest h.2]; rfl
+
+end
+
+/-- The types a substitution puts in reach no `dictObj` when the arguments it was built from reach
+none. `TypeDef.ctorsAt` builds its substitution by zipping the declared parameters against them. -/
+theorem Ty.noDictObj_zip {params : List String} :
+    ∀ {args : List Ty}, Ty.noDictObjList args = true →
+      ∀ pair ∈ params.zip args, Ty.noDictObj pair.2 = true := by
+  induction params with
+  | nil => intro args _ pair hm; simp at hm
+  | cons n rest ih =>
+    intro args h pair hm
+    cases args with
+    | nil => simp at hm
+    | cons a as =>
+      rw [Ty.noDictObjList, Bool.and_eq_true] at h
+      rcases List.mem_cons.mp (by simpa using hm) with rfl | hm'
+      · exact h.1
+      · exact ih h.2 pair hm'
+
 inductive Lit where
   | bool (b : Bool)
   | int53 (i : Int)
@@ -453,6 +545,52 @@ def Decl.isPublic (d : Decl) : Bool := d.exported && d.paramsCheckable
 
 def Program.publicDecls (p : Program) : List Decl := p.decls.filter Decl.isPublic
 
+/-- Whether a declared type's fields reach no `dictObj`, read before its parameters are substituted
+away. The substitution only ever puts in types the use site wrote, so reading it here is enough. -/
+def TypeDef.noDictObj (t : TypeDef) : Bool :=
+  t.ctors.all fun c => c.fields.all fun f => f.ty.noDictObj
+
+/-- Whether a declaration's boundary reaches no `dictObj`. -/
+def Decl.noDictObj (d : Decl) : Bool :=
+  d.params.all (fun param => param.ty.noDictObj) && d.ret.noDictObj
+
+/-- Whether nothing this program declares crosses the boundary as a plain object.
+
+Every claim written before a dictionary could cross as one holds under this, which is what lets those
+claims keep the exact text they have: `encodeAt_eq_encodeValue` carries them back to `encodeValue`
+rather than restating them. -/
+def Program.noDictObj (p : Program) : Bool :=
+  p.types.all TypeDef.noDictObj && p.decls.all Decl.noDictObj
+
+theorem TypeDef.noDictObj_ctorsAt {t : TypeDef} (h : t.noDictObj = true)
+    {args : List Ty} (ha : Ty.noDictObjList args = true) :
+    ∀ c ∈ t.ctorsAt args, ∀ f ∈ c.fields, Ty.noDictObj f.ty = true := by
+  intro c hc f hf
+  rw [TypeDef.ctorsAt] at hc
+  simp only [List.mem_map] at hc
+  obtain ⟨c0, hc0, rfl⟩ := hc
+  simp only [List.mem_map] at hf
+  obtain ⟨f0, hf0, rfl⟩ := hf
+  rw [TypeDef.noDictObj] at h
+  exact Ty.noDictObj_subst (Ty.noDictObj_zip ha) f0.ty
+    (List.all_eq_true.mp (List.all_eq_true.mp h c0 hc0) f0 hf0)
+
+/-- A declaration's return type, where the program reaches no `dictObj`. -/
+theorem Program.noDictObj_ret {p : Program} (hp : p.noDictObj = true)
+    {d : Decl} (hd : d ∈ p.decls) : Ty.noDictObj d.ret = true := by
+  rw [Program.noDictObj, Bool.and_eq_true] at hp
+  have := List.all_eq_true.mp hp.2 d hd
+  rw [Decl.noDictObj, Bool.and_eq_true] at this
+  exact this.2
+
+/-- A declaration's parameter types, where the program reaches no `dictObj`. -/
+theorem Program.noDictObj_param {p : Program} (hp : p.noDictObj = true)
+    {d : Decl} (hd : d ∈ p.decls) : ∀ param ∈ d.params, Ty.noDictObj param.ty = true := by
+  rw [Program.noDictObj, Bool.and_eq_true] at hp
+  have := List.all_eq_true.mp hp.2 d hd
+  rw [Decl.noDictObj, Bool.and_eq_true] at this
+  exact fun param hm => List.all_eq_true.mp this.1 param hm
+
 def Program.find? (p : Program) (name : String) : Option Decl :=
   p.decls.find? (·.name == name)
 
@@ -463,6 +601,18 @@ def Program.findType? (p : Program) (name : String) : Option TypeDef :=
 scrutinee's type, so only the typing of `ctor` uses this. -/
 def Program.ownerOf? (p : Program) (ctor : String) : Option TypeDef :=
   p.types.find? fun t => t.ctors.any (·.name == ctor)
+
+/-- The field types a constructor is read at, where the program reaches no `dictObj` and the type was
+used at arguments that reach none. This is the step `encodeAt` takes at a `named` type. -/
+theorem Program.noDictObj_findAt? {p : Program} (hp : p.noDictObj = true)
+    {n : String} {t : TypeDef} (ht : p.findType? n = some t)
+    {args : List Ty} (ha : Ty.noDictObjList args = true)
+    {ctor : String} {c : CtorDef} (hc : t.findAt? args ctor = some c) :
+    ∀ f ∈ c.fields, Ty.noDictObj f.ty = true := by
+  rw [Program.noDictObj, Bool.and_eq_true] at hp
+  refine TypeDef.noDictObj_ctorsAt
+    (List.all_eq_true.mp hp.1 t (List.mem_of_find?_eq_some ht)) ha c ?_
+  exact List.mem_of_find?_eq_some hc
 
 /-- What a type's key has to be before a constructor's name can be read as carrying it. -/
 def TypeDef.checkedKey (t : TypeDef) : Except String Unit := do
