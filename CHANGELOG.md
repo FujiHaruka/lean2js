@@ -6,6 +6,12 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- The codes an export throws are a type in `index.d.ts` rather than prose beside the signature.
+  `TrapCode` is the closed set of them and `TrapError<Code>` is what a call throws, so a consumer who
+  switches over `code` and misses one has a type error instead of a branch nobody wrote. Each function's
+  `@throws` carries the union it reaches — `TrapError<"typeError" | "divByZero">` — which is the same
+  reading off the syntax the line named before, in a form their own compiler reads.
+
 - `proof-manifest.json` names the SHA-256 of every other file the package ships, and `lean2js verify
   <dir>` reads a package back and answers whether it is still the one its own manifest speaks about.
   Until now the theorems sat in the manifest beside an `index.js` nothing tied them to, so a package

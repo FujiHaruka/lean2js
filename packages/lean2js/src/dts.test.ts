@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { Money, OrderState } from "@lean2js/verified-example";
+import type { Money, OrderState, TrapCode, TrapError } from "@lean2js/verified-example";
 import {
   add,
   addMoney,
   allLines,
+  divide,
   limitsFor,
   mostRecentFirst,
   roleRank,
@@ -109,6 +110,33 @@ describe("where the two do not line up", () => {
     expect(limits.get("daily")).toBe(1000);
     expect(push).toBeTypeOf("function");
     expect(set).toBeTypeOf("function");
+  });
+});
+
+describe("the codes an export throws", () => {
+  // A code added to or dropped from `Traps.allCodes` fails `pnpm typecheck` here: a missing key and an
+  // extra one are both errors against `Record<TrapCode, string>`. That is the whole point of publishing
+  // the codes as a union — a consumer's own exhaustive handling breaks at compile time rather than
+  // falling through at run time.
+  const explanation = {
+    typeError: "an argument the declared type does not admit",
+    int53Overflow: "arithmetic that left the safe-integer range",
+    divByZero: "a division or remainder by zero",
+    indexOutOfBounds: "an index, slice or substring outside the value it reads",
+  } satisfies Record<TrapCode, string>;
+
+  it("narrows to the codes the function it was thrown by reaches", () => {
+    const caught = ((): TrapError<"typeError" | "int53Overflow" | "divByZero"> => {
+      try {
+        divide(1, 0);
+      } catch (thrown) {
+        return thrown as TrapError<"typeError" | "int53Overflow" | "divByZero">;
+      }
+      throw new Error("a division by zero returned a number");
+    })();
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught.code).toBe("divByZero");
+    expect(explanation[caught.code]).toBe("a division or remainder by zero");
   });
 });
 

@@ -67,6 +67,10 @@ def thrownCodes : List (String × String) :=
     ("divByZero", "a division or remainder by zero"),
     ("indexOutOfBounds", "an index, slice or substring outside the value it reads") ]
 
+-- The README above and the `TrapCode` union in the `.d.ts` are two readings of one list: a code in one
+-- and not the other is a package documenting what it cannot throw, or throwing what it documents nowhere.
+#guard thrownCodes.map (·.1) == Traps.allCodes
+
 /-- The signature a consumer reads, in the types the `.d.ts` declares rather than the subset's own
 spellings: those are what `index.d.ts` says and the only ones a caller can act on. -/
 def Artifact.tsSignature (d : Core.Decl) : String :=

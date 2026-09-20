@@ -133,3 +133,15 @@ it. A `structure` that never appears in a published signature is not printed eit
 the bodies it calls, not every trap the subset has. A function that only adds carries `typeError` and
 `int53Overflow`; one that never divides does not carry `divByZero`; one that takes no arguments carries
 nothing, `typeError` being the entry check refusing an argument.
+
+It names them as a type rather than as prose: the `.d.ts` declares `TrapCode`, the closed set of codes,
+and `TrapError<Code>`, and each function throws `TrapError<...>` narrowed to its own. A consumer who
+switches over `code` and misses one has a type error rather than a branch nobody wrote.
+
+```ts
+export type TrapCode = "typeError" | "int53Overflow" | "divByZero" | "indexOutOfBounds";
+export type TrapError<Code extends TrapCode = TrapCode> = Error & { readonly code: Code };
+
+/** @throws {TrapError<"typeError" | "int53Overflow" | "divByZero">} */
+export declare function divide(a: number, b: number): number;
+```

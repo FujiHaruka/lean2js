@@ -140,11 +140,13 @@ real JavaScript answer alike, not the range of spellings.
   repository's example on another machine and fails on the diff.
 - **What the `@throws` line names is read off the syntax.** `decl_traps` proves the generated code throws
   the code `eval` traps with; *which* codes a given function can trap with is a separate question, and the
-  line in `index.d.ts` answers it by reading the body — each operation contributes the codes its case in
+  `@throws` in `index.d.ts` answers it by reading the body — each operation contributes the codes its case in
   `eval` can return, a call contributes its callee's, and a declaration handed over as a function
   contributes its own at the call that hands it over. `emit` checks that reading against every generated
   vector: one that traps with a code the line does not name fails the build. It is still an
-  over-approximation — an `Int53.div` on a path no argument can reach is listed all the same.
+  over-approximation — an `Int53.div` on a path no argument can reach is listed all the same. What it
+  names is a type, `TrapError<...>` over the closed `TrapCode` union, so the over-approximation is
+  something a consumer's own compiler reads rather than prose beside the signature.
 
 [`decl_correct`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_correct
 [`decl_traps`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.decl_traps
