@@ -646,9 +646,11 @@ def helperArgsOk (name : String) (args : List Js.JsValue) : Prop :=
 behind the table are left trusted for is what `helperArgsOk` still asks of a call.
 
 The table is not the whole of what the model assumes about hand-written JavaScript. `JsSem.eval` carries
-`__ck` and the seven traversal helpers as rules of its own rather than as rows, and those are answered by
-`HelperProof.calls_ck_checkTy`, `calls_map`, `calls_filter`, `calls_find`, `calls_all`, `calls_any`,
-`calls_reduce` and `calls_sortBy`. `__sortBy` asks something of its arguments the way four of the rows
+`__ck`, `__out` and the seven traversal helpers as rules of its own rather than as rows, and those are
+answered by `HelperProof.calls_ck_checkTy`, `calls_out_outTy`, `calls_map`, `calls_filter`, `calls_find`,
+`calls_all`, `calls_any`, `calls_reduce` and `calls_sortBy`. `calls_out_outTy` is the one of those that
+asks something of its argument: `__out` walks a value the declared type accepts, which is what the entry
+hands it and what `decl_correct` says the body produced. `__sortBy` asks something of its arguments the way four of the rows
 do: the keys of one call are all numbers or all strings, which is what the key type the compiler insists
 on gives. -/
 theorem helper_agrees (ext : Ext) (name : String) (args : List Js.JsValue) (r : Js.JsResult)

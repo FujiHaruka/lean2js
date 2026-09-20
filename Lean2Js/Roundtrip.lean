@@ -21,8 +21,8 @@ namespace Lean2Js.Parse
 /-- The names `parseNamed` gives a meaning of their own. An identifier or a callee spelled one of these
 reads back as the form the reader has a constructor for. -/
 def dispatchNames : List String :=
-  ["true", "false", "new", "__ck", "__map", "__filter", "__find", "__all", "__any", "__reduce",
-   "__sortBy"]
+  ["true", "false", "new", "__ck", "__out", "__map", "__filter", "__find", "__all", "__any",
+   "__reduce", "__sortBy"]
 
 def okCallee (s : String) : Bool := okName s && !dispatchNames.contains s
 
@@ -58,6 +58,7 @@ def RenderableExpr : Js.Expr → Bool
   | .reduceJs arr init accName elemName body =>
     RenderableExpr arr && RenderableExpr init && okName accName && okName elemName
       && RenderableExpr body
+  | .out _ e => RenderableExpr e
 termination_by e => sizeOf e
 
 def RenderableList : List Js.Expr → Bool
@@ -110,6 +111,9 @@ theorem render_dictLit (es : List (String × Js.Expr)) :
   rw [Js.Expr.render]
 theorem render_check (d : Js.TyDesc) (e : Js.Expr) :
     Js.Expr.render (.check d e) = "__ck(" ++ e.render ++ ", " ++ d.render ++ ")" := by
+  rw [Js.Expr.render]
+theorem render_out (d : Js.TyDesc) (e : Js.Expr) :
+    Js.Expr.render (.out d e) = "__out(" ++ e.render ++ ", " ++ d.render ++ ", [])" := by
   rw [Js.Expr.render]
 theorem render_mapJs (arr : Js.Expr) (b : String) (body : Js.Expr) :
     Js.Expr.render (.mapJs arr b body) =
@@ -371,6 +375,14 @@ theorem render_check_toList (d : Js.TyDesc) (e : Js.Expr) :
   simp only [String.toList_append, List.append_assoc]
   rfl
 
+theorem render_out_toList (d : Js.TyDesc) (e : Js.Expr) :
+    (Js.Expr.render (.out d e)).toList =
+      '_' :: '_' :: 'o' :: 'u' :: 't' :: '(' :: (e.render.toList ++
+        (',' :: ' ' :: (d.render.toList ++ [',', ' ', '[', ']', ')']))) := by
+  rw [render_out]
+  simp only [String.toList_append, List.append_assoc]
+  rfl
+
 /-- The four helpers that take a one-parameter arrow write the same shape around a different name. -/
 private def lambdaTail (arr : Js.Expr) (b : String) (body : Js.Expr) : List Char :=
   arr.render.toList ++ (',' :: ' ' :: '(' :: (b.toList ++
@@ -568,6 +580,10 @@ theorem parseIdentList_render (e : Js.Expr) (he : RenderableExpr e = true) (f : 
     rw [render_check_toList] at h
     exact identList_name_head f ['_', '_', 'c', 'k'] (by simp) (by decide)
       (by decide) (by decide) (by decide) _ h
+  | .out d e =>
+    rw [render_out_toList] at h
+    exact identList_name_head f ['_', '_', 'o', 'u', 't'] (by simp) (by decide)
+      (by decide) (by decide) (by decide) _ h
   | .mapJs arr b body =>
     rw [render_mapJs_toList] at h
     exact identList_name_head f ['_', '_', 'm', 'a', 'p'] (by simp) (by decide)
@@ -688,6 +704,7 @@ theorem parseArrowHead_render (e : Js.Expr) (he : RenderableExpr e = true) (f : 
   | .arrayLit items => rw [render_arrayLit_toList, List.cons_append]; exact arrowHead_ne _ (by decide) _
   | .dictLit entries => rw [render_dictLit_toList]; exact arrowHead_ne _ (by decide) _
   | .check d e => rw [render_check_toList]; exact arrowHead_ne _ (by decide) _
+  | .out d e => rw [render_out_toList]; exact arrowHead_ne _ (by decide) _
   | .mapJs arr b body => rw [render_mapJs_toList]; exact arrowHead_ne _ (by decide) _
   | .filterJs arr b body => rw [render_filterJs_toList]; exact arrowHead_ne _ (by decide) _
   | .sortByJs arr b body => rw [render_sortByJs_toList]; exact arrowHead_ne _ (by decide) _
@@ -809,6 +826,7 @@ theorem render_head (e : Js.Expr) (he : RenderableExpr e = true) :
   | .arrayLit items => exact ⟨'[', _, render_arrayLit_toList items, by simp⟩
   | .dictLit entries => exact ⟨'n', _, render_dictLit_toList entries, by decide⟩
   | .check d e => exact ⟨'_', _, render_check_toList d e, by decide⟩
+  | .out d e => exact ⟨'_', _, render_out_toList d e, by decide⟩
   | .mapJs arr b body => exact ⟨'_', _, render_mapJs_toList arr b body, by decide⟩
   | .filterJs arr b body => exact ⟨'_', _, render_filterJs_toList arr b body, by decide⟩
   | .sortByJs arr b body => exact ⟨'_', _, render_sortByJs_toList arr b body, by decide⟩
@@ -893,9 +911,9 @@ theorem parseNamed_other (f : Nat) (name : String) (h : dispatchNames.contains n
          let cs ← expect [')'] cs
          pure (Js.Expr.call name args, cs)) := by
   simp [dispatchNames] at h
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := h
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := h
   rw [parseNamed]
-  simp only [beq_iff_eq, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, if_false, ite_false,
+  simp only [beq_iff_eq, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, if_false, ite_false,
     decide_false, Bool.false_eq_true]
   rfl
 
@@ -957,6 +975,7 @@ theorem render_head_num (e : Js.Expr) (he : RenderableExpr e = true) {c : Char} 
   | .dictLit entries =>
     exact absurd (hstart 'n' _ (render_dictLit_toList entries) (by decide)) (by simp)
   | .check d e' => exact absurd (hstart '_' _ (render_check_toList d e') (by decide)) (by simp)
+  | .out d e' => exact absurd (hstart '_' _ (render_out_toList d e') (by decide)) (by simp)
   | .mapJs arr b body =>
     exact absurd (hstart '_' _ (render_mapJs_toList arr b body) (by decide)) (by simp)
   | .filterJs arr b body =>
@@ -1327,6 +1346,32 @@ theorem parseExpr_append (e : Js.Expr) (he : RenderableExpr e = true) (f : Nat)
         let cs ← expect [')'] cs
         pure (Js.Expr.check dd e', cs)) = some (Js.Expr.check d e', rest)
       rw [parseDesc_append d g (by omega) (')' :: rest)]
+      simp [expect]
+  | .out d e' =>
+    rw [RenderableExpr] at he
+    rw [render_out_toList] at hf ⊢
+    simp only [List.append_assoc, List.cons_append, List.nil_append] at hf ⊢
+    simp only [List.length_cons, List.length_append, List.length_nil] at hf
+    have hd := descSize_le d
+    obtain ⟨g, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    · show parseExpr (g + 1 + 1) ("__out".toList ++ ('(' :: (e'.render.toList ++
+        (',' :: ' ' :: (d.render.toList ++ (',' :: ' ' :: '[' :: ']' :: ')' :: rest)))))) = _
+      rw [parseExpr_name (g + 1) "__out" (by decide) _ (by intro c r hc; cases hc; decide),
+        parseNamed]
+      show (do
+        let (x, cs) ← parseExpr g (e'.render.toList ++
+          (',' :: ' ' :: (d.render.toList ++ (',' :: ' ' :: '[' :: ']' :: ')' :: rest))))
+        let cs ← expect [',', ' '] cs
+        let (dd, cs) ← parseDesc g cs
+        let cs ← expect [',', ' ', '[', ']', ')'] cs
+        pure (Js.Expr.out dd x, cs)) = some (Js.Expr.out d e', rest)
+      rw [parseExpr_append e' he g (by omega) _
+        (Sep.cons (by decide) (by decide) (by decide) _)]
+      show (do
+        let (dd, cs) ← parseDesc g (d.render.toList ++ (',' :: ' ' :: '[' :: ']' :: ')' :: rest))
+        let cs ← expect [',', ' ', '[', ']', ')'] cs
+        pure (Js.Expr.out dd e', cs)) = some (Js.Expr.out d e', rest)
+      rw [parseDesc_append d g (by omega) (',' :: ' ' :: '[' :: ']' :: ')' :: rest)]
       simp [expect]
   | .unary op e' =>
     rw [RenderableExpr] at he

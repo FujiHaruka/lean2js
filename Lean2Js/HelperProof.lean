@@ -6669,4 +6669,119 @@ theorem calls_ck_checkTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk 0
   · simp
   · rw [normV_ofJs]; simp
 
+/-! ### The walk back out the model runs
+
+`Js.outTy` is `Js.normTy` at every node but the one, and `outV` is `normV` at every node but the same
+one, so the bridge between them is `normV_ofJs` with one name substituted and one case fewer: an object
+met at a `dictObj` is no longer an arm of its own on either side. -/
+
+theorem outTy_option_unmatched {fields : List (String × Js.JsValue)} {t : TyDesc}
+    (h1 : Js.lookupField fields "tag" = some (.str "none") → False)
+    (h2 : Js.lookupField fields "tag" = some (.str "some") → False) :
+    Js.outTy tenv (Js.JsValue.obj fields) (.option t) = .obj fields := by
+  rw [Js.outTy.eq_3]
+  split
+  · next hf => exact absurd hf h1
+  · next hf => exact absurd hf h2
+  · rfl
+
+theorem outTy_result_unmatched {fields : List (String × Js.JsValue)} {ok err : TyDesc}
+    (h1 : Js.lookupField fields "tag" = some (.str "ok") → False)
+    (h2 : Js.lookupField fields "tag" = some (.str "error") → False) :
+    Js.outTy tenv (Js.JsValue.obj fields) (.result ok err) = .obj fields := by
+  rw [Js.outTy.eq_4]
+  split
+  · next hf => exact absurd hf h1
+  · next hf => exact absurd hf h2
+  · rfl
+
+theorem outTy_ctors_unmatched {fields : List (String × Js.JsValue)} {key : String}
+    {alts : List (String × List (String × TyDesc))}
+    (h : ∀ ctor : String, Js.lookupField fields key = some (.str ctor) → False) :
+    Js.outTy tenv (Js.JsValue.obj fields) (.ctors key alts) = .obj fields := by
+  rw [Js.outTy.eq_5]
+  split
+  · next ctor hf => exact absurd hf (h ctor)
+  · rfl
+
+theorem outV_ofJs (tenv : TyEnv) (x : Js.JsValue) (t : TyDesc) :
+    outV tenv (ofJs x) t = ofJs (Js.outTy tenv x t) := by
+  induction tenv, x, t using Js.outTy.induct
+    (motive2 := fun tenv fields fs =>
+      outVFields tenv (ofJsFields fields) fs = ofJsFields (Js.outFields tenv fields fs))
+    (motive3 := fun tenv entries t =>
+      outVEntries tenv (ofJsFields entries) t = ofJsFields (Js.outEntries tenv entries t))
+    (motive4 := fun tenv xs t =>
+      outVList tenv (ofJsList xs) t = ofJsList (Js.outList tenv xs t)) with
+  | case1 tenv xs t ih => rw [ofJs, outV, Js.outTy, ofJs, ih]
+  | case2 tenv entries t ih => rw [ofJs, outV, Js.outTy, ofJs, ih]
+  | case3 tenv fields t htag =>
+    rw [ofJs, outV.eq_3, lookupV_ofJsFields_str htag, Js.outTy.eq_3, htag]
+    simp [ofJs, ofJsFields, strictEq]
+  | case4 tenv fields t htag ih =>
+    rw [ofJs, outV.eq_3, lookupV_ofJsFields_str htag, Js.outTy.eq_3, htag]
+    simp [ofJs, ofJsFields, strictEq, ih]
+  | case5 tenv fields t h1 h2 =>
+    rw [ofJs, outV.eq_3, strictEq_lookupV_str_false h1, strictEq_lookupV_str_false h2,
+      outTy_option_unmatched h1 h2, ofJs]
+    simp
+  | case6 tenv fields ok err htag ih =>
+    rw [ofJs, outV.eq_4, lookupV_ofJsFields_str htag, Js.outTy.eq_4, htag]
+    simp [ofJs, ofJsFields, strictEq, ih]
+  | case7 tenv fields ok err htag ih =>
+    rw [ofJs, outV.eq_4, lookupV_ofJsFields_str htag, Js.outTy.eq_4, htag]
+    simp [ofJs, ofJsFields, strictEq, ih]
+  | case8 tenv fields ok err h1 h2 =>
+    rw [ofJs, outV.eq_4, strictEq_lookupV_str_false h1, strictEq_lookupV_str_false h2,
+      outTy_result_unmatched h1 h2, ofJs]
+    simp
+  | case9 tenv fields key alts ctor htag alt hfind ih =>
+    rw [ofJs, outV.eq_5, lookupV_ofJsFields_str htag, Js.outTy.eq_5, htag]
+    dsimp only
+    simp only [strictEq, hfind, ih, ofJs, ofJsFields]
+  | case10 tenv fields key alts ctor htag hfind =>
+    rw [ofJs, outV.eq_5, lookupV_ofJsFields_str htag, Js.outTy.eq_5, htag]
+    dsimp only
+    simp only [strictEq, hfind, ofJs]
+  | case11 tenv fields key alts h =>
+    rw [ofJs, outV.eq_5, List.find?_eq_none.mpr (fun c _ => by
+        simp only [strictEq_str_lookupV_false h c.1, Bool.false_eq_true, not_false_eq_true]),
+      outTy_ctors_unmatched h, ofJs]
+  | case12 tenv entries t ih => rw [ofJs, outV, Js.outTy, ofJs, ih]
+  | case13 tenv v key alts ih => rw [outV, Js.outTy]; exact ih
+  | case14 tenv v up b hb ih => rw [outV, Js.outTy, hb]; exact ih
+  | case15 tenv v up hb => rw [outV, Js.outTy, hb]
+  | case16 tenv v d h1 h2 h3 h4 h5 => cases v <;> cases d <;> simp_all [ofJs, outV, Js.outTy]
+  | case17 tenv fields => rw [outVFields, Js.outFields, ofJsFields]
+  | case18 tenv fields n d rest v hlk hsz ih1 ih2 =>
+    rw [outVFields.eq_2, ofJsFields_any, hlk, if_pos (by simp),
+      lookupV_ofJsFields hlk, ih1, ih2, Js.outFields.eq_2]
+    split
+    · next v' hlk' => rw [hlk] at hlk'; cases hlk'; rw [ofJsFields]
+    · next hlk' => rw [hlk] at hlk'; exact absurd hlk' (by simp)
+  | case19 tenv fields n d rest hlk ih =>
+    rw [outVFields.eq_2, ofJsFields_any, hlk, if_neg (by simp), ih, Js.outFields.eq_2]
+    split
+    · next v' hlk' => rw [hlk] at hlk'; exact absurd hlk' (by simp)
+    · rfl
+  | case20 tenv d => rw [ofJsFields, outVEntries, Js.outEntries, ofJsFields]
+  | case21 tenv k v rest t ih1 ih2 =>
+    rw [ofJsFields, outVEntries.eq_2, ih1, ih2, Js.outEntries.eq_2, ofJsFields]
+  | case22 tenv d => rw [ofJsList, outVList, Js.outList, ofJsList]
+  | case23 tenv x rest t ih1 ih2 =>
+    rw [ofJsList, outVList, ih1, ih2, Js.outList, ofJsList]
+
+/-- What the generated code's walk back out does to a result: hand it back as the model's walk out
+leaves it. Nothing is refused and nothing needs to be, which is what the hypothesis says — the value
+`__out` is handed is one the declared type accepts, and `decl_correct` is what gives that at the one
+place the compiler writes this call. -/
+theorem calls_out_outTy (ext : Ext) (x : Js.JsValue) (t : TyDesc) (h : descOk 0 t = true)
+    (hk : Js.dictKeysDistinct x = true) (hh : Js.checkTy [] x t = true) (f : Nat) :
+    callDef ext (f + outFuel [] (ofJs x) t) "__out" [ofJs x, tyVal t, Val.arr []]
+      = ofRes (.ok (Js.outTy [] x t)) := by
+  rw [← envVal_nil,
+    calls_out (tenv := []) ext (ofJs x) t h rfl (by rw [mapsOk_ofJs]; exact hk)
+      (by rw [has_checkTy]; exact hh), outV_ofJs]
+  rfl
+
 end Lean2Js.HelperSem

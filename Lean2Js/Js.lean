@@ -125,6 +125,9 @@ inductive Expr where
   | quantJs (op : Core.QuantOp) (arr : Expr) (binder : String) (body : Expr)
   | reduceJs (arr init : Expr) (accName elemName : String) (body : Expr)
   | sortByJs (arr : Expr) (binder : String) (body : Expr)
+  /-- The walk a result takes on the way back out of an entry, the mirror of `check`. It runs no check:
+  what the body handed back already has the declared type, so there is nothing left to refuse. -/
+  | out (d : TyDesc) (e : Expr)
   deriving Inhabited, BEq
 
 inductive Stmt where
@@ -179,6 +182,7 @@ def Expr.render : Expr → String
       ++ ") => (" ++ body.render ++ "))"
   | .sortByJs arr binder body =>
     "__sortBy(" ++ arr.render ++ ", (" ++ binder ++ ") => (" ++ body.render ++ "))"
+  | .out d e => "__out(" ++ e.render ++ ", " ++ d.render ++ ", [])"
 termination_by e => sizeOf e
 
 def Expr.renderList : List Expr → String

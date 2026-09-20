@@ -939,6 +939,9 @@ def eval (m : Module) (fuel : Nat) (env : JsEnv) (e : Expr) : JsResult :=
     | .check d x => do
       let v ← eval m f env x
       if checkTy [] v d then .ok (normTy [] v d) else .error "typeError"
+    | .out d x => do
+      let v ← eval m f env x
+      .ok (outTy [] v d)
     | .mapJs arr binder body => do
       match ← eval m f env arr with
       | .arr xs => do .ok (.arr (← evalMapJs m f env binder body xs))

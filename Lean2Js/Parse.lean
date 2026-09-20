@@ -732,6 +732,13 @@ def parseNamed : Nat → String → List Char → Option (Js.Expr × List Char)
       let (d, cs) ← parseDesc f cs
       let cs ← expect [')'] cs
       pure (.check d e, cs)
+    else if name == "__out" then do
+      let cs ← expect ['('] cs
+      let (e, cs) ← parseExpr f cs
+      let cs ← expect [',', ' '] cs
+      let (d, cs) ← parseDesc f cs
+      let cs ← expect [',', ' ', '[', ']', ')'] cs
+      pure (.out d e, cs)
     else if name == "__map" then do
       let (arr, binder, body, cs) ← parseLambdaCall f cs
       pure (.mapJs arr binder body, cs)
@@ -1001,6 +1008,9 @@ private def x : Js.Expr := .ident "x"
   .check (.dict (.array .bool)) x, .check (.ctors "tag" []) x,
   .check (.ctors "tag" [("none", []), ("some", [("value", .int53)])]) x,
   .check (.ctors "kind" [("free", []), ("team", [("seats", .int53)])]) x,
+  .out .bool x, .out .string x, .out (.dictObj .int53) x, .out (.array (.dictObj .bool)) x,
+  .out (.option (.dictObj .string)) x, .out (.dict (.dictObj .int53)) x,
+  .out (.mu "tag" [("leaf", []), ("node", [("kids", .array (.ref 0))])]) x,
   .mapJs x "e" x, .filterJs x "e" x, .findJs x "e" x,
   .quantJs .all x "e" x, .quantJs .any x "e" x, .reduceJs x (.num 0) "a" "e" x].all roundTrips
 

@@ -286,7 +286,7 @@ theorem okCallee_of_validateIdent {kind name : String} {u : Unit}
   have hd : name ∉ dispatchNames := by
     intro hmem
     simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
-    rcases hmem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    rcases hmem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
     · exact absurd hjs (by decide)
     · exact absurd hjs (by decide)
     · exact absurd hjs (by decide)
@@ -302,7 +302,7 @@ theorem okCallee_bodyName {name : String} (h : okName name = true) :
   have hnd : bodyName name ∉ dispatchNames := by
     intro hmem
     simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
-    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
+    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
       (have hc := congrArg String.toList hq; rw [toList_bodyName] at hc; simp at hc)
   simp [okCallee, hok, hnd]
 
@@ -1574,7 +1574,7 @@ theorem okCallee_rawParam (i : Nat) : okCallee (rawParam i) = true := by
   have hnd : rawParam i ∉ dispatchNames := by
     intro hmem
     simp only [dispatchNames, List.mem_cons, List.not_mem_nil, or_false] at hmem
-    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
+    rcases hmem with hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq | hq <;>
       (have hc := congrArg String.toList hq; rw [hlist] at hc; simp at hc)
   simp [okCallee, hok, hnd]
 
