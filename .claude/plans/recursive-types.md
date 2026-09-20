@@ -229,7 +229,8 @@ it, by induction over the constructors, with the list-walking half in a `mutual`
 that walks the type. That is the same move `ofValue_toValue` and `toValue_hasTy` already make for a
 recursive type, one step further out.
 
-**The form carries no spec.**
+**The form carries no spec.** — **and this spelling is wrong: it also has to carry its result type.**
+See "Phase 5's `Core.Expr` side, re-priced" at the end of this document.
 
 ```
 | foldE (scrut : Expr) (typeName : String) (tyArgs : List Ty) (alts : List (Pat × Expr))
@@ -285,9 +286,10 @@ only has at run time. It does not have to. `__fold` hands the **node** to one ca
 itself, with each field that came round replaced by what the callback answered for it — and the
 callback dispatches on the key the constructor's name is carried under. That is what a `match` does,
 and `Compile` already compiles `matchE` to `.arrowCall [scrutName] (chain arms) [jscrut]`: `foldE`
-compiles through the same `compileAlts` and the same `chain`, with only the application moved from
-`arrowCall` to `__fold`. So the binders stay ordinary JavaScript identifiers and `Compile.Ctx` stays
-`name → Ty` — the "change the compiler's shape rather than its vocabulary" this section rejected for the
+compiles through the same `chain`, with only the application moved from `arrowCall` to `__fold`. So the
+binders stay ordinary JavaScript identifiers and `Compile.Ctx` stays `name → Ty`. **It does not compile
+through the same `compileAlts`** — an arm binds the children's answers, so the field types move; see the
+re-pricing at the end — the "change the compiler's shape rather than its vocabulary" this section rejected for the
 module-level-function option is not paid here either.
 
 **`foldJs` is `mapJs` with two more arguments — and it landed as this, measured rather than sketched:**
@@ -358,7 +360,7 @@ def fold : Def :=
 | --- | --- |
 | ~~`calls_fold`~~ | **done.** 400 lines in `HelperProof.lean`, against the 1170 `calls_norm`'s block takes: three kinds where a `TyDesc` has a dozen, and no induction on a rank. The helper and the proof landed together |
 | ~~`Js.Expr.foldJs`~~ | **done.** The form, its printer, its reader, the roundtrip case and the evaluator's walk. The spec's printer and reader were the real work, as priced; `JsSem` was not mechanical and the measure widened |
-| `Core.Expr.foldE`, `Eval`, and the covering side | unchanged: a new form is layer 3, and `Sound` and `Correct` each gain a case — though both lean on `matchE`'s existing `compileAlts` and `chain` |
+| `Core.Expr.foldE`, `Eval`, and the covering side | **re-priced at the end of this document, and larger than this row says.** `Step` and `StepAgree` are not on this list and are not free, and `compileAlts` is not reusable |
 | `EncDeriving` emitting `T.fold` and `denotes_fold` | unchanged, and still the other expensive half |
 | `Reify` finding the fold by an attribute | unchanged, and still cheap |
 
@@ -485,7 +487,8 @@ Measured on the way: the generated `__has` accepts a value 500 levels deep on No
 does not declare at every level, and refuses a bad constructor or an out-of-range number arbitrarily far
 inside.
 
-**Phase 5 is started: `__fold`, `calls_fold` and `Js.Expr.foldJs` are in.** Its shape is chosen and its
+**Phase 5 is started: `__fold`, `calls_fold` and `Js.Expr.foldJs` are in, and the `Core.Expr` side is
+written as far as `Compile` but not landed** — see "Phase 5's `Core.Expr` side, re-priced" at the end. Its shape is chosen and its
 JavaScript side was measured rather than estimated — see "Phase 5, re-priced" above, which is what the
 reader should price the rest from. The helper is in the shipped runtime, proved and reached by nothing,
 and the form the compiler would write the call as is in the AST, printed, read back and walked by the
@@ -503,3 +506,158 @@ the directions.
 Nothing here is urgent: `.map`, `.filter`, `.foldl`, `.find?`, `.all`, `.any` and `Arr.range` already
 cover everything a body has to repeat over, so the gap phase 5 closes is exactly one — a value of a type
 that names itself can be handed in and handed back, but not walked.
+
+### Phase 5's `Core.Expr` side, re-priced against the code on 2026-09-21
+
+**Measured by writing it.** Every module below was written and built; the whole change is kept as a
+patch at `~/.claude/handoffs/-Users-haruka-dev-lean2js-foldE.patch`, which applies cleanly on
+`f411395`. It was not landed because a new `Core.Expr` constructor breaks every exhaustive match at
+once, so the smallest green commit is the whole form — and three of its modules are still unwritten.
+What follows is what the writing settled, so the leg that pays for the rest starts from the text.
+
+**Three things the section above gets wrong.**
+
+**1. The form has to carry its result type.** "The form carries no spec" is right about the spec and
+wrong about the type:
+
+```lean
+| foldE (scrut : Expr) (typeName : String) (tyArgs : List Ty) (result : Ty)
+    (alts : List (Pat × Expr))
+```
+
+A pattern that names a field which came round binds the **answer** for that field, not the field, so the
+types a `match` reads off the declared type are the wrong ones. `Reify` knows `result` — it is reading an
+elaborated Lean term whose type is `β` — so carrying it costs nothing there.
+
+**2. `Compile` cannot reuse `compileAlts`.** `compileAlts` calls `patParts`, which reads a constructor's
+field types out of `signature` (`Compile.lean:313`–`333`) — the declared ones. A fold needs them
+substituted, which is one level deep and so one new reader rather than a change to `patParts`:
+
+```lean
+def foldFieldTys (typeName : String) (tyArgs : List Ty) (result : Ty) :
+    List Field → List (String × Ty)
+  | [] => []
+  | f :: rest =>
+    let t := match foldKindOf typeName tyArgs f.ty with
+      | .self => result | .list => .array result | .plain => f.ty
+    (f.name, t) :: foldFieldTys typeName tyArgs result rest
+```
+
+`foldPatParts` is `patParts`'s `.ctor` arm over those, handing the nested patterns to the ordinary
+`patPartsList`; `compileFoldAlts` is `compileAlts` over it. **A top-level `.bind` in a fold's alternative
+is refused**, and that is not a shortcut: the rebuilt node is the declared type with every field that
+came round replaced by the answer for it, and that is not a type this language can write. `.wild` is
+fine, and naming the fields is what an author writes anyway.
+
+Exhaustiveness and unreachability are checked against the **declared** type, unchanged: the constructor
+names and arities a fold matches on are the declared ones, and only the binders' types move.
+
+**3. `Step` and `StepAgree` were priced at zero and are not zero.** The machine has to hold the walk
+over a *tree*, which is three frames and a two-function walk. `step` stays a structural match because a
+field that came round is handed back to the machine as a value to walk rather than walked in place:
+
+```lean
+  | foldScrutK (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+  | foldFieldK (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+      (ctor : String) (fields : List (String × Value)) (done : List (String × Value))
+      (name : String) (rest : List Field)
+  | foldElemK (typeName : String) (tyArgs : List Ty) (alts : List Alt) (env : Env)
+      (ctor : String) (fields : List (String × Value)) (done : List (String × Value))
+      (name : String) (doneXs restXs : List Value) (rest : List Field)
+```
+
+`continueFoldFields` / `continueFoldElems` recur on the field list and the element list alone — measure
+`(sizeOf rest, 0)` and `(sizeOf rest, 1)` — and return `.apply v (.foldScrutK … :: .foldFieldK … :: k)`
+where the walk descends. `beginFold` reads the constructor out of the value and opens the field walk.
+`Step` was 60 lines and built first try. **`StepAgree` is unwritten and is the part to budget**: it needs
+`mapItems`' shape (`StepAgree.lean:104`) carried over a value instead of a list, which means the same
+four-way induction the two proofs below take, with the continuation carried through it.
+
+**What the one test is.** `Core.foldKindOf` is read by the evaluator and by the emitter, so the two
+cannot disagree about which field comes round:
+
+```lean
+inductive FoldKind where | self | list | plain
+
+def foldKindOf (typeName : String) (tyArgs : List Ty) : Ty → FoldKind
+  | .named n as => if n == typeName && as == tyArgs then .self else .plain
+  | .array (.named n as) => if n == typeName && as == tyArgs then .list else .plain
+  | _ => .plain
+```
+
+Only the type at the same arguments comes round: `Tree Int` inside `Tree String` is a different type.
+
+**`Eval` — the shape everything else copies.** Four walkers in `evalExpr`'s mutual block, mirroring
+`HelperProof.foldV` / `foldList` / `foldListAt` / `foldPairs`. The block's measure widened from
+`(fuel, k, n)` to five components, because the fold walks a value where every other walker walks a list:
+
+| | measure |
+| --- | --- |
+| `evalExpr` | `(fuel, 0, 0, 0, 0)` |
+| `evalArgs`, `evalMapItems` and the four beside it, `evalStmts` | `(fuel, 1, 0, 0, xs.length)` |
+| `evalFold v` | `(fuel, 2, sizeOf v, 1, 0)` |
+| `evalFoldList xs` | `(fuel, 2, sizeOf xs, 2, 0)` |
+| `evalFoldListAt v` | `(fuel, 2, sizeOf v, 3, 0)` |
+| `evalFoldFields fields fs` | `(fuel, 2, sizeOf fields, 0, sizeOf fs)` |
+
+`sizeOf fields` and not `sizeOf fields + 1`: the `+ 1` leaves `sizeOf fields + 1 < 1 + sizeOf ctor +
+sizeOf fields`, which needs `0 < sizeOf ctor` for a `String` and `omega` does not know it.
+`Value.lookupFieldV` and `sizeOf_lookupFieldV` are the new pair the walk needs, written beside
+`JsSem.lookupField` / `sizeOf_lookupField`, which already existed for `checkFields`.
+
+```lean
+def evalFold (p : Program) (fuel : Nat) (env : Env) (typeName : String) (tyArgs : List Ty)
+    (alts : List Alt) (v : Value) : Except Err Value :=
+  match v with
+  | .obj ctor fields =>
+    match (p.types.find? (·.name == typeName)).bind (fun td => td.ctors.find? (·.name == ctor)) with
+    | some c => do
+      let fs ← evalFoldFields p fuel env typeName tyArgs alts fields c.fields
+      match firstMatch alts (.obj ctor fs) with
+      | some (binds, body) => evalExpr p fuel (binds ++ env) body
+      | none => .error .noMatchingAlternative
+    | none => .error (.typeError s!"fold expects a value of {typeName}")
+  | _ => .error (.typeError s!"fold expects a value of {typeName}")
+```
+
+Fuel does not move, as priced: the recursion is on the value, so a fold costs one expression node
+however deep the value is and `Cost.cost` stays syntactic.
+
+**The two proofs that were written, and what they cost.** Both are a strong induction on a bound for the
+value's size (`Nat.strongRecOn`), carrying **all four walkers at once** because they call each other, and
+taking the enclosing induction's `ih` as a hypothesis. Both compiled first try.
+
+| | where | lines |
+| --- | --- | --- |
+| `fold_refines` — more fuel does not change what a fold answers | `Fuel.lean`, before `evalExpr_succ` | 60 |
+| `hfoldI` — no function value leaks out of a fold | `Cost.lean`, a `have` beside `hmap` and the rest | 75 |
+
+Six unfolding lemmas in `Eval.lean` are what let them `rw`. `evalFoldFields`'s has to be split in two —
+`evalFoldFields_cons_none` and `_cons_some`, each `rw [eq_def]; repeat' split; all_goals simp_all` —
+because the arm matches on `h : lookupFieldV fields fd.name` with the equation bound, and a statement
+written without the binder is a different `match`.
+
+**The cheap ones, in full.** `Traps`, `Bound`, `Gather` and two of `Cost`'s walks take `foldE` on
+`matchE`'s arm verbatim (`| .matchE scrut alts | .foldE scrut _ _ _ alts =>`). One decision inside them:
+
+- **`Bound.repeatBound` answers `none` for a fold**, where `matchE` takes the max over its arms. A
+  fold's arm runs once per node and can append the answers for the children, so the copies multiply with
+  a depth the text does not say. Declining is what refuses a `Str.repeat` reading a fold's result, and it
+  is the safe direction; `matchE`'s max would underestimate.
+- **`rangeOf` is left on its `_ => Range.unknown` fallback**, for the same reason and because `unknown`
+  is already the conservative answer.
+
+**What is left, in the order it has to go.**
+
+| | State |
+| --- | --- |
+| `Core`, `Value`, `Eval`, `Traps`, `Bound`, `Fuel`, `Step`, `Cost`, `Gather`, `Compile` | **written and building** — in the patch |
+| `Renderable` | started. `compileExpr.mutual_induct` gains a motive for `compileFoldAlts`, so the `apply` at `Renderable.lean:824` needs a fifth conjunct, a `foldE` case beside the `match` one, two `compileFoldAlts` cases, a `renderable_foldPatParts` beside `renderable_patParts`, and `renderable_foldJs` |
+| `Sound`, `Decl`, `Correct` | unwritten. `Correct`'s is the biggest single item left: relating `evalFold` on `Value` to `JsSem.evalFoldJs` on `JsValue` through `encodeValue`, by the same four-way induction, and it is `calls_fold`-scale on the other side |
+| `StepAgree` | unwritten — see 3 above |
+| `Exhaustive` | unwritten, expected small |
+| `Reify` finding the fold by an attribute, `EncDeriving` emitting `T.fold` and `denotes_fold` | unwritten, and still the other expensive half |
+| `Example`, `Axioms`, the documents, `/proof-audit` | unwritten |
+
+**Budget it as two or three legs, not one.** Ten modules of it are written; the three proofs that are
+left are each the size of the two that are done put together.
