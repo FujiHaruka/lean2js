@@ -126,6 +126,30 @@ if lake exe lean2js MyLogic --out unproved 2> unproved.err; then
 fi
 grep -q 'rests on sorryAx' unproved.err || { cat unproved.err; echo "lean2js refused for another reason"; exit 1; }
 
+# A theorem nothing can satisfy proves cleanly, reaches no forbidden axiom and ships looking like a
+# guarantee, so emit offers each claim's binders the edge cases the vectors are drawn from and names the
+# ones nothing among them met. It reports rather than refuses: satisfiability is not decidable, and a
+# theorem whose witness lies outside the sample is honest. The lines are the ones
+# reference/proving.md puts in front of an author, so they are pinned as they are written there.
+cp MyLogic.lean.orig MyLogic.lean
+cat >> MyLogic.lean <<'LEAN'
+
+namespace MyLogic
+/-- A team workspace with no seats at all is billed nothing. -/
+theorem empty_team_is_free (seats : Int) (hzero : seats = 0) (hsome : 0 < seats) :
+    seatCharge .team seats = 0 := by
+  exfalso; omega
+end MyLogic
+LEAN
+lake exe lean2js MyLogic --out unwitnessed 2> unwitnessed.err
+grep -q 'no argument among 19 tried meets the hypotheses of `empty_team_is_free` (seats)' unwitnessed.err \
+  || { cat unwitnessed.err; echo "emit did not print the line proving.md shows for a claim nothing meets"; exit 1; }
+grep -q 'witnessed 1 of 2 theorems that carry hypotheses; 3 carry none and 0 were not probed' unwitnessed.err \
+  || { cat unwitnessed.err; echo "emit did not print the summary proving.md shows"; exit 1; }
+test -s unwitnessed/index.js \
+  || { echo "emit refused a package over a claim it could not witness rather than reporting it"; exit 1; }
+cp MyLogic.lean.orig MyLogic.lean
+
 # A `def` marked `@[expand]` is written out where it is called, so it has to leave nothing of itself in
 # the package: no export, no entry in the types, no function at all.
 cat > MyLogic.lean <<'LEAN'

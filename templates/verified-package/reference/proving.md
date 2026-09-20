@@ -150,9 +150,30 @@ evaluate through, including the ones inside an `Except` or an `Option`. Without 
 
 ## Three things to check before you publish a theorem
 
-- **Can the hypotheses be met?** A hypothesis nothing satisfies makes the theorem true and empty, and no
-  gate catches it: it compiles, it reaches no forbidden axiom, and it ships looking like a guarantee. If
-  a hypothesis names a dictionary key or a constructor, check with `#eval` that some argument reaches it.
+- **Can the hypotheses be met?** A hypothesis nothing satisfies makes the theorem true and empty, and
+  nothing refuses it: it compiles, it reaches no forbidden axiom, and it ships looking like a guarantee.
+  `lean2js` looks — it offers each claim's binders the edge cases the vectors are drawn from, decides the
+  hypotheses at every tuple, and names the claims nothing among them met. So a theorem like
+
+  ```lean
+  /-- A team workspace with no seats at all is billed nothing. -/
+  theorem empty_team_is_free (seats : Int) (hzero : seats = 0) (hsome : 0 < seats) :
+      seatCharge .team seats = 0 := by
+    exfalso; omega
+  ```
+
+  comes back as
+
+  ```
+  no argument among 19 tried meets the hypotheses of `empty_team_is_free` (seats)
+  witnessed 1 of 2 theorems that carry hypotheses; 3 carry none and 0 were not probed
+  ```
+
+  A line says what was tried, not what is true, and nothing is refused over one: a theorem whose witness
+  lies outside the sample gets a line and is right anyway. A binder whose type carries no `Enc` — a
+  `Type`, a function — and a hypothesis with no `Decidable` leave a claim *not probed*, counted apart
+  from one nothing met, so `#eval` is still what settles a hypothesis naming a dictionary key or a
+  constructor.
 - **Does the docstring say what the signature says?** The docstring is published as the description of
   the claim, so prose that promises more than the theorem states is the one defect the compiler cannot
   see.

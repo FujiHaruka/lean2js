@@ -155,6 +155,18 @@ real JavaScript answer alike, not the range of spellings.
   source, a package is the same bytes** — that is what makes a digest something a third party can
   reproduce rather than only compare, and it is checked rather than proved: CI regenerates this
   repository's example on another machine and fails on the diff.
+- **A shipped theorem's hypotheses are tried at an argument.** A theorem nothing can satisfy proves
+  cleanly, reaches no forbidden axiom and ships looking like a guarantee, so `emit` offers each claim's
+  data binders the edge cases the vectors are drawn from, decides the hypotheses at every tuple, and
+  names on stderr the claims nothing among them met. It reports rather than refuses, and what it reports
+  is what it did — *no argument among the ones tried meets these hypotheses*, never *these hypotheses
+  cannot be met*. Whether an arbitrary `Prop` has a witness is not decidable, so a theorem whose witness
+  lies outside the sample is honest and turning it away would be this compiler lying in the other
+  direction. A binder whose type carries no `Enc` and a hypothesis with no `Decidable` leave a claim
+  unprobed rather than unwitnessed, and the summary counts the two apart, so a run that names nothing
+  cannot be read as a run where the walk did not happen. None of it reaches `proof-manifest.json`: what
+  is published is the claim and its proof, and that a witness turned up on the machine that built the
+  package is a property of neither.
 - **What the `@throws` line names is read off the syntax.** `decl_traps` proves the generated code throws
   the code `eval` traps with; *which* codes a given function can trap with is a separate question, and the
   `@throws` in `index.d.ts` answers it by reading the body — each operation contributes the codes its case in

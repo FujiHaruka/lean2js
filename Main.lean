@@ -1,5 +1,6 @@
 import Lean
 import Lean2Js
+import Lean2Js.Probe
 
 /-!
 `lean2js` — writes a verified module out as an npm package.
@@ -94,6 +95,14 @@ private unsafe def namedConstant (ns n : Name) : MetaM (Option Constant) := do
     a claim that reads it by name publishes a symbol nothing in the package answers for. A constant a \
     shipped theorem names has to be an `Int`, a `String` or a `Bool`"
 
+/-- What `lean2js` read out of the user's module: the package, and the two names the witness walk goes
+on from. The walk names the program's constant rather than carrying the program across, and it needs the
+claims under their full names rather than the short ones the manifest publishes. -/
+private structure Reading where
+  artifact : Artifact
+  programConst : Name
+  claims : Array Name
+
 /-- Every public theorem in the manifest's namespace is a claim, so each one's axioms are read here:
 `lake build` is no help, since a proof plugged with `sorry` is still a term and the build passes with a
 warning.
@@ -102,7 +111,7 @@ The certificates are the exception the manifest does not list one by one. There 
 shipped declaration, saying it computes the `def` it was read from, so what a reader wants is that they
 are all there rather than seventy restatements of the same shape — and a declaration without one does not
 ship at all. -/
-private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
+private unsafe def readArtifact (inv : Invocation) : MetaM Reading := do
   let ns := inv.manifestConst.getPrefix
   let manifest ← evalConstCheck Manifest ``Manifest inv.manifestConst
   let members ← Core.Dsl.namespaceMembers ns
@@ -160,18 +169,130 @@ private unsafe def readArtifact (inv : Invocation) : MetaM Artifact := do
         every public theorem in {ns} ships as a claim, and a claim ships only when its proof reaches no \
         further than {allowed}"
     used := used ++ axioms
-  let claims : List Claim ← (theorems.filter (!certificates.contains ·)).toList.mapM fun n => do
+  let claimNames := theorems.filter (!certificates.contains ·)
+  let claims : List Claim ← claimNames.toList.mapM fun n => do
     return { name := toString (n.replacePrefix ns .anonymous), statement := ← statementOf ns n,
              doc := (← findDocString? (← getEnv) n).map (·.trimAscii.copy) }
   let mut constants : Array Constant := #[]
-  for n in theorems.filter (!certificates.contains ·) do
+  for n in claimNames do
     for c in (← getConstInfo n).type.getUsedConstants do
       unless c.getPrefix == ns do continue
       if constants.any (·.name == toString (c.replacePrefix ns .anonymous)) then continue
       if let some k ← namedConstant ns c then constants := constants.push k
   let axioms := ((used.map toString).qsort (fun a b => decide (a < b))).toList.eraseDups
-  return { manifest, program, claims, constants := constants.toList,
-           source := toString inv.module, axioms, docs := docs.toList }
+  let artifact : Artifact := { manifest, program, claims, constants := constants.toList,
+                               source := toString inv.module, axioms, docs := docs.toList }
+  return { artifact, programConst, claims := claimNames }
+
+/-- How many tuples of arguments one claim's hypotheses are tried at. It caps a product taken per theorem
+that carries a hypothesis, of which a package has few, rather than per declaration the way the vectors
+are. -/
+private def witnessBudget : Nat := 256
+
+/-- How wide a sample each binder's own type is drawn at before the budget narrows it. It is the width
+the vectors are generated at, so an argument this finds is one the differential run would have offered
+the declarations too. -/
+private def witnessWidth : Nat := 12
+
+/-- What trying one claim's hypotheses at sampled arguments came to. -/
+private inductive Witness where
+  /-- The claim carries no hypotheses, so this is not a way for it to be empty. -/
+  | noHypotheses
+  /-- Something the sample does not reach: a binder whose type carries no `Enc`, a hypothesis with no
+  `Decidable`, or a type nothing sampled decoded into. It is reported apart from a claim nothing
+  witnessed, because there is a real difference between the two and the summary keeps it. -/
+  | notProbed
+  /-- An argument among the ones tried meets the hypotheses. -/
+  | met
+  /-- None of them did, after that many arguments were built and decided. -/
+  | unmet (tried : Nat) (binders : Array Name)
+
+/-- Walks one claim's telescope and tries its hypotheses at sampled arguments.
+
+The walk sorts the binders: an instance is synthesised and substituted away, a `Prop` is a hypothesis, a
+type carrying an `Enc` is data the sample can reach, and anything else — a `Type`, a function, a type
+with no `Enc` — leaves the claim unprobed. What it found is folded into one closed term written in
+`Lean2Js.Probe`, and that term is compiled and run once inside the user's own environment: the program is
+named rather than carried, since it is already a constant of that environment, and the sample is
+generated there rather than reflected across. -/
+private unsafe def probeClaim (programConst n : Name) : MetaM Witness := do
+  Meta.forallTelescopeReducing (← getConstInfo n).type fun xs _ => do
+    let mut data : Array (Expr × Expr × Expr) := #[]
+    let mut hyps : Array Expr := #[]
+    let mut instFVars : Array Expr := #[]
+    let mut instVals : Array Expr := #[]
+    let mut reachable := true
+    for x in xs do
+      let t ← instantiateMVars (← Meta.inferType x)
+      if (← x.fvarId!.getBinderInfo).isInstImplicit then
+        match ← Meta.trySynthInstance t with
+        | .some e =>
+          instFVars := instFVars.push x
+          instVals := instVals.push e
+        | _ => reachable := false
+      else if ← Meta.isProp t then
+        hyps := hyps.push t
+      else
+        let inst? ← observing? do
+          let .some inst ← Meta.trySynthInstance (← Meta.mkAppM ``Enc #[t])
+            | throwError "no Enc for {t}"
+          return inst
+        match inst? with
+        | some inst => if t.hasFVar then reachable := false else data := data.push (x, t, inst)
+        | none => reachable := false
+    if hyps.isEmpty then return .noHypotheses
+    unless reachable do return .notProbed
+    let mut prop := hyps[0]!
+    for i in [1 : hyps.size] do
+      prop := mkApp2 (mkConst ``And) prop hyps[i]!
+    prop := prop.replaceFVars instFVars instVals
+    let dataIds := data.map (·.1.fvarId!)
+    unless (collectFVars {} prop).fvarIds.all (dataIds.contains ·) do return .notProbed
+    let some decided ← observing? (Meta.mkDecide prop) | return .notProbed
+    let mut body := mkApp (mkConst ``Probe.decided) decided
+    for (x, t, inst) in data.reverse do
+      body := mkApp3 (mkConst ``Probe.arg) t inst (← Meta.mkLambdaFVars #[x] body)
+    let tys ← Meta.mkListLit (mkConst ``Core.Ty)
+      (data.toList.map fun (_, t, inst) => mkApp2 (mkConst ``Enc.ty) t inst)
+    let outcome ← Meta.evalExpr' Probe.Outcome ``Probe.Outcome
+      (mkApp5 (mkConst ``Probe.probe) (mkConst programConst) (mkNatLit witnessBudget)
+        (mkNatLit witnessWidth) tys body)
+    if outcome.decoded == 0 then return .notProbed
+    if outcome.witness.isSome then return .met
+    return .unmet outcome.decoded (← data.mapM fun (x, _, _) => x.fvarId!.getUserName)
+
+/-- One line per claim whose hypotheses no sampled argument met, and one line saying what the walk
+covered — a run that printed nothing would otherwise read the same as a run where the walk never
+happened.
+
+What a line says is what was done: *no argument among the ones tried meets these hypotheses*, never
+*these hypotheses cannot be met*. Satisfiability of an arbitrary `Prop` is not decidable, a theorem whose
+witness lies outside the sample is honest, and refusing one would be this compiler lying in the other
+direction. Nothing here reaches `proof-manifest.json` either: what is published is the claim and its
+proof, and that a witness turned up on this machine is a property of neither. -/
+private unsafe def witnessReport (ns programConst : Name) (claims : Array Name) :
+    MetaM (Array String) := do
+  let mut lines : Array String := #[]
+  let mut probed := 0
+  let mut witnessed := 0
+  let mut bare := 0
+  let mut unprobed := 0
+  for n in claims do
+    match ← probeClaim programConst n with
+    | .noHypotheses => bare := bare + 1
+    | .notProbed => unprobed := unprobed + 1
+    | .met =>
+      probed := probed + 1
+      witnessed := witnessed + 1
+    | .unmet tried binders =>
+      probed := probed + 1
+      let named := String.intercalate ", " (binders.toList.map toString)
+      lines := lines.push s!"no argument among {tried} tried meets the hypotheses of \
+        `{n.replacePrefix ns .anonymous}` ({named})"
+  let carriesNone := if bare == 1 then "1 carries none" else s!"{bare} carry none"
+  let unreached := if unprobed == 1 then "1 was not probed" else s!"{unprobed} were not probed"
+  return lines.push s!"witnessed {witnessed} of {probed} theorems that carry hypotheses; \
+    {carriesNone} and {unreached}"
 
 private structure FileDigest where
   file : String
@@ -223,10 +344,19 @@ private unsafe def run (inv : Invocation) : IO UInt32 := do
   unless (← rebuild inv.module) do return 1
   initSearchPath (← findSysroot)
   enableInitializersExecution
-  let env ← importModules #[{ module := inv.module }] {} (trustLevel := 1024) (loadExts := true)
-  match ← EIO.toBaseIO ((readArtifact inv).toIO (printingContext inv.manifestConst.getPrefix) { env }) with
+  -- `Lean2Js.Probe` is the language the witness walk's term is written in, and that term is compiled
+  -- and run inside this environment. A user's module imports `Lean2Js`, which does not reach it: it is
+  -- named here rather than put on the path every consumer's build compiles.
+  let env ← importModules #[{ module := inv.module }, { module := `Lean2Js.Probe }] {}
+    (trustLevel := 1024) (loadExts := true)
+  let ns := inv.manifestConst.getPrefix
+  let read : MetaM (Artifact × Array String) := do
+    let r ← readArtifact inv
+    return (r.artifact, ← witnessReport ns r.programConst r.claims)
+  match ← EIO.toBaseIO (read.toIO (printingContext ns) { env }) with
   | .error e => IO.eprintln e; return 1
-  | .ok (artifact, _) =>
+  | .ok ((artifact, report), _) =>
+    for line in report do IO.eprintln line
     emit inv.outDir artifact
     return 0
 

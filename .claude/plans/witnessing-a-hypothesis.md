@@ -46,24 +46,21 @@ false at the first value tried.
 the way `readArtifact` already evaluates a `Core.Decl` out of a constant. A hypothesis with no
 `Decidable` instance is *not probed*, and lands in the same bucket as an unsamplable binder.
 
-**The open question, settled.** A sampled `Value` has to reach the elaborator as an `Expr`, and this
-repository has no `ToExpr Value`. **Derive it** — `deriving instance Lean.ToExpr for Lean2Js.Value`
-elaborates as it stands, with no hand-written instance and no help for the `UInt32` field, checked with
-`lake env lean` on a scratch file (2026-09-20):
+**No value crosses back into the elaborator.** The sample does not have to be reflected as an `Expr` at
+all. `readArtifact` already holds the program as a *constant* of the user's environment, so the term the
+walk builds names that constant and generates the sample on the far side of the crossing: one
+`evalExpr` per claim runs the whole probe, and nothing needs a `ToExpr Value`.
 
-```
-#eval toExpr (Value.obj "Money" [("amount", .int53 5), ("currency", .str "JPY")])
--- Lean2Js.Value.obj "Money" (List.cons … (Prod.mk … "amount" (Lean2Js.Value.int53 …)) …)
-#eval toExpr (Value.uint32 3)
--- Lean2Js.Value.uint32 (OfNat.ofNat.{0} UInt32 3 (UInt32.instOfNat 3))
-```
+What the walk builds per claim is `Probe.probe program cap width [Enc.ty α₁, …] f`, where `f` is the
+binders folded outward — one `Probe.arg` per data binder, ending in `Probe.decided (decide P)` under all
+of them, with `P` the conjunction of the hypotheses and its instance binders substituted away. A binder
+whose type still mentions a free variable, and a `P` `mkDecide` finds no instance for, leave the claim
+unprobed.
 
-It cannot live in `Lean2Js/Value.lean`: that module is on the path a user's package imports and has no
-`import Lean`, and pulling the frontend in there would put it in every consumer's build. A new
-`Lean2Js/Reflect.lean`, imported by `Main.lean` alone, is where it goes. From an `Expr` of a `Value`,
-the binder's own value is `Enc.ofValue v |>.get!` applied at the binder's type, and a hypothesis is
-decided by synthesising `Decidable` for it and `whnf`-ing `decide h` — no tactic framework needed,
-since `readArtifact` is already in `MetaM`.
+The runtime half is `Lean2Js/Probe.lean`, and it has no `import Lean`: the term is compiled inside the
+environment of the user's own module, so every constant it names has to be one that environment holds,
+and a module pulling the frontend in would drag all of it there. `Main.lean` names that module in
+`importModules` rather than `Lean2Js.lean` importing it, so a user's package never compiles it.
 
 ## What the walk finds on this repository's own example
 
@@ -76,34 +73,36 @@ for the rest. Run over every public theorem of `Lean2Js.Example` (scratch file, 
 - the certificates are excluded from the claims already, and each carries `f : Nat` and `v : Value`;
 - most of the remaining claims are compiler-level — `m : Js.Module`, `jargs : List Js.JsValue`,
   `ty : Core.Ty`, `err : Err` — none of which has an `Enc`, so they land in *not probed*;
-- `clamped_quantity_in_range` is the one claim of the shape this feature is for: `data=1 hyps=2
-  opaque=[]`, the binder being `quantity : Int` and the hypotheses `int53Min ≤ quantity` and
-  `quantity ≤ int53Max`, both `Decidable`.
+- `clamped_quantity_in_range` is the shape this feature is for: `data=1 hyps=2 opaque=[]`, the binder
+  being `quantity : Int` and the hypotheses `int53Min ≤ quantity` and `quantity ≤ int53Max`, both
+  `Decidable`.
 
-So the example is a poor demonstration and the template is the right one: the case
-`scripts/check-template.sh` pins has to be a theorem of a user's shape — an `Int` or a `String` binder
-and a hypothesis nothing meets — and the summary line is what keeps the near-silence on this repository
-from reading as "the check did not run".
+What the emit prints for this repository's own example is `witnessed 3 of 3 theorems that carry
+hypotheses; 17 carry none and 19 were not probed`, so the example is a poor demonstration and the
+template is the right one: the case `scripts/check-template.sh` pins is a theorem of a user's shape — an
+`Int` binder and two hypotheses that cannot hold together — and the summary line is what keeps the
+near-silence on this repository from reading as "the check did not run".
 
-**A wrinkle the sampling has to answer.** A sampled `Value` becomes the binder's own value through
-`Enc.ofValue`, which returns an `Option`. There is no `Inhabited α` to `get!` through, so either the
-sample is filtered by evaluating `(Enc.ofValue v).isSome` before the proposition is built, or the
-proposition is `(Enc.ofValue v).elim False (fun a => hyp a)` and a failed decode counts as unmet — which
-is the direction that produces a false alarm, and **A false alarm is worse than silence** below says
-which way to go. Filter first.
+**A sample that does not decode is evidence of nothing.** `Enc.ofValue` returns an `Option` and there is
+no `Inhabited α` to `get!` through, so `Probe.arg` drops such a value rather than counting it as unmet:
+counting it would be the false alarm that **A false alarm is worse than silence** below rules out.
+`Outcome.decoded` is what the printed count reports, and a claim nothing decoded for is unprobed rather
+than unwitnessed.
 
 ## What it says
 
-One line per claim it could not witness, on stderr, after the vector count and before the write:
+One line per claim it could not witness, on stderr, before the vector count and the write. The walk
+is over the claims, which `readArtifact` has just finished reading, and `emit` is where the package
+starts:
 
 ```
-no argument among 240 tried meets the hypotheses of `unlisted_is_free` (prices, sku)
+no argument among 19 tried meets the hypotheses of `empty_team_is_free` (seats)
 ```
 
 and, so that a clean run is not silence that could also mean "the check did not run":
 
 ```
-witnessed 6 of 6 theorems that carry hypotheses; 2 carry none and 1 was not probed
+witnessed 1 of 2 theorems that carry hypotheses; 3 carry none and 0 were not probed
 ```
 
 Nothing is written into `proof-manifest.json`. What is published is the claim and its proof; that a
@@ -114,9 +113,9 @@ package cannot re-run the search.
 
 | File | What moves |
 | --- | --- |
-| a new `Lean2Js/Reflect.lean`, imported by `Main.lean` alone | `deriving instance ToExpr for Value` |
+| a new `Lean2Js/Probe.lean`, named by `Main.lean` alone | the term the walk folds: `arg`, `decided`, `run`, `tuples`, `probe` |
 | `Main.lean` | the telescope walk, the sampling, the report; beside `readArtifact`, which already has the environment and the `MetaM` |
-| `Lean2Js/Vectors.lean` | nothing, if `edgeCases` is enough; a cap on the tuple count if it is not |
+| `Lean2Js/Vectors.lean` | nothing: `edgeCases` was enough, and the cap lives in `Probe` |
 | `docs/guarantees.md` | a bullet under **What is checked rather than proved** |
 | `templates/verified-package/reference/proving.md` | the by-hand `#eval` instruction gains "and the emit says so too" |
 | `scripts/check-template.sh` | a theorem with a hypothesis nothing meets, asserted by the line it prints |

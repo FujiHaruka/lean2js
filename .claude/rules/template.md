@@ -25,6 +25,10 @@ is sold on, each by the message the user would see:
   (`write Arr.length instead`) — written under a coercion, which is the shape the head of the term alone
   does not reach
 - a theorem proved with `sorry` (`rests on sorryAx`)
+- a theorem whose hypotheses no sampled argument meets — the one case here that is *not* a refusal:
+  the package is still written, and what is pinned is the pair of lines `reference/proving.md` puts
+  in front of an author (`no argument among 19 tried meets the hypotheses of` and the summary
+  beside it), because a wording that drifts from that document is the failure this catches
 - a `structure` whose constructor was never named (`would ship as "mk"`)
 - a field named the key its own type is told apart by (`may not have a field named kind`), beside the
   happy path for `@[discriminator]`, which goes all the way through the differential run

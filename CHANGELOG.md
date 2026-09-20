@@ -6,6 +6,26 @@ what decides which compiler your artifact was built by.
 
 ## Unreleased
 
+- **`emit` looks for an argument that meets each shipped theorem's hypotheses**, and names on stderr the
+  claims that nothing among the ones it tried met:
+
+  ```
+  no argument among 19 tried meets the hypotheses of `empty_team_is_free` (seats)
+  witnessed 1 of 2 theorems that carry hypotheses; 3 carry none and 0 were not probed
+  ```
+
+  A theorem nothing can satisfy proves cleanly, reaches no forbidden axiom and ships looking like a
+  guarantee, and until now the only things looking for one were an author's own `#eval` and a reader of
+  the proof. Each claim's data binders are offered the edge cases the vectors are drawn from, and the
+  hypotheses are decided at every tuple until one meets them.
+
+  **It reports rather than refuses.** Whether an arbitrary `Prop` has a witness is not decidable, so a
+  line says what was tried rather than what is true, and a theorem whose witness lies outside the sample
+  is left alone. A binder whose type carries no `Enc` and a hypothesis with no `Decidable` leave a claim
+  unprobed rather than unwitnessed, and the summary counts the two apart so that a run naming nothing
+  cannot be read as a run where the walk did not happen. None of it reaches `proof-manifest.json`: what
+  is published is the claim and its proof.
+
 - **`@[ship internal]`** ships a declaration without putting it in the package's API: other declarations
   call it as they call any other, and it appears in neither `index.d.ts` nor the exports of `index.js`.
   Until now the only ways to keep a helper off the published surface were to give it a function
