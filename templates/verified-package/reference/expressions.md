@@ -24,11 +24,11 @@ parameter or from another declaration.
 | `++` | `String` / `List` |
 | `min` `max` | `Int` / `UInt32` |
 
-**`/` on `Int` is refused.** Lean's `/` floors and the subset's division truncates, so the same symbol
-read as the other operation would silently change what the function means. Write `Int53.div`,
+**`/` on `Int` is refused.** Lean's `/` floors and the subset's division truncates, so reading the same
+symbol as the other operation would silently change what the function means. Write `Int53.div`,
 `Int53.mod` or `Int53.abs`.
 
-Division by zero, an `Int53` that overflows and a read out of range trap — see
+Division by zero, an `Int53` that overflows and a read out of range trap:
 [`javascript.md`](javascript.md).
 
 ## Conditions, bindings, branches
@@ -46,17 +46,14 @@ match state with
 | .cancelled reason => reason
 ```
 
-- A pattern is `_`, a number, a string, `true` / `false`, a constructor, or a name that binds. Patterns
-  nest, and a wildcard may follow an arm that binds (`| .some price => price | _ => 0`).
-- A binder written `_` does not appear in the generated code; a named binder becomes a variable of that
-  name.
-- Arms have to be exhaustive, which is Lean's own rule. Where they are, the last arm is taken without a
-  test.
+- A pattern is `_`, a number, a string, `true` / `false`, a constructor, or a name that binds, and they
+  nest. A binder written `_` leaves nothing in the generated code; a named one becomes a variable of
+  that name.
+- The last arm is taken without a test, exhaustiveness being Lean's own rule.
 - **`match` reads one value.** `match state, event with` comes back `matches on more than one value,
   which this walk does not read`. Nest instead: match the state, and match the event inside each arm.
-- `match` on `Option` and `Except` reads the same way, as does `if let`.
-- What is matched need not be a variable — the answer of a call will do — and an arm may read that value
-  again.
+- `match` on `Option` and `Except` reads the same way, as does `if let`. What is matched need not be a
+  variable — the answer of a call will do — and an arm may read that value again.
 
 ## Calls and building values
 
@@ -75,9 +72,8 @@ Arr.get xs 0                          an index
 priced tenPercentOff amount           handing a declaration to a call
 ```
 
-- What you may call is a **`@[ship] def` in the same namespace**. `ship_package` puts the declarations in
-  the order every call reaches backwards in, and Lean's own refusal of mutual recursion is what stops a
-  cycle before this does.
+- What you may call is a **`@[ship] def` in the same namespace**. Lean's own refusal of mutual recursion
+  is what stops a cycle before this does.
 - **A function is only ever a name.** What may be handed to a call of your own is the name of a
   declaration, never a lambda written in place: `priced tenPercentOff amount` is read, `priced (fun x =>
   x) amount` is refused. A function may take at most one argument, and `ship_package` places a
@@ -95,5 +91,4 @@ states.map (fun state => match state with | .shipped _ trackingId => trackingId 
 Arr.count amounts (fun amount => amount < 0)
 ```
 
-The name of a shipped declaration works in every one of those places too
-(`quantities.map clampToTen`).
+The name of a shipped declaration works in every one of those places too (`quantities.map clampToTen`).

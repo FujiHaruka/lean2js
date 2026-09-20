@@ -2,9 +2,8 @@
 
 Prove your business logic in Lean 4, and ship it as an ordinary npm package.
 
-**One person writes the Lean; everyone else writes TypeScript.** What the rest of your team installs is a
-dependency with no build step, no runtime and no Lean in it, so the cost of the proofs is paid once, by
-whoever writes the logic, and not by the code that calls it.
+**One person writes the Lean; everyone else writes TypeScript.** What the rest of your team installs is
+a dependency with no build step, no runtime and no Lean in it.
 
 ```
 Ordinary Lean    →  verified compiler  →  npm package  →  React / Next / Node
@@ -27,9 +26,7 @@ const invoice = invoiceFor({ tag: "team" }, 12, { tag: "percentOff", percent: 10
 //     subtotal: 9300, discount: 930, total: 8370 } }
 ```
 
-The `.d.ts` is generated from the same declarations the theorems are about. Sum types become
-discriminated unions, records become objects with a `tag`, `Array<T>` becomes `readonly T[]`, and
-`Dict<V>` becomes `ReadonlyMap<string, V>`:
+The `.d.ts` is generated from the same declarations the theorems are about:
 
 ```ts
 export type Plan =
@@ -44,8 +41,8 @@ export declare function invoiceFor(plan: Plan, seats: number, discount: Discount
 ```
 
 An argument the declared type does not admit never reaches the body: the generated function checks it at
-the boundary and throws. Arithmetic that leaves `Int53`, division by zero and out-of-range access throw
-as well, carrying the code the reference semantics reports.
+the boundary and throws the code the reference semantics reports, as arithmetic leaving `Int53`,
+division by zero and out-of-range access do.
 
 ```js
 seatCharge({ tag: "team" }, "12");             // Error: typeError
@@ -57,41 +54,22 @@ seatCharge({ tag: "team" }, 9007199254740991); // Error: int53Overflow
 | File | What it is |
 | --- | --- |
 | `index.js` | ESM. The runtime helpers it calls are confined to the `__` prefix |
-| `index.d.ts` | The types above. Consumers need nothing else to call the package |
+| `index.d.ts` | The types above, with a `@throws` line per function |
 | `proof-manifest.json` | Theorems, the axioms they rest on, the compiler and Lean versions, the public API |
-| `README.md` | The public API in TypeScript, what a call throws, the theorems and the axioms — the page npm shows |
-| `package.json` | `exports` / `sideEffects` / `engines`, and `"private": true` until you say otherwise |
+| `README.md` | The public API, what a call throws, the theorems and the axioms — the page npm shows |
+| `package.json` | `"private": true` until the manifest says otherwise |
 
 ## Quickstart
 
-You need [elan](https://github.com/leanprover/elan) (Lean 4.33.1) and `node` on your `PATH`: `lean2js`
-runs every generated vector against the assembled package on Node before it writes anything. The first
-`lake build` fetches and builds this library from source — about a minute on an M-series Mac, and `.lake`
-ends up around 270MB. Everything after that is incremental.
-
-New to Lean? [Functional Programming in Lean](https://lean-lang.org/functional_programming_in_lean/) is
-enough; the subset is a small part of what it covers, and none of it is dependent types.
-
-A package is three files.
+`elan` (Lean 4.33.1) and `node` on your `PATH`: every generated vector is run against the assembled
+package on Node before anything is written.
 
 ```toml
 # lakefile.toml
-name = "myLogic"
-version = "0.1.0"
-defaultTargets = ["MyLogic"]
-
 [[require]]
 name = "Lean2Js"
 git = "https://github.com/FujiHaruka/lean2js"
 rev = "v0.2.0"
-
-[[lean_lib]]
-name = "MyLogic"
-```
-
-```
--- lean-toolchain
-leanprover/lean4:v4.33.1
 ```
 
 ```lean
@@ -109,13 +87,6 @@ inductive Plan where
   deriving Enc
 
 @[ship]
-def includedSeats (plan : Plan) : Int :=
-  match plan with
-  | .free => 3
-  | .team => 5
-  | .enterprise => 25
-
-@[ship]
 def seatPrice (plan : Plan) : Int :=
   match plan with
   | .free => 0
@@ -123,14 +94,14 @@ def seatPrice (plan : Plan) : Int :=
   | .enterprise => 2500
 
 @[ship]
-def billableSeats (plan : Plan) (seats : Int) : Int :=
-  max (max seats 0 - includedSeats plan) 0
-
-@[ship]
 def seatCharge (plan : Plan) (seats : Int) : Int :=
-  seatPrice plan * billableSeats plan seats
+  seatPrice plan * max seats 0
 
 ship_package
+
+/-- A workspace on the free plan is never billed for seats, whatever seat count it reports. -/
+theorem free_plan_is_never_charged (seats : Int) : seatCharge .free seats = 0 := by
+  simp [seatCharge, seatPrice]
 
 def manifest : Manifest := {
   package := "@example/my-logic"
@@ -143,53 +114,32 @@ end MyLogic
 ```sh
 lake build                           # checks the logic and the theorems
 lake exe lean2js MyLogic --out dist  # checks them again, then writes the npm package
-# 2733 vectors agree on Node v24.18.0
-# needs 99 of the 10000 fuel the artifact runs at
-# wrote 9 exports to dist
+# 471 vectors agree on Node v24.19.0
+# needs 11 of the 10000 fuel the artifact runs at
+# wrote 2 exports and 1 theorems to dist
 ```
 
-`lean2js` is an executable the `Lean2Js` library owns, and `lake exe` resolves it out of the dependency —
-you never write one. It takes a module name, reads that module's `manifest`, the `program` and the public
-theorems beside it, and writes the package.
-
+`lean2js` takes a module name and reads the `manifest`, the program and the public theorems beside it.
 It refuses rather than writes when the program reaches outside what it can stand behind: a vector on
 which the generated JavaScript and the reference semantics disagree, a theorem resting on `sorry`, a
 declaration without a certificate or one `ship_package` did not gather, or a program past the fuel the
 artifact runs at. Nothing lands in `--out` when it refuses.
 
-[`templates/verified-package/`](templates/verified-package/) is this package with the rest of the example
-— a discount type, an invoice assembled from line items, validation that refuses a negative seat count,
-and four theorems. Copy it and start replacing declarations. A package with no theorems is written all
-the same, and its README says plainly that it ships none, so the proofs can come once the shape of the
-logic has settled.
+[`templates/verified-package/`](templates/verified-package/) is this with the rest of the example — a
+discount type, an invoice assembled from line items, validation that refuses a negative seat count, and
+four theorems. A package with no theorems is written all the same, so the proofs can come once the shape
+of the logic has settled.
 
 ## Writing the logic
 
-You write ordinary Lean, and `@[ship]` marks what ships. Two rules draw the subset. **A value is one of
-the seven things JavaScript has** — `boolean`, `number`, `bigint`, `string`, `Array`, `Map`, a tagged
-object — which is why the vocabulary is `Arr.*` / `Str.*` / `Dict.*` rather than Lean's library. And
-**every call goes to a name written above it**: no recursion, no closure and no function built where it
-stands, so the fuel a program needs follows from its syntax. One question decides almost all of it:
-**could you write it in plain JavaScript, with no function in a variable, and no loop but an `Array`
-method?** A `def` that leaves the subset is refused by name, with the term the walk stopped at and the
-rule it broke.
+`@[ship]` marks what ships, and two rules draw the subset. **A value is one of the seven things
+JavaScript has** — `boolean`, `number`, `bigint`, `string`, `Array`, `Map`, a tagged object — which is
+why the vocabulary is `Arr.*` / `Str.*` / `Dict.*` rather than Lean's library. And **every call goes to
+a name written above it**: no recursion, no closure and no function built where it stands, so the fuel a
+program needs follows from its syntax. One question decides almost all of it: **could you write it in
+plain JavaScript, with no function in a variable, and no loop but an `Array` method?**
 
 ```lean
-inductive Discount where
-  | noDiscount
-  | percentOff (percent : Int)
-  | amountOff (amount : Int)
-  deriving Enc
-
-@[ship]
-def discountOn (discount : Discount) (subtotal : Int) : Int :=
-  match discount with
-  | .noDiscount => 0
-  | .percentOff percent =>
-    let rate := min (max percent 0) 100
-    Int53.div (max subtotal 0 * rate) 100
-  | .amountOff amount => min (max amount 0) (max subtotal 0)
-
 @[ship]
 def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String Invoice :=
   if seats < 0 then .error "a seat count cannot be negative"
@@ -212,83 +162,54 @@ def invoiceFor (plan : Plan) (seats : Int) (discount : Discount) : Except String
 | Strings (`Str.trim` / `Str.upper` / `Str.lower` / `Str.startsWith` / `Str.endsWith` / `Str.includes` / `Str.indexOf?` / `Str.split` / `Str.join` / `Str.replace` / `Str.repeat` / `Str.padStart` / `Str.substring`) and an `Int53` in decimal, both ways (`Int53.toString` / `Str.toInt?`) | Regular expressions |
 | `Dict V` (string keys, emitted as a `Map`) | Plain objects used as dictionaries |
 
-Where JavaScript and Lean disagree the generated code follows neither silently: division by zero,
-`Int53` overflow and out-of-range access trap, `/` truncates rather than flooring, string length is
-counted in code points, equality is structural, and `-0` is normalised to `0`.
-[`reference/`](templates/verified-package/reference/README.md) is the whole of the subset — the
-declarations, the vocabulary with its signatures, and where an answer differs from JavaScript's.
+A `def` that leaves the subset is refused by name, with the term the walk stopped at. Where JavaScript
+and Lean disagree the generated code follows neither silently: division by zero, `Int53` overflow and
+out-of-range access trap, `/` truncates, string length is counted in code points, equality is
+structural, and `-0` is normalised to `0`.
+[`reference/`](templates/verified-package/reference/README.md) is the whole of the subset.
 
 ## Writing theorems
 
-Theorems are about your own `def`s. Neither the interpreter nor the AST appears in them, and the proofs
-are the ones you would write about any Lean function. **There is no Mathlib here**: what you prove with
-is Lean's own `rfl`, `decide`, `simp`, `omega` and `cases`, which is what the shapes in
-[`reference/proving.md`](templates/verified-package/reference/proving.md) are written around.
+Theorems are about your own `def`s; neither the interpreter nor the AST appears in them. **There is no
+Mathlib here** — `rfl`, `decide`, `simp`, `omega` and `cases` are what you prove with, and
+[`reference/proving.md`](templates/verified-package/reference/proving.md) is written around the shapes
+those close.
 
-```lean
-/-- A workspace on the free plan is never billed for seats, whatever seat count it reports. -/
-theorem free_plan_is_never_charged (seats : Int) : seatCharge .free seats = 0 := by
-  simp [seatCharge, seatPrice]
-```
-
-What carries that down to the shipped JavaScript is the certificate `ship_package` wrote beside the
-declaration: it says the function the package exports computes this very `def`. The rest — that the
-generated code agrees with the reference semantics, throws the same codes, and refuses at the boundary
-what the semantics would not accept — is proved once, about every program.
+What carries a theorem down to the shipped JavaScript is the certificate `ship_package` wrote beside the
+declaration: it says the exported function computes this very `def`. The rest — agreement with the
+reference semantics, the same trap codes, refusal at the boundary — is proved once, about every program.
 
 **You do not write the list of theorems.** `lean2js` collects every public theorem in the manifest's
-namespace, uses the statement Lean prints for it as the wording and the docstring as the description, and
+namespace, takes the statement Lean prints as the wording and the docstring as the description, and
 writes both into `proof-manifest.json` and the package's `README.md`. A lemma you do not want published
-is `private`. **`sorry` builds clean**, with nothing but a warning, so `lean2js` looks at the axioms each
-theorem rests on before writing and refuses anything beyond `propext`, `Classical.choice` and
-`Quot.sound`.
+is `private`. `sorry` builds clean, so the axioms behind each theorem are checked before anything is
+written and one beyond `propext`, `Classical.choice` or `Quot.sound` stops the emit.
 
 ## What is guaranteed
 
 - **Proved about the compiler, once.** For every expression form in the subset, the generated JavaScript
-  agrees with the reference semantics: it returns the same value, throws the same code where the
-  semantics traps, and refuses at the boundary what the semantics would not accept. The text of
-  `index.js` reads back as the module the compiler built, and the `.d.ts` admits every argument the entry
-  check accepts.
-- **Checked for your package, before it is written.** Every vector generated for your program is run
-  twice — the reference semantics against the model of the generated JavaScript inside Lean, and against
-  the assembled package loaded into Node. One disagreement and nothing is written.
+  returns what the reference semantics returns, throws the same code where it traps, and refuses at the
+  boundary what it would not accept. `index.js` reads back as the module the compiler built, and the
+  `.d.ts` admits every argument the entry check accepts.
+- **Checked for your package, before it is written.** Every generated vector is run twice: the reference
+  semantics against the model of the generated JavaScript inside Lean, and against the assembled package
+  loaded into Node. One disagreement and nothing is written.
 - **Proved by you, and carried with the package.** Your theorems ship in `proof-manifest.json` with the
-  axioms they rest on. Each is about a `def` of yours, and the certificate beside its declaration is what
+  axioms they rest on, each about a `def` of yours, and the certificate beside that declaration is what
   makes it a claim about the export of the same name.
 
-One caveat, and it is in the types: `Int53` and `UInt32` both map to `number`, so TypeScript accepts a
+One caveat, and it is in the types: `Int53` and `UInt32` are both `number`, so TypeScript accepts a
 number that is not an integer, or is outside their range, and the call is refused at run time with
-`typeError`. Nothing else is narrower than it looks: fields are read by name, so their order is free,
-keys the type does not declare are ignored, and every spelling a JavaScript caller can construct is
-inside what the theorems state.
+`typeError`. Nothing else is narrower than it looks — fields are read by name, keys the type does not
+declare are ignored, and every spelling a JavaScript caller can construct is inside what the theorems
+state.
 
-Still trusted: how TypeScript reads the printed `.d.ts` text, Lean's own kernel and elaborator, and Node.
-And no proof here can tell you whether the rule you wrote down is the rule the business wanted — a wrong
-rule ships proved.
+Still trusted: how TypeScript reads the printed `.d.ts` text, Lean's own kernel and elaborator, and
+Node. And no proof here can tell you whether the rule you wrote down is the rule the business wanted.
 
 [`docs/guarantees.md`](docs/guarantees.md) has the whole assembly, and the
 [Lean reference](https://fujiharuka.github.io/lean2js/) has the statements, their hypotheses and the
 proofs.
-
-## Publishing what it writes
-
-`dist/` is a complete package: no dependencies, no build step, nothing to configure. The generated
-`package.json` carries `"private": true` until the manifest says otherwise.
-
-```lean
-def manifest : Manifest := {
-  package := "@your-scope/your-logic"
-  version := "0.1.0"
-  isPrivate := false
-  license := some "MIT"
-  repository := some "https://github.com/you/your-logic"
-}
-```
-
-`license` and `repository` go into `package.json` as written. Then `cd dist && npm publish --access
-public`. Inside a monorepo, point the workspace at the output directory instead and leave
-`isPrivate := true`.
 
 ## License
 

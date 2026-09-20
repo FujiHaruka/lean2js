@@ -29,6 +29,18 @@ from that map. A reader — usually an agent — opens one of them, not all of t
 exactly one and the others link to it. Adding a section means asking which file already owns the
 question before adding a seventh.
 
+## Assume the reader knows their job
+
+The reader is a software engineer who writes Lean. What `lake exe` resolves, what `npm publish` does,
+how a `lakefile.toml` is laid out, what a discriminated union is, what `omega` decides — none of that is
+written here. **Only what this repository decides is**: which subset is read, what an operation answers,
+what the compiler refuses, how far the proofs reach. A sentence a competent reader could have written
+themselves is padding, however true it is.
+
+The corollary is that a generated package is a package like any other. It carries `"private": true` and
+the manifest can turn that off; how to publish an npm package, or point a workspace at a directory, is
+not this repository's subject.
+
 ## Write the final state only
 
 No diffs, no history, no "this used to be", no rejected alternatives, no defending a decision. The test

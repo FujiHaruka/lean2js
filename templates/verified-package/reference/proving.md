@@ -11,16 +11,14 @@ README. A lemma you do not want published is `private`.
 ## What you are proving with
 
 - **There is no Mathlib.** The dependency is Lean 4 and this library, so `norm_num`, `ring`, `linarith`
-  and `field_simp` come back as `unknown tactic`.
-- What is there is Lean's own: `rfl`, `decide`, `simp`, `simp_all`, `omega`, `cases`, `induction`,
-  `exact`, `constructor`, `split`, `unfold` and `intro`.
+  and `field_simp` come back as `unknown tactic`. What is there is Lean's own: `rfl`, `decide`, `simp`,
+  `simp_all`, `omega`, `cases`, `induction`, `exact`, `constructor`, `split`, `unfold`, `intro`.
 - **Lean's own `List` lemmas are in the default `simp` set** — `List.filter_filter`,
-  `List.length_append`, `List.map_append`, `List.mem_filter` and many more. A goal about two `filter`s in
-  a row, or a `map` over an append, often closes with a bare `simp`. Try that before an induction.
-- **`String` is the exception**: its lemmas are not in the set. `(a ++ b) ++ c = a ++ (b ++ c)` needs
+  `List.length_append`, `List.map_append`, `List.mem_filter` and many more — so a goal about two
+  `filter`s in a row, or a `map` over an append, often closes with a bare `simp`. Try that before an
+  induction.
+- **`String` is the exception**: its lemmas are not in the set, so `(a ++ b) ++ c = a ++ (b ++ c)` needs
   `String.append_assoc` named.
-- `omega` decides linear arithmetic over `Int` and `Nat`, which covers most `min` / `max` / bounds goals.
-- `decide` closes a goal that is decidable and concrete, not one with a variable in it.
 
 ## The shapes that come up
 
@@ -40,7 +38,7 @@ theorem negative_seats_are_refused (plan : Plan) (discount : Discount) (seats : 
     invoiceFor plan seats discount = .error "a seat count cannot be negative" := by
   simp [invoiceFor, hneg]
 
-/-- An array peeled one element at a time. The prelude's vocabulary carries the empty case and the
+/-- An array peeled one element at a time: the prelude's vocabulary carries the empty case and the
 `x :: xs` case as `simp` equations. -/
 theorem total_of_three (a b c : Int) : Arr.sum [a, b, c] = a + b + c := by
   simp; omega
@@ -60,10 +58,9 @@ theorem large_orders_are_tier_three (quantity : Int) (hbig : 100 ≤ quantity) :
   split <;> omega
 ```
 
-**`decide` reaches less far than it looks.** It needs a `Decidable` instance for the whole proposition,
-and an equation between two values of your own `structure`, or between two `Except String YourType`, does
-not get one — not even with `deriving DecidableEq` on every part. `rfl` is what closes those: it runs
-both sides.
+**`decide` reaches less far than it looks.** An equation between two values of your own `structure`, or
+between two `Except String YourType`, gets no `Decidable` instance — not even with `deriving DecidableEq`
+on every part. `rfl` is what closes those: it runs both sides.
 
 ```lean
 theorem free_plan_invoice : invoiceFor .free 0 .noDiscount = .ok ⟨[⟨"Free seats", 0⟩], 0, 0, 0⟩ := rfl
@@ -71,9 +68,9 @@ theorem free_plan_invoice : invoiceFor .free 0 .noDiscount = .ok ⟨[⟨"Free se
 
 ## Where `simp` goes wrong
 
-- **Naming a definition in `simp` replaces every rule about it with its body.** The `simp` hint points
-  the wrong way in all three cases below: it reports the argument that stopped matching as *unused*,
-  which is the one to keep.
+- **Naming a definition in `simp` replaces every rule about it with its body.** In all three cases below
+  the `simp` hint points the wrong way: it reports the argument that stopped matching as *unused*, which
+  is the one to keep.
   - A hypothesis about a call. Where `h : totalOf amounts = 500`, `simp [totalOf, h]` opens
     `totalOf amounts` into `Arr.sum amounts` before `h` can fire. Drop `totalOf`: `simp [h]` closes it.
   - A prelude name that already carries equations. `simp` closes `Str.join [a, b] "-" = a ++ "-" ++ b` on
@@ -83,7 +80,7 @@ theorem free_plan_invoice : invoiceFor .free 0 .noDiscount = .ok ⟨[⟨"Free se
     `h : prices.get sku = none` needs `simp [priceOrZero, h]`, because `prices.get sku` does not appear
     until `priceOrZero` is opened.
 - **Spell a numeric literal the way the goal spells it.** `simp` computes `14 * 24 * 60 * 60 * 1000` in
-  the goal but not inside a hypothesis handed to it as a rewrite rule, so a hypothesis written
+  the goal but not inside a hypothesis handed to it as a rewrite rule, so one written
   `elapsed > 14 * 24 * 60 * 60 * 1000` will not fire against a goal holding `1209600000`. Pick one
   spelling, or normalise with `omega`.
 - **State a hypothesis the way the `def` tests it, and open the helper that tests it.** If the body asks
@@ -140,14 +137,14 @@ theorem unlisted_is_free (prices : Dict Int) (sku : String) (h : prices.get sku 
   simp [priceOrZero, h]
 ```
 
-A theorem stated this way says something for every catalogue, and it does not break when a price changes.
+Stated this way the theorem says something for every catalogue, and it does not break when a price
+changes.
 
 ## `#eval`
 
-`#eval` checks that a hypothesis can be met at all, and it needs your types to be printable: `deriving
-Enc, Repr` on every type you `#eval` through, including the ones inside an `Except` or an `Option`.
-Without `Repr`, `#eval invoiceFor .free 3 .noDiscount` fails with `Unable to synthesize MonadEval
-instance`.
+`#eval` checks that a hypothesis can be met at all, and it needs `deriving Enc, Repr` on every type you
+evaluate through, including the ones inside an `Except` or an `Option`. Without `Repr` the failure reads
+`Unable to synthesize MonadEval instance` rather than anything about printing.
 
 ## Three things to check before you publish a theorem
 

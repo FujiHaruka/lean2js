@@ -5,8 +5,8 @@ Two rules draw the subset.
 **1. A value is one of the seven things JavaScript has.** `boolean`, `number`, `bigint`, `string`,
 `Array`, `Map`, and the tagged object `{ tag: ... }`. `Option`, `Except` and the types you declare with
 `deriving Enc` are the tagged object, under the key the type declares; `Dict` is the `Map`; `Int`,
-`UInt32` and `BigInt` are three names because JavaScript has two number types and a safe range inside
-one of them.
+`UInt32` and `BigInt` are three names for JavaScript's two number types and the safe range inside one of
+them.
 
 **2. Every call goes to a name written above it.** No recursion, no closure, no function built where it
 stands: a function reaches a call as the name of a declaration. Repetition is the seven array
@@ -37,9 +37,8 @@ shorthand for a `match`.
 | `if seats < 0 then` | yes — the `Decidable` instance is gone before anything runs |
 | `@[expand] def f [Inhabited α]` | yes — an expansion's instance never reaches the AST |
 
-The last two are what "no type classes" would get wrong. Nothing may survive to run time that is not a
-value: an instance resolved while the declaration is read costs nothing, and a `@[ship] def` is
-monomorphic because a declaration has nowhere to put a type variable.
+The last two are what "no type classes" would get wrong. The rule is that **nothing may survive to run
+time that is not a value**, which is also why a `@[ship] def` is monomorphic.
 
 | Where to look | |
 | --- | --- |

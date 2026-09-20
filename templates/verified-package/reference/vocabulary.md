@@ -9,13 +9,12 @@ constructors and the operators.
 | On | What you write | Instead of |
 | --- | --- | --- |
 | `List T` | `Arr.length` `Arr.get` `Arr.slice` | `List.length` counts in `Nat`; a read past the end traps rather than answering a default |
-| | `Arr.sortByKey` | `List.mergeSort` takes a comparison, which would have to be proved a total order. The key's type carries the order: `Int` or `String` |
-| | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's repeat by recursion, which the walk does not read |
-| `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API, which is not read at all |
-| `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | Lean's `/`, which floors where the subset truncates, and `toString`, a class method |
+| | `Arr.sortByKey` | `List.mergeSort`, which takes a comparison. The key's type carries the order: `Int` or `String` |
+| | `Arr.take` `Arr.drop` `Arr.isEmpty` `Arr.contains` `Arr.sum` `Arr.count` `Arr.head?` `Arr.last?` `Arr.flatten` `Arr.flatMap` | Lean's, which repeat by recursion |
+| `String` | `Str.length` `Str.substring` `Str.isEmpty` `Str.trim` `Str.upper` `Str.lower` `Str.startsWith` `Str.endsWith` `Str.includes` `Str.indexOf?` `Str.split` `Str.join` `Str.replace` `Str.repeat` `Str.padStart` `Str.toInt?` | Lean's `String` API, none of which is read |
+| `Int` / `BigInt` | `Int53.div` `Int53.mod` `Int53.abs` `Int53.toString` `BigInt.div` `BigInt.mod` `BigInt.abs` | `/`, which floors where the subset truncates, and `toString` |
 | `Dict V` | `Dict.ofList` `Dict.ofPairs` `.get` `.set` `.has` `.erase` `.keys` `.values` `.size` `Dict.getD` | `List (String × V)`, which already encodes as an array |
-| `Option T` | `Opt.getD` `Opt.map` | `Option.getD`, which is imported before this library is read |
-| `Except E A` | `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | `Except.map`, the same |
+| `Option T` / `Except E A` | `Opt.getD` `Opt.map` `Exc.getD` `Exc.map` `Exc.mapError` `Exc.toOption` | `Option.getD` and `Except.map`, imported before this library is read |
 
 ## Signatures
 
