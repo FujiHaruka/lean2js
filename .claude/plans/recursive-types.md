@@ -265,6 +265,92 @@ value beside one on the constructor list. Budget it as the phase, not as a step 
 **Do the stack bound first.** It is independent of all of this, it is measured (see Risks), and it is a
 sentence missing from `docs/guarantees.md` today whether or not phase 5 is ever started.
 
+### Phase 5, re-priced against the code on 2026-09-21: the JavaScript side is cheaper than the section above says
+
+Three of the costs the section above puts on the JavaScript side are not there. Measured by writing the
+helper into `Lean2Js/Helper.lean`, building, and running it — not by reading.
+
+**The trusted base does not move.** The section above budgets "one row in `HelperSem.prim` for applying
+an arrow read out of an object", and calls that a real addition to the table. It is not needed:
+`Helper.Expr` already has `.index`, `.field` and `.apply`, and `HelperSem.applyVal` already resolves an
+`.ext`, so reading a callback out of an object by a tag read off the value and applying it is spelled in
+forms that are all there. Run on the model: the callback the tag names is the one that answers, and a
+tag the table does not name is `stuck` rather than thrown — which is the outcome a proof has to rule
+out, and the compiler's own alternative table is what rules it out.
+
+**One callback rather than one per constructor, and then the arity problem is not there either.** A
+constructor's field count varies and `Helper.Expr.apply` carries a *syntactic* argument list, so a
+helper applying one arrow per constructor would need a new form for applying a callback to a list it
+only has at run time. It does not have to. `__fold` hands the **node** to one callback — the node
+itself, with each field that came round replaced by what the callback answered for it — and the
+callback dispatches on the key the constructor's name is carried under. That is what a `match` does,
+and `Compile` already compiles `matchE` to `.arrowCall [scrutName] (chain arms) [jscrut]`: `foldE`
+compiles through the same `compileAlts` and the same `chain`, with only the application moved from
+`arrowCall` to `__fold`. So the binders stay ordinary JavaScript identifiers and `Compile.Ctx` stays
+`name → Ty` — the "change the compiler's shape rather than its vocabulary" this section rejected for the
+module-level-function option is not paid here either.
+
+**`foldJs` is `mapJs` with one more argument.**
+
+```
+| foldJs (scrut : Expr) (spec : FoldSpec) (binder : String) (body : Expr)
+```
+
+rendering `__fold(scrut, "tag", <spec>, (binder) => body)`. `mapJs` is the twin to copy in `Js`,
+`JsSem`, `Parse`, `Roundtrip` and `Renderable`, which is the technique that has paid all chain long.
+
+**The helper, written and run.** Two `Def`s in the existing vocabulary, 24 lines of printed JavaScript:
+`__fold(x, key, spec, f)`, which is one expression, and `__foldFields(x, key, fields, spec, f)`, which
+walks the constructor's fields and is the twin of `__normFields`. The spec is an object keyed by
+constructor name holding that constructor's fields in declared order as `[name, kind]` pairs, with
+`kind` one of `"self"`, `"list"` and `"plain"` — everything `EncDeriving.kindOf` already computes. Run
+on the model against a three-level `Category`, with a callback counting nodes: 4.
+
+The two `Def`s as they were run, so the leg that pays for `calls_fold` starts from the text rather than
+from the description. They go last in `Helper.defs`, after `ck`:
+
+```lean
+def foldFields : Def :=
+  { name := "__foldFields", params := ["x", "key", "fields", "spec", "f"]
+    body := .block [
+      .const "out" (.arrayLit [.arrayLit [.var "key", .index (.var "x") (.var "key")]]),
+      .forOf "g" (.var "fields") [
+        .const "n" (.index (.var "g") (.num 0)),
+        .const "kind" (.index (.var "g") (.num 1)),
+        .const "v" (.index (.var "x") (.var "n")),
+        .ifThen (.bin "===" (.var "kind") (.str "self")) [
+          .push "out" (.arrayLit [.var "n",
+            .call "__fold" [.var "v", .var "key", .var "spec", .var "f"]])],
+        .ifThen (.bin "===" (.var "kind") (.str "list")) [
+          .const "ys" (.arrayLit []),
+          .forOf "c" (.var "v") [
+            .push "ys" (.call "__fold" [.var "c", .var "key", .var "spec", .var "f"])],
+          .push "out" (.arrayLit [.var "n", .var "ys"])],
+        .ifThen (.bin "===" (.var "kind") (.str "plain"))
+          [.push "out" (.arrayLit [.var "n", .var "v"])]],
+      .ret (.prim "Object.fromEntries" [(.var "out")]) ] }
+
+def fold : Def :=
+  { name := "__fold", params := ["x", "key", "spec", "f"]
+    body := .expr (.apply (.var "f")
+      [.call "__foldFields" [(.var "x"), (.var "key"),
+        .index (.var "spec") (.index (.var "x") (.var "key")), (.var "spec"), (.var "f")]]) }
+```
+
+**What is left is where the cost actually sits, and none of it moved.**
+
+| | |
+| --- | --- |
+| `calls_fold` | still the phase. `calls_norm`'s block is 1170 lines of which `calls_norm_aux` is 410; the fold's spec has three kinds where a `TyDesc` has a dozen and needs no induction on a rank, so smaller than that — but it is the same kind of proof, and it is what makes the helper more than dead code |
+| `Core.Expr.foldE`, `Eval`, and the covering side | unchanged: a new form is layer 3, and `Sound` and `Correct` each gain a case — though both lean on `matchE`'s existing `compileAlts` and `chain` |
+| `EncDeriving` emitting `T.fold` and `denotes_fold` | unchanged, and still the other expensive half |
+| `Reify` finding the fold by an attribute | unchanged, and still cheap |
+
+**The order this re-pricing suggests.** The helper cannot land before `calls_fold`: this repository keeps
+dead code only where a theorem covers it — `comparable`'s entry is the precedent — so a runtime helper
+nothing calls and nothing proves is not a state to leave the tree in. `calls_fold` and the helper are one
+commit; everything above is the commit after it.
+
 ## Phases
 
 Each phase leaves every gate green and the artifact regenerated.
@@ -283,8 +369,10 @@ Each phase leaves every gate green and the artifact regenerated.
    `Lean2Js/Example.lean`, its theorems, its `#print axioms` lines, and the sentences in `README.md`,
    `docs/guarantees.md`, `CHANGELOG.md` and `templates/verified-package/reference/` that say a type may
    not name itself.
-5. **Walking one.** Not started, and **priced** — see "Phase 5, priced" above for the spelling, the
-   `Core.Expr` form, the JavaScript side and where the cost sits. The fold in the vocabulary first — it
+5. **Walking one.** Not started, and **priced** — see "Phase 5, priced" above for the spelling and the
+   `Core.Expr` form, and "Phase 5, re-priced" for the JavaScript side, which was measured rather than
+   estimated and came out cheaper. The first commit is `calls_fold` together with the helper it is
+   about; nothing else can land before it. The fold in the vocabulary first — it
    leaves `Cost` where it is — and a `def` that calls itself only where that is not enough, at a depth
    the entry check bounds. What decides either is the one fact above: a bounded depth is what keeps
    `Cost.cost` syntactic and what keeps V8's stack out of the picture.
@@ -371,7 +459,8 @@ Measured on the way: the generated `__has` accepts a value 500 levels deep on No
 does not declare at every level, and refuses a bad constructor or an out-of-range number arbitrarily far
 inside.
 
-**Phase 5 is not started, and its shape is now chosen rather than open.** A shipped `def` still reads
+**Phase 5 is not started; its shape is chosen and its JavaScript side is now measured rather than
+estimated** — see "Phase 5, re-priced" above, which is what the reader should price from. A shipped `def` still reads
 the constructor it was handed and the fields directly under it. What reading `Eval` and `Cost` settled is
 written out under "Walking a value of a recursive type" above: fuel measures nesting depth rather than
 work, so the syntactic bound survives exactly as long as the depth of the incoming value is bounded — and
