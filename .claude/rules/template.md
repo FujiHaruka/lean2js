@@ -48,8 +48,9 @@ is sold on, each by the message the user would see:
   with `lean2js`, because a digest only this compiler can compute answers nobody
 - that an `@[expand] def` leaves no name at all in the generated package
 - that `proof-manifest.json` names the version in `lakefile.toml`
-- that `AGENTS.md` is in the copy and `CLAUDE.md` still links to it, which is what a `cp -R` of the
-  template has to carry for an agent to find the entry at all
+- that `AGENTS.md` is in the copy and `CLAUDE.md` still links to it, which is what any copy of the
+  template — the `cp -R` here, the tarball the README unpacks — has to carry for an agent to find the
+  entry at all
 
 **Add a case here when a new refusal is documented**, and assert the message, not just the exit code: a
 refusal that fires for another reason is the failure mode this script exists to catch.

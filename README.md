@@ -70,15 +70,16 @@ of the others, so a reader holding the package can ask whether the two still bel
 package on Node before anything is written.
 
 ```sh
-git clone --depth 1 https://github.com/FujiHaruka/lean2js
-cp -R lean2js/templates/verified-package my-logic && cd my-logic
+mkdir my-logic && cd my-logic
+curl -L https://github.com/FujiHaruka/lean2js/archive/refs/heads/main.tar.gz \
+  | tar -xz --strip-components=3 lean2js-main/templates/verified-package
 ```
 
 [`templates/verified-package/`](templates/verified-package/) is where to start: the shape below with the
 rest of the example — a discount type, an invoice assembled from line items, validation that refuses a
 negative seat count — beside the [`reference/`](templates/verified-package/reference/README.md) an author
-reads while writing the Lean. The copy pins the `rev` it was written against, so how fresh the clone is
-does not matter.
+reads while writing the Lean. What comes down pins the `rev` it was written against, so taking it from
+`main` does not move the compiler under you.
 
 A coding agent is set up by the same copy: [`AGENTS.md`](templates/verified-package/AGENTS.md), which
 `CLAUDE.md` links to, is the order the commands run in, what counts as having succeeded, and what a
