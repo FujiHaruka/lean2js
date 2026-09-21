@@ -66,5 +66,5 @@ the reference semantics and the generated code to it.
 | `Date.now()` / time zones / formatting | The clock and the zone are ambient state, so the instant arrives as a parameter: an `Int` of epoch milliseconds. The calendar itself is there — `Cal.dayOfInstant` to a day, then `Cal.year` / `Cal.month` / `Cal.day` |
 | `Float` / a fractional `number` | `Int` in minor units (cents, basis points), or `BigInt` where the range runs out |
 | `Math.random()` / the clock / a counter | Take it as a parameter. The core is pure |
-| walking a type that names itself | A `def` reads the constructor it was handed and the fields directly under it. Take the answer for each child as a parameter, or do the walk in TypeScript and call in per node |
+| a `def` that calls itself, to walk a value of a type that names itself | The fold `deriving Enc` writes beside the encoding: [`expressions.md`](expressions.md) |
 | `**` / `Math.pow` / `10 ^ n` | `(Arr.range (min (max n 0) 40)).foldl (fun running step => running * b) 1`, with `b` the base: one multiplication per step. For a power of ten, `Opt.getD (Str.toInt? ("1" ++ Str.repeat "0" (min (max n 0) 15))) 0` says it without the fold. The clamp is not optional either way |

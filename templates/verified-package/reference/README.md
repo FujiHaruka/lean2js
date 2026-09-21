@@ -11,10 +11,10 @@ them.
 **2. Every call goes to a name written above it.** No recursion, no closure, no function built where it
 stands: a function reaches a call as the name of a declaration. Repetition is the seven array
 traversals — `map`, `filter`, `find?`, `all`, `any`, `foldl` and `Arr.sortByKey` — whose lambda is the
-traversal's own syntax rather than a value. The array they walk need not have come from a caller:
-`Arr.range n` is the whole numbers below `n`, so a body that has to run a number of times folds over
-those. How far it counts has to be bounded by the program text, which is the one thing `Arr.range` asks
-that nothing else does.
+traversal's own syntax rather than a value, and the fold that walks a type that names itself. The array
+a traversal walks need not have come from a caller: `Arr.range n` is the whole numbers below `n`, so a
+body that has to run a number of times folds over those. How far it counts has to be bounded by the
+program text, which is the one thing `Arr.range` asks that nothing else does.
 
 One question settles almost everything:
 
@@ -33,7 +33,7 @@ shorthand for a `match`.
 | --- | --- |
 | `Nat`, `Float`, a tuple, `/` on `Int` | no — the subset's numbers are `Int`, `UInt32`, `BigInt`; declare a `structure` for a tuple; divide with `Int53.div` |
 | `xs.length` / `s.length` / `xs.take 3` | no — write `Arr.length` / `Str.length` / `Arr.take` |
-| a helper that calls itself | no |
+| a helper that calls itself | no — a value of a type that names itself is walked by its fold |
 | `do` and `←` over `Except` | no — `bind` takes a function built where it stands |
 | `xs.sort compare` | no — `Arr.sortByKey xs key` takes the key, and the order comes from its type |
 | `xs.filter (fun x => x.active)` | yes — the lambda is the traversal's own syntax |
@@ -46,7 +46,7 @@ time that is not a value**, which is also why a `@[ship] def` is monomorphic.
 | Where to look | |
 | --- | --- |
 | [`declarations.md`](declarations.md) | `@[ship]`, `@[expand]`, declaring types, and the TypeScript a consumer sees |
-| [`expressions.md`](expressions.md) | literals, operators, `match`, calls, lambdas |
+| [`expressions.md`](expressions.md) | literals, operators, `match`, calls, lambdas, and the fold that walks a type that names itself |
 | [`vocabulary.md`](vocabulary.md) | `Arr` / `Str` / `Dict` / `Opt` / `Exc` / `Int53` / `BigInt` / `Cal`, with signatures |
 | [`javascript.md`](javascript.md) | where the subset's answer differs from JavaScript's, and what to write for what is not there |
 | [`errors.md`](errors.md) | what a refusal says |
