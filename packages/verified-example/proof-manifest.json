@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "compiler": {
     "name": "lean2js",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "lean": {
     "version": "4.33.1",
@@ -21,7 +21,7 @@
     },
     {
       "file": "README.md",
-      "sha256": "81423dcaed37387320d447b141f3d1cde1c6261722855d57d8432c1786139f02"
+      "sha256": "9fe617abb9c92bb6b9f8e94bdd5d98bee1ee32801a2e6e4e8c91be0272d9f31c"
     },
     {
       "file": "package.json",

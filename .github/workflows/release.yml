@@ -24,6 +24,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+      - uses: actions/checkout@v5
+      # A repository archive would need no packing, and its downloads are counted nowhere; an asset's are.
+      - name: The template, as the quickstart takes it down
+        run: |
+          pinned="$(sed -n 's/^rev = "\(.*\)"$/\1/p' templates/verified-package/lakefile.toml)"
+          test "$pinned" = "$TAG" || { echo "the template pins $pinned rather than $TAG"; exit 1; }
+          tar -czf verified-package.tar.gz -C templates/verified-package .
+          gh release upload "$TAG" verified-package.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
 
   archive:
     needs: release

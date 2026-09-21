@@ -71,15 +71,15 @@ package on Node before anything is written.
 
 ```sh
 mkdir my-logic && cd my-logic
-curl -L https://github.com/FujiHaruka/lean2js/archive/refs/heads/main.tar.gz \
-  | tar -xz --strip-components=3 lean2js-main/templates/verified-package
+curl -L https://github.com/FujiHaruka/lean2js/releases/latest/download/verified-package.tar.gz \
+  | tar -xz
 ```
 
 [`templates/verified-package/`](templates/verified-package/) is where to start: the shape below with the
 rest of the example — a discount type, an invoice assembled from line items, validation that refuses a
 negative seat count — beside the [`reference/`](templates/verified-package/reference/README.md) an author
-reads while writing the Lean. What comes down pins the `rev` it was written against, so taking it from
-`main` does not move the compiler under you.
+reads while writing the Lean. What comes down is that directory as the latest release packed it, pinning
+the `rev` of the release it came out of, so the compiler does not move under you.
 
 A coding agent is set up by the same copy: [`AGENTS.md`](templates/verified-package/AGENTS.md), which
 `CLAUDE.md` links to, is the order the commands run in, what counts as having succeeded, and what a
@@ -93,7 +93,7 @@ What the copy comes down to is a `lakefile.toml` and a module:
 [[require]]
 name = "Lean2Js"
 git = "https://github.com/FujiHaruka/lean2js"
-rev = "v0.3.0"
+rev = "v0.4.0"
 ```
 
 ```lean

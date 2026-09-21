@@ -4,6 +4,21 @@ Versions follow the `version` in `lakefile.toml`, which is also the `compiler.ve
 `proof-manifest.json`. Pin a package to a tag rather than to `main`: the `rev` in your `lakefile.toml` is
 what decides which compiler your artifact was built by.
 
+## 0.4.0
+
+- **The quickstart takes the template down from a release rather than out of a repository archive.**
+  `releases/latest/download/verified-package.tar.gz` is `templates/verified-package/` packed at the tag
+  it was released from, so the `rev` inside it names the compiler the `reference/` beside it was written
+  against. Unpacked out of `main` those two came apart: the documents were whatever `main` held that
+  day, and the `rev` was the release before it.
+
+  The release refuses to attach a template pinning anything but its own tag, and `pnpm template:check`
+  fails where the template or the README names a `rev` other than the version in `lakefile.toml`, so
+  the three agree before there is a tag to move.
+
+- Nothing else changed. A package emitted by 0.4.0 differs from one emitted by 0.3.0 in the version its
+  `proof-manifest.json` names and nowhere else.
+
 ## 0.3.0
 
 - **A dictionary can cross the boundary as a plain object.** `Dict.Obj V` is the same dictionary as

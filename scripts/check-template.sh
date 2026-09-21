@@ -404,4 +404,12 @@ grep -q 'free_plan_is_never_charged' dist/proof-manifest.json
 lakefile_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo/lakefile.toml")"
 sed -n '/"compiler"/,/}/p' dist/proof-manifest.json | grep -q "\"version\": \"$lakefile_version\"" \
   || { echo "the emitted manifest does not name the version in lakefile.toml ($lakefile_version)"; exit 1; }
+# The release refuses a template pinning anything but its own tag, and the README quotes the same line;
+# both are caught here, while there is still no tag to have to move.
+template_rev="$(sed -n 's/^rev = "\(.*\)"$/\1/p' "$repo/templates/verified-package/lakefile.toml")"
+test "$template_rev" = "v$lakefile_version" \
+  || { echo "the template pins $template_rev rather than v$lakefile_version"; exit 1; }
+grep -q "^rev = \"v$lakefile_version\"$" "$repo/README.md" \
+  || { echo "README quotes a rev other than v$lakefile_version"; exit 1; }
+
 echo "template check passed: $(grep -c '^export function ' dist/index.js) export(s) written"
