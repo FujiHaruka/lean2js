@@ -69,12 +69,13 @@ every call a consumer can make. The other two cover every declaration, exported 
   a `Map`; one of `Dict.Obj V` hands back a plain object, which is what `JSON.stringify` serialises —
   it writes `{}` for a `Map`. The entry walks the value its body built out through its declared return
   type to do that, and the walk is one of the two the model holds as an evaluation rule
-  ([`calls_out_outTy`]). **This is per declaration, not per package**: an entry whose return type
-  reaches no `Dict.Obj` emits no walk and returns exactly what its body built
-  ([`retWalk_id_of_retNoDictObj`]), so it is the function it was, while its neighbour that does return
-  one walks. The walk itself is in every package's preamble either way — the runtime helpers are one
-  fixed list. The two spellings are one dictionary inside the package: the same operations run on both,
-  and what the constructor decides is only what a consumer meets.
+  ([`calls_out_outTy`]). **This is per declaration, not per package**: what decides it is the return
+  descriptor — that declaration's return type expanded through the declared types it names — so an entry
+  whose descriptor reaches no `Dict.Obj` emits no walk and returns exactly what its body built
+  ([`retWalk_id_of_descNoDictObj`]), while its neighbour that does return one walks. The walk itself is
+  in every package's preamble either way — the runtime helpers are one fixed list. The two spellings are
+  one dictionary inside the package: the same operations run on both, and what the constructor decides is
+  only what a consumer meets.
 - **Except for a dictionary holding the same key twice, all three directions speak for every spelling of
   the arguments the entry check accepts** (`ArgsDecode`) — the order of keys and keys the declaration does
   not name are carried by the same theorems as the canonical spelling. That one excluded shape exists only
@@ -172,13 +173,15 @@ it out to one and nothing else can come back. What comes back satisfies that nar
 ([`returned_values_fit_parameter_types`]); and what one call hands back passes the next call's entry
 check outright ([`returned_values_pass_the_entry_check`]) — that last one carries no range caveat,
 because the range is what the reference semantics already said about the value the first call returned.
-The narrowing stops at a declared type: its interface is printed once and serves both directions, so a
-`Dict.Obj` **field** keeps the union wherever it appears.
+That second entry does not merely accept it: it reads it back as the value the first call returned
+([`returned_values_read_back_unchanged`]), so a dictionary walked out to a plain object is the `Map` the
+body works in again and nothing else moves. The narrowing stops at a declared type: its interface is
+printed once and serves both directions, so a `Dict.Obj` **field** keeps the union wherever it appears.
 
 The `.d.ts` is the only type a consumer actually reads, so **both directions are in the manifest**. What
-the four statements about the printed type call the `.d.ts` side is `Dts.TsSat` and its returning twin
-`Dts.TsSatOut` — the declared type read as a predicate in Lean; the fifth is about the check itself and
-needs no reading. How TypeScript reads the printed `.d.ts` text is the one thing trusted here, and it is
+the statements about the printed type call the `.d.ts` side is `Dts.TsSat` and its returning twin
+`Dts.TsSatOut` — the declared type read as a predicate in Lean; the two about the check itself need no
+reading. How TypeScript reads the printed `.d.ts` text is the one thing trusted here, and it is
 checked rather than proved: tsc is run over the generated file on its own terms, and over calls into it
 that the entry check accepts and refuses.
 
@@ -259,9 +262,10 @@ range of spellings.
 [`encoded_values_fit_dts`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.encoded_values_fit_dts
 [`returned_values_fit_parameter_types`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.returned_values_fit_parameter_types
 [`returned_values_pass_the_entry_check`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.returned_values_pass_the_entry_check
+[`returned_values_read_back_unchanged`]: https://fujiharuka.github.io/lean2js/Lean2Js/Example.html#Lean2Js.Example.returned_values_read_back_unchanged
 [`checkAgreement`]: https://fujiharuka.github.io/lean2js/Lean2Js/Agree.html#Lean2Js.checkAgreement
 [`calls_ck_checkTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_ck_checkTy
 [`calls_out_outTy`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_out_outTy
-[`retWalk_id_of_retNoDictObj`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.retWalk_id_of_retNoDictObj
+[`retWalk_id_of_descNoDictObj`]: https://fujiharuka.github.io/lean2js/Lean2Js/Decl.html#Lean2Js.Decl.retWalk_id_of_descNoDictObj
 [`calls_map`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_map
 [`calls_fold`]: https://fujiharuka.github.io/lean2js/Lean2Js/HelperProof.html#Lean2Js.HelperSem.calls_fold

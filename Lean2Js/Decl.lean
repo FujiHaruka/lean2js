@@ -2432,16 +2432,24 @@ theorem descNoDictObj_tyDesc {p : Program} (hp : p.typesNoDictObj = true) (b : N
         rw [Js.fieldsNoDictObj]
         simp [iht (hf f (by simp)) dt hdt, ihr (fun g hg => hf g (by simp [hg])) rs hrs]
 
-/-- **An entry whose return type reaches no `dictObj` emits no walk out.** The return descriptor the
-compiler expands reaches none, so `Compile.retWalk` is the identity and the function written out is the
-one it was before a dictionary could cross the boundary as a plain object. This is stated per
-declaration because that is what a real program exhibits: one declaration of it may hand a dictionary
-across as an object while its neighbour does not. -/
+/-- **An entry whose return descriptor reaches no `dictObj` emits no walk out**, so `Compile.retWalk` is
+the identity and the function written out is the one it was before a dictionary could cross the boundary
+as a plain object. The descriptor is that declaration's own return type expanded, so this is per
+declaration: one declaration of a program may hand a dictionary across as an object while its neighbour
+emits no walk at all. -/
+theorem retWalk_id_of_descNoDictObj {desc : Js.TyDesc} (hnd : Js.descNoDictObj desc = true)
+    (e : Js.Expr) : Compile.retWalk desc e = e := by
+  rw [Compile.retWalk, if_pos hnd]
+
+/-- **The same, read off the return type as written**, which takes the whole program: `Ty.noDictObj`
+stops at a declared type's name, and such a type may carry a `Dict.Obj` field, so the expansion reaches
+one where the return type does not. That is what `hp` rules out, and
+`retWalk_id_of_descNoDictObj` is the reading that asks for neither. -/
 theorem retWalk_id_of_retNoDictObj {p : Program} (hp : p.typesNoDictObj = true)
     {d : Decl} (hret : Ty.noDictObj d.ret = true) {desc : Js.TyDesc}
     (hdesc : Compile.tyDesc p (Compile.tyDescBudget p d.ret) d.ret = .ok desc) (e : Js.Expr) :
-    Compile.retWalk desc e = e := by
-  rw [Compile.retWalk, if_pos (descNoDictObj_tyDesc (st := []) hp _ d.ret hret desc hdesc)]
+    Compile.retWalk desc e = e :=
+  retWalk_id_of_descNoDictObj (descNoDictObj_tyDesc (st := []) hp _ d.ret hret desc hdesc) e
 
 /-- **No entry of a program that declares no `dictObj` anywhere emits a walk out**, which is every
 declaration of it at once. -/
