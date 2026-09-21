@@ -7,8 +7,10 @@ paths:
 # The user-facing template
 
 `templates/verified-package/` is what an author copies to start: a `lakefile.toml`, a `lean-toolchain`,
-`MyLogic.lean`, `README.md`, and the `reference/` the author reads while writing the Lean. It depends on
-this library **over git at a tag**, because that is the dependency a real user writes.
+`MyLogic.lean`, `README.md`, the `AGENTS.md` their coding agent is driven by — with `CLAUDE.md` a
+symlink to it, so the entry is one file under two names rather than two files — and the `reference/` the
+author reads while writing the Lean. It depends on this library **over git at a tag**, because that is
+the dependency a real user writes.
 
 `pnpm template:check` (`scripts/check-template.sh`) copies it into a scratch directory, redirects that
 `[[require]]` at the working tree, and builds and emits from empty. So the check tests the template as
@@ -46,6 +48,8 @@ is sold on, each by the message the user would see:
   with `lean2js`, because a digest only this compiler can compute answers nobody
 - that an `@[expand] def` leaves no name at all in the generated package
 - that `proof-manifest.json` names the version in `lakefile.toml`
+- that `AGENTS.md` is in the copy and `CLAUDE.md` still links to it, which is what a `cp -R` of the
+  template has to carry for an agent to find the entry at all
 
 **Add a case here when a new refusal is documented**, and assert the message, not just the exit code: a
 refusal that fires for another reason is the failure mode this script exists to catch.

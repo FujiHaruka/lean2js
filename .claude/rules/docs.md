@@ -17,6 +17,7 @@ repository; everything about developing the compiler lives under `.claude/`. His
 | `docs/index.md` | the landing page of the Lean reference site, published from `main` by `.github/workflows/docs.yml` via litedoc4 |
 | `CHANGELOG.md` | someone pinning a `rev`; versions follow `version` in `lakefile.toml` |
 | `templates/verified-package/README.md` | an author who has just copied the template |
+| `templates/verified-package/AGENTS.md` | the coding agent driving that package: the order the commands run in, what having succeeded looks like, and what a message that stopped one means. `CLAUDE.md` beside it is a symlink to it |
 | `templates/verified-package/reference/` | an author — usually a coding agent — looking one thing up while writing the Lean |
 | `.claude/rules/`, `.claude/plans/` | a session working on the compiler itself. Never linked from a user document |
 | `scripts/dogfood/` | a session run as an outside user, to measure whether the documents above are enough |
@@ -58,6 +59,11 @@ question before adding a seventh.
 
 A document a reader has to scroll past to reach their answer is answering more than one question. Split
 it and give the pieces a map; do not let the map grow into a summary of what it points at.
+
+The same line runs between `AGENTS.md` and `reference/`: the first owns the run — the order, what having
+succeeded looks like, what each command touches, and what a message that stopped one means — and the
+second owns the language. A refusal is named in `AGENTS.md` only where what to do about it is not the
+substitution `errors.md` already gives.
 
 ## A number is measured, and a sample is copied
 

@@ -17,20 +17,19 @@ seconds. `lake build --no-cache` always compiles.
 `lean2js` reads the `manifest`, the `Program` and the public theorems of the module it is given
 (`--manifest` points it at a different constant). It checks before it writes: every generated vector has
 to agree between the reference semantics and the model of the generated JavaScript, and then between the
-assembled package and real JavaScript on Node — which is why `node` has to be on your `PATH`. A theorem
-resting on an axiom other than `propext` / `Classical.choice` / `Quot.sound` fails the run.
+assembled package and real JavaScript on Node. A theorem resting on an axiom other than `propext` /
+`Classical.choice` / `Quot.sound` fails the run.
 
 | File | What it is |
 | --- | --- |
 | `lakefile.toml` | The dependency on `Lean2Js`, pinned to a tag. That `rev` decides which compiler your artifact was built by, and — being a tag — whether the first build fetches it or compiles it |
 | `MyLogic.lean` | The business logic, the theorems, and the manifest |
+| [`AGENTS.md`](AGENTS.md) | The order the commands run in, what having succeeded looks like, and what a message that stopped one means. `CLAUDE.md` is a link to it |
 | [`reference/`](reference/README.md) | What a shipped `def` may be written in, and what you prove it with |
 
 `dist/` gets `index.js`, `index.d.ts`, `proof-manifest.json`, `package.json`, and a `README.md` holding
 the public API, what a call throws, and the theorems and their axioms. The manifest names the SHA-256 of
-each of the others, and `lake exe lean2js verify dist` reads them back and answers whether they are still
-the files it names — worth a line in your CI, since nothing else tells a consumer that the theorems they
-are reading are about the `index.js` beside them.
+each of the others, which is what `lake exe lean2js verify dist` reads back.
 
 ## What to change
 

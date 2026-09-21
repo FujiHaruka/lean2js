@@ -28,6 +28,11 @@ with open(path, "w") as f:
 PY
 
 cd "$work"
+
+test -s AGENTS.md || { echo "the template lost the entry AGENTS.md"; exit 1; }
+test "$(readlink CLAUDE.md)" = AGENTS.md || { echo "CLAUDE.md does not link to AGENTS.md"; exit 1; }
+test -s CLAUDE.md || { echo "the CLAUDE.md link did not survive being copied"; exit 1; }
+
 lake build
 lake exe lean2js MyLogic --out dist
 
