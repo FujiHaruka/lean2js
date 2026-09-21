@@ -77,9 +77,13 @@ cp -R lean2js/templates/verified-package my-logic && cd my-logic
 [`templates/verified-package/`](templates/verified-package/) is where to start: the shape below with the
 rest of the example — a discount type, an invoice assembled from line items, validation that refuses a
 negative seat count — beside the [`reference/`](templates/verified-package/reference/README.md) an author
-reads while writing the Lean and the [`AGENTS.md`](templates/verified-package/AGENTS.md) their coding
-agent is driven by, which `CLAUDE.md` links to. The copy pins the `rev` it was written against, so how
-fresh the clone is does not matter.
+reads while writing the Lean. The copy pins the `rev` it was written against, so how fresh the clone is
+does not matter.
+
+A coding agent is set up by the same copy: [`AGENTS.md`](templates/verified-package/AGENTS.md), which
+`CLAUDE.md` links to, is the order the commands run in, what counts as having succeeded, and what a
+message that stopped one means, and `reference/` answers one question per file beside it. A session
+started in the copy writes Lean rather than reading this repository first.
 
 What the copy comes down to is a `lakefile.toml` and a module:
 
