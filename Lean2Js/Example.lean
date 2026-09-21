@@ -730,9 +730,10 @@ theorem an_empty_group_holds_no_product (name : String) :
     categoryProducts (.group name []) = 0 := rfl
 
 /-- The walk goes past the first level, which is the whole difference from `directChildren`: a group
-whose only child is a group holding one leaf holds that one product. -/
-theorem nesting_keeps_the_product (outer inner product : String) :
-    categoryProducts (.group outer [.group inner [.leaf product]]) = 1 := rfl
+whose only child is a group holding two leaves holds both those products, where counting what is
+directly under it answers one. -/
+theorem nesting_keeps_the_product (outer inner first second : String) :
+    categoryProducts (.group outer [.group inner [.leaf first, .leaf second]]) = 2 := rfl
 
 /-- A group holds what its children hold and nothing besides: the count distributes over the children,
 however deep each of them goes. -/
@@ -1193,8 +1194,8 @@ theorem no_rate_is_no_tax (amount : Int) : taxOn amount 0 = 0 := by
 
 omit [Discriminators] in
 /-- A refund is taxed exactly as the charge it reverses: the tax on a negative amount is the tax on the
-positive one, negated. Rounding a half away from zero is what holds this; rounding a half upwards, as
-JavaScript's `Math.round` does, would not. -/
+positive one, negated. Rounding a half upwards, as JavaScript's `Math.round` does, would not hold
+this. -/
 theorem a_refund_is_taxed_as_the_charge (amount rate : Int) :
     taxOn (-amount) rate = -taxOn amount rate := by
   have hi := Int.tmod_lt_of_pos (amount * rate) (show (0:Int) < 10000 by decide)

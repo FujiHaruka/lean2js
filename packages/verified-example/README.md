@@ -291,11 +291,12 @@ theorem an_empty_group_holds_no_product (name : String) : categoryProducts (Cate
 ### nesting_keeps_the_product
 
 The walk goes past the first level, which is the whole difference from `directChildren`: a group
-whose only child is a group holding one leaf holds that one product.
+whose only child is a group holding two leaves holds both those products, where counting what is
+directly under it answers one.
 
 ```lean
-theorem nesting_keeps_the_product (outer inner product : String) :
-  categoryProducts (Category.group outer [Category.group inner [Category.leaf product]]) = 1
+theorem nesting_keeps_the_product (outer inner first second : String) :
+  categoryProducts (Category.group outer [Category.group inner [Category.leaf first, Category.leaf second]]) = 2
 ```
 
 ### a_group_holds_what_its_children_hold
@@ -713,8 +714,8 @@ theorem no_rate_is_no_tax (amount : Int) : taxOn amount 0 = 0
 ### a_refund_is_taxed_as_the_charge
 
 A refund is taxed exactly as the charge it reverses: the tax on a negative amount is the tax on the
-positive one, negated. Rounding a half away from zero is what holds this; rounding a half upwards, as
-JavaScript's `Math.round` does, would not.
+positive one, negated. Rounding a half upwards, as JavaScript's `Math.round` does, would not hold
+this.
 
 ```lean
 theorem a_refund_is_taxed_as_the_charge (amount rate : Int) : taxOn (-amount) rate = -taxOn amount rate

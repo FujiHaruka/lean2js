@@ -21,7 +21,7 @@
     },
     {
       "file": "README.md",
-      "sha256": "1c2d8f31dc9f33e506d2c615ad80428277ee48dd1341b6fddedbdb40deb71014"
+      "sha256": "81423dcaed37387320d447b141f3d1cde1c6261722855d57d8432c1786139f02"
     },
     {
       "file": "package.json",
@@ -787,8 +787,8 @@
     },
     {
       "name": "nesting_keeps_the_product",
-      "statement": "nesting_keeps_the_product (outer inner product : String) :\n  categoryProducts (Category.group outer [Category.group inner [Category.leaf product]]) = 1",
-      "doc": "The walk goes past the first level, which is the whole difference from `directChildren`: a group\nwhose only child is a group holding one leaf holds that one product."
+      "statement": "nesting_keeps_the_product (outer inner first second : String) :\n  categoryProducts (Category.group outer [Category.group inner [Category.leaf first, Category.leaf second]]) = 2",
+      "doc": "The walk goes past the first level, which is the whole difference from `directChildren`: a group\nwhose only child is a group holding two leaves holds both those products, where counting what is\ndirectly under it answers one."
     },
     {
       "name": "a_group_holds_what_its_children_hold",
@@ -968,7 +968,7 @@
     {
       "name": "a_refund_is_taxed_as_the_charge",
       "statement": "a_refund_is_taxed_as_the_charge (amount rate : Int) : taxOn (-amount) rate = -taxOn amount rate",
-      "doc": "A refund is taxed exactly as the charge it reverses: the tax on a negative amount is the tax on the\npositive one, negated. Rounding a half away from zero is what holds this; rounding a half upwards, as\nJavaScript's `Math.round` does, would not."
+      "doc": "A refund is taxed exactly as the charge it reverses: the tax on a negative amount is the tax on the\npositive one, negated. Rounding a half upwards, as JavaScript's `Math.round` does, would not hold\nthis."
     },
     {
       "name": "tax_of_five_at_a_tenth",
