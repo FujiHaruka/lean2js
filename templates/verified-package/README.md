@@ -4,10 +4,11 @@ The starting point for a package that ships business logic written in Lean, toge
 proved about it.
 
 ```sh
-cp -R templates/verified-package my-logic && cd my-logic
 lake build                            # checks the logic and the theorems
 lake exe lean2js MyLogic --out dist   # checks them again, then writes the npm package into dist/
 ```
+
+What each of those decides, and what a message that stopped one means, is [`AGENTS.md`](AGENTS.md).
 
 The first `lake build` fetches this library rather than compiling it, where your `rev` names a tag and
 an archive was attached to that tag's release for your platform. Everything else — a rev that is a bare

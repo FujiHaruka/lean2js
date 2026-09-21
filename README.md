@@ -69,6 +69,20 @@ of the others, so a reader holding the package can ask whether the two still bel
 `elan` (Lean 4.33.1) and `node` on your `PATH`: every generated vector is run against the assembled
 package on Node before anything is written.
 
+```sh
+git clone --depth 1 https://github.com/FujiHaruka/lean2js
+cp -R lean2js/templates/verified-package my-logic && cd my-logic
+```
+
+[`templates/verified-package/`](templates/verified-package/) is where to start: the shape below with the
+rest of the example — a discount type, an invoice assembled from line items, validation that refuses a
+negative seat count — beside the [`reference/`](templates/verified-package/reference/README.md) an author
+reads while writing the Lean and the [`AGENTS.md`](templates/verified-package/AGENTS.md) their coding
+agent is driven by, which `CLAUDE.md` links to. The copy pins the `rev` it was written against, so how
+fresh the clone is does not matter.
+
+What the copy comes down to is a `lakefile.toml` and a module:
+
 ```toml
 # lakefile.toml
 [[require]]
@@ -130,10 +144,8 @@ which the generated JavaScript and the reference semantics disagree, a theorem r
 declaration without a certificate or one `ship_package` did not gather, or a program past the fuel the
 artifact runs at. Nothing lands in `--out` when it refuses.
 
-[`templates/verified-package/`](templates/verified-package/) is this with the rest of the example — a
-discount type, an invoice assembled from line items, validation that refuses a negative seat count, and
-four theorems. A package with no theorems is written all the same, so the proofs can come once the shape
-of the logic has settled.
+A package with no theorems is written all the same, so the proofs can come once the shape of the logic
+has settled.
 
 ## Writing the logic
 
